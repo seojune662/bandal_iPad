@@ -1,0 +1,25 @@
+:root { color-scheme: light dark; font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; background: #fffefa; color: #24352f; }
+* { box-sizing: border-box; }
+body { margin: 0; -webkit-text-size-adjust: 100%; }
+.document-heading { display: flex; justify-content: space-between; gap: 16px; padding: 13px 20px; border-bottom: 1px solid #ddd; background: #f6f6ef; font-size: 14px; }
+.document-heading span { white-space: nowrap; color: #68736b; }
+.file-status { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 65vh; padding: 30px; text-align: center; }
+.file-status.error { color: #b53b2d; }
+.file-status progress { width: min(280px, 80vw); }
+.file-docx__document { max-width: 850px; margin: auto; padding: 24px clamp(18px, 5vw, 56px) 100px; background: white; color: #222; }
+.file-docx__document img { max-width: 100%; height: auto; }
+.file-docx__document table, .file-sheet table { border-collapse: collapse; }
+.file-docx__document td, .file-docx__document th { border: 1px solid #ddd; padding: 8px; }
+.file-sheet__toolbar { padding: 8px; }
+.file-sheet__tabs { display: flex; overflow: auto; gap: 6px; }
+.file-sheet__tab { min-height: 44px; padding: 8px 20px; border: 1px solid #c8d3c9; border-radius: 9px; background: transparent; color: inherit; white-space: nowrap; font: inherit; }
+.file-sheet__tab[aria-selected=true] { background: #357763; color: white; }
+.file-sheet__scroll, .file-sheet__viewport { overflow: auto; max-height: calc(100dvh - 130px); }
+.file-sheet { overflow: auto; }
+.file-sheet th, .file-sheet td { min-width: 90px; max-width: 500px; height: 32px; padding: 4px 10px; border: 1px solid #d8dfd8; white-space: pre-wrap; overflow-wrap: break-word; }
+.file-sheet th { background: #f0f3ed; color: #526354; font-size: 12px; }
+.file-sheet td { background: white; color: #222; }
+.file-hwp { max-width: 850px; margin: auto; padding: 24px; }
+.file-hwp p { margin: .6em 0; white-space: pre-wrap; }
+.notice, .file-sheet__notice { margin: 10px 20px; color: #707a70; font-size: 13px; }
+@media(prefers-color-scheme:dark) { :root { background: #202622; color: #e7eae4; } .document-heading { background: #29312b; border-color: #455047; } .document-heading span, .notice { color: #a3b1a6; } }

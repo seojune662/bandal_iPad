@@ -1,0 +1,19 @@
+services:
+  converter:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:?Set the project HTTPS URL}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?Set the public project key}
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=1073741824,mode=1777
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 128
+    restart: unless-stopped

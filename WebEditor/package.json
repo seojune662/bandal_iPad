@@ -1,0 +1,23 @@
+{
+  "name": "bandal-ipad-editor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": { "build": "node ../Scripts/build-web-editor.mjs", "check": "node ../Scripts/build-web-editor.mjs --check", "test": "node ../Scripts/build-web-editor.test.mjs" },
+  "dependencies": {
+    "@silurus/ooxml": "0.86.1",
+    "jszip": "3.10.1",
+    "mammoth": "1.12.1",
+    "xlsx": "file:vendor/xlsx-0.20.3.tgz",
+    "@milkdown/core": "7.22.0",
+    "@milkdown/ctx": "7.22.0",
+    "@milkdown/plugin-history": "7.22.0",
+    "@milkdown/preset-commonmark": "7.22.0",
+    "@milkdown/preset-gfm": "7.22.0",
+    "@milkdown/prose": "7.22.0",
+    "@milkdown/utils": "7.22.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": { "vite": "6.4.3", "typescript": "5.9.3", "@types/react": "18.3.31", "@types/react-dom": "18.3.7", "playwright": "1.62.1" }
+}

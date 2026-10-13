@@ -1,0 +1,352 @@
+--- a/src/main/features/ipadSync/runtime.ts
++++ b/src/main/features/ipadSync/runtime.ts
+@@ -1,7 +1,7 @@
+ import { app, dialog, Menu, type MenuItemConstructorOptions } from 'electron'
+ import { spawn, type ChildProcess } from 'node:child_process'
+ import { createHash } from 'node:crypto'
+-import { existsSync, readFileSync } from 'node:fs'
++import { existsSync, readFileSync, mkdirSync, openSync, writeSync, fsyncSync, closeSync, renameSync } from 'node:fs'
+ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+ import { join } from 'node:path'
+ import type { Database } from 'better-sqlite3'
+@@ -53,10 +53,15 @@
+   private readonly directory: string
+   private readonly timer: ReturnType<typeof setInterval>
+   private userID: string | null = null
++  private boundUserID: string | null = null
+ 
+   constructor(private readonly deps: Dependencies) {
+     this.directory = join(deps.userDataPath, 'ipad-companion')
+-    try { this.enabled = JSON.parse(readFileSync(join(this.directory, 'preferences.json'), 'utf8')).enabled === true } catch { /* First launch. */ }
++    try {
++      const preferences = JSON.parse(readFileSync(join(this.directory, 'preferences.json'), 'utf8'))
++      this.boundUserID = typeof preferences.boundUserID === 'string' ? preferences.boundUserID : null
++      this.enabled = preferences.enabled === true && this.boundUserID !== null
++    } catch { /* First launch; no automatic upload without an explicit account binding. */ }
+     this.timer = setInterval(() => {
+       if (this.enabled && !this.busy) void this.synchronize().catch(error => {
+         this.status = error instanceof Error ? error.message : '동기화 대기 중'
+@@ -72,12 +77,22 @@
+   private cancel(): void { this.generation += 1; this.child?.kill(); this.child = null }
+ 
+   async setEnabled(enabled: boolean): Promise<void> {
++    if (enabled) await this.session()
+     this.enabled = enabled
+     if (!enabled) this.cancel()
+-    await mkdir(this.directory, { recursive: true })
+-    await writeFile(join(this.directory, 'preferences.json'), JSON.stringify({ enabled }))
++    this.savePreferences()
+     this.status = enabled ? '자동 동기화 대기 중' : '자동 동기화 꺼짐'
+     if (enabled) await this.synchronize()
++  }
++
++  private savePreferences(): void {
++    mkdirSync(this.directory, { recursive: true })
++    const target = join(this.directory, 'preferences.json')
++    const temporary = `${target}.partial`
++    const descriptor = openSync(temporary, 'w', 0o600)
++    try { writeSync(descriptor, JSON.stringify({ enabled: this.enabled, boundUserID: this.boundUserID })); fsyncSync(descriptor) }
++    finally { closeSync(descriptor) }
++    renameSync(temporary, target)
+   }
+ 
+   private async session(): Promise<{ userID: string; token: string }> {
+@@ -85,6 +100,14 @@
+     if (!client) throw new Error('설정에서 반달 계정에 로그인해 주세요.')
+     const { data, error } = await client.auth.getSession()
+     if (error || !data.session) throw new Error('설정에서 반달 계정에 로그인해 주세요.')
++    if (this.boundUserID !== null && this.boundUserID !== data.session.user.id) {
++      this.cancel()
++      throw new Error('이 데스크톱 자료는 다른 반달 계정에 연결되어 있습니다. 기존 계정으로 로그인하거나 별도 데스크톱 프로필을 사용해 주세요.')
++    }
++    if (this.boundUserID === null) {
++      this.boundUserID = data.session.user.id
++      try { this.savePreferences() } catch (error) { this.boundUserID = null; throw error }
++    }
+     if (this.userID !== null && this.userID !== data.session.user.id) this.cancel()
+     this.userID = data.session.user.id
+     return { userID: data.session.user.id, token: data.session.access_token }
+@@ -167,7 +190,9 @@
+       const helper = process.env['BANDAL_IPAD_BRIDGE'] ?? (app.isPackaged
+         ? join(process.resourcesPath, 'ipad-bridge', 'bridge.py')
+         : join(app.getAppPath(), 'resources', 'ipad-bridge', 'bridge.py'))
+-      const executable = process.env['BANDAL_IPAD_BRIDGE_EXECUTABLE']
++      const bundledExecutable = join(process.resourcesPath, 'ipad-bridge', process.platform === 'win32' ? 'bandal-ipad-bridge.exe' : 'bandal-ipad-bridge')
++      const executable = process.env['BANDAL_IPAD_BRIDGE_EXECUTABLE'] ?? (app.isPackaged ? bundledExecutable : undefined)
++      if (executable && !existsSync(executable)) throw new Error('번들 iPad 동기화 도우미가 없습니다. 앱 설치 파일을 확인해 주세요.')
+       if (!executable && !existsSync(helper)) throw new Error('iPad 동기화 도우미를 찾을 수 없습니다.')
+       const args = [command, '--desktop-db', join(this.deps.userDataPath, 'bandal.db'),
+         '--exchange', exchange, '--course-root', join(this.deps.userDataPath, 'iPad Courses'), ...extra]
+@@ -179,7 +204,7 @@
+         child.stderr?.on('data', (chunk: Buffer) => { detail = (detail + chunk.toString()).slice(-2000) })
+         // Consume progress without recording file contents, tokens, or personal paths.
+         child.stdout?.resume()
+-        child.once('error', () => reject(new Error('동기화 도우미를 실행할 수 없습니다. Python 3 또는 번들 도우미를 확인해 주세요.')))
++        child.once('error', () => reject(new Error('동기화 도우미를 실행할 수 없습니다. 앱 설치 파일을 확인해 주세요.')))
+         child.once('exit', code => {
+           this.child = null
+           if (code === 0) resolve()
+--- a/resources/ipad-bridge/bridge.py
++++ b/resources/ipad-bridge/bridge.py
+@@ -245,9 +245,13 @@
+                 kind = "pdf" if extension == ".pdf" else "note" if extension in (".md", ".markdown") else "image" if extension in (".png", ".jpg", ".jpeg", ".heic", ".webp", ".gif") else "file"
+                 sha = exchange.asset(path)
+                 source = dict(item or {}); source.update(course_id=cid, rel_path=relative, hash=sha)
+-                payload = {"id": material_id, "courseID": cid, "title": path.stem, "fileName": path.name,
++                previous_material = exchange.get("material:" + material_id)
++                # Desktop has no folder/page-note columns. Retain all unprojected
++                # fields so a roundtrip cannot detach iPad relationships.
++                payload = json.loads(previous_material["payload"]) if previous_material else {}
++                payload.update({"id": material_id, "courseID": cid, "title": path.stem, "fileName": path.name,
+                            "revision": sha, "kind": kind, "byteCount": path.stat().st_size,
+-                           "createdAt": source.get("created_at", course["created_at"])}
++                           "createdAt": source.get("created_at", course["created_at"])})
+                 exchange.export_record("material:" + material_id, "material", payload, source)
+                 counts["materials"] += 1
+                 if kind == "note":
+@@ -288,6 +292,13 @@
+                     portable = {"schemaVersion": 1, "materialID": material_id, "documentRevision": sha,
+                                 "page": page, "coordinateSpace": COORDINATES, "geometry": bounds,
+                                 "objects": objects, "highlights": highlights}
++                    prior_record = exchange.get(prefix + str(page))
++                    if prior_record:
++                        prior = json.loads(base64.b64decode(json.loads(prior_record["payload"])["data"], validate=True))
++                        for collection, deleted_key in [("objects", "deletedObjectIDs"), ("highlights", "deletedHighlightIDs")]:
++                            active = {item["id"] for item in portable[collection]}
++                            removed = {item["id"] for item in prior.get(collection, [])} - active
++                            portable[deleted_key] = sorted(set(prior.get(deleted_key, [])) | removed)
+                     wrapper = {"materialID": material_id, "documentRevision": sha, "page": page,
+                                "data": base64.b64encode(encoded(portable)).decode()}
+                     fingerprint = ink_fingerprint([row for row in drawings if row["page"] == page],
+@@ -651,15 +662,12 @@
+             cursor = page["cursor"]
+             exchange.db.execute("INSERT INTO metadata VALUES('sync_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(cursor),))
+         if not page["hasMore"]: break
+-    for record in exchange.records("material"):
+-        material = json.loads(record["payload"])
+-        if record["deleted"] or material["kind"] in ("whiteboard", "note"): continue
+-        sha = material["revision"]
++    for _, sha, _, count in asset_references(exchange, include_notes=False):
+         if len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha): raise ValueError("Invalid asset hash")
+         target = exchange.assets / sha
+         if target.exists() and file_hash(target) == sha: continue
+         data = remote.request("storage/v1/object/authenticated/bandal-assets/" + remote.user_id + "/" + sha)
+-        if digest(data) != sha: raise ValueError("Downloaded asset hash mismatch")
++        if digest(data) != sha or (count is not None and len(data) != count): raise ValueError("Downloaded asset hash or length mismatch")
+         temporary = target.with_suffix(".partial"); temporary.write_bytes(data); os.replace(temporary, target)
+     return {"pushed": pushed, "conflicts": conflicts, "merged": merged_count, "cursor": cursor}
+ 
+@@ -669,30 +677,45 @@
+             "revision": row["revision"], "deleted": bool(row["deleted"]), "formatVersion": row["format_version"]}
+ 
+ 
++def asset_references(exchange, include_notes=True):
++    """Asset identifiers exactly match App/Services/Exchange.swift, including recordings."""
++    for record in exchange.records():
++        if record["deleted"]: continue
++        payload = json.loads(record["payload"])
++        if record["kind"] == "material" and payload["kind"] != "whiteboard":
++            if not include_notes and payload["kind"] == "note": continue
++            yield payload["id"], payload["revision"], payload["fileName"], payload.get("byteCount")
++        elif record["kind"] == "recording" and payload.get("assetRevision"):
++            yield "recording:" + payload["id"], payload["assetRevision"], payload["fileName"], payload.get("byteCount")
++
++
+ def write_pack(exchange, path):
+     records = [envelope(row) for row in exchange.records() if row["kind"] in KINDS]
+     assets = []
+-    for record in exchange.records("material"):
+-        if record["deleted"]: continue
+-        material = json.loads(record["payload"])
+-        if material["kind"] == "whiteboard": continue
+-        asset = exchange.assets / material["revision"]
++    raw_size = 0
++    for identifier, sha, name, expected_count in asset_references(exchange):
++        asset = exchange.assets / sha
+         if not asset.is_file(): raise ValueError("Material asset is missing from exchange")
++        raw_size += asset.stat().st_size
++        if raw_size > 64 * 1024 * 1024: raise ValueError("Package assets exceed 64 MiB; use account synchronization")
+         data = asset.read_bytes()
+-        if digest(data) != material["revision"]: raise ValueError("Asset integrity check failed")
+-        assets.append({"materialID": material["id"], "sha256": material["revision"], "byteCount": len(data),
+-                       "fileName": material["fileName"], "data": base64.b64encode(data).decode()})
++        if digest(data) != sha or (expected_count is not None and expected_count != len(data)): raise ValueError("Asset integrity check failed")
++        assets.append({"materialID": identifier, "sha256": sha, "byteCount": len(data),
++                       "fileName": name, "data": base64.b64encode(data).decode()})
+     pack = {"format": "bandal-exchange", "version": 1, "records": records, "assets": assets}
++    package_bytes = encoded(pack)
++    if len(package_bytes) > 100 * 1024 * 1024: raise ValueError("Package exceeds 100 MiB; use account synchronization")
+     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
+     temporary = path.with_name("." + path.name + ".partial")
+     try:
+         with open(temporary, "wb") as output:
+-            output.write(encoded(pack)); output.flush(); os.fsync(output.fileno())
++            output.write(package_bytes); output.flush(); os.fsync(output.fileno())
+         os.replace(temporary, path)
+     finally: temporary.unlink(missing_ok=True)
+ 
+ 
+ def read_pack(exchange, path):
++    if Path(path).stat().st_size > 100 * 1024 * 1024: raise ValueError("Package exceeds 100 MiB; use account synchronization")
+     pack = json.loads(Path(path).read_bytes())
+     if pack.get("format") != "bandal-exchange" or pack.get("version") != 1:
+         raise ValueError("Unsupported exchange package")
+@@ -703,11 +726,18 @@
+         seen.add(record["id"])
+         payload = json.loads(base64.b64decode(record["payload"], validate=True))
+         records.append((record, payload))
++    raw_size = 0
+     for asset in pack["assets"]:
+         data = base64.b64decode(asset["data"], validate=True)
++        raw_size += len(data)
++        if raw_size > 64 * 1024 * 1024: raise ValueError("Package assets exceed 64 MiB")
+         if digest(data) != asset["sha256"] or len(data) != asset["byteCount"]:
+             raise ValueError("Package asset hash or length mismatch")
+-        if Path(asset["fileName"]).name != asset["fileName"] or "\\" in asset["fileName"]:
++        if asset["materialID"].startswith("recording:"):
++            recording_id = asset["materialID"].removeprefix("recording:")
++            uuid.UUID(recording_id)
++            if asset["fileName"] != f"Recordings/{recording_id}.wav": raise ValueError("Unsafe recording path")
++        elif Path(asset["fileName"]).name != asset["fileName"] or "\\" in asset["fileName"]:
+             raise ValueError("Unsafe asset name")
+         assets.append((asset, data))
+     # Validation completes before any records or existing files are changed.
+--- /dev/null
++++ b/scripts/build-ipad-bridge.mjs
+@@ -0,0 +1,42 @@
++import { execFileSync } from 'node:child_process'
++import { createHash } from 'node:crypto'
++import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
++import { dirname, join, resolve } from 'node:path'
++import { fileURLToPath } from 'node:url'
++
++const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
++const source = join(root, 'resources/ipad-bridge/bridge.py')
++const sourceHash = () => createHash('sha256').update(readFileSync(source)).digest('hex')
++const outputFor = (platform, arch) => join(root, 'resources/native/ipad-bridge', `${platform}-${arch}`)
++
++export function buildIPadBridge(arch = process.arch) {
++  if (!['darwin', 'win32'].includes(process.platform) || arch !== process.arch) {
++    throw new Error('Build the iPad companion on the matching operating system and architecture.')
++  }
++  const output = outputFor(process.platform, arch)
++  mkdirSync(output, { recursive: true })
++  const python = process.env.BANDAL_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3')
++  execFileSync(python, ['-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', '--name', 'bandal-ipad-bridge',
++    '--distpath', output, '--workpath', join(root, '.cache/ipad-bridge', arch),
++    '--specpath', join(root, '.cache/ipad-bridge', arch), source], { stdio: 'inherit' })
++  const binary = join(output, `bandal-ipad-bridge${process.platform === 'win32' ? '.exe' : ''}`)
++  execFileSync(binary, ['--help'], { stdio: 'pipe' })
++  writeFileSync(join(output, 'manifest.json'), JSON.stringify({ platform: process.platform, arch,
++    sourceHash: sourceHash(), binaryHash: createHash('sha256').update(readFileSync(binary)).digest('hex') }))
++}
++
++export default async function beforePack(context) {
++  const platform = context.electronPlatformName
++  const arch = context.arch === 3 ? 'arm64' : 'x64'
++  const output = outputFor(platform, arch)
++  const manifestPath = join(output, 'manifest.json')
++  if (!existsSync(manifestPath)) throw new Error(`Missing iPad companion ${platform}-${arch}; run node scripts/build-ipad-bridge.mjs on its native build runner first.`)
++  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
++  const binary = join(output, `bandal-ipad-bridge${platform === 'win32' ? '.exe' : ''}`)
++  if (manifest.platform !== platform || manifest.arch !== arch || manifest.sourceHash !== sourceHash() ||
++      manifest.binaryHash !== createHash('sha256').update(readFileSync(binary)).digest('hex')) {
++    throw new Error('Stale or corrupt iPad companion; rebuild before packaging.')
++  }
++}
++
++if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) buildIPadBridge(process.argv[2])
+--- a/scripts/build-native.mjs
++++ b/scripts/build-native.mjs
+@@ -1,7 +1,9 @@
++import ipadBridge from './build-ipad-bridge.mjs'
+ import calendar from './build-calendar.mjs'
+ import browserImport from './build-browser-import.mjs'
+ 
+ export default async function beforePack(context) {
++  await ipadBridge(context)
+   await calendar(context)
+   await browserImport(context)
+ }
+--- a/electron-builder.yml
++++ b/electron-builder.yml
+@@ -122,11 +122,14 @@
+   # env vars are absent, so local builds stay fast.
+   notarize: true
+   extraResources:
++    - from: resources/native/ipad-bridge/darwin-${arch}/bandal-ipad-bridge
++      to: ipad-bridge/bandal-ipad-bridge
+     - from: resources/native/calendar/${arch}/bandal-calendar
+       to: calendar/bandal-calendar
+     - from: resources/native/browser-import/${arch}/bandal-browser-import
+       to: browser-import/bandal-browser-import
+   binaries:
++    - Contents/Resources/ipad-bridge/bandal-ipad-bridge
+     - Contents/Resources/calendar/bandal-calendar
+     - Contents/Resources/browser-import/bandal-browser-import
+   extendInfo:
+@@ -142,6 +145,8 @@
+ 
+ win:
+   extraResources:
++    - from: resources/native/ipad-bridge/win32-${arch}/bandal-ipad-bridge.exe
++      to: ipad-bridge/bandal-ipad-bridge.exe
+     - from: resources/native/browser-import/${arch}/bandal-browser-import.exe
+       to: browser-import/bandal-browser-import.exe
+   target:
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -141,9 +141,36 @@
+           # one holding only the mac assets and the other only Windows.
+           echo "release_id=$EXISTING" >> "$GITHUB_OUTPUT"
+ 
++  ipad-bridge:
++    name: iPad companion ${{ matrix.platform }}-${{ matrix.arch }}
++    needs: verify
++    runs-on: ${{ matrix.os }}
++    strategy:
++      matrix:
++        include:
++          - { os: macos-14, platform: darwin, arch: arm64 }
++          - { os: macos-15-intel, platform: darwin, arch: x64 }
++          - { os: windows-latest, platform: win32, arch: x64 }
++    steps:
++      - uses: actions/checkout@v7
++        with:
++          ref: ${{ needs.verify.outputs.tag }}
++      - uses: actions/setup-node@v7
++        with:
++          node-version: ${{ env.NODE_VERSION }}
++      - uses: actions/setup-python@v6
++        with:
++          python-version: '3.13'
++      - run: python -m pip install pyinstaller==6.16.0
++      - run: node scripts/build-ipad-bridge.mjs ${{ matrix.arch }}
++      - uses: actions/upload-artifact@v6
++        with:
++          name: ipad-bridge-${{ matrix.platform }}-${{ matrix.arch }}
++          path: resources/native/ipad-bridge/
++
+   build:
+     name: Build ${{ matrix.name }}
+-    needs: [verify, create-release]
++    needs: [verify, create-release, ipad-bridge]
+     runs-on: ${{ matrix.os }}
+     # Notarization waits on Apple's service; 25 minutes is normal, so do not
+     # lower this without checking a real run.
+@@ -176,6 +203,15 @@
+           cache: pnpm
+ 
+       - run: pnpm install --frozen-lockfile
++
++      - uses: actions/download-artifact@v7
++        with:
++          pattern: ipad-bridge-*
++          merge-multiple: true
++          path: resources/native/ipad-bridge/
++      - name: Restore companion executable permissions
++        if: runner.os == 'macOS'
++        run: chmod +x resources/native/ipad-bridge/darwin-*/bandal-ipad-bridge
+ 
+       # Compiles main/preload/renderer into out/. electron-builder only
+       # *packages* — it does not compile — so without this it asars an empty

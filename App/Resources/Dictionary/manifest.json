@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "datasetVersion": "koreader-dicts-en-ko-v1.2.0",
+  "sourceUrl": "https://github.com/DanielGregorini/koreader-dicts/releases/download/v1.2.0/en-ko.zip",
+  "sourceSha256": "219eacf3f57e93da993a9ba438d3c3eaf3fa3b94de745847fe74826cb776ccf1",
+  "sourceBytes": 2520930,
+  "license": "CC-BY-SA-4.0",
+  "database": {
+    "file": "en-ko.sqlite",
+    "sha256": "89ad128e6081ef75cd02704e2748f6b3ea4d8d623b317ae2339909867e428366",
+    "bytes": 17993728
+  },
+  "counts": {
+    "headwords": 25985,
+    "entries": 27053,
+    "inflectionRows": 79218,
+    "inflectedForms": 74862
+  },
+  "modifications": "Converted StarDict HTML to structured senses and indexed SQLite; normalized lookup keys and translated part-of-speech labels. No generated translations."
+}

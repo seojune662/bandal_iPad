@@ -1,0 +1,74 @@
+name: Bandal
+options:
+  bundleIdPrefix: app.bandal
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.2"
+packages:
+  BandalCore:
+    path: Packages/BandalCore
+  sherpa-onnx:
+    url: https://github.com/k2-fsa/sherpa-onnx
+    exactVersion: 1.13.8
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "2"
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  Bandal:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes: [Resources, Info.plist]
+      - path: App/Resources/Assets.xcassets
+        buildPhase: resources
+      - path: App/Resources/Configuration.plist
+        optional: true
+        buildPhase: resources
+      - path: App/Resources/Editor
+        type: folder
+        buildPhase: resources
+      - path: App/Resources/Dictionary
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: BandalCore
+      - package: sherpa-onnx
+        product: sherpa-onnx
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.bandal.ipad
+        TARGETED_DEVICE_FAMILY: "2"
+        INFOPLIST_FILE: App/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    scheme:
+      testTargets: [BandalTests, BandalUITests]
+  BandalTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests/BandalTests]
+    dependencies:
+      - target: Bandal
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: app.bandal.ipad.tests
+        TARGETED_DEVICE_FAMILY: "2"
+  BandalUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests/BandalUITests]
+    dependencies:
+      - target: Bandal
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: app.bandal.ipad.uitests
+        TARGETED_DEVICE_FAMILY: "2"

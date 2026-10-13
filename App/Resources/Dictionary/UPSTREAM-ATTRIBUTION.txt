@@ -1,0 +1,7 @@
+This dictionary is distributed under Creative Commons Attribution-ShareAlike 4.0 International (CC-BY-SA-4.0).
+https://creativecommons.org/licenses/by-sa/4.0/
+
+It is built from the following sources:
+
+  * pwn30: Princeton University WordNet 3.0
+  * wikt-en-ko: English Wiktionary via kaikki.org (wiktextract)
