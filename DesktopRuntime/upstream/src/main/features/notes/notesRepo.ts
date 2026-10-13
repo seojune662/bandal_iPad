@@ -1,7 +1,8 @@
 import { replaceNoteTitle } from '../../../shared/noteTitle'
 /**
  * Notes repository. Notes are plain .md files inside the course folder; the
- * DB is not involved. Every relPath goes through the path-traversal guard.
+ * production rename delegates to the material journal for filesystem/DB recovery.
+ * Every relPath goes through the path-traversal guard.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync } from 'node:fs'
@@ -31,8 +32,8 @@ export interface NotesRepo {
   /**
    * 제목과 파일명을 한 트랜잭션으로 맞춘다: 제목을 정리(sanitize)하고,
    * 충돌은 -2/-3 접미로 풀고, 파일명을 바꾼 뒤 문서의 첫 H1을 최종
-   * 이름으로 원자적으로 고쳐 쓴다. H1 저장이 실패하면 파일명을 원래대로
-   * 되돌린다.
+   * 이름으로 원자적으로 고쳐 쓴다. 앱에서는 H1·링크·원본 본문을 먼저
+   * 복구 기록에 저장하며, 종료/실패 후 새 경로에서 이어 완료한다.
    */
   rename(input: { courseId: string; relPath: string; newName: string }): Promise<{
     relPath: string
@@ -47,6 +48,9 @@ export interface NotesRepoDeps {
   getCourseFolder: (courseId: string) => string
   onPathChanged?: (change: { courseId: string; fromRelPath: string; toRelPath: string; isDirectory: false }) => void
   onCreated?: (note: NoteRef) => void
+  /** Production delegates to the material journal; file-only embedders may omit it. */
+  renameWithMarkdown?: (input: { courseId: string; fromRelPath: string; toRelPath: string; before: string; after: string }) => Promise<void>
+  assertPathAvailable?: (courseId: string, relPath?: string) => void
 }
 
 /** Strips path separators and other filesystem-hostile chars from a title. */
@@ -110,6 +114,7 @@ export function createNotesRepo(deps: NotesRepoDeps): NotesRepo {
     const folder = requireFolder(id)
     const rel = requireNonEmptyString(relPath, 'relPath')
     assertMarkdownPath(rel)
+    deps.assertPathAvailable?.(id, rel)
     return { abs: resolveInsideReal(folder, rel), folder }
   }
 
@@ -153,6 +158,7 @@ export function createNotesRepo(deps: NotesRepoDeps): NotesRepo {
       if (typeof input.dirRelPath !== 'string') {
         throw new ValidationError('dirRelPath must be a string')
       }
+      deps.assertPathAvailable?.(id)
       const dirAbs = resolveInside(folder, input.dirRelPath, { allowRoot: true })
       const title = sanitizeTitle(requireNonEmptyString(input.title, 'title'))
 
@@ -178,6 +184,20 @@ export function createNotesRepo(deps: NotesRepoDeps): NotesRepo {
     async rename(input) {
       const { abs, folder } = resolveNote(input.courseId, input.relPath)
       if (!existsSync(abs)) throw new NotFoundError('note', input.relPath)
+      if (deps.renameWithMarkdown) {
+        const stem = sanitizeTitle(requireNonEmptyString(input.newName, 'newName').replace(/\.md$/iu, ''))
+        const directory = dirname(abs)
+        let fileName = `${stem}.md`
+        for (let suffix = 2; existsSync(join(directory, fileName)) && join(directory, fileName) !== abs; suffix++) {
+          if (suffix > 1000) throw new ValidationError(`could not find a free name for "${stem}"`)
+          fileName = `${stem}-${suffix}.md`
+        }
+        const title = fileName.replace(/\.md$/u, ''), parent = posix.dirname(input.relPath)
+        const relPath = parent === '.' ? fileName : posix.join(parent, fileName), before = readFileSync(abs, 'utf8')
+        await deps.renameWithMarkdown({ courseId: input.courseId, fromRelPath: input.relPath, toRelPath: relPath, before, after: replaceNoteTitle(before, title) })
+        const finalPath = resolveInsideReal(requireFolder(input.courseId), relPath)
+        return { relPath, mtime: mtimeToken(finalPath), title, markdown: readFileSync(finalPath, 'utf8') }
+      }
       const originalIdentity = statSync(abs, { bigint: true })
       let committed = false
       // Keep filename + H1 replacement synchronous as one transaction. When a

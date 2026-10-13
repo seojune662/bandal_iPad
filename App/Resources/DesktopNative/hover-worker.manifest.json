@@ -1,7 +1,7 @@
 {
   "source": "desktop hoverPreviewExtract/hoverPreviewImage with bounded worker ZIP IO",
   "runtimeVersion": "26.2.6",
-  "byteCount": 1505090,
-  "sha256": "30e939357c20c172840010205d1a944c3b4da570aae90181c88c15e464fb3b3c",
+  "byteCount": 1505114,
+  "sha256": "0f9b4e8b7d8f77eddb850e7495a82b7737f78b1b3d2966a7772eb2a9897a87eb",
   "modules": 31
 }

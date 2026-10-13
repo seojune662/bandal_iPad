@@ -133,6 +133,20 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         #endif
         shell = WKWebView(frame: .zero, configuration: configuration)
         shell.navigationDelegate = self
+        var lastScribbleConfiguration = "", lastScribbleDecision = 0
+        scribblePolicy.onDiagnostic = { [weak self] values in
+            let number: (String) -> Int = { max(0, values[$0] as? Int ?? 0) }
+            let configuration = "views.\(number("attachedViews")).textInputs.\(number("textInputViews")).protected.\(number("protectedRegionCount")).editors.\(number("editorRegionCount"))"
+            let decisions = number("decisions")
+            if configuration != lastScribbleConfiguration {
+                lastScribbleConfiguration = configuration
+                self?.runtime.log.record("pencil.scribble.regions", code: configuration)
+            }
+            if decisions != lastScribbleDecision && decisions > 0 && (decisions <= 20 || decisions.isMultiple(of: 50)) {
+                self?.runtime.log.record("pencil.scribble.decision", code: "count.\(decisions).allowed.\(number("allowed")).denied.\(number("denied"))")
+            }
+            lastScribbleDecision = decisions
+        }
         scribblePolicy.attach(to: shell)
         shell.scrollView.isScrollEnabled = true
         shell.scrollView.bounces = false
@@ -156,6 +170,9 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
             }
             nativePDF?.attach(to: view, shell: shell)
             nativePDF?.emit = { [weak self] channel, value in self?.emit(channel, value) }
+            nativePDF?.onDiagnostic = { [weak self] event, code in
+                self?.runtime.log.record(event, code: code)
+            }
         } catch { showStartupError(error.localizedDescription); return }
         bookmarkImports = DesktopBookmarkImportService { [weak self] channel, request in
             guard let self else { throw CancellationError() }

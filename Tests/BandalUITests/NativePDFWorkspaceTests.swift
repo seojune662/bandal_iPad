@@ -80,6 +80,7 @@ final class NativePDFWorkspaceTests: XCTestCase {
         XCTAssertFalse(failure.exists)
     }
     func testNativeBodyKeepsToolbarAndFingerZoomWithoutCreatingInk() throws {
+        continueAfterFailure = false
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--reset-ui-testing", "--desktop-parity-fixture", "--desktop-pdf-fixture", "-bandal.nativePDF.enabled", "YES"]
@@ -95,6 +96,26 @@ final class NativePDFWorkspaceTests: XCTestCase {
         let pen = app.descendants(matching: .any).matching(identifier: "펜").firstMatch
         XCTAssertTrue(pen.waitForExistence(timeout: 10)); pen.tap()
         XCTAssertTrue(body.exists); XCTAssertFalse(failure.exists)
+        let style = app.descendants(matching: .any).matching(identifier: "필기 스타일").firstMatch
+        XCTAssertTrue(style.exists); style.tap()
+        let blue = app.descendants(matching: .any).matching(identifier: "파랑").firstMatch
+        XCTAssertTrue(blue.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(blue.isHittable, "The floating style menu must receive input above the native PDF")
+        XCTAssertTrue(body.exists, "A style popover must leave the native PDF visible")
+        blue.tap()
+        XCTAssertTrue(blue.isSelected || (blue.value as? String) == "1", "Choosing blue must update the original tool style")
+        let thickness = app.sliders["선 굵기"]
+        XCTAssertTrue(thickness.isHittable, "Native PDF must leave the original slider reachable")
+        let previousThickness = String(describing: thickness.value)
+        // WK range inputs do not expose the native min/max attributes required
+        // by adjust(). Exercise their real touch path instead.
+        thickness.coordinate(withNormalizedOffset: CGVector(dx: 0.13, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: thickness.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)))
+        XCTAssertNotEqual(String(describing: thickness.value), previousThickness, "Dragging thickness must update the original range value")
+        XCTAssertFalse(app.buttons["되돌리기"].isEnabled, "Style changes must not create a drawing beneath the menu")
+        body.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.65)).tap()
+        let paletteClosed = expectation(for: NSPredicate { _, _ in !blue.exists }, evaluatedWith: app)
+        wait(for: [paletteClosed], timeout: 5)
         let zoom = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "현재 배율 ")).firstMatch
         XCTAssertTrue(zoom.waitForExistence(timeout: 10))
         let before = zoom.label, toolbar = app.buttons["축소"].frame

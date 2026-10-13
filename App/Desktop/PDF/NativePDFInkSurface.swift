@@ -2,7 +2,7 @@ import UIKit
 import PDFKit
 
 @MainActor
-final class NativePDFInkSurface: UIView {
+final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     struct Tool: Equatable {
         var name = "select"
         var style = NativePDFInkStyle(color: "ink", width: 0.003, opacity: 1)
@@ -22,6 +22,7 @@ final class NativePDFInkSurface: UIView {
     var onLayout: (() -> Void)?
     var viewportProvider: (() -> CGRect?)?
     var onTiming: ((Double, Int) -> Void)?
+    var onDiagnostic: ((String) -> Void)?
     var objects: [[String: Any]] = [] { didSet { if !(oldValue as NSArray).isEqual(to: objects) { invalidateBackdrop() } } }
     var highlights: [[String: Any]] = [] { didSet { if !(oldValue as NSArray).isEqual(to: highlights) { invalidateBackdrop() } } }
     var selectionBox: [String: Double]? { didSet { decorations.setNeedsDisplay() } }
@@ -57,12 +58,30 @@ final class NativePDFInkSurface: UIView {
     private var paper: UIImage?
     private var backdrop: UIImage?
     private var sceneDirty = true
+    private var inputCounts: [String: Int] = [:]
+
+    var inputDiagnostics: [String: Any] {
+        ["tool": tool.name, "loading": isLoading, "journalBlocked": journalBlocked,
+         "mapped": mapper != nil, "interactive": isUserInteractionEnabled, "inWindow": window != nil,
+         "counts": inputCounts]
+    }
+    private func recordInput(_ phase: String, type: UITouch.TouchType = .pencil) {
+        let kind = type == .pencil ? "pencil" : type == .direct ? "finger" : "other"
+        let tools = ["select", "pen", "highlighter", "eraser", "line", "arrow", "rect", "ellipse", "text"]
+        let name = tools.contains(tool.name) ? tool.name : "unknown"
+        let key = "\(name).\(kind).\(phase)", count = (inputCounts[key] ?? 0) + 1
+        inputCounts[key] = count
+        // Hit testing may run repeatedly for a single contact. Keep exact
+        // begin/end counters separately and bound diagnostic disk traffic.
+        if count <= 20 || count.isMultiple(of: 50) { onDiagnostic?("\(key).\(count)") }
+    }
 
     init?(nativeFrame: CGRect = .zero) {
         guard let renderer = NativePDFMetalInk() else { return nil }
         metal = renderer
         super.init(frame: nativeFrame)
         backgroundColor = .clear; isOpaque = false; isMultipleTouchEnabled = true
+        addInteraction(UIScribbleInteraction(delegate: self))
         // This full-page view owns touch coordinates only. Keeping all drawing
         // in cropped children avoids a page-sized UIView backing allocation.
         scene.isUserInteractionEnabled = false; scene.accessibilityElementsHidden = true
@@ -80,6 +99,9 @@ final class NativePDFInkSurface: UIView {
         accessibilityLabel = "PDF 필기 영역"
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    func scribbleInteraction(_ interaction: UIScribbleInteraction, shouldBeginAt location: CGPoint) -> Bool {
+        recordInput("scribble.denied"); return false
+    }
     override func layoutSubviews() {
         super.layoutSubviews(); onLayout?(); refreshViewport()
     }
@@ -118,10 +140,17 @@ final class NativePDFInkSurface: UIView {
             link.add(to: .main, forMode: .common); displayLink = link
         }
     }
+    func pencilInputTarget(at point: CGPoint) -> UIView? {
+        guard !isHidden, alpha > 0.01, isUserInteractionEnabled, bounds.contains(point) else { return nil }
+        guard !isLoading else { recordInput("blocked.loading"); return nil }
+        guard !journalBlocked else { recordInput("blocked.journal"); return nil }
+        guard mapper != nil else { recordInput("blocked.mapper"); return nil }
+        guard ["select", "pen", "highlighter", "eraser", "line", "arrow", "rect", "ellipse", "text"].contains(tool.name) else { recordInput("blocked.tool"); return nil }
+        recordInput("target"); return self
+    }
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        guard !isLoading, !journalBlocked, mapper != nil, !isHidden, bounds.contains(point),
-              ["select", "pen", "highlighter", "eraser", "line", "arrow", "rect", "ellipse", "text"].contains(tool.name) else { return nil }
-        if event?.allTouches?.contains(where: { $0.type == .pencil }) == true { return self }
+        if event?.allTouches?.contains(where: { $0.type == .pencil }) == true { return pencilInputTarget(at: point) }
+        guard !isLoading, !journalBlocked, mapper != nil, !isHidden, bounds.contains(point) else { return nil }
         // Fingers still navigate empty paper. Explicit selection/text objects
         // can be manipulated by touch, including their visible resize handles.
         if ["select", "text"].contains(tool.name), let mapper,
@@ -134,6 +163,7 @@ final class NativePDFInkSurface: UIView {
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         if ending { finishMeasuredStroke() }
+        if let touch = touches.first { recordInput("begin", type: touch.type) }
         guard !journalBlocked, active == nil, let touch = touches.first(where: { $0.type == .pencil }) ?? touches.first(where: { $0.type == .direct && ["select", "text"].contains(tool.name) }), mapper != nil else { return }
         if tool.name == "highlighter", prepareBackdrop() == nil {
             onFailure?(NativePDFError.invalid("형광펜 배경을 준비하지 못했습니다. 필기를 보존한 채 PDF를 다시 열어 주세요.")); return
@@ -154,6 +184,7 @@ final class NativePDFInkSurface: UIView {
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = active, touches.contains(touch) else { return }
+        recordInput("end", type: touch.type)
         append(event?.coalescedTouches(for: touch) ?? [touch]); predicted = []
         // Persist measured points immediately, then accept delayed UIKit
         // corrections independently of the next stroke. No prediction enters
@@ -166,6 +197,7 @@ final class NativePDFInkSurface: UIView {
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = active, touches.contains(touch) else { return }
+        recordInput("cancel", type: touch.type)
         // Only measured points survive interruptions. Predictions are never
         // persisted, nor can another finger terminate a Pencil-owned stroke.
         finishMeasuredStroke(cancelObjectEdit: true)

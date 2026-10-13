@@ -18,7 +18,7 @@ var BandalWebPip = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // upstream/src/main/windows/webPipIsolation.ts
+  // DesktopRuntime/upstream/src/main/windows/webPipIsolation.ts
   var webPipIsolation_exports = {};
   __export(webPipIsolation_exports, {
     isWebPipIsolationResult: () => isWebPipIsolationResult,

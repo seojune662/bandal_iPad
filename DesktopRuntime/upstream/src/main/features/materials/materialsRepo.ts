@@ -26,6 +26,9 @@ import { assertRealInside, nowIso, requireId, requireNonEmptyString,
 export interface MaterialsRepo {
   /** Called after dependent repositories are initialized, before exposing data. */
   recoverPathChanges(): void
+  assertPathAvailable(courseId: string, relPath?: string): void
+  /** A note filename, H1 and backlinks share the material path recovery intent. */
+  renameWithMarkdown(input: { courseId: string; fromRelPath: string; toRelPath: string; before: string; after: string }): Promise<void>
   tree(courseId: string): Promise<MaterialNode[]>
   snapshot(courseId: string): MaterialNode[] | null
   search(courseId: string, query: string): Promise<MaterialSearchHit[]>
@@ -466,6 +469,27 @@ export function createMaterialsRepo(deps: MaterialsRepoDeps): MaterialsRepo {
 
   return {
     recoverPathChanges,
+    assertPathAvailable: (courseId, relPath) => assertMaterialPathAvailable(db, courseId, relPath),
+    async renameWithMarkdown(input) {
+      const { abs: source, folder } = resolveMaterial(input.courseId, input.fromRelPath)
+      const destination = resolveCoursePath(folder, input.toRelPath)
+      if (!/\.md$/i.test(input.fromRelPath) || !/\.md$/i.test(input.toRelPath) || typeof input.before !== 'string' || typeof input.after !== 'string') throw new ValidationError('Invalid note path change')
+      if (assertFileOrDirectory(source, input.fromRelPath) !== 'file') throw new ValidationError('A note must be a regular file')
+      return mutatePath(input.courseId, async () => {
+        const intent = journal.begin({ courseId: input.courseId, fromRelPath: input.fromRelPath, toRelPath: input.toRelPath, isDirectory: false }, folder, { before: input.before, after: input.after })
+        try {
+          if (source !== destination) await renameWithRetry(source, destination, () => {
+            if (getCourseFolder(input.courseId) !== folder) throw new ConflictError('Course folder changed before note rename')
+            assertRealInside(folder, source); assertRealInside(folder, destination)
+            if (existsSync(destination)) throw new ConflictError('Note destination appeared before rename')
+          })
+          completePathChange(input.courseId, input.fromRelPath, input.toRelPath, intent)
+        } catch (error) {
+          try { journal.discardIfOriginal(intent) } catch { /* Preserve all pending text and the original error. */ }
+          throw error
+        }
+      })
+    },
     absolutePathForAsync,
     absolutePathFor(courseId, relPath) {
       return resolveMaterialAbs(courseId, relPath)

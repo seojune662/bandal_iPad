@@ -482,6 +482,8 @@ export function registerHandlers(deps: RegisterHandlersDeps): IpcRouter {
   const hoverPreview = createMaterialHoverPreviewService({ materials: materialsRepo, userData: deps.userDataPath })
   app.once('will-quit', () => hoverPreview.dispose())
   const notesRepo = createNotesRepo({
+    renameWithMarkdown: input => materialsRepo.renameWithMarkdown(input),
+    assertPathAvailable: (courseId, relPath) => materialsRepo.assertPathAvailable(courseId, relPath),
     getCourseFolder: (courseId) => coursesRepo.getFolder(courseId),
     onCreated: ({ courseId, relPath }) => materialsRepo.recordAdded(courseId, relPath),
     onPathChanged: onMaterialPathChanged

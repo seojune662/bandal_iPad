@@ -49,6 +49,8 @@ export interface RepointMaterialPathInput {
    * concurrent cache refresh cannot replace it between those two phases.
    */
   candidateNoteRelPaths?: readonly string[]
+  /** The path journal already durably planned and published the note writes. */
+  noteWritesPrepared?: boolean
 }
 
 export interface RepointMaterialPathResult {
@@ -479,6 +481,76 @@ function rewritePdfDrawingImageSources(
   return count
 }
 
+/** Pure counterpart of the original backlink writer, shared by durable rename plans. */
+export function rewriteMaterialNote(markdown: string, input: Pick<RepointMaterialPathInput,
+  'fromRelPath' | 'toRelPath' | 'isDirectory'>): string {
+  let rewritten = markdown.replace(materialUrlPattern(), (href) => {
+    const parsed = parseMaterialLink(href)
+    if (parsed === null) return href
+    const relPathNext = repointedPath(
+      parsed.relPath,
+      input.fromRelPath,
+      input.toRelPath,
+      input.isDirectory
+    )
+    if (relPathNext === null) return href
+    return createMaterialLink({ ...parsed, relPath: relPathNext })
+  }).replace(WIKILINK_RE, (text) => {
+    const parsed = parseWikilink(text)
+    if (parsed === null) return text
+    const targetNext = repointedWikilinkTarget(
+      parsed.target,
+      input.fromRelPath,
+      input.toRelPath,
+      input.isDirectory
+    )
+    if (targetNext === null || targetNext === parsed.target) return text
+    return formatWikilink({ ...parsed, target: targetNext })
+  })
+  const pageNote = parsePdfPageNote(rewritten)
+  if (pageNote !== null) {
+    const nextSource = repointedPath(
+      sourceRelPath(pageNote.manifest),
+      input.fromRelPath,
+      input.toRelPath,
+      input.isDirectory
+    )
+    if (nextSource !== null) {
+      pageNote.manifest.source = encodeURIComponent(nextSource)
+      rewritten = serializePdfPageNote(pageNote)
+    }
+  }
+  return rewritten
+}
+
+export interface PlannedMaterialNoteWrite { relPath: string; before: string; after: string; mode: number }
+/** Run before the filesystem rename. Candidate refs name their final paths;
+ * read moved notes at the corresponding original path while it still exists. */
+export function prepareMaterialNoteWrites(input: RepointMaterialPathInput,
+  heading?: { before: string; after: string }): PlannedMaterialNoteWrite[] {
+  const candidates = new Set(collectRepointNoteCandidates(input))
+  if (!input.isDirectory && /\.(md|markdown)$/i.test(input.fromRelPath)) candidates.add(input.toRelPath)
+  if (heading) candidates.add(input.toRelPath)
+  const writes: PlannedMaterialNoteWrite[] = []
+  let totalBytes = 0
+  for (const relPath of candidates) {
+    const originalPath = repointedPath(relPath, input.toRelPath, input.fromRelPath, input.isDirectory) ?? relPath
+    const absPath = assertRealInside(input.courseFolder, resolveInside(input.courseFolder, originalPath))
+    const info = statSync(absPath), mode = info.mode
+    if (!info.isFile() || info.size > 16 * 1024 * 1024) throw new ValidationError(`Note is too large to journal safely: ${relPath}`)
+    const before = readFileSync(absPath, 'utf8')
+    if (heading && relPath === input.toRelPath && before !== heading.before) throw new ValidationError('Note changed before rename could begin')
+    const updated = heading && relPath === input.toRelPath ? heading.after : before
+    const after = rewriteMaterialNote(updated, input)
+    if (before === after) continue
+    if ((mode & 0o222) === 0) throw new ValidationError(`Note is read-only: ${relPath}`)
+    totalBytes += Buffer.byteLength(before) + Buffer.byteLength(after)
+    if (totalBytes > 32 * 1024 * 1024) throw new ValidationError('Note rename recovery plan exceeds 32 MiB; no files were moved')
+    writes.push({ relPath, before, after, mode })
+  }
+  return writes
+}
+
 function rewriteCandidateNotes(
   input: RepointMaterialPathInput,
   candidates: readonly string[]
@@ -494,47 +566,8 @@ function rewriteCandidateNotes(
         throw new Error('note is read-only')
       }
       const markdown = readFileSync(absPath, 'utf8')
-      let changed = false
-      let rewritten = markdown.replace(materialUrlPattern(), (href) => {
-        const parsed = parseMaterialLink(href)
-        if (parsed === null) return href
-        const relPathNext = repointedPath(
-          parsed.relPath,
-          input.fromRelPath,
-          input.toRelPath,
-          input.isDirectory
-        )
-        if (relPathNext === null) return href
-        changed = true
-        return createMaterialLink({ ...parsed, relPath: relPathNext })
-      }).replace(WIKILINK_RE, (text) => {
-        const parsed = parseWikilink(text)
-        if (parsed === null) return text
-        const targetNext = repointedWikilinkTarget(
-          parsed.target,
-          input.fromRelPath,
-          input.toRelPath,
-          input.isDirectory
-        )
-        if (targetNext === null || targetNext === parsed.target) return text
-        changed = true
-        return formatWikilink({ ...parsed, target: targetNext })
-      })
-      const pageNote = parsePdfPageNote(rewritten)
-      if (pageNote !== null) {
-        const nextSource = repointedPath(
-          sourceRelPath(pageNote.manifest),
-          input.fromRelPath,
-          input.toRelPath,
-          input.isDirectory
-        )
-        if (nextSource !== null) {
-          pageNote.manifest.source = encodeURIComponent(nextSource)
-          rewritten = serializePdfPageNote(pageNote)
-          changed = true
-        }
-      }
-      if (!changed) continue
+      const rewritten = rewriteMaterialNote(markdown, input)
+      if (rewritten === markdown) continue
       writeFileAtomic(absPath, rewritten, { mode })
       rewrittenNotes.push(relPath)
     } catch (error) {
@@ -599,6 +632,6 @@ export function repointMaterialPath(
   })
 
   const updatedRows = repointDatabase()
-  const notes = rewriteCandidateNotes(normalizedInput, candidates)
+  const notes = input.noteWritesPrepared ? { rewrittenNotes: [] as string[], failures: [] as string[] } : rewriteCandidateNotes(normalizedInput, candidates)
   return { updatedRows, ...notes }
 }

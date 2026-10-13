@@ -13,9 +13,10 @@ import { basename, dirname, join } from 'node:path'
 const WINDOWS_RENAME_RETRY_DELAYS_MS = [50, 100, 200, 400, 800] as const
 const renameWait = new Int32Array(new SharedArrayBuffer(4))
 
-function publishAtomicFile(temporaryPath: string, absPath: string): void {
+function publishAtomicFile(temporaryPath: string, absPath: string, beforePublish?: () => void): void {
   for (let attempt = 0; ; attempt += 1) {
     try {
+      beforePublish?.()
       renameSync(temporaryPath, absPath)
       return
     } catch (error) {
@@ -32,7 +33,7 @@ function publishAtomicFile(temporaryPath: string, absPath: string): void {
 export function writeFileAtomic(
   absPath: string,
   data: string | Buffer,
-  opts?: { mode?: number; retryWindowsLocks?: boolean }
+  opts?: { mode?: number; retryWindowsLocks?: boolean; beforePublish?: () => void }
 ): void {
   const temporaryPath = join(
     dirname(absPath),
@@ -52,8 +53,8 @@ export function writeFileAtomic(
     descriptor = undefined
     // Async transactions restore their own state and yield before retrying.
     // Avoid nesting a blocking wait inside that outer retry policy.
-    if (opts?.retryWindowsLocks === false) renameSync(temporaryPath, absPath)
-    else publishAtomicFile(temporaryPath, absPath)
+    if (opts?.retryWindowsLocks === false) { opts.beforePublish?.(); renameSync(temporaryPath, absPath) }
+    else publishAtomicFile(temporaryPath, absPath, opts?.beforePublish)
   } catch (error) {
     if (descriptor !== undefined) {
       try {

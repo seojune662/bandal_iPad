@@ -79,7 +79,13 @@ export function useNativePDF(props: Props): { active: boolean; hasPending: boole
       if (event.surfaceId !== id.surfaceId || event.generation !== id.generation) return
       if (event.type === 'stroke') { void entry.accept(event.payload).catch(report); return }
       if (cancelled) return
-      if (event.type === 'activate') { latest.current.onActivate(); return }
+      if (event.type === 'activate') {
+        // Native paper contact does not generate a DOM pointerdown. Use the
+        // original palette's keyboard dismissal so pen/highlighter contact
+        // closes it too, without inventing a stroke or a text-editor click.
+        document.querySelector('.pdf-tool-popover')?.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' }))
+        latest.current.onActivate(); return
+      }
       if (event.type === 'pending') {
         const count = event.payload.count
         if (typeof count === 'number' && Number.isInteger(count) && count >= 0) setPendingCount(count)
@@ -183,7 +189,13 @@ export function useNativePDF(props: Props): { active: boolean; hasPending: boole
       frame = requestAnimationFrame(() => { void (async () => {
         const sequence = ++layoutSequence
         const rect = element.getBoundingClientRect()
-        const dialog = document.querySelector('[role="dialog"], [role="alertdialog"]')
+        // The desktop PDF's style palette and highlight editor use role=dialog
+        // for accessibility but are nonmodal. Keep PDFKit visible and route
+        // only their rectangles back to HTML. A true modal always takes over,
+        // including one nested inside a popover or explicitly aria-modal.
+        const dialog = [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"], dialog[open]')].find(node =>
+          node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden' &&
+          (node.getAttribute('aria-modal') === 'true' || !node.matches('.pdf-tool-popover, .pdf-popover')))
         editors.prune()
         if (!activeRef.current) editors.dispose()
         const activeEditors = activeRef.current && !dialog ? [...element.querySelectorAll<HTMLElement>('.ink-layer__textbox-editor')] : []
@@ -203,7 +215,7 @@ export function useNativePDF(props: Props): { active: boolean; hasPending: boole
         }
         const colors = readHighlightPalette(element)
         setPalette(current => JSON.stringify(current) === JSON.stringify(colors) ? current : colors)
-        const holes = [...document.querySelectorAll<HTMLElement>('.pdf-popover, .context-menu, .page-image-menu, .ink-layer__textbox-editor')].map(node => node.getBoundingClientRect())
+        const holes = [...document.querySelectorAll<HTMLElement>('.pdf-popover, .pdf-tool-popover, .context-menu, .page-image-menu, .ink-layer__textbox-editor')].map(node => node.getBoundingClientRect())
           .filter(hole => hole.width > 0 && hole.height > 0 && hole.bottom > rect.top && hole.top < rect.bottom && hole.right > rect.left && hole.left < rect.right)
           .map(hole => ({ x: hole.x - rect.x - 2, y: hole.y - rect.y - 2, width: hole.width + 4, height: hole.height + 4 }))
         lastHoles = holes
@@ -211,7 +223,7 @@ export function useNativePDF(props: Props): { active: boolean; hasPending: boole
       })().catch(error => { if (!disposed) report(error) }) })
     }
     const observer = new ResizeObserver(layout); observer.observe(element)
-    const mutations = new MutationObserver(layout); mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'transform'], characterData: true })
+    const mutations = new MutationObserver(layout); mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'transform', 'hidden', 'role', 'aria-modal', 'open'], characterData: true })
     window.addEventListener('resize', layout); window.addEventListener('bandal-native-pdf-editor-layout', layout); layout()
     return () => { disposed = true; layoutSequence++; cancelAnimationFrame(frame); observer.disconnect(); mutations.disconnect(); window.removeEventListener('resize', layout); window.removeEventListener('bandal-native-pdf-editor-layout', layout); editors.dispose() }
   }, [ready, active, props.scroller])

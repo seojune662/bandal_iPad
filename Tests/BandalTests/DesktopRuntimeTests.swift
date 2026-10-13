@@ -126,6 +126,34 @@ final class DesktopRuntimeTests: XCTestCase {
     }
 
     @MainActor
+    func testNoteRenameKeepsHeadingAndSelfLinksAcrossNativeRuntimeRestart() async throws {
+        let runtime = DesktopRuntime(root: directory, legacyRoot: directory.appendingPathComponent("Legacy"))
+        try await runtime.start()
+        let courseValue = try await runtime.invoke("courses:create", request: ["name": "노트 이동 복구", "color": "blue"])
+        let course = try XCTUnwrap(courseValue as? [String: Any])
+        let courseId = try XCTUnwrap(course["id"] as? String)
+        let noteValue = try await runtime.invoke("notes:create", request: ["courseId": courseId, "dirRelPath": "", "title": "Original"])
+        let note = try XCTUnwrap(noteValue as? [String: Any])
+        let oldPath = try XCTUnwrap(note["relPath"] as? String)
+        _ = try await runtime.invoke("notes:write", request: ["courseId": courseId, "relPath": oldPath, "markdown": "# Original\n\n보존할 본문 [[Original]]\n"])
+        let movedValue = try await runtime.invoke("notes:rename", request: ["courseId": courseId, "relPath": oldPath, "newName": "Renamed"])
+        let moved = try XCTUnwrap(movedValue as? [String: Any])
+        let newPath = try XCTUnwrap(moved["relPath"] as? String)
+        XCTAssertEqual(newPath, "Renamed.md")
+        XCTAssertTrue((moved["markdown"] as? String ?? "").contains("# Renamed"))
+        XCTAssertTrue((moved["markdown"] as? String ?? "").contains("[[Renamed]]"))
+        let reopened = DesktopRuntime(root: directory, legacyRoot: directory.appendingPathComponent("Legacy"))
+        try await reopened.start()
+        let savedValue = try await reopened.invoke("notes:read", request: ["courseId": courseId, "relPath": newPath])
+        let saved = try XCTUnwrap(savedValue as? [String: Any])
+        XCTAssertEqual(saved["markdown"] as? String, moved["markdown"] as? String)
+        do {
+            _ = try await reopened.invoke("notes:read", request: ["courseId": courseId, "relPath": oldPath])
+            XCTFail("The old note must not reappear after recovery")
+        } catch {}
+    }
+
+    @MainActor
     func testActualDesktopBackendCreatesCoursesNotesAndReloadsSavedLayout() async throws {
         let runtime = DesktopRuntime(root: directory, legacyRoot: directory.appendingPathComponent("Legacy"))
         try await runtime.start()

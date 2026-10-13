@@ -122,7 +122,8 @@ export function initialize() {
     } },
     revealItem: path => native('platform.reveal', { path }), trashItem: trash, onPathChanged: repoint })
   handlePrivate('nativeMaterial:path', req => materials.absolutePathForAsync(req.courseId,req.relPath))
-  const notes = createNotesRepo({ getCourseFolder: id => courses.getFolder(id), onPathChanged: repoint,
+  const notes = createNotesRepo({ renameWithMarkdown: input => materials.renameWithMarkdown(input),
+    assertPathAvailable: (courseId, relPath) => materials.assertPathAvailable(courseId, relPath), getCourseFolder: id => courses.getFolder(id), onPathChanged: repoint,
     onCreated: ref => materials.recordAdded(ref.courseId, ref.relPath) })
   installHoverPreview({handle,materials})
   const pdfSourcePath = (courseId: string, relPath: string) => resolveInsideReal(courses.getFolder(courseId), relPath)

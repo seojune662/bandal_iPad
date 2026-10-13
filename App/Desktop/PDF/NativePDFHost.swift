@@ -10,6 +10,7 @@ import CryptoKit
 final class NativePDFHost {
     typealias Invoke = (String, [String: Any]) async throws -> Any
     var emit: (String, Any) -> Void = { _, _ in }
+    var onDiagnostic: (String, String) -> Void = { _, _ in }
     private let root: URL
     private let invoke: Invoke
     private let journal: NativePDFJournal
@@ -92,6 +93,7 @@ final class NativePDFHost {
             documents.removeValue(forKey: identifier)
             let item = NativePDFDocument(id: identifier, generation: generation, courseID: course, relativePath: path,
                                          revision: snapshot.revision, document: pdf)
+            item.onDiagnostic = { [weak self] event, code in self?.onDiagnostic(event, code) }
             item.onEvent = { [weak self] type, body in
                 self?.emit("pdfNative:event", ["surfaceId": identifier, "generation": generation, "type": type, "payload": body])
             }
@@ -101,6 +103,7 @@ final class NativePDFHost {
                                                 data: NativePDFStrokeData(points: stroke.points), style: stroke.style,
                                                 clientMutationId: stroke.mutationID, documentRevision: item.revision)
                 try self.journal.append(input, documentRevision: item.revision)
+                item.recordJournal(stroke.kind, phase: "commit")
                 item.addPending(input)
                 item.refreshOverlays()
                 item.onEvent("stroke", try Self.json(input))
@@ -111,6 +114,7 @@ final class NativePDFHost {
                     data: NativePDFStrokeData(points: stroke.points), style: stroke.style,
                     clientMutationId: stroke.mutationID, documentRevision: item.revision)
                 try self.journal.checkpoint(input, documentRevision: item.revision)
+                item.recordJournal(stroke.kind, phase: "checkpoint")
                 item.addPending(input); item.refreshOverlays()
             }
             item.resolveImage = { [weak self] object in
@@ -254,6 +258,13 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     var onStroke: ((Int, NativePDFCompletedStroke) throws -> Void)?
     var onCheckpoint: ((Int, NativePDFCompletedStroke) throws -> Void)?
     var onEvent: (String, [String: Any]) -> Void = { _, _ in }
+    var onDiagnostic: (String, String) -> Void = { _, _ in }
+    private var journalCounts: [String: Int] = [:]
+    func recordJournal(_ kind: String, phase: String) {
+        let key = "\(kind == "highlighter" ? "highlighter" : "ink").\(phase)", count = (journalCounts[key] ?? 0) + 1
+        journalCounts[key] = count
+        if count <= 20 || count.isMultiple(of: 50) { onDiagnostic("nativePDF.journal", "\(key).\(count)") }
+    }
     var pending: [String: NativePDFStrokeInput] = [:]
     var pendingOrder: [String] = []
     private var acknowledgedRows: [String: String] = [:]
@@ -288,7 +299,9 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
          "scaleChanges": scaleChanges, "navigateCommands": navigateCommands, "requestedZoom": lastRequestedZoom,
          "scrollZoom": scrollView?.zoomScale ?? 0, "scrollMinZoom": scrollView?.minimumZoomScale ?? 0, "scrollMaxZoom": scrollView?.maximumZoomScale ?? 0, "autoScales": pdfView.autoScales,
          "receiveToMetalSubmitP95MS": submissionP95, "timingSamples": submissionSamples,
-         "retainedPages": overlays.count, "suspended": suspended]
+         "retainedPages": overlays.count, "suspended": suspended,
+         "tool": tool.name, "loading": loading, "markup": pdfView.isInMarkupMode,
+         "inputs": overlays.values.map(\.inputDiagnostics), "journalCounts": journalCounts]
     }
     private var lastViewport = ""
     private var emission: Task<Void, Never>?
@@ -307,6 +320,21 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         pdfView.accessibilityIdentifier = "bandal-native-pdf-body"
         pdfView.accessibilityLabel = "PDF 본문"
         pdfView.onContact = { [weak self] in self?.onEvent("activate", [:]) }
+        pdfView.pencilTarget = { [weak self] point in
+            guard let self, !self.suspended else { return nil }
+            // Native page controls retain normal UIKit button handling.
+            if !self.pageActions.isHidden, self.pageActions.frame.contains(point) { return nil }
+            for overlay in self.overlays.values where overlay.window != nil {
+                var ancestor = overlay.superview, visible = true
+                while let view = ancestor, view !== self.pdfView {
+                    if view.isHidden || view.alpha <= 0.01 { visible = false; break }
+                    ancestor = view.superview
+                }
+                guard visible, ancestor === self.pdfView else { continue }
+                if let target = overlay.pencilInputTarget(at: overlay.convert(point, from: self.pdfView)) { return target }
+            }
+            return nil
+        }
         pdfView.delegate = self; pdfView.pageOverlayViewProvider = self
         pdfView.displayMode = .singlePageContinuous; pdfView.displayDirection = .vertical; pdfView.displayBox = .cropBox
         pdfView.pageShadowsEnabled = false; pdfView.backgroundColor = .secondarySystemBackground
@@ -317,6 +345,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         pdfView.addGestureRecognizer(nativePinch)
         let annotationTap = UITapGestureRecognizer(target: self, action: #selector(annotationTapped(_:)))
         annotationTap.cancelsTouchesInView = false
+        annotationTap.delaysTouchesBegan = false; annotationTap.delaysTouchesEnded = false
         pdfView.addGestureRecognizer(annotationTap)
         var buttonStyle = UIButton.Configuration.gray()
         buttonStyle.image = UIImage(systemName: "ellipsis")
@@ -449,6 +478,14 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
            let style = try? JSONDecoder().decode(NativePDFInkStyle.self, from: data), style.isValid {
             tool = .init(name: name, style: style)
             if ["pen", "highlighter"].contains(name) { objectScenes.removeAll() }
+        }
+        // PDFKit read mode may skip page overlay interaction. Markup enables
+        // the public drawing path; selection mode retains finger text lookup.
+        // Pencil select still routes explicitly through our provider's views.
+        let markup = tool.name != "select"
+        if pdfView.isInMarkupMode != markup {
+            pdfView.isInMarkupMode = markup
+            onDiagnostic("nativePDF.mode", "\(tool.name).markup.\(markup ? "on" : "off")")
         }
         refreshOverlays()
         pageActions.isHidden = tool.name != "select" || loading
@@ -625,7 +662,11 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             try onCheckpoint(number, stroke)
         }
         overlay.imageForObject = { [weak self] object in self?.images.object(forKey: Self.imageKey(object) as NSString) }
-        overlay.onFailure = { [weak self] error in self?.onEvent("error", ["message": error.localizedDescription]) }
+        overlay.onFailure = { [weak self] error in
+            self?.recordJournal("ink", phase: "failure")
+            self?.onEvent("error", ["message": error.localizedDescription])
+        }
+        overlay.onDiagnostic = { [weak self] code in self?.onDiagnostic("nativePDF.input", code) }
         overlay.onTiming = { [weak self] p95, samples in self?.submissionP95 = p95; self?.submissionSamples = samples; self?.updateAccessibilityState() }
         overlay.onInteraction = { [weak self] tool, payload in self?.onEvent("interaction", payload.merging(["page": number, "tool": tool]) { _, new in new }) }
         overlay.onPointer = { [weak self] payload in self?.onEvent("pointer", payload.merging(["page": number]) { _, new in new }) }

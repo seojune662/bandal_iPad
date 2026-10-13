@@ -1,7 +1,7 @@
 {
   "format": "bandal-desktop-source-snapshot",
   "version": 1,
-  "sourceCommit": "7872259eb2029680082b7bd9537606b41c568b20",
+  "sourceCommit": "2cf3ab0d46480c7b9ce14d9da2cc98327b1cb882",
   "appVersion": "0.84.1",
   "capturedAt": "2026-10-13T20:49:20.669786+00:00",
   "sourceWorkingChanges": [
@@ -1001,8 +1001,8 @@
     },
     {
       "path": "src/main/features/links/renameRepoint.ts",
-      "bytes": 19236,
-      "sha256": "a36fbde5bd65ca61053dc0b43af55aeb8a3c9bea9b830891bbcc8bb5f590a090"
+      "bytes": 21411,
+      "sha256": "a7fdf9609c97d5881323720ff0e0d8d0010a6f8cdc73c8208297ca046530ab2e"
     },
     {
       "path": "src/main/features/mail/gmailModel.ts",
@@ -1046,8 +1046,8 @@
     },
     {
       "path": "src/main/features/materials/materialPathJournal.ts",
-      "bytes": 9412,
-      "sha256": "517beeefbaa65bd182e9a477beafd596504d1895e807e5946edae872a58950cf"
+      "bytes": 12438,
+      "sha256": "15738a0828407837412b77c9abf80fa302a42e108aa41d837d4a566705be7cf7"
     },
     {
       "path": "src/main/features/materials/materialPathLock.ts",
@@ -1056,8 +1056,8 @@
     },
     {
       "path": "src/main/features/materials/materialsRepo.ts",
-      "bytes": 39398,
-      "sha256": "6686b83e9bae0ee80ca65c3c57f39b3a6da3c61535c65b7226b3f873d656a59b"
+      "bytes": 41285,
+      "sha256": "4d479e7a0b9b51e2751d69ecf9df76511877d1d44372ca30e40bc69f6fe04a4b"
     },
     {
       "path": "src/main/features/materials/mediaProgressRepo.ts",
@@ -1121,8 +1121,8 @@
     },
     {
       "path": "src/main/features/notes/notesRepo.ts",
-      "bytes": 10438,
-      "sha256": "1805dc4b7a69210a545be880abd543f12d0a664a22e68beb5d9da3728ae9248e"
+      "bytes": 12007,
+      "sha256": "29c60f6a1f836b4a93344c62a9349fb399a638419995490071c7bdd220b362d9"
     },
     {
       "path": "src/main/features/notifications/deadlineScheduler.ts",
@@ -1466,8 +1466,8 @@
     },
     {
       "path": "src/main/ipc/registerHandlers.ts",
-      "bytes": 163630,
-      "sha256": "4f088b58cf60074629e64027632d49e6c7e8a34622b39bf899e24b3cd0deb688"
+      "bytes": 163806,
+      "sha256": "6e6ac332c9bbecb082fcca06b3144d263c2a6e257ccb017f2f84aef681372c1e"
     },
     {
       "path": "src/main/ipc/rendererSender.ts",
@@ -1481,8 +1481,8 @@
     },
     {
       "path": "src/main/lib/atomicWrite.ts",
-      "bytes": 2787,
-      "sha256": "f07556c74c8513789390bf69358ac528eb0352c1a5254684f5876e7e6bada745"
+      "bytes": 2916,
+      "sha256": "2e0d26be930c5aabc02815774c38144d092b4cb5babf005c97da2401c9737800"
     },
     {
       "path": "src/main/lib/quitDrain.ts",
