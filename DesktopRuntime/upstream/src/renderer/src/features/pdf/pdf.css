@@ -1,0 +1,1201 @@
+/* [M3-D] PDF viewer tab.
+ * Tokens only — all colors come from styles/tokens.css semantic tokens.
+ * Motion sticks to transform/opacity. Highlight rects use
+ * mix-blend-mode: multiply over the (paper-white) page canvas, which reads
+ * correctly in both themes because each theme defines its own
+ * --highlight-* ramp. */
+
+.pdf-panel {
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.pdf-tab {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  container-name: pdf-viewer;
+  container-type: inline-size;
+}
+
+/* -- toolbar -------------------------------------------------------------- */
+
+.pdf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+  height: var(--chrome-height);
+  padding-inline: var(--space-3);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.pdf-toolbar__pages {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.pdf-toolbar__page-input {
+  width: 2.75rem;
+  height: 1.5rem;
+  padding-inline: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  text-align: right;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.pdf-toolbar__page-input:hover {
+  border-color: var(--border-strong);
+}
+
+.pdf-toolbar__page-input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+.pdf-toolbar__page-total {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.pdf-toolbar__page-note,
+.pdf-toolbar__page-note-sync,
+.pdf-toolbar__annotation-toggle {
+  position: relative;
+  display: inline-flex;
+  height: 1.75rem;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+}
+
+.pdf-toolbar__page-note:hover,
+.pdf-toolbar__page-note:focus-visible,
+.pdf-toolbar__page-note-sync:hover,
+.pdf-toolbar__page-note-sync:focus-visible,
+.pdf-toolbar__page-note-sync[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-muted);
+  border-color: var(--accent);
+}
+
+.pdf-toolbar__page-note .pdf-toolbar__badge {
+  position: static;
+  min-width: 1rem;
+  height: 1rem;
+  padding-inline: var(--space-1);
+}
+
+.pdf-toolbar__zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-inline: auto;
+}
+
+.pdf-toolbar__button {
+  display: grid;
+  place-items: center;
+  width: var(--icon-button-size);
+  height: 1.5rem;
+  font-size: var(--icon-size-sm);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.pdf-toolbar__button:hover,
+.pdf-toolbar__button:focus-visible {
+  color: var(--accent);
+  background: var(--bg-raised);
+}
+
+.pdf-toolbar__button:active {
+  transform: scale(0.9);
+}
+
+.pdf-toolbar__zoom-value {
+  min-width: 3.25rem;
+  height: 1.5rem;
+  padding-inline: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.pdf-toolbar__zoom-value:hover,
+.pdf-toolbar__zoom-value:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.pdf-toolbar__zoom-value:active {
+  transform: translateY(1px);
+}
+
+.pdf-toolbar__rail-toggle {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--icon-button-size);
+  height: 1.5rem;
+  font-size: var(--icon-size-sm);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.pdf-toolbar__rail-toggle:hover,
+.pdf-toolbar__rail-toggle:focus-visible {
+  color: var(--accent);
+  background: var(--bg-raised);
+}
+
+.pdf-toolbar__rail-toggle[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.pdf-toolbar__rail-toggle:active {
+  transform: scale(0.9);
+}
+
+.pdf-toolbar__badge {
+  position: absolute;
+  top: -0.3rem;
+  right: -0.35rem;
+  min-width: 1rem;
+  padding: 0 var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1rem;
+  color: var(--bg-app);
+  text-align: center;
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+}
+
+/* A split PDF should keep navigation and zoom anchored while giving drawing
+   tools the full pane width. Scrolling the whole toolbar would make essential
+   controls disappear; below 72rem only the drawing strip becomes a second,
+   horizontally navigable row. Container queries follow the dock pane rather
+   than the application window, so this also works in arbitrary split layouts. */
+@container pdf-viewer (max-width: 72rem) {
+  .pdf-toolbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--chrome-height);
+    column-gap: var(--space-2);
+    row-gap: 0;
+  }
+
+  .pdf-toolbar__zoom {
+    margin-inline: auto 0;
+  }
+
+  .pdf-tool-rail-shell {
+    order: 10;
+    flex: 0 0 calc(100% + var(--space-3) * 2);
+    height: var(--button-height);
+    margin-inline: calc(var(--space-3) * -1);
+
+    border-inline: 0;
+  }
+}
+
+/* Icon-first compact chrome keeps every persistent control reachable even in
+   a narrow side-by-side lecture layout. Accessible names remain on buttons. */
+@container pdf-viewer (max-width: 44rem) {
+  .pdf-toolbar {
+    padding-inline: var(--space-2);
+    column-gap: var(--space-1);
+  }
+
+  .pdf-toolbar__label {
+    display: none;
+  }
+
+  .pdf-toolbar__preview-toggle,
+  .pdf-toolbar__page-note,
+  .pdf-toolbar__page-note-sync,
+  .pdf-toolbar__annotation-toggle {
+    justify-content: center;
+    width: var(--control-height);
+    padding-inline: 0;
+  }
+
+  .pdf-toolbar__page-note .pdf-toolbar__badge {
+    position: absolute;
+    top: -0.25rem;
+    right: -0.25rem;
+    min-width: 0.9rem;
+    height: 0.9rem;
+    padding-inline: 0.2rem;
+    line-height: 0.9rem;
+  }
+
+  .pdf-toolbar__page-input {
+    width: 2.35rem;
+  }
+
+  .pdf-toolbar__zoom {
+    gap: 0;
+  }
+
+  .pdf-toolbar__zoom-value {
+    min-width: 2.85rem;
+    padding-inline: var(--space-1);
+  }
+
+  .pdf-tool-rail-shell {
+    flex-basis: calc(100% + var(--space-2) * 2);
+    margin-inline: calc(var(--space-2) * -1);
+  }
+}
+
+/* -- scroller + pages ------------------------------------------------------ */
+
+.pdf-tab__main {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pdf-scroller {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  /* Page+offset restoration owns reflow; Chromium must not also anchor a
+     transient canvas/text-layer node while virtualized pages change size. */
+  overflow-anchor: none;
+  background: var(--bg-app);
+  overscroll-behavior: contain;
+  /* The global 8px scrollbar leaves almost no painted thumb after its 4px
+     transparent border. A PDF is long-form navigation, so give its primary
+     scrollbar a full-size, easy-to-grab target. */
+  scrollbar-width: auto;
+  scrollbar-color: var(--border-strong) var(--bg-surface);
+}
+
+.pdf-scroller::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+.pdf-scroller::-webkit-scrollbar-track,
+.pdf-scroller::-webkit-scrollbar-corner {
+  background: var(--bg-surface);
+}
+
+.pdf-scroller::-webkit-scrollbar-thumb {
+  min-height: var(--control-height);
+  background: var(--border-strong);
+  border: 3px solid var(--bg-surface);
+  border-radius: var(--radius-pill);
+  background-clip: padding-box;
+}
+
+.pdf-scroller::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  border: 3px solid var(--bg-surface);
+  background-clip: padding-box;
+}
+
+.pdf-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  width: max-content;
+  min-width: 100%;
+  padding: var(--space-5) var(--space-4) var(--space-7);
+}
+
+.pdf-page {
+  position: relative;
+  flex: 0 0 auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.pdf-page__placeholder {
+  width: 100%;
+  background: var(--bg-raised);
+  animation: pdf-pulse 1.6s var(--ease-out) infinite alternate;
+}
+
+.pdf-page__clip-drag {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-height);
+  padding-inline: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  cursor: grab;
+}
+
+.pdf-page__clip-drag:hover,
+.pdf-page__clip-drag:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.pdf-page__clip-drag:active {
+  cursor: grabbing;
+}
+
+/* pdf.js canvas sits at z 0, our highlights at 1, the text layer at 2 —
+ * so selection stays fully interactive above the highlight rects. */
+.pdf-highlight-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.pdf-highlight {
+  position: absolute;
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+  opacity: 0.42;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.pdf-highlight[data-color='yellow'] {
+  background: var(--highlight-yellow);
+}
+
+.pdf-highlight[data-color='green'] {
+  background: var(--highlight-green);
+}
+
+.pdf-highlight[data-color='pink'] {
+  background: var(--highlight-pink);
+}
+
+.pdf-highlight[data-color='blue'] {
+  background: var(--highlight-blue);
+}
+
+.pdf-highlight.is-hovered {
+  opacity: 0.6;
+}
+
+.pdf-highlight.is-active {
+  opacity: 0.72;
+}
+
+.pdf-highlight.is-flashing {
+  animation: pdf-flash 0.8s var(--ease-out) 2;
+}
+
+.pdf-page:has(.pdf-highlight.is-hovered) {
+  cursor: pointer;
+}
+
+/* -- loading / error ------------------------------------------------------- */
+
+.pdf-skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-5) var(--space-4);
+}
+
+.pdf-skeleton__page {
+  width: min(100%, 40rem);
+  aspect-ratio: 1 / 1.414;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  animation: pdf-pulse 1.6s var(--ease-out) infinite alternate;
+}
+
+.pdf-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--bg-app);
+}
+
+.pdf-error__mark {
+  display: grid;
+  place-items: center;
+  width: var(--empty-mark-size);
+  height: var(--empty-mark-size);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--danger);
+  background: var(--danger-muted);
+  border-radius: var(--radius-pill);
+}
+
+.pdf-error h2 {
+  font-size: var(--text-lg);
+  font-weight: 650;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+}
+
+.pdf-error p {
+  max-width: var(--dialog-width);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* -- popovers -------------------------------------------------------------- */
+
+.pdf-popover {
+  position: absolute;
+  z-index: 6;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(var(--space-3));
+  animation: pdf-popover-in var(--dur-fast) var(--ease-out);
+  transform: translateX(-50%);
+}
+
+.pdf-popover--selection {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.pdf-popover__clip-drag {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-height);
+  padding-inline: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  border-inline-start: 1px solid var(--border-subtle);
+  cursor: grab;
+}
+
+.pdf-popover__clip-drag:hover,
+.pdf-popover__clip-drag:focus-visible {
+  color: var(--accent);
+}
+
+.pdf-popover__clip-drag:active {
+  cursor: grabbing;
+}
+
+.pdf-popover--edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 16.5rem;
+  padding: var(--space-3);
+}
+
+.pdf-popover__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pdf-popover__swatches {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.pdf-popover__swatch {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.pdf-popover__swatch[data-color='yellow'] {
+  background: var(--highlight-yellow);
+}
+
+.pdf-popover__swatch[data-color='green'] {
+  background: var(--highlight-green);
+}
+
+.pdf-popover__swatch[data-color='pink'] {
+  background: var(--highlight-pink);
+}
+
+.pdf-popover__swatch[data-color='blue'] {
+  background: var(--highlight-blue);
+}
+
+.pdf-popover__swatch:hover,
+.pdf-popover__swatch:focus-visible {
+  transform: scale(1.18);
+}
+
+.pdf-popover__swatch:active {
+  transform: scale(0.95);
+}
+
+.pdf-popover__swatch[data-selected='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+.pdf-popover__icon-button {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: var(--icon-size-sm);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.pdf-popover__delete:hover,
+.pdf-popover__delete:focus-visible {
+  color: var(--danger);
+  background: var(--danger-muted);
+}
+
+.pdf-popover__icon-button:active {
+  transform: scale(0.9);
+}
+
+.pdf-popover__quote {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  padding-left: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  border-left: 2px solid var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.pdf-popover__stale {
+  font-size: var(--text-xs);
+  font-style: italic;
+  color: var(--text-muted);
+  cursor: help;
+}
+
+.pdf-popover__comment {
+  width: 100%;
+  padding: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  outline: none;
+  resize: vertical;
+}
+
+.pdf-popover__comment::placeholder {
+  color: var(--text-muted);
+}
+
+.pdf-popover__comment:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+/* [M5] annotation → AI tutor entry point. */
+
+.pdf-popover__ask-ai {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.pdf-popover__ask-ai:hover,
+.pdf-popover__ask-ai:focus-visible {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+}
+
+.pdf-popover__ask-ai:active {
+  transform: translateY(1px);
+}
+
+.pdf-popover__ask-ai svg {
+  font-size: var(--icon-size-sm);
+}
+
+/* Escape with unsaved memo edits arms this confirm row rather than discarding
+   silently (STYLEGUIDE §8: destructive actions are two-step). */
+
+.pdf-popover__discard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--bg-raised);
+  border-radius: var(--radius-sm);
+}
+
+.pdf-popover__discard-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.pdf-popover__discard-drop,
+.pdf-popover__discard-keep {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.pdf-popover__discard-drop {
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+
+.pdf-popover__discard-drop:hover,
+.pdf-popover__discard-drop:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-app);
+}
+
+.pdf-popover__discard-keep {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.pdf-popover__discard-keep:hover,
+.pdf-popover__discard-keep:focus-visible {
+  color: var(--bg-app);
+  background: var(--accent);
+}
+
+.pdf-popover__discard-drop:active,
+.pdf-popover__discard-keep:active {
+  transform: translateY(1px);
+}
+
+.pdf-popover__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pdf-popover__hint {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.pdf-popover__save {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-muted);
+  border-radius: var(--radius-pill);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.pdf-popover__save:hover:enabled,
+.pdf-popover__save:focus-visible {
+  color: var(--bg-app);
+  background: var(--accent);
+}
+
+.pdf-popover__save:active:enabled {
+  transform: translateY(1px);
+}
+
+.pdf-popover__save:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* -- annotation rail ------------------------------------------------------- */
+
+.pdf-rail {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--rail-right-width);
+  min-height: 0;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--shell-divider);
+  animation: pdf-rail-in var(--dur-base) var(--ease-out);
+}
+
+.pdf-rail__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+}
+
+.pdf-rail__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+}
+
+.pdf-rail__count {
+  padding: 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-raised);
+  border-radius: var(--radius-pill);
+}
+
+.pdf-rail__close {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: var(--icon-size-sm);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.pdf-rail__close:hover,
+.pdf-rail__close:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
+
+.pdf-rail__close:active {
+  transform: scale(0.9);
+}
+
+.pdf-rail__error {
+  margin: 0 var(--space-3) var(--space-2);
+  padding: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--danger);
+  background: var(--danger-muted);
+  border-radius: var(--radius-sm);
+}
+
+.pdf-rail__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  flex: 1;
+  padding: var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.pdf-rail__empty-mark {
+  display: grid;
+  place-items: center;
+  width: var(--empty-mark-size);
+  height: var(--empty-mark-size);
+  font-size: var(--text-lg);
+  color: var(--accent);
+  background: var(--accent-muted);
+  border-radius: var(--radius-lg);
+}
+
+.pdf-rail__scroll {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-2) var(--space-4);
+}
+
+.pdf-rail__backlinks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.pdf-rail__backlinks-title {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+}
+
+.pdf-rail__backlink-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.pdf-rail__backlink-kind {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.pdf-rail__backlink-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: none;
+}
+
+.pdf-rail__backlink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  border-radius: var(--radius-sm);
+}
+
+.pdf-rail__backlink:hover,
+.pdf-rail__backlink:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
+
+.pdf-rail__backlink-icon {
+  flex: 0 0 auto;
+  font-size: var(--icon-size-sm);
+  color: var(--accent);
+}
+
+.pdf-rail__backlink-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-rail__backlink-page {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.pdf-rail__backlinks + .pdf-rail__group,
+.pdf-rail__backlinks + .pdf-rail__empty {
+  margin-top: var(--space-3);
+}
+
+.pdf-rail__group + .pdf-rail__group {
+  margin-top: var(--space-3);
+}
+
+.pdf-rail__page {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+}
+
+.pdf-rail__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: none;
+}
+
+.pdf-rail__row {
+  position: relative;
+}
+
+/* [M5] hover-revealed "AI에게 물어보기" on each rail entry. */
+
+.pdf-rail__ask {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  display: grid;
+  place-items: center;
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  font-size: var(--icon-size-sm);
+  color: var(--accent);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.pdf-rail__row:hover .pdf-rail__ask,
+.pdf-rail__row:focus-within .pdf-rail__ask {
+  opacity: 1;
+}
+
+.pdf-rail__ask:hover,
+.pdf-rail__ask:focus-visible {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+}
+
+.pdf-rail__ask:active {
+  transform: translateY(1px);
+}
+
+.pdf-rail__item {
+  display: flex;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  text-align: left;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.pdf-rail__item:hover,
+.pdf-rail__item:focus-visible {
+  background: var(--bg-raised);
+}
+
+.pdf-rail__item:active {
+  transform: translateY(1px);
+}
+
+.pdf-rail__item[data-active='true'] {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+}
+
+.pdf-rail__chip {
+  flex: 0 0 auto;
+  width: 3px;
+  border-radius: var(--radius-pill);
+}
+
+.pdf-rail__chip[data-color='yellow'] {
+  background: var(--highlight-yellow);
+}
+
+.pdf-rail__chip[data-color='green'] {
+  background: var(--highlight-green);
+}
+
+.pdf-rail__chip[data-color='pink'] {
+  background: var(--highlight-pink);
+}
+
+.pdf-rail__chip[data-color='blue'] {
+  background: var(--highlight-blue);
+}
+
+.pdf-rail__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.pdf-rail__quote {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.pdf-rail__comment {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.pdf-rail__stale {
+  align-self: flex-start;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-pill);
+  cursor: help;
+}
+
+/* -- keyframes (opacity/transform only) ------------------------------------ */
+
+@keyframes pdf-pulse {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0.55;
+  }
+}
+
+@keyframes pdf-flash {
+  0% {
+    opacity: 0.42;
+  }
+
+  50% {
+    opacity: 0.95;
+  }
+
+  100% {
+    opacity: 0.42;
+  }
+}
+
+@keyframes pdf-popover-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes pdf-rail-in {
+  from {
+    opacity: 0;
+    transform: translateX(0.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* The old raster scales immediately; new pixels replace it atomically. */
+.pdf-page > .react-pdf__Page {
+  width: 100%;
+  height: 100%;
+}
+.pdf-buffered-canvas {
+  width: 100%;
+  height: 100%;
+}
+.pdf-page .react-pdf__Page__canvas {
+  width: 100%;
+  height: 100%;
+}
+
+@container pdf-viewer (max-width: 580px) {
+  .pdf-tab__main > .pdf-rail {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: min(var(--rail-right-width), 100%);
+    z-index: 12;
+    box-shadow: -8px 0 24px rgb(0 0 0 / 0.06);
+  }
+}
+
+.pdf-annotation-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}

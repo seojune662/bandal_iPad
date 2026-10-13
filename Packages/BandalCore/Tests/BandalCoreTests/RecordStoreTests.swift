@@ -60,6 +60,62 @@ private actor TestServer: SyncTransport {
     #expect(try await reopened.pendingOperations().count == 1)
 }
 
+@Test func projectionRecoveryMarkerSurvivesRemoteCursorCommitAndReopen() async throws {
+    let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let url = root.appendingPathComponent("projection.sqlite")
+    let store = try RecordStore(url: url)
+    #expect(try await !store.projectionRecoveryPending())
+    try await store.beginProjectionRecovery()
+    let remote = StoredRecord(id: "n", kind: "note", payload: json("remote"), revision: 3)
+    try await store.apply(PullPage(records: [remote], cursor: 8, hasMore: false))
+    let reopened = try RecordStore(url: url)
+    #expect(try await reopened.projectionRecoveryPending())
+    #expect(try await reopened.syncCursor() == 8)
+    #expect(try await reopened.get(id: "n") == remote)
+    try await reopened.completeProjectionRecovery()
+    #expect(try await !store.projectionRecoveryPending())
+    #expect(try await store.get(id: "n") == remote)
+}
+
+@Test func preMarkerStoreRequiresOneReconciliationWhileNewStoreStartsClean() async throws {
+    let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let old = try RecordStore(url: root.appendingPathComponent("old.sqlite"))
+    try await old.apply(PullPage(records: [StoredRecord(id: "n", kind: "note", payload: json("received before upgrade"), revision: 3)], cursor: 9, hasMore: false))
+    #expect(try await !old.projectionRecoveryPending())
+    try await old.prepareProjectionRecovery()
+    #expect(try await old.projectionRecoveryPending())
+    try await old.completeProjectionRecovery()
+    try await old.prepareProjectionRecovery()
+    #expect(try await !old.projectionRecoveryPending())
+    #expect(try await old.syncCursor() == 9)
+    let fresh = try RecordStore(url: root.appendingPathComponent("new.sqlite"))
+    try await fresh.prepareProjectionRecovery()
+    #expect(try await !fresh.projectionRecoveryPending())
+}
+
+@Test func conflictChoiceAtomicallyPreservesNewUnreviewedAcceptedVersion() async throws {
+    let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let url = root.appendingPathComponent("choice.sqlite"), store = try RecordStore(url: root.appendingPathComponent("choice.sqlite"))
+    let a = StoredRecord(id: "n", kind: "note", payload: json("A"), revision: 1)
+    let b = StoredRecord(id: "n", kind: "note", payload: json("B"), revision: 2)
+    let c = StoredRecord(id: "n", kind: "note", payload: json("C arrived after review opened"), revision: 3)
+    try await store.apply(PullPage(records: [c], cursor: 7, hasMore: false))
+    let fault = try SQLiteConnection(url: url)
+    try fault.exec("CREATE TRIGGER fail_choice BEFORE INSERT ON outbox BEGIN SELECT RAISE(ABORT, 'choice crash'); END;")
+    await #expect(throws: CoreError.self) { try await store.queueConflictResolution(a, reviewedVariants: [a, b]) }
+    #expect(try await store.get(id: "n") == c)
+    #expect(try await store.conflicts().isEmpty)
+    #expect(try await !store.projectionRecoveryPending())
+    try fault.exec("DROP TRIGGER fail_choice")
+    let preserved = try #require(await store.queueConflictResolution(a, reviewedVariants: [a, b]))
+    let reopened = try RecordStore(url: url)
+    #expect(preserved.local == c)
+    #expect(try await reopened.conflicts().first?.local == c)
+    #expect(try await reopened.get(id: "n")?.payload == a.payload)
+    #expect(try await reopened.pendingOperations().first?.baseRevision == 3)
+    #expect(try await reopened.projectionRecoveryPending())
+}
+
 @Test func multiplePendingRevisionsAndTombstones() async throws {
     let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
     let store = try RecordStore(url: root.appendingPathComponent("records.sqlite"))
@@ -279,6 +335,25 @@ private actor TestServer: SyncTransport {
     #expect(throws: CoreError.self) { try AssetHasher.verify(revision, file: source) }
     let traversal = AssetRevision(sha256: "../../private", byteCount: 0, originalName: "", contentType: "")
     await #expect(throws: CoreError.self) { try await assets.url(for: traversal) }
+}
+
+@Test func immutableSnapshotReuseStillRejectsCacheCorruptionAndChangedNewSource() async throws {
+    let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appendingPathComponent("recording.wav")
+    try Data("first recording".utf8).write(to: source)
+    let assets = try AssetStore(directory: root.appendingPathComponent("assets"))
+    let revision = try AssetHasher.revision(of: source, contentType: "audio/wav")
+    _ = try await assets.importFile(at: source, matching: revision)
+    // Once the immutable snapshot exists, no source copy/read is necessary.
+    try FileManager.default.removeItem(at: source)
+    #expect(try await assets.importFile(at: source, matching: revision) == revision)
+    let snapshot = try await assets.url(for: revision)
+    try Data("other recording".utf8).write(to: snapshot) // Same size; inode/ctime invalidate the cached digest.
+    await #expect(throws: CoreError.self) { try await assets.importFile(at: source, matching: revision) }
+    try FileManager.default.removeItem(at: snapshot)
+    try Data("changed source after projection".utf8).write(to: source)
+    await #expect(throws: CoreError.self) { try await assets.importFile(at: source, matching: revision) }
+    #expect(!FileManager.default.fileExists(atPath: snapshot.path))
 }
 
 private func inkPayload(_ objects: [String: Double], deleted: [String] = []) throws -> Data {

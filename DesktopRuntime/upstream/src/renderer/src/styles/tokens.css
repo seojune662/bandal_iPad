@@ -1,0 +1,132 @@
+@import './themes/index.css';
+
+/* Shared layout, type and control tokens. Colors live in the two neutral themes. */
+:root {
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* Spacing scale (4px base) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  /* Typography */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo',
+    'Pretendard Variable', Pretendard, 'Noto Sans KR', sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono',
+    monospace;
+  /* Note editor only (설정 > 화면 > 필기 글꼴); the chrome never uses it. */
+  --font-serif:
+    'Noto Serif KR', 'Apple SD Gothic Neo', Georgia, 'Times New Roman', serif;
+
+  /* Root font-size multiplier (설정 > 화면 > 글자 크기). Set on <html> by
+   * src/shared/appearance.ts; base.css multiplies `html { font-size }` by it so
+   * every rem token above and below scales like browser zoom. */
+  --font-scale: 1;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.5rem;
+
+  --tracking-tight: -0.015em;
+  --tracking-wide: 0.015em;
+
+  /* Shell and controls */
+  --chrome-height: 44px;
+  --window-controls-width: 48px;
+  --navigation-width: 48px;
+  --sidebar-inset: calc(var(--navigation-width) + var(--rail-left-width));
+  --focus-ring: #3981f7;
+  --sidebar-selection: color-mix(in srgb, var(--text-primary) 5.5%, var(--bg-surface));
+  --sidebar-hover: color-mix(in srgb, var(--text-primary) 3%, var(--bg-surface));
+  --shell-divider: color-mix(in srgb, var(--border-subtle) 55%, transparent);
+  --rail-left-width: 15rem;
+  --rail-right-width: 18rem;
+  --control-height: 2rem;
+  --button-height: 2.25rem;
+  --icon-button-size: 2rem;
+  --icon-size: 1rem;
+  --icon-size-sm: 0.875rem;
+  --course-dot-size: 0.5rem;
+  --color-swatch-size: 1.75rem;
+  --brand-mark-size: 1.125rem;
+  --empty-mark-size: 3.5rem;
+  --dialog-width: 24rem;
+  --context-menu-width: 11rem;
+  --traffic-light-inset: 4.5rem;
+  --window-controls-inset: calc(
+    100vw - env(titlebar-area-x, 0px) -
+      env(titlebar-area-width, calc(100vw - 138px)) + var(--space-2)
+  );
+
+  /* Motion */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Density (설정 > 화면 > 밀도). `compact` re-cuts only the scale tokens that
+ * set the rhythm — radii, the two mid spacing steps, and the chrome/control
+ * heights — so every surface tightens together without per-component rules.
+ * Set on <html> by src/shared/appearance.ts. */
+:root[data-density='compact'] {
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --space-3: 0.5rem;
+  --space-4: 0.75rem;
+  --control-height: 1.75rem;
+  --button-height: 2rem;
+}
+
+:root {
+  --preview-light-bg: #ffffff;
+  --preview-light-surface: #f3f3f3;
+  --preview-light-text: #686868;
+  --preview-light-accent: #171717;
+  --preview-dark-bg: #212121;
+  --preview-dark-surface: #181818;
+  --preview-dark-text: #b0b0b0;
+  --preview-dark-accent: #ececec;
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --shell-divider: var(--text-muted);
+    --border-subtle: var(--text-muted);
+    --border-strong: var(--text-secondary);
+  }
+}
+@media (forced-colors: active) {
+  :root {
+    --bg-app: Canvas;
+    --bg-surface: Canvas;
+    --bg-raised: ButtonFace;
+    --bg-overlay: Canvas;
+    --text-primary: CanvasText;
+    --text-secondary: CanvasText;
+    --text-muted: CanvasText;
+    --accent: Highlight;
+    --accent-muted: ButtonFace;
+    --on-accent: HighlightText;
+    --focus-ring: Highlight;
+    --shell-divider: GrayText;
+    --border-subtle: GrayText;
+    --border-strong: ButtonText;
+  }
+}
+
+:root[data-platform='darwin']:not([data-fullscreen='true']) { --window-controls-width: 144px; }
+:root[data-fullscreen='true'] { --window-controls-inset: 0px; }

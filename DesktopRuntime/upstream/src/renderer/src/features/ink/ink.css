@@ -1,0 +1,393 @@
+/* PDF and slide canvases keep their paper colors in every app theme.
+   Match the exported document palette; dark UI text is otherwise white on paper. */
+.pdf-tab,
+.pdf-tool-popover,
+.presentation-viewer {
+  --drawing-color-ink: rgb(20 23 31);
+  --drawing-color-red: rgb(214 36 46);
+  --drawing-color-orange: rgb(240 99 20);
+  --drawing-color-yellow: rgb(245 184 10);
+  --drawing-color-green: rgb(26 148 77);
+  --drawing-color-blue: rgb(20 97 224);
+  --drawing-color-violet: rgb(125 54 209);
+}
+
+.ink-layer {
+  overflow: visible;
+  touch-action: none;
+}
+
+.ink-layer__mark,
+.ink-layer__preview {
+  pointer-events: none;
+}
+
+.ink-layer__mark.is-highlighter,
+.ink-layer__preview.is-highlighter {
+  mix-blend-mode: multiply;
+}
+
+/* hidden 필수: 내부 HTML 은 스케일 전 레이아웃이 수백 "페이지 폭" 크기라,
+   visible 이면 그 유령 영역이 페이지 전체의 클릭을 가로챈다(재배치 클릭·
+   새 박스 생성이 전부 막히던 원인). 스케일 후 내용은 박스에 정확히 맞아
+   시각적으로 잘리는 것은 없다. */
+.ink-layer__textbox-object {
+  overflow: hidden;
+  /* foreignObject itself has no SVG paint, so `auto`/visiblePainted lets a
+     click fall through to the PDF text layer when its display child is inert. */
+  pointer-events: all;
+}
+
+/* 표시용 텍스트도 박스의 히트 영역이다. foreignObject 는 스스로 칠해진
+   도형이 아니라서 자식까지 투과시키면 클릭이 뒤의 PDF 글자로 빠진다. */
+div.ink-layer__textbox {
+  pointer-events: auto;
+}
+
+.ink-layer__textbox[data-color] {
+  --drawing-current-color: var(--drawing-color-ink);
+}
+
+.ink-layer__textbox[data-color='red'] {
+  --drawing-current-color: var(--drawing-color-red);
+}
+
+.ink-layer__textbox[data-color='orange'] {
+  --drawing-current-color: var(--drawing-color-orange);
+}
+
+.ink-layer__textbox[data-color='yellow'] {
+  --drawing-current-color: var(--drawing-color-yellow);
+}
+
+.ink-layer__textbox[data-color='green'] {
+  --drawing-current-color: var(--drawing-color-green);
+}
+
+.ink-layer__textbox[data-color='blue'] {
+  --drawing-current-color: var(--drawing-color-blue);
+}
+
+.ink-layer__textbox[data-color='violet'] {
+  --drawing-current-color: var(--drawing-color-violet);
+}
+
+/* 패딩·테두리는 em — px 고정이면 줌마다 측정 높이가 달라져 grow-only 규칙이
+   박스 높이를 단조 증식시킨다. 값은 textBoxMetrics 와 같아야 하며 인라인
+   style 이 덮어쓴다(여기 값은 폴백). */
+.ink-layer__textbox {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 0.3em;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  line-height: 1.35;
+  color: var(--drawing-current-color);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--textbox-fill, transparent);
+  border: 0.06em solid transparent;
+}
+
+/* style.fill — 글자색과 독립인 배경 틴트(알파 = TEXT_FILL_OPACITY). 변수로
+   두어 편집 중(.is-editing)에도 같은 틴트가 보인다. */
+.ink-layer__textbox[data-fill='ink'] {
+  --textbox-fill: color-mix(
+    in oklch,
+    var(--drawing-color-ink) 18%,
+    transparent
+  );
+}
+
+.ink-layer__textbox[data-fill='red'] {
+  --textbox-fill: color-mix(
+    in oklch,
+    var(--drawing-color-red) 18%,
+    transparent
+  );
+}
+
+.ink-layer__textbox[data-fill='orange'] {
+  --textbox-fill: color-mix(
+    in oklch,
+    var(--drawing-color-orange) 18%,
+    transparent
+  );
+}
+
+.ink-layer__textbox[data-fill='yellow'] {
+  --textbox-fill: color-mix(
+    in oklch,
+    var(--drawing-color-yellow) 18%,
+    transparent
+  );
+}
+
+.ink-layer__textbox[data-fill='green'] {
+  --textbox-fill: color-mix(
+    in oklch,
+    var(--drawing-color-green) 18%,
+    transparent
+  );
+}
+
+.ink-layer__textbox[data-fill='blue'] {
+  --textbox-fill: color-mix(
+    in oklch,
+    var(--drawing-color-blue) 18%,
+    transparent
+  );
+}
+
+.ink-layer__textbox[data-fill='violet'] {
+  --textbox-fill: color-mix(
+    in oklch,
+    var(--drawing-color-violet) 18%,
+    transparent
+  );
+}
+
+textarea.ink-layer__textbox {
+  min-width: 0;
+  outline: none;
+  resize: none;
+  user-select: text;
+}
+
+.ink-layer__textbox-editor {
+  min-width: 0;
+  cursor: text;
+  user-select: text;
+}
+
+.ink-layer__textbox-editor-content {
+  min-height: 1.35em;
+  outline: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ink-layer__textbox-editor-content:empty::before,
+.ink-layer__textbox-editor-content:has(
+    > br.ProseMirror-trailingBreak:only-child
+  )::before {
+  color: var(--text-muted);
+  content: attr(data-placeholder);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.ink-layer__textbox-editor-content [data-text-color='ink'] {
+  color: var(--drawing-color-ink);
+}
+
+.ink-layer__textbox-editor-content [data-text-color='red'] {
+  color: var(--drawing-color-red);
+}
+
+.ink-layer__textbox-editor-content [data-text-color='orange'] {
+  color: var(--drawing-color-orange);
+}
+
+.ink-layer__textbox-editor-content [data-text-color='yellow'] {
+  color: var(--drawing-color-yellow);
+}
+
+.ink-layer__textbox-editor-content [data-text-color='green'] {
+  color: var(--drawing-color-green);
+}
+
+.ink-layer__textbox-editor-content [data-text-color='blue'] {
+  color: var(--drawing-color-blue);
+}
+
+.ink-layer__textbox-editor-content [data-text-color='violet'] {
+  color: var(--drawing-color-violet);
+}
+
+textarea.ink-layer__textbox::placeholder {
+  color: var(--text-muted);
+}
+
+.ink-layer__textbox.is-editing {
+  background: var(--textbox-fill, var(--bg-overlay));
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+.ink-layer__textbox-resize {
+  stroke: var(--bg-surface);
+  stroke-width: 1;
+}
+
+.ink-layer__clip-object {
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.ink-layer__clip {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: var(--text-secondary);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+.ink-layer__clip img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ink-layer__clip-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.ink-layer__clip-placeholder strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ink-layer__clip[data-state='error'] {
+  border-color: var(--danger);
+}
+
+.ink-layer__clip[data-state='error'] .ink-layer__clip-placeholder span {
+  color: var(--danger);
+}
+
+.ink-layer__clip-resize {
+  fill: var(--accent);
+  stroke: var(--bg-surface);
+  stroke-width: 1;
+}
+
+.ink-layer__image-object {
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.ink-layer__image {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: var(--text-secondary);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ready 이미지는 SVG <image> — box 와 픽셀 단위로 일치해 핸들이 정확히 붙는다. */
+.ink-layer__image-el {
+  pointer-events: auto;
+}
+
+/* text/select 툴에서 hover 로 박스 범위를 드러낸다 — 투명한 텍스트박스가
+   어디를 차지하는지 보여야 "클릭이 왜 안 먹는지"가 보인다. */
+.ink-layer__textbox-object:hover .ink-layer__textbox:not(.is-editing) {
+  border-color: var(--border-strong);
+  border-style: dashed;
+}
+
+/* select 툴로 잡은 셰이프의 공용 선택 외곽선. */
+.ink-layer__selection-frame {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+.ink-layer__mark--selectable {
+  cursor: move;
+}
+
+.ink-layer__image-frame {
+  fill: none;
+  stroke: var(--border-strong);
+  pointer-events: none;
+}
+
+.ink-layer__image-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.ink-layer__image-placeholder strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ink-layer__image[data-state='error'] {
+  border-color: var(--danger);
+}
+
+.ink-layer__image[data-state='error'] .ink-layer__image-placeholder span {
+  color: var(--danger);
+}
+
+.ink-layer__image-resize {
+  fill: var(--accent);
+  stroke: var(--bg-surface);
+  stroke-width: 1;
+}
+
+.ink-layer__textbox-resize[data-resize-handle='nw'],
+.ink-layer__textbox-resize[data-resize-handle='se'],
+.ink-layer__clip-resize[data-resize-handle='nw'],
+.ink-layer__clip-resize[data-resize-handle='se'],
+.ink-layer__image-resize[data-resize-handle='nw'],
+.ink-layer__image-resize[data-resize-handle='se'] {
+  cursor: nwse-resize;
+}
+
+.ink-layer__textbox-resize[data-resize-handle='ne'],
+.ink-layer__textbox-resize[data-resize-handle='sw'],
+.ink-layer__clip-resize[data-resize-handle='ne'],
+.ink-layer__clip-resize[data-resize-handle='sw'],
+.ink-layer__image-resize[data-resize-handle='ne'],
+.ink-layer__image-resize[data-resize-handle='sw'] {
+  cursor: nesw-resize;
+}
+
+.ink-layer__textbox-resize[data-resize-handle='e'],
+.ink-layer__textbox-resize[data-resize-handle='w'] {
+  cursor: ew-resize;
+}
+
+.ink-layer__textbox-resize[data-resize-handle='n'],
+.ink-layer__textbox-resize[data-resize-handle='s'] {
+  cursor: ns-resize;
+}

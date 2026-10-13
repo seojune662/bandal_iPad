@@ -1,0 +1,15 @@
+.learning-generation-preview {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  gap: 10px 16px;
+  margin: 20px 0 0;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-raised);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.learning-generation-preview dt { color: var(--text-muted); }
+.learning-generation-preview dd { margin: 0; overflow-wrap: anywhere; }
+.learning-source-quote { max-height: 120px; overflow: auto; margin: 12px 0; padding: 12px 16px; border-left: 3px solid var(--accent); color: var(--text-muted); font-size: 12px; line-height: 1.7; }

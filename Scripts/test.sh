@@ -7,10 +7,13 @@ python3 -m unittest discover -s backend/ppt-converter -p 'test_*.py' -v
 if [[ -n "${BANDAL_TEST_BRIDGE_BINARY:-}" ]]; then
   python3 -m unittest discover -s Tools/desktop-bridge -p 'test_binary.py' -v
 fi
-node Scripts/build-web-editor.mjs
-node Scripts/build-web-editor.test.mjs
+node DesktopRuntime/scripts/build.mjs
+node DesktopRuntime/scripts/test-renderer.mjs
+node DesktopRuntime/scripts/test-platform-routing.mjs
+node DesktopRuntime/scripts/test-lifecycle.mjs
+node DesktopRuntime/scripts/test-sync-ui.mjs
 xcodegen generate
 : "${BANDAL_DESTINATION:?Set BANDAL_DESTINATION to an available iPad simulator, e.g. platform=iOS Simulator,id=SIMULATOR_UUID}"
 xcodebuild -project Bandal.xcodeproj -scheme Bandal -destination "$BANDAL_DESTINATION" \
   -derivedDataPath .derivedData -clonedSourcePackagesDirPath .build/SourcePackages \
-  CODE_SIGNING_ALLOWED=NO test
+  CODE_SIGNING_ALLOWED=NO test "$@"

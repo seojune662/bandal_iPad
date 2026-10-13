@@ -1,0 +1,129 @@
+/* 인쇄 미리보기 — a modal over the workspace, sized so an A4 page is legible
+ * without the dialog swallowing the window. */
+
+.print-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--backdrop);
+  animation: print-preview-fade var(--dur-base) var(--ease-out);
+}
+
+@keyframes print-preview-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.print-preview {
+  display: flex;
+  flex-direction: column;
+  width: min(40rem, 100%);
+  max-height: 100%;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.print-preview__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.print-preview__title {
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.print-preview__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+}
+
+.print-preview__close:hover,
+.print-preview__close:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
+
+.print-preview__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.print-preview__options label {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.print-preview__options select {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+}
+
+.print-preview__toggle {
+  cursor: pointer;
+}
+
+.print-preview__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: center;
+  flex: 1;
+  min-height: 12rem;
+  padding: var(--space-4);
+  overflow-y: auto;
+  background: var(--bg-app);
+}
+
+.print-preview__status {
+  padding: var(--space-6) 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* Paper, so the preview reads as paper rather than as a web page. */
+.print-preview__page {
+  box-shadow: var(--shadow-md);
+}
+
+.print-preview__page + .print-preview__page {
+  margin-block-start: var(--space-3);
+}
+
+.print-preview__actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  padding: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}

@@ -1,0 +1,153 @@
+/* Avatar-only entry in the bottom icon row; the name lives in the tooltip. */
+.sidebar-account {
+  position: relative;
+  display: flex;
+}
+
+.sidebar-account__trigger[aria-expanded='true'] {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
+
+.sidebar-account__popover {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 44px;
+  width: 17rem;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1);
+  color: var(--text-primary);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: calc(var(--radius-lg) + var(--space-1));
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-account__profile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-2);
+}
+
+.sidebar-account__identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.sidebar-account__profile strong,
+.sidebar-account__profile span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-account__profile strong {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.sidebar-account__profile span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.sidebar-account__profile .account-avatar {
+  border-color: var(--border-subtle);
+  box-shadow: none;
+}
+
+.sidebar-account__divider {
+  margin: var(--space-1) var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sidebar-account__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: calc(var(--control-height) + var(--space-1));
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 450;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.sidebar-account__item svg {
+  flex: none;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  color: var(--text-secondary);
+}
+
+.sidebar-account__item:hover:not([aria-disabled='true']),
+.sidebar-account__item:focus-visible {
+  background: var(--sidebar-hover);
+}
+
+.sidebar-account__item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.sidebar-account__item[aria-disabled='true'] {
+  cursor: progress;
+  color: var(--text-muted);
+}
+
+.sidebar-account__error {
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--danger);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.account-avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  font-size: var(--text-base);
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+}
+
+.account-avatar[data-size='sm'] {
+  width: calc(var(--icon-size) + var(--space-2));
+  height: calc(var(--icon-size) + var(--space-2));
+  font-size: var(--text-sm);
+}
+
+.account-avatar[data-size='lg'] {
+  width: var(--empty-mark-size);
+  height: var(--empty-mark-size);
+  font-size: var(--text-xl);
+}
+
+
+.account-avatar img { width: 100%; height: 100%; object-fit: cover; }

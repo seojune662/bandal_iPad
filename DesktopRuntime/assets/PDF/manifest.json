@@ -1,0 +1,17 @@
+{
+  "source": "bandal desktop v0.83.1",
+  "files": [
+    {
+      "file": "NotoSansKR-Regular.otf",
+      "sha256": "69975a0ac8472717870aefeab0a4d52739308d90856b9955313b2ad5e0148d68",
+      "byteCount": 4644748,
+      "source": "resources/fonts/NotoSansKR-Regular.otf"
+    },
+    {
+      "file": "NotoSansKR-Bold.otf",
+      "sha256": "5a6ceb287ed2fc6cfc6213144ebea68cbd94b20fc9eb873d8486493bf02d9bda",
+      "byteCount": 4816044,
+      "source": "resources/fonts/NotoSansKR-Bold.otf"
+    }
+  ]
+}

@@ -1,0 +1,2156 @@
+{
+  "source": "Byte-preserved original desktop IpcContract including inherited contracts",
+  "total": 323,
+  "definitions": {
+    "connected": "Concrete dispatch exists; not an end-to-end or physical-device completeness claim.",
+    "partial": "Working subset plus listed gap.",
+    "unavailable": "Explicit unsupported response or unavailable empty enumeration.",
+    "unregistered": "No concrete public handler found."
+  },
+  "method": "Backend fixture registry + exact Swift case labels. canHandle prefix declarations never count as implementation. Private native service channels excluded.",
+  "backendBundleSha256": "fc1d95753d2def04070e1ab3dfd57394fe33c55b7c441e9b5d533434475cb86e",
+  "counts": {
+    "connected": 251,
+    "partial": 40,
+    "unavailable": 21,
+    "unregistered": 11
+  },
+  "registeredBackendChannels": 228,
+  "extraBackendChannels": [
+    "agent:apiKey",
+    "agent:setApiKey"
+  ],
+  "rows": [
+    {
+      "channel": "activity:recent",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "activity:record",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "agent:availability",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native API transport uses original sessions/tools; local CLI skills and arbitrary executable work are unavailable. WK browser tools enforce original grants/policies; semantic keys, approved submission/file attachment and original Canvas LMS recipes are connected. Trusted OS key injection and cross-origin frames are unavailable. Real keys/provider access remain external validation gates."
+    },
+    {
+      "channel": "agent:cancelLogin",
+      "state": "unavailable",
+      "route": "typescript",
+      "reason": "iPad has no local CLI process. Handler reports unsupported/ok:false; API-key controls replace CLI setup in the original provider card."
+    },
+    {
+      "channel": "agent:geminiApiKey",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "agent:install",
+      "state": "unavailable",
+      "route": "typescript",
+      "reason": "iPad has no local CLI process. Handler reports unsupported/ok:false; API-key controls replace CLI setup in the original provider card."
+    },
+    {
+      "channel": "agent:installCommand",
+      "state": "unavailable",
+      "route": "typescript",
+      "reason": "iPad has no local CLI process. Handler reports unsupported/ok:false; API-key controls replace CLI setup in the original provider card."
+    },
+    {
+      "channel": "agent:login",
+      "state": "unavailable",
+      "route": "typescript",
+      "reason": "iPad has no local CLI process. Handler reports unsupported/ok:false; API-key controls replace CLI setup in the original provider card."
+    },
+    {
+      "channel": "agent:models",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native API transport uses original sessions/tools; local CLI skills and arbitrary executable work are unavailable. WK browser tools enforce original grants/policies; semantic keys, approved submission/file attachment and original Canvas LMS recipes are connected. Trusted OS key injection and cross-origin frames are unavailable. Real keys/provider access remain external validation gates."
+    },
+    {
+      "channel": "agent:reopenLogin",
+      "state": "unavailable",
+      "route": "typescript",
+      "reason": "iPad has no local CLI process. Handler reports unsupported/ok:false; API-key controls replace CLI setup in the original provider card."
+    },
+    {
+      "channel": "agent:setGeminiApiKey",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "agent:skills",
+      "state": "unavailable",
+      "route": "typescript",
+      "reason": "Executable local skills are not connected; enumeration returns an empty list, not a functioning runtime."
+    },
+    {
+      "channel": "agent:submitLoginCode",
+      "state": "unavailable",
+      "route": "typescript",
+      "reason": "iPad has no local CLI process. Handler reports unsupported/ok:false; API-key controls replace CLI setup in the original provider card."
+    },
+    {
+      "channel": "agent:syncWorkspace",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopShell.swift:307",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "agentTools:changes",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "agentTools:confirmations",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "agentTools:respondConfirm",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "agentTools:undo",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "annotations:create",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "annotations:delete",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "annotations:listForFile",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "annotations:update",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "app:clearCache",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopShell.swift:283",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "app:diagnostics",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "app:openLogs",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "appleCalendar:configure",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "appleCalendar:connect",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "appleCalendar:disconnect",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "appleCalendar:events",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "appleCalendar:export",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "appleCalendar:permissions",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopSystemServices.swift:40",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "appleCalendar:state",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "assistant:capture",
+      "state": "partial",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopCaptureService.swift:48",
+      "reason": "Original region selection UI returns a bounded PNG of the current app only. Other applications and protected video content cannot be captured. Native capture regression tests and physical-device validation are tracked separately."
+    },
+    {
+      "channel": "assistant:selection",
+      "state": "partial",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopCaptureService.swift:102",
+      "reason": "Original region selection UI returns a bounded PNG of the current app only. Other applications and protected video content cannot be captured. Native capture regression tests and physical-device validation are tracked separately."
+    },
+    {
+      "channel": "auth:getState",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopAccountService.swift:59",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "auth:setNickname",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopAccountService.swift:62",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "auth:signIn",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopAccountService.swift:60",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "auth:signOut",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopAccountService.swift:61",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "board:createTask",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "board:deleteTask",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "board:listTasks",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "board:reorderTasks",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "board:updateTask",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "browser:clearHistory",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:230",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:clearSession",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:242",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:clearStorage",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:242",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:controlDownload",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:281",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:courseForUrl",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:234",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:createPage",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:140",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:deleteProfile",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:203",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:destroyPage",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:172",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:downloadFile",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:280",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:extensions",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:282",
+      "reason": "Enumeration is empty because Chromium extension and other-app browser import runtimes are unavailable."
+    },
+    {
+      "channel": "browser:favicon",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:274",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:forgetPermission",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:263",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:importBookmarks",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:285",
+      "reason": "Concrete Swift branch rejects this unsupported operation."
+    },
+    {
+      "channel": "browser:importCancel",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:285",
+      "reason": "Concrete Swift branch rejects this unsupported operation."
+    },
+    {
+      "channel": "browser:importFile",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:285",
+      "reason": "Concrete Swift branch rejects this unsupported operation."
+    },
+    {
+      "channel": "browser:importJob",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:285",
+      "reason": "Concrete Swift branch rejects this unsupported operation."
+    },
+    {
+      "channel": "browser:importSources",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:283",
+      "reason": "Enumeration is empty because Chromium extension and other-app browser import runtimes are unavailable."
+    },
+    {
+      "channel": "browser:importStart",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:285",
+      "reason": "Concrete Swift branch rejects this unsupported operation."
+    },
+    {
+      "channel": "browser:installExtension",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:284",
+      "reason": "Concrete Swift branch rejects this unsupported operation."
+    },
+    {
+      "channel": "browser:pageAction",
+      "state": "partial",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:170",
+      "reason": "Concrete WK actions exist; Chromium DevTools and undocumented page actions reject explicitly."
+    },
+    {
+      "channel": "browser:pageBounds",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:152",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:prepareClose",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:185",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:prepareProfileSwitch",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:185",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:profiles",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:191",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:recordVisit",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:214",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:removeExtension",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:284",
+      "reason": "Concrete Swift branch rejects this unsupported operation."
+    },
+    {
+      "channel": "browser:saveProfile",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:192",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:searchHistory",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:225",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:sessionSites",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:237",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:setCourse",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:176",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:setDownloadTarget",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:181",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:setExtensionEnabled",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:284",
+      "reason": "Concrete Swift branch rejects this unsupported operation."
+    },
+    {
+      "channel": "browser:setHostOccluded",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:166",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:setPopupPermission",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:267",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browser:sitePermissions",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopBrowserHost.swift:260",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "browserAgent:auditTail",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "browserAgent:grants",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "browserAgent:registerTab",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "browserAgent:resumeRun",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "browserAgent:revokeGrant",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "browserAgent:stopRun",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "browserAgent:syncTabs",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "calendar:range",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "calendar:upcoming",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "canvas:create",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "canvas:exportPdf",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "canvas:hoverPreview",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "canvas:list",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "canvas:open",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "canvas:putShape",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "canvas:remove",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "canvas:removeShapes",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "canvas:rename",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "canvas:setBackground",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "canvas:setPageCount",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "chat:accessPolicy",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "chat:cancel",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "chat:close",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "chat:context",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native API transport uses original sessions/tools; local CLI skills and arbitrary executable work are unavailable. WK browser tools enforce original grants/policies; semantic keys, approved submission/file attachment and original Canvas LMS recipes are connected. Trusted OS key injection and cross-origin frames are unavailable. Real keys/provider access remain external validation gates."
+    },
+    {
+      "channel": "chat:conversations",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "chat:deleteConversation",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "chat:grants",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "chat:importAttachments",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "chat:open",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native API transport uses original sessions/tools; local CLI skills and arbitrary executable work are unavailable. WK browser tools enforce original grants/policies; semantic keys, approved submission/file attachment and original Canvas LMS recipes are connected. Trusted OS key injection and cross-origin frames are unavailable. Real keys/provider access remain external validation gates."
+    },
+    {
+      "channel": "chat:openArtifact",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopFileServices.swift:142",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "chat:pickAttachments",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopFileServices.swift:59",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "chat:respondPermission",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "chat:revokeGrant",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "chat:send",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native API transport uses original sessions/tools; local CLI skills and arbitrary executable work are unavailable. WK browser tools enforce original grants/policies; semantic keys, approved submission/file attachment and original Canvas LMS recipes are connected. Trusted OS key injection and cross-origin frames are unavailable. Real keys/provider access remain external validation gates."
+    },
+    {
+      "channel": "chat:setConfiguration",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native API transport uses original sessions/tools; local CLI skills and arbitrary executable work are unavailable. WK browser tools enforce original grants/policies; semantic keys, approved submission/file attachment and original Canvas LMS recipes are connected. Trusted OS key injection and cross-origin frames are unavailable. Real keys/provider access remain external validation gates."
+    },
+    {
+      "channel": "chat:setModel",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native API transport uses original sessions/tools; local CLI skills and arbitrary executable work are unavailable. WK browser tools enforce original grants/policies; semantic keys, approved submission/file attachment and original Canvas LMS recipes are connected. Trusted OS key injection and cross-origin frames are unavailable. Real keys/provider access remain external validation gates."
+    },
+    {
+      "channel": "chat:setProvider",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "clipboard:beginCopy",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopFileServices.swift:80",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "clipboard:writeImage",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopFileServices.swift:84",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "context:rebuild",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courseGroups:create",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courseGroups:delete",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courseGroups:list",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courseGroups:rename",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courseLinks:create",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courseLinks:delete",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courseLinks:list",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courseLinks:update",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courses:addFromFolder",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courses:archive",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courses:create",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courses:delete",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courses:list",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courses:organize",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courses:pickFolder",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopFileServices.swift:111",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "courses:purge",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courses:relink",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courses:rename",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "courses:setColor",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "credentials:availability",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopCredentialsService.swift:117",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "credentials:capture",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopCredentialsService.swift:114",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "credentials:fill",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopCredentialsService.swift:114",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "credentials:forget",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopCredentialsService.swift:122",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "credentials:importCsv",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopCredentialsService.swift:127",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "credentials:list",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopCredentialsService.swift:120",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "credentials:save",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopCredentialsService.swift:121",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "desktopAgent:openPermissionSettings",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopCaptureService.swift:40",
+      "reason": "iPad has no cross-app screen/accessibility automation grant. Status is explicitly unsupported; opening a nonexistent OS permission throws. App-local capture uses a separate concrete service."
+    },
+    {
+      "channel": "desktopAgent:permissionStatus",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopCaptureService.swift:39",
+      "reason": "iPad has no cross-app screen/accessibility automation grant. Status is explicitly unsupported; opening a nonexistent OS permission throws. App-local capture uses a separate concrete service."
+    },
+    {
+      "channel": "drawings:create",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "drawings:delete",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "drawings:listForFile",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "drawings:update",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "favorites:add",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "favorites:list",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "favorites:remove",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "favorites:rename",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "favorites:reorder",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "feedback:send",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "layout:get",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "layout:save",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "layout:saveMany",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:addArticle",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Public article extraction, original Readability validation and durable snapshots are connected. Course-owned source-tab extraction is wired to the native browser with URL/generation validation; real authenticated sites remain an external validation gate."
+    },
+    {
+      "channel": "learning:completeArticle",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:create",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:delete",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:dismissRun",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:finishQuiz",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:get",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:getArticle",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:getArtifact",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:importPreview",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:importSave",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:list",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:lookupDictionary",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:rename",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:resolveSource",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:restore",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:reviewCard",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:run",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original grounded quiz/card/summary runtime and cancellation are connected. Browser-assisted find-articles now uses the native WK bridge; real web/provider access and all learning-pack combinations require further end-to-end validation."
+    },
+    {
+      "channel": "learning:runCancel",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:runRetry",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original grounded quiz/card/summary runtime and cancellation are connected. Browser-assisted find-articles now uses the native WK bridge; real web/provider access and all learning-pack combinations require further end-to-end validation."
+    },
+    {
+      "channel": "learning:saveProgress",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:saveQuizAnswer",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:saveWord",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:updateOccurrence",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:updateSettings",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "learning:updateWord",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "link:sendHighlightToNote",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "link:sendWebClipToNote",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "links:create",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "links:forMaterial",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "links:graph",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "links:listFor",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "links:listForDescriptor",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "links:remove",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "links:updatePageNote",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "mail:cancelConnect",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "mail:connect",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native Gmail OAuth/REST operations and original inbox/thread/send contracts are implemented. User confirmed no Google iOS OAuth client is configured yet; real mailbox access remains blocked on that external configuration."
+    },
+    {
+      "channel": "mail:disconnect",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "mail:list",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native Gmail OAuth/REST operations and original inbox/thread/send contracts are implemented. User confirmed no Google iOS OAuth client is configured yet; real mailbox access remains blocked on that external configuration."
+    },
+    {
+      "channel": "mail:modify",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native Gmail OAuth/REST operations and original inbox/thread/send contracts are implemented. User confirmed no Google iOS OAuth client is configured yet; real mailbox access remains blocked on that external configuration."
+    },
+    {
+      "channel": "mail:read",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native Gmail OAuth/REST operations and original inbox/thread/send contracts are implemented. User confirmed no Google iOS OAuth client is configured yet; real mailbox access remains blocked on that external configuration."
+    },
+    {
+      "channel": "mail:reply",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native Gmail OAuth/REST operations and original inbox/thread/send contracts are implemented. User confirmed no Google iOS OAuth client is configured yet; real mailbox access remains blocked on that external configuration."
+    },
+    {
+      "channel": "mail:state",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "marketplace:dashboard",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "marketplace:register",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "marketplace:release",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "marketplace:report",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "marketplace:resolveReport",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "marketplace:review",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "marketplace:reviewBundle",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "marketplace:submit",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:createFolder",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:delete",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:downloadFromUrl",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopShell.swift:291",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "materials:duplicate",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:hoverPreview",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:import",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:move",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:preview",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopFileServices.swift:142",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "materials:readFile",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:rename",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:reveal",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopFileServices.swift:142",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "materials:search",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:snapshot",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:tree",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:unwatch",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:watch",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "materials:writeFile",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "mcp:delete",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original encrypted registry and original screen-assistant-only scope plus real HTTPS Streamable HTTP initialize/list/call are connected; native Keychain encryption and once approvals protect secrets/actions. Local stdio servers reject explicitly; real user server interoperability remains unverified."
+    },
+    {
+      "channel": "mcp:list",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original encrypted registry and original screen-assistant-only scope plus real HTTPS Streamable HTTP initialize/list/call are connected; native Keychain encryption and once approvals protect secrets/actions. Local stdio servers reject explicitly; real user server interoperability remains unverified."
+    },
+    {
+      "channel": "mcp:save",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original encrypted registry and original screen-assistant-only scope plus real HTTPS Streamable HTTP initialize/list/call are connected; native Keychain encryption and once approvals protect secrets/actions. Local stdio servers reject explicitly; real user server interoperability remains unverified."
+    },
+    {
+      "channel": "mcp:test",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original encrypted registry and original screen-assistant-only scope plus real HTTPS Streamable HTTP initialize/list/call are connected; native Keychain encryption and once approvals protect secrets/actions. Local stdio servers reject explicitly; real user server interoperability remains unverified."
+    },
+    {
+      "channel": "media:getProgress",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "media:setProgress",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "notes:create",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "notes:read",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "notes:rename",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "notes:write",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "notifications:test",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopSystemServices.swift:51",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "packs:importText",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "packs:list",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "packs:remove",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "packs:setEnabled",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "pdf:exportAnnotated",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "pdf:getViewState",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "pdf:setViewState",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "permissions:openSettings",
+      "state": "partial",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopSystemServices.swift:40",
+      "reason": "iPad notifications permission/settings work; macOS screen/accessibility permissions correctly report not-applicable."
+    },
+    {
+      "channel": "permissions:request",
+      "state": "partial",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopSystemServices.swift:47",
+      "reason": "iPad notifications permission/settings work; macOS screen/accessibility permissions correctly report not-applicable."
+    },
+    {
+      "channel": "permissions:status",
+      "state": "partial",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopSystemServices.swift:43",
+      "reason": "iPad notifications permission/settings work; macOS screen/accessibility permissions correctly report not-applicable."
+    },
+    {
+      "channel": "pip:close",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopMiniPlayer.swift:27",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "pip:getState",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopMiniPlayer.swift:29",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "pip:moveBy",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopMiniPlayer.swift:31",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "pip:open",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopMiniPlayer.swift:26",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "pip:report",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopMiniPlayer.swift:30",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "pip:restore",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopMiniPlayer.swift:28",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "plugins:approve",
+      "state": "unregistered",
+      "route": null,
+      "reason": "No concrete public backend or Swift handler. Requests reject; this feature is not complete."
+    },
+    {
+      "channel": "plugins:catalog",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original catalog service and verified archive installer are connected through a bounded tokenless transport. Installing a workflow pack is supported; executable extension host approval/enabling/execution is not ported. Real user catalogs remain an external validation gate."
+    },
+    {
+      "channel": "plugins:devFolders",
+      "state": "unregistered",
+      "route": null,
+      "reason": "No concrete public backend or Swift handler. Requests reject; this feature is not complete."
+    },
+    {
+      "channel": "plugins:editorReply",
+      "state": "unregistered",
+      "route": null,
+      "reason": "No concrete public backend or Swift handler. Requests reject; this feature is not complete."
+    },
+    {
+      "channel": "plugins:getSettings",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original validated plugin registry/settings persist. Installed code is disabled until approval; executable extension host is not ported."
+    },
+    {
+      "channel": "plugins:installFromCatalog",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original catalog service and verified archive installer are connected through a bounded tokenless transport. Installing a workflow pack is supported; executable extension host approval/enabling/execution is not ported. Real user catalogs remain an external validation gate."
+    },
+    {
+      "channel": "plugins:installFromFolder",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original validated plugin registry/settings persist. Installed code is disabled until approval; executable extension host is not ported."
+    },
+    {
+      "channel": "plugins:list",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original validated plugin registry/settings persist. Installed code is disabled until approval; executable extension host is not ported."
+    },
+    {
+      "channel": "plugins:logs",
+      "state": "unregistered",
+      "route": null,
+      "reason": "No concrete public backend or Swift handler. Requests reject; this feature is not complete."
+    },
+    {
+      "channel": "plugins:pickFolder",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopFileServices.swift:111",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "plugins:reload",
+      "state": "unregistered",
+      "route": null,
+      "reason": "No concrete public backend or Swift handler. Requests reject; this feature is not complete."
+    },
+    {
+      "channel": "plugins:resetSettings",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original validated plugin registry/settings persist. Installed code is disabled until approval; executable extension host is not ported."
+    },
+    {
+      "channel": "plugins:runCommand",
+      "state": "unregistered",
+      "route": null,
+      "reason": "No concrete public backend or Swift handler. Requests reject; this feature is not complete."
+    },
+    {
+      "channel": "plugins:setEnabled",
+      "state": "unregistered",
+      "route": null,
+      "reason": "No concrete public backend or Swift handler. Requests reject; this feature is not complete."
+    },
+    {
+      "channel": "plugins:setSetting",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original validated plugin registry/settings persist. Installed code is disabled until approval; executable extension host is not ported."
+    },
+    {
+      "channel": "plugins:uninstall",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "plugins:unwatchFolder",
+      "state": "unregistered",
+      "route": null,
+      "reason": "No concrete public backend or Swift handler. Requests reject; this feature is not complete."
+    },
+    {
+      "channel": "plugins:watchFolder",
+      "state": "unregistered",
+      "route": null,
+      "reason": "No concrete public backend or Swift handler. Requests reject; this feature is not complete."
+    },
+    {
+      "channel": "presentation:cancelPrepare",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "presentation:cancelRuntime",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "presentation:installRuntime",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native OOXML preparation and authenticated legacy PPT conversion client are implemented. User confirmed no deployed PPT conversion server yet; real legacy PPT conversion remains blocked on that external service."
+    },
+    {
+      "channel": "presentation:pdfCancel",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "presentation:pdfFinish",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "presentation:pdfPage",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "presentation:pdfStart",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "presentation:prepare",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native OOXML preparation and authenticated legacy PPT conversion client are implemented. User confirmed no deployed PPT conversion server yet; real legacy PPT conversion remains blocked on that external service."
+    },
+    {
+      "channel": "presentation:runtime",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Native OOXML preparation and authenticated legacy PPT conversion client are implemented. User confirmed no deployed PPT conversion server yet; real legacy PPT conversion remains blocked on that external service."
+    },
+    {
+      "channel": "print:pdf",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopFileServices.swift:128",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "print:pdfFromUrl",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopShell.swift:287",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "print:savePdfAs",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopFileServices.swift:121",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "recordings:anchor",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "recordings:append",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopRecordingService.swift:68",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "recordings:cancelDownload",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopRecordingService.swift:56",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "recordings:control",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopRecordingService.swift:74",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "recordings:create",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopRecordingService.swift:65",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "recordings:downloadModel",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopRecordingService.swift:52",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "recordings:export",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "recordings:list",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "recordings:models",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopRecordingService.swift:51",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "recordings:read",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "recordings:resolve",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "search:indexPdfPages",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "search:query",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "settings:get",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original settings schema/persistence works; a stored preference alone does not prove that every native effect is implemented. See settings audit."
+    },
+    {
+      "channel": "settings:pickDataRoot",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopFileServices.swift:111",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "settings:reset",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original settings schema/persistence works; a stored preference alone does not prove that every native effect is implemented. See settings audit."
+    },
+    {
+      "channel": "settings:set",
+      "state": "partial",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopShell.swift:265",
+      "reason": "Original settings schema/persistence works; a stored preference alone does not prove that every native effect is implemented. See settings audit."
+    },
+    {
+      "channel": "shell:openExternal",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopShell.swift:310",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "study:generate",
+      "state": "partial",
+      "route": "typescript",
+      "reason": "Original grounded quiz/card/summary runtime and cancellation are connected. Browser-assisted find-articles now uses the native WK bridge; real web/provider access and all learning-pack combinations require further end-to-end validation."
+    },
+    {
+      "channel": "study:run",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "study:tools",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "studyMarket:discardBundle",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "studyMarket:discardPreview",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "studyMarket:import",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "studyMarket:openCheckout",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "studyMarket:pickPreviewImage",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "studyMarket:prepare",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "studyMarket:preview",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "studyMarket:previewSource",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "studyMarket:request",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "studyMarket:upload",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "ui:consumePendingOpen",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopShell.swift:306",
+      "reason": "Concrete Swift dispatch case exists."
+    },
+    {
+      "channel": "update:check",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopShell.swift:314",
+      "reason": "Concrete Swift branch rejects this unsupported operation."
+    },
+    {
+      "channel": "update:download",
+      "state": "unregistered",
+      "route": null,
+      "reason": "No concrete public backend or Swift handler. Requests reject; this feature is not complete."
+    },
+    {
+      "channel": "update:install",
+      "state": "unregistered",
+      "route": null,
+      "reason": "No concrete public backend or Swift handler. Requests reject; this feature is not complete."
+    },
+    {
+      "channel": "update:status",
+      "state": "unavailable",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopShell.swift:314",
+      "reason": "Concrete Swift branch rejects this unsupported operation."
+    },
+    {
+      "channel": "usage:summary",
+      "state": "connected",
+      "route": "typescript",
+      "reason": "Observed in initialized backend registry using temporary fixture storage."
+    },
+    {
+      "channel": "window:getState",
+      "state": "partial",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopShell.swift:303",
+      "reason": "Reports the iPad host state, not desktop native-window controls."
+    },
+    {
+      "channel": "window:setPrintEnabled",
+      "state": "connected",
+      "route": "swift",
+      "evidence": "App/Desktop/DesktopShell.swift:304",
+      "reason": "Concrete Swift dispatch case exists."
+    }
+  ],
+  "groups": {
+    "agent": [
+      "agent:availability",
+      "agent:cancelLogin",
+      "agent:install",
+      "agent:installCommand",
+      "agent:login",
+      "agent:models",
+      "agent:reopenLogin",
+      "agent:skills",
+      "agent:submitLoginCode"
+    ],
+    "assistant": [
+      "assistant:capture",
+      "assistant:selection"
+    ],
+    "browser": [
+      "browser:extensions",
+      "browser:importBookmarks",
+      "browser:importCancel",
+      "browser:importFile",
+      "browser:importJob",
+      "browser:importSources",
+      "browser:importStart",
+      "browser:installExtension",
+      "browser:pageAction",
+      "browser:removeExtension",
+      "browser:setExtensionEnabled"
+    ],
+    "chat": [
+      "chat:context",
+      "chat:open",
+      "chat:send",
+      "chat:setConfiguration",
+      "chat:setModel"
+    ],
+    "desktopAgent": [
+      "desktopAgent:openPermissionSettings",
+      "desktopAgent:permissionStatus"
+    ],
+    "learning": [
+      "learning:addArticle",
+      "learning:run",
+      "learning:runRetry"
+    ],
+    "mail": [
+      "mail:connect",
+      "mail:list",
+      "mail:modify",
+      "mail:read",
+      "mail:reply"
+    ],
+    "mcp": [
+      "mcp:delete",
+      "mcp:list",
+      "mcp:save",
+      "mcp:test"
+    ],
+    "permissions": [
+      "permissions:openSettings",
+      "permissions:request",
+      "permissions:status"
+    ],
+    "plugins": [
+      "plugins:approve",
+      "plugins:catalog",
+      "plugins:devFolders",
+      "plugins:editorReply",
+      "plugins:getSettings",
+      "plugins:installFromCatalog",
+      "plugins:installFromFolder",
+      "plugins:list",
+      "plugins:logs",
+      "plugins:reload",
+      "plugins:resetSettings",
+      "plugins:runCommand",
+      "plugins:setEnabled",
+      "plugins:setSetting",
+      "plugins:unwatchFolder",
+      "plugins:watchFolder"
+    ],
+    "presentation": [
+      "presentation:installRuntime",
+      "presentation:prepare",
+      "presentation:runtime"
+    ],
+    "settings": [
+      "settings:get",
+      "settings:reset",
+      "settings:set"
+    ],
+    "study": [
+      "study:generate"
+    ],
+    "update": [
+      "update:check",
+      "update:download",
+      "update:install",
+      "update:status"
+    ],
+    "window": [
+      "window:getState"
+    ]
+  }
+}

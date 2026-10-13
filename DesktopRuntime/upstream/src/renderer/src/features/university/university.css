@@ -1,0 +1,498 @@
+/* [M8] 학교 학사 사이트 바로가기.
+ *
+ * Tokens only — no raw colors (docs/STYLEGUIDE.md §1). The controls here
+ * (`.university-field` / `.university-label` / `.university-button`) are
+ * self-contained on purpose: the picker also renders inside the 설정 창,
+ * which does not load the app shell's control stylesheets.
+ *
+ * Motion is transform/opacity only; hover promotes the surface, the accent
+ * is reserved for "지금 선택된 것". */
+
+/* -- shared controls -------------------------------------------------------- */
+
+.university-field {
+  width: 100%;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.university-field::placeholder {
+  color: var(--text-muted);
+}
+
+.university-field:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.university-field[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.university-label {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.university-button {
+  height: var(--button-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.university-button:hover:not(:disabled) {
+  opacity: 0.86;
+}
+
+.university-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.university-button--primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.university-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
+/* -- left-rail section ------------------------------------------------------ */
+
+.university-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+/* The school is the rail identity: one quiet selector row, followed by its
+   shortcuts only when expanded. */
+.university-section__heading {
+  display: grid;
+  grid-template-columns: var(--icon-size-sm) minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  min-height: var(--control-height);
+  gap: var(--space-2);
+  padding-inline: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.university-section__chevron {
+  justify-self: center;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  color: var(--text-muted);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.university-section__heading[aria-expanded='true']
+  .university-section__chevron {
+  transform: rotate(90deg);
+}
+
+.university-section__name {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  letter-spacing: var(--tracking-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.university-section__empty-icon {
+  align-self: center;
+  width: var(--text-xl);
+  height: var(--text-xl);
+  color: var(--text-muted);
+}
+
+.university-section__pick,
+.university-section__more {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.university-section__pick:hover,
+.university-section__pick:focus-visible,
+.university-section__more:hover,
+.university-section__more:focus-visible {
+  color: var(--text-primary);
+}
+
+.university-section__pick:active,
+.university-section__more:active {
+  transform: translateY(1px);
+}
+
+.university-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.university-shortcut {
+  position: relative;
+  display: grid;
+  grid-template-columns:
+    var(--icon-size-sm) var(--icon-size-sm) minmax(0, 1fr)
+    auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  cursor: grab;
+  font-size: var(--text-xs);
+  text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.university-shortcut:hover,
+.university-shortcut:focus-visible {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.university-shortcut:active {
+  transform: translateY(1px);
+}
+
+.university-shortcut[data-dragging='true'] {
+  opacity: 0.55;
+  cursor: grabbing;
+  transform: none;
+}
+
+.university-shortcut[data-drop-before='true']::after {
+  position: absolute;
+  inset-block-start: calc(var(--space-1) / -4);
+  inset-inline: var(--space-1);
+  z-index: 1;
+  height: calc(var(--space-1) / 2);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  content: '';
+  pointer-events: none;
+}
+
+.university-shortcut__handle {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.university-shortcut:hover .university-shortcut__handle,
+.university-shortcut:focus-within .university-shortcut__handle,
+.university-shortcut[data-dragging='true'] .university-shortcut__handle {
+  opacity: 1;
+}
+
+.university-shortcut__icon {
+  flex: none;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  color: var(--text-muted);
+}
+
+.university-shortcut:hover .university-shortcut__icon,
+.university-shortcut:focus-visible .university-shortcut__icon {
+  color: var(--accent);
+}
+
+.university-shortcut__label {
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.university-shortcut__external {
+  flex: none;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.university-tier-drop-zone {
+  display: flex;
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(var(--space-1) / 2);
+  margin-inline: var(--space-1);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  transition:
+    min-height var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    outline-color var(--dur-fast) var(--ease-out);
+}
+
+.university-tier-drop-zone > span {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.university-tier-drop-zone[data-drag-active='true'],
+.university-tier-drop-zone[data-compact='true'] {
+  min-height: var(--space-5);
+}
+
+.university-tier-drop-zone[data-drag-active='true'] > span,
+.university-tier-drop-zone[data-compact='true'] > span {
+  opacity: 1;
+}
+
+.university-tier-drop-zone[data-compact='true'] {
+  border: calc(var(--space-1) / 4) dashed var(--border-subtle);
+}
+
+.university-tier-drop-zone[data-drop-tier='true'] {
+  background: var(--accent-muted);
+  outline: calc(var(--space-1) / 4) dashed var(--accent);
+  outline-offset: calc(var(--space-1) / -2);
+}
+
+.university-shortcut-menu__icon--up {
+  transform: rotate(-90deg);
+}
+
+.university-shortcut-menu__icon--down {
+  transform: rotate(90deg);
+}
+
+/* -- picker ----------------------------------------------------------------- */
+
+.university-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.university-picker__current {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.university-picker__current strong {
+  color: var(--text-primary);
+}
+
+.university-picker__zero {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.university-list {
+  display: flex;
+  overflow-y: auto;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 15rem;
+  margin: 0;
+  padding: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+  list-style: none;
+}
+
+.university-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.university-option:hover,
+.university-option:focus-visible {
+  background: var(--bg-raised);
+}
+
+.university-option:active {
+  transform: translateY(1px);
+}
+
+.university-option[data-selected='true'] {
+  background: var(--accent-muted);
+}
+
+.university-option__name {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.university-option[data-selected='true'] .university-option__name {
+  color: var(--accent);
+}
+
+.university-option__meta {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.university-picker__custom-cta {
+  align-self: flex-start;
+  padding: var(--space-1) 0;
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.university-picker__custom-cta:hover,
+.university-picker__custom-cta:focus-visible {
+  color: var(--accent);
+}
+
+.university-picker__custom-cta:active {
+  transform: translateY(1px);
+}
+
+.university-custom-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.university-custom-form__optional {
+  color: var(--text-muted);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.university-custom-form__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.university-custom-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/* -- 설정 창: 바로가기 표 ---------------------------------------------------- */
+
+.university-service-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.university-service-group {
+  border-top: calc(var(--space-1) / 4) solid var(--border-subtle);
+}
+
+.university-service-group + .university-service-group {
+  margin-top: var(--space-3);
+}
+
+.university-service-group__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-5) var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.university-service-group .setting-row {
+  align-items: flex-start;
+}
+
+.university-service-table__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.university-service-table__move {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.university-service-table__move-button {
+  width: var(--control-height);
+  padding: 0;
+}
+
+.university-service-table__toggle-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}

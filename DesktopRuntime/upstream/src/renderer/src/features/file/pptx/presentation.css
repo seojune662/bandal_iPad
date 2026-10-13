@@ -1,0 +1,37 @@
+.presentation-viewer { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+.presentation-toolbar { flex-shrink: 0; padding: 8px 10px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface); }
+.presentation-toolbar > strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
+.presentation-toolbar__controls { display: flex; align-items: center; gap: 5px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 3px; }
+.presentation-toolbar__controls > * { flex-shrink: 0; }
+.presentation-toolbar button { padding: 5px 8px; color: var(--text-secondary); font-size: 11px; white-space: nowrap; border-radius: 6px; }
+.presentation-toolbar button:hover { background: var(--bg-raised); }
+.presentation-toolbar button[aria-pressed='true'] { background: var(--accent-muted); color: var(--accent); }
+.presentation-toolbar input[type='number'] { width: 45px; border: 1px solid var(--border-subtle); border-radius: 5px; padding: 4px; background: var(--bg-app); color: var(--text-primary); text-align: center; font-size: 11px; }
+.presentation-toolbar span, .presentation-toolbar label { display: flex; gap: 4px; align-items: center; color: var(--text-muted); font-size: 10px; }
+/* PdfToolRail normally grows horizontally inside the PDF toolbar. Here its
+   shell is a row in a column layout: never let flex-grow consume slide space. */
+.presentation-viewer > .pdf-tool-rail-shell {
+  flex: 0 0 var(--button-height);
+  height: var(--button-height);
+  min-height: 0;
+  border-inline: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+.presentation-scroller { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; overflow-anchor: none; }
+.presentation-pages { padding: 12px; }
+.presentation-page { position: relative; margin: 0 auto 6px; background: white; box-shadow: 0 1px 4px #0002; overflow: hidden; contain: layout paint; border-radius: 3px; }
+.presentation-page__canvas { display: block; width: 100%; height: 100%; }
+.presentation-page__text { position: absolute; inset: 0; overflow: hidden; }
+.presentation-page__number { position: absolute; right: 8px; bottom: 5px; font-size: 9px; color: #777; pointer-events: none; z-index: 1; }
+.presentation-page__error { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 12px; color: var(--danger); }
+.presentation-notes { max-height: 25%; flex-shrink: 0; overflow: auto; padding: 12px 16px; border-top: 1px solid var(--border-subtle); color: var(--text-secondary); font-size: 12px; }
+.presentation-notes p { white-space: pre-wrap; margin-top: 6px; }
+.presentation-runtime { max-width: 420px; margin: auto; padding: 28px; text-align: center; line-height: 1.6; }
+.presentation-runtime h2 { font-size: 17px; margin-bottom: 12px; }
+.presentation-runtime p { margin: 10px 0; color: var(--text-muted); font-size: 12px; }
+.presentation-runtime button { margin: 8px 4px; padding: 8px 12px; border-radius: 6px; background: var(--accent-muted); color: var(--accent); font-size: 12px; }
+.presentation-runtime progress { width: 100%; height: 5px; }
+.presentation-progress { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-surface); color: var(--text-secondary); box-shadow: 0 4px 24px #0002; z-index: 210; font-size: 12px; }
+.presentation-progress progress { width: 100px; height: 5px; }
+.presentation-progress button { color: var(--accent); }

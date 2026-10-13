@@ -2,12 +2,9 @@ import SwiftUI
 
 @main
 struct BandalApp: App {
-    @StateObject private var model = AppModel()
     var body: some Scene {
         WindowGroup {
-            WorkspaceView().environmentObject(model)
-                .tint(BandalTheme.accent)
-                .onOpenURL { if $0.isFileURL { model.importURL($0) } else { model.openLink($0) } }
+            DesktopShell()
         }
     }
 }

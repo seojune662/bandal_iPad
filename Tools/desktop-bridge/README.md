@@ -82,7 +82,8 @@ Unsupported future ink versions stop import. Source PDF revisions cannot silentl
 receive another revision's ink. Concurrent page edits merge distinct stroke IDs;
 same-ID edits and ambiguous delete/edit races retain a conflict instead.
 
-This bridge currently projects courses, ordinary material files, Markdown notes,
+When run without the Electron projector environment, the legacy Python-only CLI
+fallback covers courses, ordinary material files, Markdown notes,
 PDF drawings/highlights and course tasks. Other desktop tables (personal boards,
 recording sessions, conversation/learning history) are left untouched and are not
 claimed to have an equivalent desktop projection yet. Unrecognized content
@@ -96,3 +97,83 @@ Packages are capped at 64 MiB raw assets and 100 MiB encoded JSON, matching iPad
 
 Run `python3 -m unittest discover -s Tools/desktop-bridge -p 'test_*.py' -v` for
 fixture roundtrips. The tests never connect to the live desktop DB or cloud.
+
+## Shared desktop TypeScript projector
+
+The new iPad architecture runs the unchanged desktop repositories in JavaScriptCore.
+`projector-host.cjs` runs the same bundled projection code on the desktop through
+the app's Electron binary (`ELECTRON_RUN_AS_NODE=1`) and its own `better-sqlite3`
+binding. It does not load an incompatible system-Node SQLite addon. The Python
+bridge continues to own the existing transport, account binding, cursor, outbox,
+operation receipts and immutable asset directory.
+
+Before a network exchange or package import changes staging records, a durable
+`pending_projection` marker is recorded. On restart, the bridge obtains missing
+assets and materializes those accepted records before another local export or
+push. An interrupted download/import cannot turn old desktop bytes into a newer
+remote edit. Existing staging databases reconcile once when this recovery version
+is installed. Unresolved records remain excluded from local export until the user
+chooses a conflict version; replaying historical conflicts does not reopen a
+resolution. The legacy fallback stops on a conflicting edit and retains the marker.
+
+The new projection covers courses/groups, materials, Markdown notes, PDF ink and
+highlights, personal whiteboards, tasks, completed recordings with transcripts and
+anchors, conversations/messages, favorites, and learning project files. Learning
+state, article snapshots, quiz/review result files and generated artifacts are
+content-addressed assets, so a large learning state does not have to fit in the
+4 MiB per-record limit. Import pauses the original learning runtime, validates the
+original manifest/state, and publishes state last. Settings, API keys, auth tokens,
+cookies, device layout, CLI execution state and tool grants are not synchronized.
+Unknown canonical fields and unprojected record kinds remain in the local cache.
+
+The first run seeds original stable IDs from `desktop_map`, captures pending local
+edits using the legacy mapping, and drains legacy imports before recording the
+`typescript-projector-v1` handoff. It keeps prior outbox operation IDs, remote cursor
+and `_bandal_bridge_commits` receipts. Subsequent file-index rebuilding restores IDs
+from the canonical mapping instead of assigning a second identity to the file.
+
+File changes and SQL projection use a recovery journal. Distinct ink object IDs
+merge; concurrent edits to one object are retained as conflicts. A restore made
+after additional local edits creates another visible conflict containing those
+newer edits. Binary conflict assets are hash-verified and retained separately.
+Remote recording deletion currently becomes a durable conflict rather than
+removing original audio; this is an explicit remaining projection limitation.
+
+The shared projector integration has been applied to the adjacent desktop
+checkout. Its four files were checked against the staged previous hashes before
+application and verified against the resulting hashes afterward. Unrelated desktop
+changes were preserved. The arm64 packaged Python helper was rebuilt and passed
+export/import with Python absent from PATH; the desktop main-process type check
+also passed. These are local checks, not a released desktop update.
+
+`staged-projector/` retains the review bundle. To prepare an update against the
+current adjacent checkout:
+
+```sh
+node DesktopRuntime/backend/build-backend.mjs
+python3 Tools/desktop-bridge/stage_projector.py --desktop /path/to/bandal \
+  --output Tools/desktop-bridge/staged-projector
+```
+
+Review `desktop-projector.patch` and `manifest.json`. The generated backend is a
+separate content-addressed file, deliberately omitted from the readable patch.
+The readable patch can be empty when only that generated backend changed.
+Before applying, compare each existing file to `previousSHA256`; after applying
+the patch and copying `resources/ipad-bridge/backend.js`, verify all target hashes.
+Rebuild the packaged Python helper whenever `bridge.py` changes. Existing desktop
+packaging includes the entire `resources/ipad-bridge` directory and checks the
+helper source/binary hashes; do not ship the old helper with the new script.
+
+The native projector fixture uses a temporary copy of a generated desktop DB:
+
+```sh
+node DesktopRuntime/backend/test-backend.mjs --pdf --projector
+node DesktopRuntime/backend/test-backend.mjs --legacy --sync
+node DesktopRuntime/backend/test-streams.mjs
+```
+
+It verifies old IDs, outbox operations, cursor, migration receipts, original 37
+schema migrations, remote note imports, intervening desktop edits, recording/learning
+assets, and the actual Electron SQLite ABI. No production DB or cloud account is
+used by these fixtures. Release installers and a physical two-device account
+roundtrip remain separate acceptance checks.

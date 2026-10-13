@@ -1,0 +1,32 @@
+{
+  "format": "bandal-desktop-projector-stage",
+  "version": 1,
+  "sourceSnapshotManifestSHA256": "af0fc98c7d8dcd7f00e0e09f2b58aa6fb70e3ab6089aead352d20fa18b4bf9c5",
+  "files": [
+    {
+      "path": "src/main/features/ipadSync/runtime.ts",
+      "sha256": "25f854c1dad29564f247f749c3e33735aa9eb5d104120836c21ec6d66048a0ad",
+      "byteCount": 11904,
+      "previousSHA256": "25f854c1dad29564f247f749c3e33735aa9eb5d104120836c21ec6d66048a0ad"
+    },
+    {
+      "path": "resources/ipad-bridge/bridge.py",
+      "sha256": "dd9f371c8c9897327bb6aa913588368209d9047a88fe189a4b383071065bd7eb",
+      "byteCount": 59393,
+      "previousSHA256": "dd9f371c8c9897327bb6aa913588368209d9047a88fe189a4b383071065bd7eb"
+    },
+    {
+      "path": "resources/ipad-bridge/projector-host.cjs",
+      "sha256": "91ef6ab4cb9419ddf3d122b8d830dd0b8cc48bd74b2bb57707d60e7cd3a4253b",
+      "byteCount": 10822,
+      "previousSHA256": "91ef6ab4cb9419ddf3d122b8d830dd0b8cc48bd74b2bb57707d60e7cd3a4253b"
+    },
+    {
+      "path": "resources/ipad-bridge/backend.js",
+      "sha256": "d9ccd0bd234f2a746235acbd10a7c9cf3a8f679b8264d8d1e4291412de0c7ce8",
+      "byteCount": 7359700,
+      "previousSHA256": "8a5c7ce541dbc9b9a405265f0396bc0a25705d02437b1ca2de36cb685c962aba"
+    }
+  ],
+  "validation": "test-backend --pdf --projector uses Electron's own ABI on temporary copied DB; no production DB test"
+}

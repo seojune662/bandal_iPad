@@ -192,4 +192,12 @@ actor LocalSpeechEngine {
         #endif
         throw RecordingError.modelMissing
     }
+
+    /// Selection and decoding share one actor turn. Concurrent sessions may
+    /// request different models; no intervening prepare may change the model
+    /// after this window has selected it.
+    func transcribe(model: LocalSpeechModel, directory: URL, url: URL, start: TimeInterval, duration: TimeInterval) throws -> String {
+        try prepare(model: model, directory: directory)
+        return try transcribe(url: url, start: start, duration: duration)
+    }
 }

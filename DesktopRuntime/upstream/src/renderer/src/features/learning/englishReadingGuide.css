@@ -1,0 +1,81 @@
+.reading-guide-backdrop { padding: 24px; }
+.reading-guide { --guide-color: var(--course-green); width: min(840px, 100%); max-height: calc(100dvh - 48px); display: flex; flex-direction: column; overflow: hidden; color: var(--text-primary); background: var(--bg-overlay); border: 1px solid var(--border-strong); border-radius: 22px; box-shadow: 0 28px 90px rgb(0 0 0 / .24); animation: dialog-in var(--dur-base) var(--ease-out); }
+.reading-guide button:focus-visible { outline: 2px solid var(--guide-color); outline-offset: 3px; }
+.reading-guide-body:focus-visible { outline: 2px solid var(--guide-color); outline-offset: -4px; }
+.reading-guide-header { padding: 28px 32px 22px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-shrink: 0; }
+.reading-guide-eyebrow { display: flex; align-items: center; gap: 12px; color: var(--guide-color); font-size: 10px; font-weight: 700; letter-spacing: .14em; margin: 0 0 14px; }
+.reading-guide-eyebrow span { color: var(--text-muted); font-size: 10px; letter-spacing: 0; font-weight: 500; border-left: 1px solid var(--border-strong); padding-left: 12px; }
+.reading-guide-header h2 { font-size: 28px; line-height: 1.32; font-weight: 680; letter-spacing: -.055em; margin: 0; }
+.reading-guide-header p:last-child { margin: 10px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.reading-guide-steps { display: flex; flex-shrink: 0; margin: 0 32px; border-bottom: 1px solid var(--border-subtle); }
+.reading-guide-steps button { display: flex; align-items: center; justify-content: center; flex: 1; gap: 8px; min-height: 43px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); font-size: 12px; cursor: pointer; }
+.reading-guide-steps button[aria-current] { color: var(--guide-color); border-bottom-color: var(--guide-color); font-weight: 650; }
+.reading-guide-steps button:hover { background: color-mix(in srgb, var(--guide-color) 5%, transparent); }
+.reading-guide-steps button > span { font-size: 10px; font-variant-numeric: tabular-nums; opacity: .8; }
+.reading-guide-steps button svg { margin-left: auto; font-size: 12px; opacity: .55; }
+.reading-guide-steps button:last-child svg { visibility: hidden; }
+.reading-guide-body { display: grid; grid-template-columns: .9fr 1fr; gap: 30px; padding: 26px 32px; overflow: auto; min-height: 0; }
+.reading-guide-preview { min-height: 330px; padding: 20px; border: 1px solid color-mix(in srgb, var(--guide-color) 15%, var(--border-subtle)); border-radius: 14px; background: radial-gradient(ellipse at 20% 0, color-mix(in srgb, var(--guide-color) 13%, transparent), transparent 80%), var(--bg-surface); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.reading-guide-preview-caption { width: 100%; display: flex; align-items: center; gap: 5px; color: var(--guide-color); font-size: 8px; letter-spacing: .08em; font-weight: 650; margin-bottom: 18px; }
+.reading-guide-preview-caption > span:last-child { color: var(--text-muted); margin-left: auto; font-weight: 400; }
+.reading-guide-spark { font-size: 18px; line-height: 1; margin-right: 3px; }
+.reading-guide-topics { display: flex; justify-content: center; gap: 6px; margin-bottom: 12px; }
+.reading-guide-topics span { font-size: 10px; background: var(--bg-overlay); border: 1px solid color-mix(in srgb, var(--guide-color) 25%, var(--border-subtle)); border-radius: 20px; color: var(--guide-color); padding: 5px 13px; }
+.reading-guide-paper { width: 100%; max-width: 260px; padding: 18px; background: var(--bg-overlay); border: 1px solid var(--border-subtle); border-radius: 9px; box-shadow: 0 8px 20px rgb(0 0 0 / .05); transform: rotate(-2deg); }
+.reading-guide-paper-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-muted); font-size: 8px; letter-spacing: .04em; }
+.reading-guide-paper-meta > span { color: var(--guide-color); letter-spacing: 0; }
+.reading-guide-paper h3 { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; font-size: 26px; line-height: 1.05; letter-spacing: -.045em; margin: 10px 0; }
+.reading-guide-paper p { font-family: Georgia, 'Times New Roman', serif; font-size: 12px; line-height: 1.7; color: var(--text-secondary); margin: 0; }
+.reading-guide-paper-lines { margin-top: 13px; display: grid; gap: 5px; }
+.reading-guide-paper-lines i { height: 3px; border-radius: 2px; background: var(--border-subtle); }
+.reading-guide-paper-lines i:last-child { width: 67%; }
+.reading-guide-orbit { position: relative; height: 48px; margin: 14px 0; overflow: hidden; background: color-mix(in srgb, var(--guide-color) 6%, var(--bg-surface)); border-radius: 5px; }
+.reading-guide-orbit > span { position: absolute; width: 120px; height: 90px; left: calc(50% - 60px); top: -20px; border: 1px solid color-mix(in srgb, var(--guide-color) 25%, transparent); border-radius: 50%; transform: rotate(-30deg); }
+.reading-guide-orbit > span:nth-child(2) { width: 180px; height: 40px; left: calc(50% - 90px); top: 6px; }
+.reading-guide-orbit b { position: absolute; inset: 0; display: grid; place-items: center; color: var(--guide-color); font-size: 28px; }
+.reading-guide-preview-note { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-muted); margin-top: 18px; text-align: center; }
+.reading-guide-paper--excerpt { transform: rotate(-3deg); padding-bottom: 25px; }
+.reading-guide-paper--excerpt p { font-size: 18px; line-height: 1.9; margin-top: 15px; }
+.reading-guide mark { color: var(--guide-color); background: color-mix(in srgb, var(--guide-color) 15%, transparent); border-bottom: 1px solid var(--guide-color); border-radius: 3px; padding: 1px 3px; }
+.reading-guide-definition { align-self: flex-end; width: 85%; margin: -8px -4px 0 0; z-index: 1; padding: 16px; background: var(--bg-overlay); border: 1px solid color-mix(in srgb, var(--guide-color) 35%, var(--border-subtle)); border-radius: 12px; box-shadow: 0 12px 25px rgb(0 0 0 / .1); transform: rotate(2deg); }
+.reading-guide-definition > div:first-child { display: flex; align-items: baseline; gap: 8px; }
+.reading-guide-definition strong { font-family: Georgia, serif; font-size: 23px; font-weight: 400; }
+.reading-guide-definition span { color: var(--text-muted); font-size: 10px; }
+.reading-guide-definition p { font-size: 12px; margin: 8px 0 14px; }
+.reading-guide-save { display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 6px; padding: 8px; background: var(--accent); color: var(--on-accent); font-size: 11px; }
+.reading-guide-word-ticket { align-self: flex-start; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; background: var(--bg-overlay); border: 1px solid var(--border-subtle); border-radius: 9px; padding: 12px 22px; transform: rotate(-4deg); }
+.reading-guide-word-ticket span { color: var(--guide-color); font-size: 9px; }
+.reading-guide-word-ticket strong { font-family: Georgia, serif; font-weight: 400; font-size: 24px; }
+.reading-guide-word-ticket small { color: var(--text-muted); font-size: 10px; }
+.reading-guide-connection { display: flex; align-items: center; justify-content: center; gap: 4px; height: 28px; color: var(--guide-color); transform: rotate(65deg); }
+.reading-guide-connection span { width: 8px; border-top: 1px dashed currentColor; }
+.reading-guide-paper--next { transform: rotate(2deg); }
+.reading-guide-paper--next h3 { margin: 14px 0 12px; }
+.reading-guide-explanation { align-self: center; min-width: 0; }
+.reading-guide-step-number { color: var(--guide-color); letter-spacing: .14em; font-size: 9px; font-weight: 650; margin: 0 0 12px; }
+.reading-guide-explanation h3 { font-size: 21px; line-height: 1.45; letter-spacing: -.04em; margin: 0 0 10px; word-break: keep-all; }
+.reading-guide-description { color: var(--text-secondary); font-size: 12px; line-height: 1.85; word-break: keep-all; margin: 0 0 22px; }
+.reading-guide-explanation ol { display: grid; gap: 18px; padding: 0; margin: 0; list-style: none; }
+.reading-guide-explanation li { display: flex; gap: 10px; }
+.reading-guide-explanation li > span { display: grid; place-items: center; flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: color-mix(in srgb, var(--guide-color) 10%, transparent); color: var(--guide-color); font-size: 10px; }
+.reading-guide-explanation li strong { font-size: 12px; line-height: 1.6; font-weight: 650; }
+.reading-guide-explanation li p { color: var(--text-secondary); font-size: 11px; line-height: 1.8; margin: 4px 0 0; word-break: keep-all; }
+.reading-guide-tip { display: flex; gap: 8px; color: var(--text-muted); border-top: 1px solid var(--border-subtle); padding-top: 16px; margin: 20px 0 0; font-size: 10px; line-height: 1.8; word-break: keep-all; }
+.reading-guide-tip svg { flex-shrink: 0; margin-top: 3px; font-size: 13px; }
+.reading-guide-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 32px; border-top: 1px solid var(--border-subtle); flex-shrink: 0; }
+.reading-guide-footer > div { flex: 1; }
+.reading-guide-secondary { display: flex; align-items: center; gap: 4px; border: 0; background: transparent; color: var(--text-muted); padding: 8px 0; font-size: 11px; cursor: pointer; }
+.reading-guide-secondary:hover { color: var(--text-primary); }
+.reading-guide-pagination { color: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.reading-guide-next { min-width: 98px; gap: 9px; padding: 11px 16px; font-size: 12px; border-radius: 8px; }
+@media (max-width: 680px) {
+  .reading-guide-backdrop { padding: 12px; }
+  .reading-guide { max-height: calc(100dvh - 24px); border-radius: 16px; }
+  .reading-guide-header { padding: 20px 22px 16px; }
+  .reading-guide-header h2 { font-size: 24px; }
+  .reading-guide-steps { margin: 0 22px; }
+  .reading-guide-body { grid-template-columns: 1fr; padding: 20px 22px; gap: 22px; }
+  .reading-guide-preview { display: none; }
+  .reading-guide-footer { padding: 14px 22px; }
+}
+@media (prefers-reduced-motion: reduce) { .reading-guide, .reading-guide-backdrop { animation: none; } }

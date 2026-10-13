@@ -1,0 +1,36 @@
+/* Neutral light chrome; content colors retain their meaning. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg-app: #ffffff;
+  --bg-surface: #f9f9f9;
+  --bg-raised: #eeeeee;
+  --bg-overlay: #ffffff;
+  --text-primary: #0d0d0d;
+  --text-secondary: #565656;
+  --text-muted: #686868;
+  --accent: #171717;
+  --accent-muted: #e8e8e8;
+  --on-accent: #ffffff;
+  --danger: oklch(54% 0.17 25);
+  --danger-muted: oklch(54% 0.17 25 / 0.11);
+  --on-danger: oklch(100% 0 0);
+  --backdrop: rgb(0 0 0 / 0.24);
+  --border-subtle: rgb(0 0 0 / 0.075);
+  --border-strong: rgb(0 0 0 / 0.22);
+  --course-gold: oklch(52% 0.105 75);
+  --course-green: oklch(50% 0.11 153);
+  --course-blue: oklch(52% 0.14 255);
+  --course-pink: oklch(54% 0.16 350);
+  --course-violet: oklch(50% 0.16 300);
+  --course-orange: oklch(56% 0.15 45);
+  --highlight-yellow: oklch(88% 0.14 95);
+  --highlight-green: oklch(85% 0.13 150);
+  --highlight-pink: oklch(85% 0.085 350);
+  --highlight-blue: oklch(84% 0.08 240);
+  --status-todo: oklch(52% 0.02 80);
+  --status-progress: oklch(52% 0.14 250);
+  --status-done: oklch(52% 0.13 152);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.12);
+}

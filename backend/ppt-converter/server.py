@@ -12,6 +12,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zipfile
+import io
 
 MAX_INPUT = 80 * 1024 * 1024
 MAX_OUTPUT = 160 * 1024 * 1024
@@ -58,7 +60,8 @@ class LibreOfficeConverter:
     def __init__(self, executable="/usr/bin/libreoffice", sandbox="/usr/bin/bwrap", timeout=120):
         self.executable, self.sandbox, self.timeout = executable, sandbox, timeout
 
-    def __call__(self, data):
+    def __call__(self, data, output="pdf"):
+        if output not in ("pdf", "pptx"): raise RequestFailure(400, "Unsupported output format")
         if not data.startswith(OLE_MAGIC): raise RequestFailure(415, "Expected a legacy .ppt OLE document")
         with tempfile.TemporaryDirectory(prefix="bandal-convert-") as folder:
             root = Path(folder); source = root / "document.ppt"; source.write_bytes(data)
@@ -76,7 +79,7 @@ class LibreOfficeConverter:
                        "--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev",
                        "--tmpfs", "/tmp", "--dir", folder, "--bind", folder, folder, "--chdir", folder,
                        self.executable, "-env:UserInstallation=" + profile.as_uri(), "--headless", "--nologo",
-                       "--nodefault", "--norestore", "--convert-to", "pdf:impress_pdf_Export", "--outdir", folder, str(source)]
+                       "--nodefault", "--norestore", "--convert-to", "pdf:impress_pdf_Export" if output == "pdf" else "pptx:Impress MS PowerPoint 2007 XML", "--outdir", folder, str(source)]
             try:
                 subprocess.run(command, check=True, timeout=self.timeout, cwd=folder,
                                env={"PATH": "/usr/bin:/bin", "HOME": folder, "TMPDIR": folder, "LANG": "C.UTF-8"},
@@ -85,12 +88,22 @@ class LibreOfficeConverter:
                 raise RequestFailure(504, "Conversion timed out") from None
             except (OSError, subprocess.CalledProcessError):
                 raise RequestFailure(422, "Conversion failed or sandbox unavailable") from None
-            result = root / "document.pdf"
+            result = root / ("document." + output)
             if not result.is_file() or result.stat().st_size > MAX_OUTPUT:
-                raise RequestFailure(422, "No valid PDF produced")
-            output = result.read_bytes()
-            if not output.startswith(b"%PDF-"): raise RequestFailure(422, "Invalid converted PDF")
-            return output
+                raise RequestFailure(422, "No valid presentation produced")
+            payload = result.read_bytes()
+            if output == "pdf":
+                if not payload.startswith(b"%PDF-"): raise RequestFailure(422, "Invalid converted PDF")
+            else:
+                try:
+                    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                        required = {"[Content_Types].xml", "ppt/presentation.xml"}
+                        if not required.issubset(archive.namelist()): raise ValueError()
+                        if any(archive.getinfo(name).file_size > 4 * 1024 * 1024 for name in required): raise ValueError()
+                        if sum(entry.file_size for entry in archive.infolist()) > 512 * 1024 * 1024: raise ValueError()
+                except (zipfile.BadZipFile, ValueError, KeyError):
+                    raise RequestFailure(422, "Invalid converted PPTX") from None
+            return payload
 
 
 def handler_for(authenticate, convert, concurrency=2):
@@ -113,7 +126,7 @@ def handler_for(authenticate, convert, concurrency=2):
             acquired = False
             try:
                 self.connection.settimeout(30)
-                if self.path != "/convert": raise RequestFailure(404, "Not found")
+                if self.path not in ("/convert", "/normalize"): raise RequestFailure(404, "Not found")
                 if self.headers.get("Transfer-Encoding"): raise RequestFailure(400, "Content-Length required")
                 lengths = self.headers.get_all("Content-Length", [])
                 if len(lengths) != 1 or not lengths[0].isdigit(): raise RequestFailure(411, "Content-Length required")
@@ -126,7 +139,8 @@ def handler_for(authenticate, convert, concurrency=2):
                 data = self.rfile.read(size)
                 if len(data) != size: raise RequestFailure(400, "Incomplete upload")
                 if not data.startswith(OLE_MAGIC): raise RequestFailure(415, "Expected a legacy .ppt OLE document")
-                self.reply(200, convert(data), "application/pdf")
+                output = "pptx" if self.path == "/normalize" else "pdf"
+                self.reply(200, convert(data, output), "application/vnd.openxmlformats-officedocument.presentationml.presentation" if output == "pptx" else "application/pdf")
             except RequestFailure as error:
                 self.reply(error.status, str(error).encode())
             except (TimeoutError, socket.timeout):

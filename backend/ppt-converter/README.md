@@ -7,6 +7,13 @@ input, persistent storage or service-role key is accepted. Input limit is 80 MiB
 output 160 MiB, two concurrent jobs, upload timeout 30 s and conversion 120 s.
 The client caches the returned PDF as a separate shared Material.
 
+The desktop renderer uses `POST /normalize` with the same authentication and
+input contract. It receives `application/vnd.openxmlformats-officedocument.presentationml.presentation`
+PPTX bytes so the original slide renderer, text selection, ink, and PDF export
+remain available. The native adapter caches by the original content hash. This
+route uses the same isolated LibreOffice process and validates the Office package
+before returning it. The original `/convert` PDF route remains compatible.
+
 Set `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`. Authorization is verified against
 the configured project's `/auth/v1/user`; redirects are rejected. HTTPS must be
 terminated by the hosting reverse proxy. Set its body limit to 80 MiB, response

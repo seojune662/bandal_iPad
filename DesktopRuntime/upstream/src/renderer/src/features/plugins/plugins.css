@@ -1,0 +1,190 @@
+.plugin-panel {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-app);
+}
+
+.plugin-panel webview {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-app);
+}
+
+.plugin-panel[data-passthrough] webview {
+  pointer-events: none;
+}
+
+.plugin-panel-placeholder {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  width: 100%;
+  padding: var(--space-6);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.plugin-panel-placeholder__mark {
+  display: grid;
+  place-items: center;
+  width: var(--empty-mark-size);
+  height: var(--empty-mark-size);
+  margin-bottom: var(--space-4);
+  color: var(--accent);
+  font-size: var(--text-xl);
+  background: var(--accent-muted);
+  border-radius: var(--radius-lg);
+}
+
+.plugin-panel-placeholder h2,
+.plugin-panel-placeholder p {
+  margin: 0;
+}
+
+.plugin-panel-placeholder h2 {
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+}
+
+.plugin-panel-placeholder p {
+  max-width: calc(var(--dialog-width) + var(--space-8));
+  margin-top: var(--space-2);
+  line-height: 1.5;
+}
+
+.plugin-panel-placeholder button,
+.plugin-permission-dialog button {
+  min-height: var(--button-height);
+  padding-inline: var(--space-3);
+  color: var(--text-primary);
+  font: inherit;
+  background: var(--bg-raised);
+  border: thin solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.plugin-panel-placeholder button {
+  margin-top: var(--space-4);
+}
+
+.plugin-panel-placeholder button:hover,
+.plugin-permission-dialog button:hover:enabled {
+  border-color: var(--accent);
+}
+
+.plugin-permission-modal {
+  position: fixed;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  inset: 0;
+  padding: var(--space-5);
+  background: var(--backdrop);
+}
+
+.plugin-permission-dialog {
+  max-height: calc(100dvh - var(--space-8));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  width: min(100%, calc(var(--dialog-width) + var(--space-8)));
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--bg-overlay);
+  border: thin solid var(--accent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.plugin-permission-dialog__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--accent-muted);
+  border-bottom: thin solid var(--border-subtle);
+}
+
+.plugin-permission-dialog__trust-mark {
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.plugin-permission-dialog__header p,
+.plugin-permission-dialog__header h2,
+.plugin-permission-dialog__description,
+.plugin-permission-dialog__empty {
+  margin: 0;
+}
+
+.plugin-permission-dialog__header p {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.plugin-permission-dialog__header h2 {
+  margin-top: var(--space-1);
+  font-size: var(--text-lg);
+}
+
+.plugin-permission-dialog__description,
+.plugin-permission-dialog__empty {
+  padding: var(--space-4) var(--space-5) 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.plugin-permission-dialog__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-4) var(--space-5) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugin-permission-dialog__list li {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--bg-raised);
+  border-left: var(--space-1) solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.plugin-permission-dialog__list code {
+  color: var(--accent);
+  font-size: var(--text-xs);
+}
+
+.plugin-permission-dialog__list span {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.plugin-permission-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-5);
+}
+
+.plugin-permission-dialog button.plugin-permission-dialog__approve {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.plugin-permission-dialog button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

@@ -99,6 +99,10 @@ class Exchange:
           CREATE TABLE IF NOT EXISTS desktop_map(record_id TEXT PRIMARY KEY,source BLOB NOT NULL,baseline TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS asset_metadata(hash TEXT PRIMARY KEY,metadata BLOB NOT NULL);
         """)
+        with self.db:
+            if not self.db.execute("SELECT 1 FROM metadata WHERE key='projection_recovery_version'").fetchone():
+                if self.db.execute("SELECT 1 FROM records LIMIT 1").fetchone(): self.begin_projection()
+                self.db.execute("INSERT INTO metadata VALUES('projection_recovery_version','1')")
 
     def get(self, record_id):
         row = self.db.execute("SELECT * FROM records WHERE id=?", (record_id,)).fetchone()
@@ -107,6 +111,16 @@ class Exchange:
     def records(self, kind=None):
         return [dict(row) for row in self.db.execute("SELECT * FROM records" + (" WHERE kind=?" if kind else ""),
                                                    (kind,) if kind else ())]
+
+    def projection_pending(self):
+        return self.db.execute("SELECT 1 FROM metadata WHERE key='pending_projection'").fetchone() is not None
+
+    def begin_projection(self):
+        self.db.execute("INSERT INTO metadata VALUES('pending_projection','1') ON CONFLICT(key) DO UPDATE SET value='1'")
+
+    def finish_projection(self):
+        with self.db:
+            self.db.execute("DELETE FROM metadata WHERE key='pending_projection'")
 
     def mapping(self, record_id):
         row = self.db.execute("SELECT source,baseline FROM desktop_map WHERE record_id=?", (record_id,)).fetchone()
@@ -213,7 +227,10 @@ def ink_fingerprint(drawings, annotations):
                            "annotations": sorted([normalize(row) for row in annotations], key=lambda r: r["id"])}))
 
 
-def export_desktop(desktop, exchange, geometry_reader=geometry_for):
+def export_desktop(desktop, exchange, geometry_reader=geometry_for, use_projector=True):
+    if exchange.projection_pending(): raise ValueError("Recover pending desktop import before exporting local documents")
+    if use_projector and os.environ.get("BANDAL_DESKTOP_PROJECTOR"):
+        return projector_export(desktop, exchange)
     counts = {"courses": 0, "materials": 0, "pages": 0, "tasks": 0}
     with contextlib.closing(open_desktop(desktop)) as db:
         # A consistent DB read snapshot; each source file is hash-checked separately.
@@ -343,7 +360,9 @@ def recover_import(db, exchange):
     journal_path.unlink()
 
 
-def import_desktop(desktop, exchange, course_root=None):
+def import_desktop(desktop, exchange, course_root=None, use_projector=True):
+    if use_projector and os.environ.get("BANDAL_DESKTOP_PROJECTOR"):
+        return projector_import(desktop, exchange, course_root)
     counts = {"courses": 0, "materials": 0, "pages": 0, "tasks": 0}
     with contextlib.closing(open_desktop(desktop, write=True)) as db:
         recover_import(db, exchange)
@@ -543,7 +562,85 @@ def import_desktop(desktop, exchange, course_root=None):
                                                             rows(db, "annotations", "WHERE course_id=? AND rel_path=? AND page=? AND deleted_at IS NULL", (cid, relative, page)))
             exchange.remember(record["id"], source, wrapper)
         exchange.db.commit()
+    exchange.finish_projection()
     return counts
+
+
+def projector_call(desktop, exchange, action, request=None, course_root=None):
+    helper = Path(os.environ["BANDAL_DESKTOP_PROJECTOR"]).resolve()
+    runtime = os.environ.get("BANDAL_DESKTOP_RUNTIME")
+    module_root = os.environ.get("BANDAL_DESKTOP_MODULE_ROOT")
+    if not runtime or not module_root or not helper.is_file():
+        raise ValueError("Desktop projector requires the app's Electron runtime and module root")
+    bundle = Path(os.environ.get("BANDAL_DESKTOP_BACKEND", helper.with_name("backend.js")))
+    if not bundle.is_file(): raise ValueError("Desktop projection backend bundle is missing")
+    seed = []
+    for row in exchange.db.execute("SELECT record_id,source FROM desktop_map"):
+        record = exchange.get(row["record_id"])
+        if record:
+            seed.append({"record": {"id": record["id"], "kind": record["kind"], "payload": json.loads(record["payload"]),
+                                    "deleted": bool(record["deleted"]), "formatVersion": record["format_version"]},
+                         "source": json.loads(row["source"])})
+    value = {"action": action, "database": str(Path(desktop).resolve()), "exchange": str(exchange.root),
+             "courseRoot": str(Path(course_root or Path(desktop).parent / "iPad Courses").resolve()),
+             "moduleRoot": module_root, "bundle": str(bundle), "request": request or {}, "seed": seed}
+    if os.environ.get("BANDAL_DESKTOP_SQLITE_MODULE"): value["sqliteModule"] = os.environ["BANDAL_DESKTOP_SQLITE_MODULE"]
+    environment = {key: item for key, item in os.environ.items() if key not in
+                   {"BANDAL_ACCESS_TOKEN", "BANDAL_SUPABASE_KEY", "BANDAL_USER_ID", "BANDAL_SUPABASE_URL"}}
+    environment["ELECTRON_RUN_AS_NODE"] = "1"
+    result = subprocess.run([runtime, str(helper)], input=encoded(value), capture_output=True, env=environment, timeout=180)
+    if result.returncode:
+        raise ValueError("Desktop projection failed: " + result.stderr.decode("utf8", errors="replace")[-2000:])
+    return json.loads(result.stdout)
+
+
+def projector_export(desktop, exchange):
+    if exchange.projection_pending(): raise ValueError("Recover pending desktop import before exporting local documents")
+    marker = exchange.db.execute("SELECT value FROM metadata WHERE key='typescript-projector-v1'").fetchone()
+    if not marker:
+        # Finish the previous mapper's pending materialization using its original
+        # optimistic guards before changing projection implementations. A local
+        # conflict aborts here, retaining every queued operation and old baseline.
+        if exchange.db.execute("SELECT 1 FROM desktop_map LIMIT 1").fetchone():
+            export_desktop(desktop, exchange, use_projector=False)
+            import_desktop(desktop, exchange, use_projector=False)
+        exchange.db.execute("INSERT INTO metadata VALUES('typescript-projector-v1','ready')")
+        exchange.db.commit()
+    snapshot = projector_call(desktop, exchange, "export")
+    for asset in snapshot["assets"]:
+        actual = exchange.asset(asset["path"])
+        if actual != asset["sha256"] or (exchange.assets / actual).stat().st_size != asset["byteCount"]:
+            raise ValueError("Desktop source changed during projection snapshot")
+    for record in snapshot["records"]:
+        source, _ = exchange.mapping(record["id"])
+        source = source or {}
+        if record["kind"] == "drawing": source["inkFingerprint"] = digest(encoded(record["payload"]))
+        exchange.export_record(record["id"], record["kind"], record["payload"], source, record["deleted"])
+    exchange.db.commit()
+    return {"records": len(snapshot["records"]), "assets": len(snapshot["assets"]), "projector": "desktop-typescript"}
+
+
+def projector_import(desktop, exchange, course_root=None):
+    records = [{"id": row["id"], "kind": row["kind"], "payload": json.loads(row["payload"]),
+                "deleted": bool(row["deleted"]), "formatVersion": row["format_version"]} for row in exchange.records()]
+    assets = [{"sha256": file.name, "path": str(file)} for file in exchange.assets.iterdir()
+              if file.is_file() and len(file.name) == 64 and all(c in "0123456789abcdef" for c in file.name)]
+    conflicts = []
+    for row in exchange.db.execute("SELECT value FROM conflicts"):
+        conflict = json.loads(row["value"])
+        if not isinstance(conflict.get("local"), dict) or not isinstance(conflict.get("remote"), dict): continue
+        for variant in ("local", "remote"):
+            conflict[variant] = {**conflict[variant], "payload": json.loads(base64.b64decode(conflict[variant]["payload"], validate=True))}
+        conflicts.append(conflict)
+    result = projector_call(desktop, exchange, "import", {"records": records, "assets": assets, "conflicts": conflicts}, course_root)
+    # The original documents or their visible conflict copies are now durable.
+    # Unresolved projector records stay excluded from subsequent local exports.
+    exchange.finish_projection()
+    if result["conflicts"]:
+        # Conflict entries and originals are durable in desktop SQLite/Recovery;
+        # expose attention instead of declaring a successful invisible overwrite.
+        raise ValueError(f"{len(result['conflicts'])} desktop sync conflicts are preserved for review")
+    return result
 
 
 class Supabase:
@@ -610,9 +707,13 @@ def merge_drawing(local, remote):
 
 
 def sync_exchange(exchange, remote):
+    if exchange.projection_pending(): raise ValueError("Recover pending desktop import before sending another exchange")
     account = exchange.db.execute("SELECT value FROM metadata WHERE key='sync_account'").fetchone()
     if account and account[0] != remote.user_id: raise ValueError("Exchange belongs to another account")
     exchange.db.execute("INSERT OR IGNORE INTO metadata VALUES('sync_account',?)", (remote.user_id,))
+    # Push conflicts can change accepted records just like a pull page. Persist
+    # intent before either can run, not after downloading the last asset.
+    exchange.begin_projection()
     exchange.db.commit()
     # Upload immutable assets before any record references are published.
     for asset in exchange.db.execute("SELECT hash,metadata FROM asset_metadata"):
@@ -666,14 +767,33 @@ def sync_exchange(exchange, remote):
             cursor = page["cursor"]
             exchange.db.execute("INSERT INTO metadata VALUES('sync_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(cursor),))
         if not page["hasMore"]: break
-    for _, sha, _, count in asset_references(exchange, include_notes=False):
+    ensure_remote_assets(exchange, remote)
+    return {"pushed": pushed, "conflicts": conflicts, "merged": merged_count, "cursor": cursor}
+
+
+def ensure_remote_assets(exchange, remote=None):
+    account = exchange.db.execute("SELECT value FROM metadata WHERE key='sync_account'").fetchone()
+    if remote and account and account[0] != remote.user_id: raise ValueError("Exchange belongs to another account")
+    seen = set()
+    for _, sha, _, count in asset_references(exchange, include_conflicts=True):
+        if sha in seen: continue
+        seen.add(sha)
         if len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha): raise ValueError("Invalid asset hash")
         target = exchange.assets / sha
-        if target.exists() and file_hash(target) == sha: continue
+        if target.exists() and file_hash(target) == sha and (count is None or target.stat().st_size == count): continue
+        if remote is None: raise ValueError("Pending import asset is missing; reconnect the bound account before exporting")
         data = remote.request("storage/v1/object/authenticated/bandal-assets/" + remote.user_id + "/" + sha)
         if digest(data) != sha or (count is not None and len(data) != count): raise ValueError("Downloaded asset hash or length mismatch")
-        temporary = target.with_suffix(".partial"); temporary.write_bytes(data); os.replace(temporary, target)
-    return {"pushed": pushed, "conflicts": conflicts, "merged": merged_count, "cursor": cursor}
+        temporary = target.with_suffix(".partial")
+        with open(temporary, "wb") as output:
+            output.write(data); output.flush(); os.fsync(output.fileno())
+        os.replace(temporary, target)
+
+
+def recover_projection(desktop, exchange, remote=None, course_root=None):
+    if not exchange.projection_pending(): return
+    ensure_remote_assets(exchange, remote)
+    import_desktop(desktop, exchange, course_root)
 
 
 def envelope(row):
@@ -681,9 +801,16 @@ def envelope(row):
             "revision": row["revision"], "deleted": bool(row["deleted"]), "formatVersion": row["format_version"]}
 
 
-def asset_references(exchange, include_notes=True):
+def asset_references(exchange, include_notes=True, include_conflicts=False):
     """Asset identifiers exactly match App/Services/Exchange.swift, including recordings."""
-    for record in exchange.records():
+    records = exchange.records()
+    if include_conflicts:
+        for row in exchange.db.execute("SELECT value FROM conflicts"):
+            conflict = json.loads(row[0])
+            for variant in ("local", "remote"):
+                value = conflict.get(variant)
+                if isinstance(value, dict): records.append({**value, "payload": base64.b64decode(value["payload"], validate=True)})
+    for record in records:
         if record["deleted"]: continue
         payload = json.loads(record["payload"])
         if record["kind"] == "material" and payload["kind"] != "whiteboard":
@@ -691,6 +818,11 @@ def asset_references(exchange, include_notes=True):
             yield payload["id"], payload["revision"], payload["fileName"], payload.get("byteCount")
         elif record["kind"] == "recording" and payload.get("assetRevision"):
             yield "recording:" + payload["id"], payload["assetRevision"], payload["fileName"], payload.get("byteCount")
+        elif record["kind"] == "artifact" and payload.get("recordType") == "desktop-learning-file":
+            yield record["id"], payload["assetRevision"], payload["fileName"], payload.get("byteCount")
+        elif record["kind"] == "artifact" and payload.get("recordType") == "desktop-learning-project":
+            for file in payload.get("files", []):
+                yield record["id"] + ":" + file["relPath"], file["assetRevision"], Path(file["relPath"]).name, file["byteCount"]
 
 
 def write_pack(exchange, path):
@@ -745,7 +877,9 @@ def read_pack(exchange, path):
             raise ValueError("Unsafe asset name")
         assets.append((asset, data))
     # Validation completes before any records or existing files are changed.
+    if exchange.projection_pending(): raise ValueError("Recover pending desktop import before opening another package")
     with exchange.db:
+        exchange.begin_projection()
         for record, payload in records:
             current = exchange.get(record["id"])
             if current and json.loads(current["payload"]) != payload:
@@ -762,7 +896,11 @@ def read_pack(exchange, path):
         for asset, data in assets:
             target = exchange.assets / asset["sha256"]
             if target.exists() and file_hash(target) != asset["sha256"]: raise ValueError("Existing asset is corrupt")
-            if not target.exists(): target.write_bytes(data)
+            if not target.exists():
+                temporary = target.with_suffix(".partial")
+                with open(temporary, "wb") as output:
+                    output.write(data); output.flush(); os.fsync(output.fileno())
+                os.replace(temporary, target)
             metadata = {"sha256": asset["sha256"], "byteCount": asset["byteCount"], "originalName": asset["fileName"],
                         "contentType": mimetypes.guess_type(asset["fileName"])[0] or "application/octet-stream"}
             exchange.db.execute("INSERT OR REPLACE INTO asset_metadata VALUES(?,?)", (asset["sha256"], encoded(metadata)))
@@ -779,13 +917,14 @@ def main():
     args = parser.parse_args()
     if args.command in ("export", "import", "cycle", "watch") and not args.desktop_db: parser.error("--desktop-db is required")
     exchange = Exchange(args.exchange)
-    if args.pack and args.command == "import": read_pack(exchange, args.pack)
     remote = None
     if args.command in ("sync", "cycle", "watch"):
         required = ["BANDAL_SUPABASE_URL", "BANDAL_SUPABASE_KEY", "BANDAL_USER_ID", "BANDAL_ACCESS_TOKEN"]
         if any(not os.environ.get(key) for key in required): parser.error("Set Supabase URL, public key, user ID and access token in BANDAL_* environment variables")
         remote = Supabase(*(os.environ[key] for key in required))
     while True:
+        if args.desktop_db: recover_projection(args.desktop_db, exchange, remote, args.course_root)
+        if args.pack and args.command == "import": read_pack(exchange, args.pack)
         if args.command in ("export", "cycle", "watch"): print(json.dumps(export_desktop(args.desktop_db, exchange)))
         if args.pack and args.command == "export": write_pack(exchange, args.pack)
         if remote: print(json.dumps(sync_exchange(exchange, remote)))

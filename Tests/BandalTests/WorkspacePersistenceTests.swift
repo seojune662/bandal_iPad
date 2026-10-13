@@ -3,10 +3,11 @@ import XCTest
 
 @MainActor
 final class WorkspacePersistenceTests: XCTestCase {
-    func testPackagedEditorDictionaryAndIdentity() throws {
+    func testPackagedDesktopRuntimeAndIdentity() throws {
         let bundle = Bundle.main
-        XCTAssertNotNil(bundle.url(forResource: "index", withExtension: "html", subdirectory: "Editor"))
-        XCTAssertNotNil(bundle.url(forResource: "documents", withExtension: "html", subdirectory: "Editor"))
+        XCTAssertNotNil(bundle.url(forResource: "index", withExtension: "html", subdirectory: "Desktop"))
+        XCTAssertNotNil(bundle.url(forResource: "backend", withExtension: "js", subdirectory: "Desktop"))
+        XCTAssertNotNil(bundle.url(forResource: "source-provenance", withExtension: "json", subdirectory: "Desktop"))
         XCTAssertEqual(bundle.infoDictionary?["UIDeviceFamily"] as? [Int], [2])
     }
     func testTwentyMixedTabsRestoreAndPrivateSessionsDoNotPersist() async throws {

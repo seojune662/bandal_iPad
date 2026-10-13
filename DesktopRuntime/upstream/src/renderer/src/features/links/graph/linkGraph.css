@@ -1,0 +1,220 @@
+/* 연결 그래프 오버레이 — board-overlay 와 같은 층위(웹뷰 레이어 위). */
+
+.link-graph-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+}
+
+.link-graph-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg-app) 62%, transparent);
+  backdrop-filter: blur(4px);
+  border: 0;
+}
+
+.link-graph-overlay__surface {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(72rem, 100%);
+  height: min(48rem, 100%);
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.link-graph-overlay__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.link-graph-overlay__head h2 {
+  font-size: var(--text-base);
+  font-weight: 650;
+  letter-spacing: var(--tracking-tight);
+}
+
+.link-graph-overlay__actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.link-graph-overlay__state {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.link-graph {
+  flex: 1;
+  min-height: 0;
+  touch-action: none;
+  cursor: grab;
+  background:
+    radial-gradient(
+      color-mix(in srgb, var(--border-subtle) 55%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 24px 24px;
+}
+
+.link-graph:active {
+  cursor: grabbing;
+}
+
+/* -- 엣지 ------------------------------------------------------------------ */
+
+.link-graph__edge {
+  stroke: var(--border-strong);
+  stroke-width: 1.4;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.link-graph__edge[data-kind='sequence'] {
+  stroke: var(--accent);
+  stroke-width: 1.8;
+}
+
+.link-graph__edge[data-kind='backlink'] {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.link-graph__edge[data-dimmed] {
+  opacity: 0.12;
+}
+
+.link-graph__arrow {
+  fill: var(--accent);
+}
+
+/* -- 노드 ------------------------------------------------------------------ */
+
+.link-graph__node {
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.link-graph__node[data-openable] {
+  cursor: grab;
+}
+
+.link-graph__node[data-openable]:active {
+  cursor: grabbing;
+}
+
+/* 드래그로 배치한(고정된) 노드 — 약한 링으로 표시. */
+.link-graph__node[data-pinned] circle,
+.link-graph__node[data-pinned] rect {
+  stroke-width: 2.5;
+}
+
+.link-graph__node[data-dimmed] {
+  opacity: 0.15;
+}
+
+.link-graph__node circle,
+.link-graph__node rect {
+  fill: var(--accent-muted);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  transition: fill var(--dur-fast) var(--ease-out);
+}
+
+.link-graph__node[data-kind='pdf'] circle {
+  fill: color-mix(in srgb, var(--course-pink, var(--accent)) 35%, var(--bg-surface));
+  stroke: var(--course-pink, var(--accent));
+}
+
+.link-graph__node[data-kind='note'] circle {
+  fill: color-mix(in srgb, var(--course-green, var(--accent)) 35%, var(--bg-surface));
+  stroke: var(--course-green, var(--accent));
+}
+
+.link-graph__node[data-kind='image'] circle,
+.link-graph__node[data-kind='video'] circle {
+  fill: color-mix(in srgb, var(--course-blue, var(--accent)) 35%, var(--bg-surface));
+  stroke: var(--course-blue, var(--accent));
+}
+
+.link-graph__node[data-kind='browser'] circle {
+  fill: color-mix(in srgb, var(--course-violet, var(--accent)) 35%, var(--bg-surface));
+  stroke: var(--course-violet, var(--accent));
+}
+
+.link-graph__node[data-kind='board'] rect {
+  fill: color-mix(in srgb, var(--course-gold, var(--accent)) 35%, var(--bg-surface));
+  stroke: var(--course-gold, var(--accent));
+}
+
+.link-graph__node[data-kind='missing'] circle {
+  fill: transparent;
+  stroke: var(--text-muted);
+  stroke-dasharray: 3 3;
+}
+
+.link-graph__node:hover circle,
+.link-graph__node:hover rect {
+  fill: var(--accent);
+}
+
+.link-graph__node text {
+  fill: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--bg-surface);
+  stroke-width: 3;
+  pointer-events: none;
+}
+
+.link-graph__node[data-dimmed] text {
+  fill: var(--text-muted);
+}
+
+/* -- 범례 ------------------------------------------------------------------ */
+
+.link-graph-overlay__legend {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.link-graph-overlay__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.link-graph-overlay__legend-item::before {
+  content: '';
+  width: 1rem;
+  border-top: 2px solid var(--border-strong);
+}
+
+.link-graph-overlay__legend-item[data-kind='sequence']::before {
+  border-top-color: var(--accent);
+}
+
+.link-graph-overlay__legend-item[data-kind='backlink']::before {
+  border-top-style: dashed;
+  border-top-color: var(--text-muted);
+}

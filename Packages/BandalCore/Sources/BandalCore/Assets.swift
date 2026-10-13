@@ -46,23 +46,41 @@ func validateAsset(_ revision: AssetRevision) throws {
 /// Immutable, content-addressed local assets. Hashes refer to bytes, never file paths.
 public actor AssetStore {
     private let directory: URL
+    private let digests = FileDigestCache()
     public init(directory: URL) throws {
         self.directory = directory
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
     public func importFile(at source: URL, contentType: String = "application/octet-stream") throws -> AssetRevision {
+        let expected = try digests.revision(of: source, contentType: contentType)
+        return try importFile(at: source, matching: expected)
+    }
+
+    /// The projector has already hashed this revision. Reuse a verified
+    /// immutable snapshot instead of copying a lecture/video every timer tick.
+    /// A newly copied source must still match the exported bytes exactly.
+    public func importFile(at source: URL, matching expected: AssetRevision) throws -> AssetRevision {
+        let destination = try url(for: expected)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try verify(expected, file: destination)
+            return expected
+        }
         let temporary = directory.appendingPathComponent(UUID().uuidString + ".partial")
         defer { try? FileManager.default.removeItem(at: temporary) }
         try FileManager.default.copyItem(at: source, to: temporary)
-        let snapshot = try AssetHasher.revision(of: temporary, contentType: contentType)
-        let revision = AssetRevision(sha256: snapshot.sha256, byteCount: snapshot.byteCount,
-                                     originalName: source.lastPathComponent, contentType: contentType)
-        let destination = try url(for: revision)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try AssetHasher.verify(revision, file: destination)
-        } else { try FileManager.default.moveItem(at: temporary, to: destination) }
-        return revision
+        try verify(expected, file: temporary)
+        let handle = try FileHandle(forWritingTo: temporary)
+        defer { try? handle.close() }
+        try handle.synchronize()
+        try FileManager.default.moveItem(at: temporary, to: destination)
+        return expected
+    }
+
+    private func verify(_ revision: AssetRevision, file: URL) throws {
+        try validateAsset(revision)
+        let actual = try digests.revision(of: file)
+        guard actual.sha256 == revision.sha256, actual.byteCount == revision.byteCount else { throw CoreError.assetIntegrity }
     }
 
     public func url(for revision: AssetRevision) throws -> URL {
@@ -73,22 +91,22 @@ public actor AssetStore {
     public func ensureAvailable(_ revision: AssetRevision, transport: any AssetTransport) async throws -> URL {
         let destination = try url(for: revision)
         if FileManager.default.fileExists(atPath: destination.path) {
-            try AssetHasher.verify(revision, file: destination); return destination
+            try verify(revision, file: destination); return destination
         }
         let temporary = directory.appendingPathComponent(UUID().uuidString + ".partial")
         defer { try? FileManager.default.removeItem(at: temporary) }
         try await transport.downloadAsset(revision, to: temporary)
-        try AssetHasher.verify(revision, file: temporary)
+        try verify(revision, file: temporary)
         // Another suspended caller may have completed the same download.
         if FileManager.default.fileExists(atPath: destination.path) {
-            try AssetHasher.verify(revision, file: destination)
+            try verify(revision, file: destination)
         } else { try FileManager.default.moveItem(at: temporary, to: destination) }
         return destination
     }
 
     public func upload(_ revision: AssetRevision, transport: any AssetTransport) async throws {
         let source = try url(for: revision)
-        try AssetHasher.verify(revision, file: source)
+        try verify(revision, file: source)
         try await transport.uploadAsset(revision, from: source)
     }
 }

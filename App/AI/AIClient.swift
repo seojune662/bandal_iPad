@@ -17,6 +17,7 @@ struct AITool {
 }
 struct AIToolCall { var id: String; var name: String; var arguments: String }
 struct AIResult { var text: String; var inputTokens: Int; var outputTokens: Int }
+struct AIInputImage { var mediaType: String; var dataBase64: String }
 enum AIError: LocalizedError {
     case message(String)
     var errorDescription: String? { if case .message(let value) = self { value } else { nil } }
@@ -33,10 +34,20 @@ final class AIClient {
     init(provider: AIProvider, model: String, key: String, session: URLSession = .shared) { self.provider = provider; self.model = model; self.key = key; self.session = session }
 
     func run(messages: [ChatMessage], system: String, tools: [AITool], onDelta: @escaping (String) -> Void,
-             onTool: @escaping (String) -> Void, execute: @escaping (AIToolCall) async -> String) async throws -> AIResult {
+             onTool: @escaping (String) -> Void, execute: @escaping (AIToolCall) async -> String,
+             images: [String: [AIInputImage]] = [:], effort: String? = nil,
+             onDeltaAsync: ((String) async throws -> Void)? = nil) async throws -> AIResult {
         guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AIError.message("설정에서 \(provider.title) API 키를 등록해 주세요.") }
+        let imageInputs = images.values.flatMap { $0 }
+        guard imageInputs.count <= 6, imageInputs.allSatisfy({ ["image/png", "image/jpeg", "image/webp", "image/gif"].contains($0.mediaType) && Data(base64Encoded: $0.dataBase64) != nil }),
+              imageInputs.reduce(0, { $0 + $1.dataBase64.utf8.count }) <= 28_000_000 else { throw AIError.message("첨부 이미지는 PNG·JPEG·WebP·GIF 최대 6장, 합계 20MB까지 사용할 수 있습니다.") }
         var history: [[String: Any]] = messages.filter { ["user", "assistant"].contains($0.role) }.map { message in
-            if provider == .gemini { return ["role": message.role == "assistant" ? "model" : "user", "parts": [["text": message.text]]] }
+            let attached = message.role == "user" ? images[message.id] ?? [] : []
+            if provider == .gemini { return ["role": message.role == "assistant" ? "model" : "user", "parts": [["text": message.text] as [String: Any]] + attached.map { ["inlineData": ["mimeType": $0.mediaType, "data": $0.dataBase64]] }] }
+            if !attached.isEmpty {
+                if provider == .openai { return ["role": message.role, "content": [["type": "input_text", "text": message.text]] + attached.map { ["type": "input_image", "image_url": "data:\($0.mediaType);base64,\($0.dataBase64)"] }] }
+                return ["role": message.role, "content": [["type": "text", "text": message.text] as [String: Any]] + attached.map { ["type": "image", "source": ["type": "base64", "media_type": $0.mediaType, "data": $0.dataBase64]] }]
+            }
             return ["role": message.role, "content": message.text]
         }
         var result = AIResult(text: "", inputTokens: 0, outputTokens: 0)
@@ -49,6 +60,7 @@ final class AIClient {
                 url = URL(string: "https://api.openai.com/v1/responses")!
                 body = ["model": model, "instructions": system, "input": history, "stream": true, "store": false, "include": ["reasoning.encrypted_content"],
                         "tools": tools.map { ["type": "function", "name": $0.name, "description": $0.description, "parameters": $0.schema, "strict": false] }]
+                if let effort, ["none", "minimal", "low", "medium", "high", "xhigh"].contains(effort) { body["reasoning"] = ["effort": effort] }
             case .claude:
                 url = URL(string: "https://api.anthropic.com/v1/messages")!
                 body = ["model": model, "system": system, "messages": history, "max_tokens": 8192, "stream": true,
@@ -82,7 +94,7 @@ final class AIClient {
             var stepText = ""
             var completed = false
             var geminiInput = 0, geminiOutput = 0
-            func append(_ text: String) { stepText += text; result.text += text; onDelta(text) }
+            func append(_ text: String) async throws { stepText += text; result.text += text; onDelta(text); try await onDeltaAsync?(text) }
             for try await line in bytes.lines {
                 try Task.checkCancellation()
                 guard line.hasPrefix("data:") else { continue }
@@ -92,8 +104,8 @@ final class AIClient {
                 switch provider {
                 case .openai:
                     let type = object["type"] as? String ?? ""
-                    if type == "response.output_text.delta", let text = object["delta"] as? String { append(text) }
-                    if type == "response.refusal.delta", let text = object["delta"] as? String { append(text) }
+                    if type == "response.output_text.delta", let text = object["delta"] as? String { try await append(text) }
+                    if type == "response.refusal.delta", let text = object["delta"] as? String { try await append(text) }
                     if type == "response.completed", let response = object["response"] as? [String: Any] {
                         completed = true; output = response["output"] as? [[String: Any]] ?? []
                         calls = output.filter { $0["type"] as? String == "function_call" }.map { AIToolCall(id: $0["call_id"] as? String ?? "", name: $0["name"] as? String ?? "", arguments: $0["arguments"] as? String ?? "{}") }
@@ -107,7 +119,7 @@ final class AIClient {
                         blockCalls[index] = AIToolCall(id: block["id"] as? String ?? "", name: block["name"] as? String ?? "", arguments: "")
                     }
                     if type == "content_block_delta", let delta = object["delta"] as? [String: Any] {
-                        if let text = delta["text"] as? String { append(text) }
+                        if let text = delta["text"] as? String { try await append(text) }
                         if let json = delta["partial_json"] as? String { blockCalls[index]?.arguments += json }
                     }
                     if type == "message_start", let message = object["message"] as? [String: Any], let usage = message["usage"] as? [String: Any] { result.inputTokens += usage["input_tokens"] as? Int ?? 0 }
@@ -122,7 +134,7 @@ final class AIClient {
                         if let reason = candidate["finishReason"] as? String { completed = true; if reason != "STOP" { throw AIError.message("Gemini 응답이 \(reason) 상태로 종료되었습니다.") } }
                         let parts = (candidate["content"] as? [String: Any])?["parts"] as? [[String: Any]] ?? []
                         for part in parts {
-                            if let text = part["text"] as? String, part["thought"] as? Bool != true { append(text) }
+                            if let text = part["text"] as? String, part["thought"] as? Bool != true { try await append(text) }
                             output.append(part)
                             if let call = part["functionCall"] as? [String: Any] {
                                 let arguments = try JSONSerialization.data(withJSONObject: call["args"] as? [String: Any] ?? [:])

@@ -102,6 +102,62 @@ class BridgeTests(unittest.TestCase):
             bridge.import_desktop(self.dbpath, self.exchange)
         self.assertEqual((self.folder / "note.md").read_text(), "# unsaved desktop edit\n")
 
+    def test_pending_remote_import_replays_before_export_after_reopen(self):
+        self.export()
+        row = self.exchange.get("note:" + self.noteid)
+        row["payload"] = bridge.encoded({"materialID": self.noteid, "markdown": "remote B"})
+        with self.exchange.db:
+            self.exchange.begin_projection()
+            self.exchange.set_record(bridge.envelope(row))
+            self.exchange.db.execute("INSERT INTO metadata VALUES('sync_cursor','8')")
+        self.exchange.db.close()
+        self.exchange = bridge.Exchange(self.root / "exchange")
+        self.assertTrue(self.exchange.projection_pending())
+        with self.assertRaisesRegex(ValueError, "Recover pending"):
+            self.export()
+        bridge.recover_projection(self.dbpath, self.exchange)
+        self.assertEqual((self.folder / "note.md").read_text(), "remote B")
+        self.assertFalse(self.exchange.projection_pending())
+        self.export()
+        self.assertEqual(json.loads(self.exchange.get(row["id"])["payload"])["markdown"], "remote B")
+        self.assertEqual(self.exchange.db.execute("SELECT value FROM metadata WHERE key='sync_cursor'").fetchone()[0], '8')
+
+    def test_upgrade_reconciles_older_exchange_without_marker_once(self):
+        self.export()
+        self.exchange.db.execute("DELETE FROM metadata WHERE key='projection_recovery_version'"); self.exchange.db.commit()
+        self.exchange.db.close(); self.exchange = bridge.Exchange(self.root / "exchange")
+        self.assertTrue(self.exchange.projection_pending())
+        bridge.recover_projection(self.dbpath, self.exchange)
+        self.exchange.db.close(); self.exchange = bridge.Exchange(self.root / "exchange")
+        self.assertFalse(self.exchange.projection_pending())
+
+    def test_new_local_edit_cannot_erase_pending_remote_or_package_import(self):
+        self.export()
+        row = self.exchange.get("note:" + self.noteid)
+        row["payload"] = bridge.encoded({"materialID": self.noteid, "markdown": "remote B"})
+        with self.exchange.db:
+            self.exchange.begin_projection(); self.exchange.set_record(bridge.envelope(row))
+        (self.folder / "note.md").write_text("local A prime")
+        with self.assertRaisesRegex(ValueError, "changed since export"):
+            bridge.recover_projection(self.dbpath, self.exchange)
+        self.assertTrue(self.exchange.projection_pending())
+        with self.assertRaisesRegex(ValueError, "Recover pending"):
+            self.export()
+        self.assertEqual(json.loads(self.exchange.get(row["id"])["payload"])["markdown"], "remote B")
+        self.assertEqual((self.folder / "note.md").read_text(), "local A prime")
+
+        pack = self.root / "recover.bandalpack"
+        bridge.write_pack(self.exchange, pack)
+        target = bridge.Exchange(self.root / "pack-exchange")
+        try:
+            bridge.read_pack(target, pack)
+            self.assertTrue(target.projection_pending())
+            with self.assertRaisesRegex(ValueError, "Recover pending"):
+                bridge.export_desktop(self.dbpath, target, lambda *_: self.geometry)
+            with self.assertRaisesRegex(ValueError, "Recover pending"):
+                bridge.read_pack(target, pack)
+        finally: target.db.close()
+
     def test_pack_integrity_validation_before_record_mutation(self):
         self.export()
         pack_path = self.root / "course.bandalpack"

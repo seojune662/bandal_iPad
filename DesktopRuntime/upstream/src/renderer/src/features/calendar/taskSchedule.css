@@ -1,0 +1,16 @@
+.task-schedule {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.task-schedule legend { margin-bottom: 10px; font-size: 13px; font-weight: 600; }
+.task-schedule__options { display: flex; flex-wrap: wrap; gap: 16px; }
+.task-schedule__options label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.task-schedule__options input { width: 16px; height: 16px; margin: 0; }
+.task-schedule__row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.task-schedule__row:has(input[type='time']) { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.task-schedule__row input { min-width: 0; width: 100%; box-sizing: border-box; }
+.task-schedule__hint { color: var(--text-secondary); line-height: 1.5; }

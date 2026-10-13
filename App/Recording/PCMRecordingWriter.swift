@@ -15,6 +15,12 @@ private final class RecordingConversionInput: @unchecked Sendable {
 /// Audio capture only queues copies here. Disk IO and conversion never run on
 /// the realtime audio thread, and speech inference never blocks this queue.
 final class PCMRecordingWriter: @unchecked Sendable {
+    enum Encoding { case float32, signed16
+        var bytes: UInt64 { self == .float32 ? 4 : 2 }
+    }
+    private let encoding: Encoding
+    private var peakLevel: Float = 0
+    private var failureMessage: String?
     private let queue = DispatchQueue(label: "app.bandal.recording.writer", qos: .userInitiated)
     private let lock = NSLock()
     private var sampleCount: UInt64 = 0
@@ -25,18 +31,22 @@ final class PCMRecordingWriter: @unchecked Sendable {
     private var failed = false
     var onError: (@Sendable (String) -> Void)?
 
-    init(url: URL, resuming: Bool = false) throws {
+    init(url: URL, resuming: Bool = false, encoding: Encoding = .float32) throws {
+        self.encoding = encoding
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         if resuming {
-            sampleCount = try Self.repair(url: url)
+            sampleCount = try Self.repair(url: url, encoding: encoding)
         } else {
-            try Self.header(samples: 0).write(to: url, options: .atomic)
+            try Self.header(samples: 0, encoding: encoding).write(to: url, options: .atomic)
         }
         file = try FileHandle(forUpdating: url)
         try file?.seekToEnd()
     }
 
     var duration: TimeInterval { lock.lock(); defer { lock.unlock() }; return Double(sampleCount) / 16000 }
+
+    var samples: UInt64 { lock.lock(); defer { lock.unlock() }; return sampleCount }
+    var level: Float { lock.lock(); defer { lock.unlock() }; return peakLevel }
 
     func append(_ buffer: AVAudioPCMBuffer) {
         guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else { return }
@@ -66,26 +76,44 @@ final class PCMRecordingWriter: @unchecked Sendable {
                     try write(output, to: file)
                     if sampleCount - lastCheckpoint >= 16000 { try checkpoint(); lastCheckpoint = sampleCount }
                 } catch {
-                    failed = true
+                    failed = true; failureMessage = error.localizedDescription
                     onError?(error.localizedDescription)
                 }
             }
         }
     }
 
-    func synchronize() { queue.sync { try? checkpoint() } }
-    func close() {
-        queue.sync {
-            do { try drainConverter(); try checkpoint(); try file?.close(); file = nil }
-            catch { onError?(error.localizedDescription) }
+    func synchronizeOrThrow() throws { try queue.sync {
+        if let failureMessage { throw NSError(domain: "BandalAudio", code: 1, userInfo: [NSLocalizedDescriptionKey: failureMessage]) }
+        try checkpoint()
+    } }
+    func synchronize() { do { try synchronizeOrThrow() } catch { onError?(error.localizedDescription) } }
+    func closeOrThrow() throws {
+        try queue.sync {
+            defer { try? file?.close(); file = nil }
+            if let failureMessage { throw NSError(domain: "BandalAudio", code: 1, userInfo: [NSLocalizedDescriptionKey: failureMessage]) }
+            try drainConverter(); try checkpoint()
         }
     }
+    func close() { do { try closeOrThrow() } catch { onError?(error.localizedDescription) } }
     private func write(_ buffer: AVAudioPCMBuffer, to file: FileHandle) throws {
         guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
-        let bytes = Data(bytes: samples, count: Int(buffer.frameLength) * MemoryLayout<Float>.size)
-        guard sampleCount * 4 + UInt64(bytes.count) < UInt64(UInt32.max) - 36 else { throw RecordingError.fileTooLarge }
+        let count = Int(buffer.frameLength)
+        var rms: Float = 0
+        for index in 0..<count { rms += samples[index] * samples[index] }
+        let bytes: Data
+        if encoding == .float32 { bytes = Data(bytes: samples, count: count * 4) }
+        else {
+            var values = [Int16](repeating: 0, count: count)
+            for index in 0..<count {
+                let value = samples[index].isFinite ? min(1, max(-1, samples[index])) : 0
+                values[index] = Int16(clamping: Int((value * (value < 0 ? 32768 : 32767)).rounded())).littleEndian
+            }
+            bytes = values.withUnsafeBytes { Data($0) }
+        }
+        guard sampleCount * encoding.bytes + UInt64(bytes.count) < UInt64(UInt32.max) - 36 else { throw RecordingError.fileTooLarge }
         try file.write(contentsOf: bytes)
-        lock.lock(); sampleCount += UInt64(buffer.frameLength); lock.unlock()
+        lock.lock(); sampleCount += UInt64(buffer.frameLength); peakLevel = min(1, sqrt(rms / Float(max(1, count))) * 3); lock.unlock()
     }
     private func drainConverter() throws {
         guard let converter, let file else { return }
@@ -103,13 +131,13 @@ final class PCMRecordingWriter: @unchecked Sendable {
     }
     private func checkpoint() throws {
         guard let file else { return }
-        try file.seek(toOffset: 0); try file.write(contentsOf: Self.header(samples: sampleCount))
+        try file.seek(toOffset: 0); try file.write(contentsOf: Self.header(samples: sampleCount, encoding: encoding))
         try file.seekToEnd(); try file.synchronize()
     }
 
     /// Rebuilds the WAV length from committed PCM bytes after process termination.
     @discardableResult
-    static func repair(url: URL) throws -> UInt64 {
+    static func repair(url: URL, encoding: Encoding = .float32) throws -> UInt64 {
         let handle = try FileHandle(forUpdating: url)
         defer { try? handle.close() }
         let size = try handle.seekToEnd()
@@ -117,20 +145,20 @@ final class PCMRecordingWriter: @unchecked Sendable {
         try handle.seek(toOffset: 0)
         guard let prefix = try handle.read(upToCount: 44), prefix.count == 44,
               prefix.prefix(4) == Data("RIFF".utf8), prefix[8..<12] == Data("WAVE".utf8),
-              prefix[20] == 3, prefix[22] == 1, prefix[34] == 32 else { throw RecordingError.invalidAudio }
-        let samples = (size - 44) / 4
-        try handle.truncate(atOffset: 44 + samples * 4)
-        try handle.seek(toOffset: 0); try handle.write(contentsOf: header(samples: samples)); try handle.synchronize()
+              prefix[20] == (encoding == .float32 ? 3 : 1), prefix[22] == 1, prefix[34] == UInt8(encoding.bytes * 8) else { throw RecordingError.invalidAudio }
+        let samples = (size - 44) / encoding.bytes
+        try handle.truncate(atOffset: 44 + samples * encoding.bytes)
+        try handle.seek(toOffset: 0); try handle.write(contentsOf: header(samples: samples, encoding: encoding)); try handle.synchronize()
         return samples
     }
-    static func header(samples: UInt64) -> Data {
+    static func header(samples: UInt64, encoding: Encoding = .float32) -> Data {
         var data = Data()
         func text(_ value: String) { data.append(contentsOf: value.utf8) }
         func u16(_ value: UInt16) { var little = value.littleEndian; withUnsafeBytes(of: &little) { data.append(contentsOf: $0) } }
         func u32(_ value: UInt32) { var little = value.littleEndian; withUnsafeBytes(of: &little) { data.append(contentsOf: $0) } }
-        let bytes = UInt32(clamping: samples * 4)
+        let bytes = UInt32(clamping: samples * encoding.bytes)
         text("RIFF"); u32(36 &+ bytes); text("WAVE"); text("fmt "); u32(16)
-        u16(3); u16(1); u32(16000); u32(64000); u16(4); u16(32)
+        u16(encoding == .float32 ? 3 : 1); u16(1); u32(16000); u32(UInt32(16000 * encoding.bytes)); u16(UInt16(encoding.bytes)); u16(UInt16(encoding.bytes * 8))
         text("data"); u32(bytes)
         return data
     }

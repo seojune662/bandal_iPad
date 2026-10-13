@@ -1,0 +1,103 @@
+.material-preview-content {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 56px;
+  height: 100%;
+  max-height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.material-preview-content__message {
+  margin: auto 0;
+  padding: 16px 4px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 12px;
+}
+
+.material-preview-content__text,
+.material-preview-content__markdown {
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+pre.material-preview-content__text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.material-preview-content__markdown {
+  white-space: normal;
+}
+
+.material-preview-content__markdown :is(p, ul, ol, blockquote, pre) { margin: 0 0 6px; }
+.material-preview-content__markdown :is(h1, h2, h3, h4, h5, h6) { margin: 0 0 6px; font-size: 14px; line-height: 1.4; }
+.material-preview-content__markdown :is(ul, ol) { padding-inline-start: 18px; }
+.material-preview-content__markdown blockquote { border-left: 2px solid var(--border-strong); padding-left: 8px; color: var(--text-secondary); }
+.material-preview-content__markdown code { font-family: var(--font-mono); font-size: 11px; }
+.material-preview-content__markdown pre { white-space: pre-wrap; }
+.material-preview-content__markdown :is(table, td, th) { border: 1px solid var(--border-subtle); border-collapse: collapse; }
+.material-preview-content__markdown :is(td, th) { padding: 2px 4px; }
+
+.material-preview-content__image {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  max-height: 164px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+}
+
+.material-preview-content__caption {
+  display: block;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material-preview-content__table-wrap { min-height: 0; overflow: hidden; }
+.material-preview-content__table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
+.material-preview-content__table td { height: 20px; padding: 2px 4px; border: 1px solid var(--border-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.material-preview-content__table tr:first-child { background: var(--bg-raised); font-weight: 600; }
+
+.material-preview-content__board {
+  --drawing-color-red: var(--danger);
+  --drawing-color-orange: var(--course-orange);
+  --drawing-color-yellow: var(--course-gold);
+  --drawing-color-green: var(--course-green);
+  --drawing-color-blue: var(--course-blue);
+  --drawing-color-violet: var(--course-violet);
+  --material-preview-paper: #fafafa;
+  --material-preview-ruling: #d9d9de;
+  --drawing-color-ink: #25252a;
+  align-self: center;
+  flex: 0 0 auto;
+  width: auto;
+  height: min(158px, calc(100% - 20px));
+  aspect-ratio: 1 / 1.41421356237;
+  overflow: hidden;
+  background-color: var(--material-preview-paper);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+}
+.material-preview-content__board[data-surface='dark'] { --material-preview-paper: #24242a; --material-preview-ruling: #3b3b44; --drawing-color-ink: #f5f5f8; }
+.material-preview-content__board[data-background='grid'] { background-image: linear-gradient(to right, var(--material-preview-ruling) 1px, transparent 1px), linear-gradient(to bottom, var(--material-preview-ruling) 1px, transparent 1px); background-size: 9px 9px; }
+.material-preview-content__board[data-background='dots'] { background-image: radial-gradient(circle, var(--material-preview-ruling) 1px, transparent 1px); background-size: 9px 9px; }
+.material-preview-content__board[data-background='lines'] { background-image: linear-gradient(to bottom, var(--material-preview-ruling) 1px, transparent 1px); background-size: 100% 9px; }
+.material-preview-content__board svg { display: block; width: 100%; height: 100%; }

@@ -1,0 +1,56 @@
+.inline-notice.settings-permissions-notice {
+  margin-top: 0;
+}
+
+.settings-permissions-card .settings-card__rows {
+  border-top: 0;
+}
+
+.settings-permissions-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  color: var(--accent);
+  background: var(--accent-muted);
+  border-radius: var(--radius-md);
+  place-items: center;
+}
+
+.settings-permissions-icon svg {
+  width: var(--icon-size);
+  height: var(--icon-size);
+}
+
+.settings-permissions-status--ok {
+  color: var(--status-done);
+}
+
+.settings-permissions-status--ok .status-pill__dot {
+  background: var(--status-done);
+}
+
+.settings-permissions-status--danger {
+  color: var(--danger);
+  background: var(--danger-muted);
+}
+
+.settings-permissions-status--danger .status-pill__dot {
+  background: var(--danger);
+}
+
+.settings-permissions-status--neutral .status-pill__dot {
+  background: var(--text-secondary);
+}
+
+.settings-permissions-status--muted {
+  color: var(--text-muted);
+  opacity: 0.64;
+}
+
+.settings-permissions-error {
+  margin-top: var(--space-1);
+  color: var(--danger);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}

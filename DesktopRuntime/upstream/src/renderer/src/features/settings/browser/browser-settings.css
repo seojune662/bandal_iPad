@@ -1,0 +1,55 @@
+.settings-browser__dimmed {
+  opacity: 0.5;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.settings-browser__segmented {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.settings-browser__import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.settings-browser__extension-add {
+  align-self: flex-start;
+}
+
+.settings-browser__extension-list {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  margin: var(--space-3) 0 0;
+  list-style: none;
+}
+
+.settings-browser__extension-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.settings-browser__extension-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.settings-browser__extension-copy strong,
+.settings-browser__extension-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-browser__extension-copy small {
+  color: var(--text-muted);
+}

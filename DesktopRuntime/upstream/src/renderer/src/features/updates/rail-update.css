@@ -1,0 +1,58 @@
+.global-navigation .rail-nav__item.rail-update-button {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  margin: 4px;
+  padding: 0;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  border: 0;
+  box-shadow: 0 2px 5px rgba(37, 99, 235, .16);
+}
+.global-navigation .rail-nav__item.rail-update-button:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
+.global-navigation .rail-nav__item.rail-update-button:disabled { opacity: 1; cursor: default; }
+.global-navigation .rail-nav__item.rail-update-button:focus-visible { outline: 2px solid #60a5fa; outline-offset: 3px; }
+.rail-update-button > svg:not(.rail-update-button__progress) { width: 16px; height: 16px; }
+.rail-update-button__progress {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+.rail-update-button__track { opacity: .25; }
+.rail-update-button__error {
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 11px;
+}
+.rail-update-dialog {
+  position: fixed;
+  z-index: 400;
+  width: min(280px, calc(100vw - 16px));
+  padding: 16px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+  font-size: 12px;
+}
+.rail-update-dialog p { margin: 8px 0 14px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.rail-update-dialog__actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rail-update-dialog__actions button { font-size: 12px; }
+.rail-update-dialog__close { padding: 6px; color: var(--text-secondary); background: transparent; border: 0; }

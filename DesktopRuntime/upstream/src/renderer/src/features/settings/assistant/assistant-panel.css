@@ -1,0 +1,32 @@
+.settings-assistant-mode.segmented {
+  margin: 0;
+}
+
+.settings-assistant-mode .segmented__option {
+  flex-direction: row;
+  justify-content: center;
+  min-height: var(--button-height);
+}
+
+.setting-row + .settings-assistant-permissions-footer {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.settings-assistant-permissions-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-3) var(--space-5);
+}
+
+.settings-assistant-permissions-button {
+  min-height: var(--control-height);
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  background: transparent;
+}
+
+.settings-assistant-permissions-button:hover {
+  color: var(--accent);
+}

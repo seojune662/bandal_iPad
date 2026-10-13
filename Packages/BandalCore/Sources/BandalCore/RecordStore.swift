@@ -161,6 +161,80 @@ public actor RecordStore {
         return try query.step() ? Int64(query.text(0)) ?? 0 : 0
     }
 
+    /// A second, authoritative document store must materialize this store's
+    /// accepted remote records before scanning local documents again. Write the
+    /// marker before starting the engine: both push conflicts and pull pages can
+    /// change records, including when the exchange later fails or is cancelled.
+    public func prepareProjectionRecovery() throws {
+        try db.transaction {
+            let installed = try db.statement("SELECT 1 FROM metadata WHERE key='projection_recovery_version'")
+            if try installed.step() { return }
+            // An older app could have committed a cursor without a marker.
+            // Reconcile its existing accepted records once before local export.
+            let records = try db.statement("SELECT 1 FROM records LIMIT 1")
+            if try records.step() { try beginProjectionRecoveryWithinTransaction() }
+            try db.exec("INSERT INTO metadata(key,value) VALUES('projection_recovery_version','1')")
+        }
+    }
+
+    public func beginProjectionRecovery() throws {
+        try db.transaction { try beginProjectionRecoveryWithinTransaction() }
+    }
+
+    private func beginProjectionRecoveryWithinTransaction() throws {
+        try db.exec("INSERT INTO metadata(key,value) VALUES('pending_projection','1') ON CONFLICT(key) DO UPDATE SET value='1'")
+    }
+
+    public func projectionRecoveryPending() throws -> Bool {
+        let query = try db.statement("SELECT 1 FROM metadata WHERE key='pending_projection'")
+        return try query.step()
+    }
+
+    /// Call only after document writes or their visible recovery conflicts are
+    /// durable. Keeping the marker on every failure makes replay idempotent.
+    public func completeProjectionRecovery() throws {
+        try db.transaction { try db.exec("DELETE FROM metadata WHERE key='pending_projection'") }
+    }
+
+    /// Queue an explicit reviewed choice without losing a newer accepted
+    /// version which has not yet reached the document store. The backup, local
+    /// operation and recovery marker commit together, including on restart.
+    public func queueConflictResolution(_ selected: StoredRecord, reviewedVariants: [StoredRecord]) throws -> SyncConflict? {
+        try db.transaction {
+            guard SyncPolicy.allowedKinds.contains(selected.kind), !reviewedVariants.isEmpty,
+                  reviewedVariants.allSatisfy({ $0.id == selected.id && $0.kind == selected.kind }) else {
+                throw CoreError.invalidRecord("Invalid conflict resolution")
+            }
+            try validate(selected)
+            let previous = try get(id: selected.id)
+            guard previous == nil || previous?.kind == selected.kind else { throw CoreError.invalidRecord("Record kind cannot change") }
+            let next = StoredRecord(id: selected.id, kind: selected.kind, payload: selected.payload,
+                                    revision: (previous?.revision ?? 0) + 1, deleted: selected.deleted,
+                                    formatVersion: selected.formatVersion)
+            try validate(next)
+            var preserved: SyncConflict?
+            if let previous, try !reviewedVariants.contains(where: { try sameContent(previous, $0) }) {
+                let conflict = SyncConflict(id: UUID().uuidString, local: previous, remote: next, createdAt: Date())
+                let save = try db.statement("INSERT INTO conflicts(id,value) VALUES(?,?)")
+                try save.bind([.text(conflict.id), .data(try encoder.encode(conflict))]); try save.step()
+                preserved = conflict
+            }
+            try beginProjectionRecoveryWithinTransaction()
+            try write(next); try enqueue(next, baseRevision: previous?.revision ?? 0)
+            return preserved
+        }
+    }
+
+    private func sameContent(_ first: StoredRecord, _ second: StoredRecord) throws -> Bool {
+        guard first.id == second.id, first.kind == second.kind, first.deleted == second.deleted,
+              first.formatVersion == second.formatVersion else { return false }
+        func canonical(_ data: Data) throws -> Data {
+            try JSONSerialization.data(withJSONObject: JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
+                                       options: [.sortedKeys, .withoutEscapingSlashes, .fragmentsAllowed])
+        }
+        return try canonical(first.payload) == canonical(second.payload)
+    }
+
     /// Reads the existing binding without claiming an unbound local store.
     public func syncAccount() throws -> String? {
         let query = try db.statement("SELECT value FROM metadata WHERE key='sync_account'")
