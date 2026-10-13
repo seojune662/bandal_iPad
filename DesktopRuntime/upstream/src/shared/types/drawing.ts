@@ -6,9 +6,10 @@
  * PDF changes. Drawings have no text to anchor to — they are pure geometry.
  * Keeping them apart leaves the well-tested highlight path untouched.
  *
- * ALL coordinates are normalized to 0..1 against the *unrotated* page box, so
- * zoom, window resize and DPI changes need no migration. Same convention as
- * `AnnotationRect`.
+ * Stored PDF coordinates are normalized to 0..1 against PDF.js's displayed
+ * (rotated) CropBox, with top-left origin. Width uses the displayed page width.
+ * Native views and portable sync convert at their boundaries; existing rows
+ * are never reinterpreted. Same convention as `AnnotationRect`.
  */
 
 export type DrawingKind =
@@ -95,6 +96,10 @@ export interface DrawingPoint {
   y: number
   /** Pointer pressure 0..1; 0.5 when the device reports none. */
   p: number
+  /** Optional measured Pencil metadata. Predictions never enter storage. */
+  t?: number
+  tiltX?: number
+  tiltY?: number
 }
 
 export interface DrawingBox {
@@ -123,6 +128,8 @@ export interface DrawingClipSource {
 }
 
 export interface DrawingData {
+  /** Absent preserves the historical renderer; v2 is shared with native ink. */
+  inkVersion?: 2
   points?: DrawingPoint[]
   box?: DrawingBox
   /** textbox only. */
@@ -214,6 +221,10 @@ export interface Drawing extends DrawingShape {
 }
 
 export interface CreateDrawingInput {
+  /** SHA-256 of the opened PDF; a native completion cannot target replaced bytes. */
+  documentRevision?: string
+  /** Stable client operation UUID for durable native stroke recovery. */
+  clientMutationId?: string
   courseId: string
   relPath: string
   page: number

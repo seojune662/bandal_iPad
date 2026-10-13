@@ -1,5 +1,9 @@
+import nativePDFPlugin from '../renderer/nativePDF/index.mjs'
 import { dependencies, runtime } from './dependencies.mjs'
 import { adaptPlatformSource } from '../renderer/platform/index.mjs'
+import { adaptBrowserSource } from '../renderer/browser/index.mjs'
+import pencilInputPlugin from '../renderer/pencil/index.mjs'
+import nativeRecordingPlugin from '../renderer/recording/index.mjs'
 
 // Type-check the actually adapted platform API, not just the pristine snapshot.
 // Source-preserving adapters deliberately leave desktop-only declarations for
@@ -9,9 +13,11 @@ const parsed = ts.getParsedCommandLineOfConfigFile(runtime + '/tsconfig.json', {
   noUnusedLocals: false, noUnusedParameters: false, allowImportingTsExtensions: true
 }, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: diagnostic => { throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')) } })
 const host = ts.createCompilerHost(parsed.options), originalRead = host.readFile
+const transforms = [pencilInputPlugin().transform, adaptPlatformSource, nativeRecordingPlugin().transform, adaptBrowserSource, nativePDFPlugin().transform]
 host.readFile = file => {
-  const source = originalRead(file)
-  return source && file.startsWith(runtime + '/upstream/') ? adaptPlatformSource(source, file)?.code ?? source : source
+  let source = originalRead(file)
+  if (source && file.startsWith(runtime + '/upstream/')) for (const transform of transforms) source = transform(source, file)?.code ?? source
+  return source
 }
 const program = ts.createProgram(parsed.fileNames, parsed.options, host)
 const diagnostics = ts.getPreEmitDiagnostics(program)

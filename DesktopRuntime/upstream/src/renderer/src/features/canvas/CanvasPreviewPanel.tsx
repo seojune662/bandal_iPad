@@ -103,7 +103,7 @@ function PreviewShape({ shape }: { shape: DrawingShape }): JSX.Element | null {
       shape.data.points ?? [],
       shape.style,
       DEFAULT_PAGE_ASPECT,
-      shape.kind === 'highlighter'
+      shape.kind === 'highlighter', shape.data.inkVersion
     )
     return path.length === 0 ? null : (
       <path

@@ -6,7 +6,7 @@ export const constants = { F_OK: 0, R_OK: 4, W_OK: 2, X_OK: 1, COPYFILE_EXCL: 1,
 function entry(value: any): any { return { ...value, isFile: () => value.isFile === true, isDirectory: () => value.isDirectory === true, isSymbolicLink: () => value.isSymbolicLink === true } }
 function statValue(value:any, options?: { bigint?: boolean }): any {
   return { ...entry(value), mtime: new Date(value.mtimeMs), ctime: new Date(value.ctimeMs ?? value.mtimeMs), birthtime: new Date(value.birthtimeMs ?? value.mtimeMs),
-    ...(options?.bigint ? { size: BigInt(value.size), mtimeNs: BigInt(value.mtimeNs ?? Math.round(value.mtimeMs * 1e6)), mtimeMs: BigInt(Math.floor(value.mtimeMs)) } : {}) }
+    ...(options?.bigint ? { size: BigInt(value.size), ...(value.dev !== undefined ? { dev: BigInt(value.dev) } : {}), ...(value.ino !== undefined ? { ino: BigInt(value.ino) } : {}), ...(value.ctimeNs !== undefined ? { ctimeNs: BigInt(value.ctimeNs) } : {}), mtimeNs: BigInt(value.mtimeNs ?? Math.round(value.mtimeMs * 1e6)), mtimeMs: BigInt(Math.floor(value.mtimeMs)) } : {}) }
 }
 export const statSync = (path: string, options?: any): any => statValue(native('fs.stat', {path, followSymlinks:true}), options)
 export const lstatSync = (path: string, options?: any): any => statValue(native('fs.stat', {path, followSymlinks:false}), options)

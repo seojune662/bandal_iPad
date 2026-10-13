@@ -56,6 +56,22 @@ class BridgeTests(unittest.TestCase):
     def export(self):
         return bridge.export_desktop(self.dbpath, self.exchange, lambda *_: self.geometry)
 
+    def test_legacy_projection_cannot_run_during_live_or_interrupted_material_move(self):
+        before = self.db.execute("SELECT * FROM pdf_drawings").fetchall()
+        original = (self.folder / "slides.pdf").read_bytes()
+        with bridge.material_path_lock(self.dbpath):
+            with self.assertRaises(sqlite3.OperationalError): self.export()
+            with self.assertRaises(sqlite3.OperationalError): bridge.import_desktop(self.dbpath, self.exchange, use_projector=False)
+        self.db.execute("CREATE TABLE material_path_intents(id TEXT PRIMARY KEY)")
+        self.db.execute("INSERT INTO material_path_intents VALUES('interrupted')"); self.db.commit()
+        with self.assertRaisesRegex(ValueError, "interrupted material paths"): self.export()
+        with self.assertRaisesRegex(ValueError, "interrupted material paths"):
+            bridge.import_desktop(self.dbpath, self.exchange, use_projector=False)
+        self.assertEqual(self.db.execute("SELECT * FROM pdf_drawings").fetchall(), before)
+        self.assertEqual((self.folder / "slides.pdf").read_bytes(), original)
+        self.db.execute("DELETE FROM material_path_intents"); self.db.commit()
+        self.assertGreater(self.export()["materials"], 0)
+
     def test_export_is_read_only_and_unchanged_export_is_idempotent(self):
         before = self.db.execute("SELECT * FROM pdf_drawings").fetchall()
         self.export()
@@ -63,6 +79,56 @@ class BridgeTests(unittest.TestCase):
         self.export()
         self.assertEqual(pending, self.exchange.db.execute("SELECT count(*) FROM outbox").fetchone()[0])
         self.assertEqual(before, self.db.execute("SELECT * FROM pdf_drawings").fetchall())
+
+    def bind_pdf(self):
+        self.db.executescript("""CREATE TABLE pdf_document_bindings(material_id TEXT PRIMARY KEY,bound_sha TEXT);
+            CREATE TABLE pdf_document_aliases(course_id TEXT,rel_path TEXT,material_id TEXT);""")
+        sha = bridge.file_hash(self.folder / "slides.pdf")
+        self.db.execute("INSERT INTO pdf_document_bindings VALUES(?,?)", (self.pdfid, sha))
+        self.db.execute("INSERT INTO pdf_document_aliases VALUES(?,?,?)", (self.cid, "slides.pdf", self.pdfid))
+        self.db.commit()
+        return sha
+
+    def test_fallback_export_keeps_binding_identity_after_index_rebuild_and_refuses_replacement(self):
+        self.bind_pdf()
+        self.db.execute("UPDATE materials_index SET id=? WHERE id=?", (str(uuid.uuid4()), self.pdfid)); self.db.commit()
+        self.export()
+        self.assertIsNotNone(self.exchange.get("material:" + self.pdfid))
+        before = self.exchange.get("material:" + self.pdfid)["payload"]
+        (self.folder / "slides.pdf").write_bytes(b"replacement-pdf")
+        with self.assertRaisesRegex(ValueError, "PDF revision"):
+            self.export()
+        self.assertEqual(self.exchange.get("material:" + self.pdfid)["payload"], before)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM pdf_drawings").fetchone()[0], 1)
+
+    def test_fallback_import_cannot_replace_bound_pdf_with_new_revision(self):
+        self.bind_pdf(); self.export()
+        record = self.exchange.get("material:" + self.pdfid)
+        payload = json.loads(record["payload"]); payload["revision"] = bridge.digest(b"different")
+        self.exchange.db.execute("UPDATE records SET payload=? WHERE id=?", (bridge.encoded(payload).decode(), record["id"]))
+        self.exchange.db.commit()
+        with self.assertRaisesRegex(ValueError, "PDF revision"):
+            bridge.import_desktop(self.dbpath, self.exchange)
+        self.assertEqual((self.folder / "slides.pdf").read_bytes(), b"fixture-pdf")
+
+    def test_v2_metadata_survives_fallback_rotation_roundtrip(self):
+        data = {"inkVersion": 2, "points": [{"x": .2, "y": .3, "p": 0, "t": 0, "tiltX": -12, "tiltY": 38}, {"x": .2, "y": .3, "p": 1, "t": 9}]}
+        self.db.execute("UPDATE pdf_drawings SET data_json=? WHERE id='stroke'", (json.dumps(data),)); self.db.commit()
+        self.export(); bridge.import_desktop(self.dbpath, self.exchange)
+        restored = json.loads(self.db.execute("SELECT data_json FROM pdf_drawings WHERE id='stroke'").fetchone()[0])
+        self.assertEqual(restored["inkVersion"], 2)
+        for before, after in zip(data["points"], restored["points"]):
+            for key, value in before.items(): self.assertAlmostEqual(after[key], value)
+
+    def test_fallback_import_cannot_disguise_bound_pdf_as_note(self):
+        self.bind_pdf(); self.export()
+        record = self.exchange.get("material:" + self.pdfid)
+        payload = json.loads(record["payload"]); payload["kind"] = "note"
+        self.exchange.db.execute("UPDATE records SET payload=? WHERE id=?", (bridge.encoded(payload).decode(), record["id"]))
+        self.exchange.db.commit()
+        with self.assertRaisesRegex(ValueError, "PDF material identity or kind"):
+            bridge.import_desktop(self.dbpath, self.exchange)
+        self.assertEqual((self.folder / "slides.pdf").read_bytes(), b"fixture-pdf")
 
     def test_pdf_rotation_roundtrip_preserves_ids_pressure_unknown_fields_and_anchor(self):
         self.export()

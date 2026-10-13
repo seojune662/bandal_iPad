@@ -39,7 +39,7 @@ function ReferencePreview({ courseId, shape, load }: { courseId: string; shape: 
 function BoardShape({ courseId, shape, loadReference }: { courseId: string; shape: DrawingShape; loadReference: boolean }): JSX.Element | null {
   const color = drawingColorVariable(shape.style.color)
   if (shape.kind === 'ink' || shape.kind === 'highlighter') {
-    const path = strokePath(shape.data.points ?? [], shape.style, PAGE_ASPECT, shape.kind === 'highlighter')
+    const path = strokePath(shape.data.points ?? [], shape.style, PAGE_ASPECT, shape.kind === 'highlighter', shape.data.inkVersion)
     return path.length === 0 ? null : <path d={path} fill={color} opacity={shape.style.opacity} />
   }
   if (shape.kind === 'line' || shape.kind === 'arrow') {

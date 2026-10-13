@@ -1,3 +1,4 @@
+import { strokePathV2 } from '../../../../shared/inkV2'
 import { getStroke } from 'perfect-freehand'
 import type {
   DrawingBox,
@@ -170,10 +171,12 @@ export function strokePath(
   points: readonly DrawingPoint[],
   style: DrawingStyle,
   aspect: number,
-  isHighlighter: boolean
+  isHighlighter: boolean,
+  inkVersion?: 2
 ): string {
+  if (inkVersion === 2) return strokePathV2(points, style.width, aspect, isHighlighter)
   if (
-    points.length < 2 ||
+    points.length < 1 ||
     !Number.isFinite(aspect) ||
     aspect <= 0 ||
     !Number.isFinite(style.width) ||
@@ -190,7 +193,7 @@ export function strokePath(
   const hasLength = firstInput !== undefined && points.some((point) =>
     point.x !== firstInput.x || point.y !== firstInput.y
   )
-  if (!hasLength) return ''
+  if (!hasLength) return strokePathV2(points, style.width, aspect, isHighlighter)
   const outline = getStroke(
     points.map((point) => [
       point.x * STROKE_COORD_SCALE,

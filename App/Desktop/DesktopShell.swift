@@ -12,6 +12,8 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
     private(set) var runtime: DesktopRuntime!
     private var shell: WKWebView!
     private var browser: DesktopBrowserHost!
+    private var nativePDF: NativePDFHost?
+    private var bookmarkImports: DesktopBookmarkImportService!
     private var assets: DesktopAssets!
     private var account: DesktopAccountService!
     private var fileServices: DesktopFileServices!
@@ -40,6 +42,7 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
     private var flushTask: Task<Void, Never>?
     private var saveBackgroundTask: UIBackgroundTaskIdentifier = .invalid
     private var shortcutRevision = 0
+    private let scribblePolicy = DesktopScribblePolicy()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -130,6 +133,7 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         #endif
         shell = WKWebView(frame: .zero, configuration: configuration)
         shell.navigationDelegate = self
+        scribblePolicy.attach(to: shell)
         shell.scrollView.isScrollEnabled = true
         shell.scrollView.bounces = false
         shell.scrollView.contentInsetAdjustmentBehavior = .never
@@ -145,6 +149,21 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         }
         browser = DesktopBrowserHost(root: root)
         browser.attach(to: view, shell: shell)
+        do {
+            nativePDF = try NativePDFHost(root: root) { [weak self] channel, request in
+                guard let self else { throw CancellationError() }
+                return try await self.runtime.invokePrivate(channel, request: request)
+            }
+            nativePDF?.attach(to: view, shell: shell)
+            nativePDF?.emit = { [weak self] channel, value in self?.emit(channel, value) }
+        } catch { showStartupError(error.localizedDescription); return }
+        bookmarkImports = DesktopBookmarkImportService { [weak self] channel, request in
+            guard let self else { throw CancellationError() }
+            return try await self.runtime.invokePrivate(channel, request: request)
+        }
+        bookmarkImports.presenter = self
+        bookmarkImports.profileExists = { [weak self] in self?.browser.isProfileAvailable($0) == true }
+        browser.isImportingProfile = { [weak self] in self?.bookmarkImports.isImporting($0) == true }
         miniPlayer = DesktopMiniPlayer(runtime: runtime)
         miniPlayer.attach(to: view)
         miniPlayer.emit = { [weak self] channel, value in self?.emit(channel, value) }
@@ -255,9 +274,14 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         super.viewDidLayoutSubviews()
         shell?.frame = view.bounds
         browser?.layoutPages()
+        nativePDF?.layout()
         miniPlayer?.layout()
         capture?.layout()
         startupError?.frame = view.bounds.insetBy(dx: 32, dy: 32)
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        if webView === shell { scribblePolicy.reset() }
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
@@ -280,6 +304,8 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
     }
 
     private func handle(_ channel: String, request: [String: Any]) async throws -> Any {
+        if channel == "browser:importBookmarkFile" { return try await bookmarkImports.handle(request) }
+        if let nativePDF, nativePDF.canHandle(channel) { return try await nativePDF.handle(channel, request: request) }
         if capture.canHandle(channel) { return try await capture.handle(channel: channel, request: request) }
         if miniPlayer.canHandle(channel) { return try await miniPlayer.handle(channel, request) }
         if credentials.canHandle(channel) { return try await credentials.handle(channel: channel, request: request) }
@@ -289,6 +315,9 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         if systemServices.canHandle(channel) { return try await systemServices.handle(channel: channel, request: request) }
         if browser.canHandle(channel) { return try await browser.handle(channel: channel, request: request) }
         switch channel {
+        case "runtime:scribbleRegions":
+            try scribblePolicy.update(request)
+            return NSNull()
         case "settings:set":
             if let preferences = request["browser"] as? [String: Any] { try await browser.validateSettings(preferences) }
             return try await runtime.invoke(channel, request: request)
@@ -437,12 +466,14 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        nativePDF?.closeAll()
         fileStaging.cancelUnfinished()
         runtime.log.record("renderer.processTerminated")
         Task { await recordings.interruptForLifecycle(); webView.reload() }
     }
 
     private func flushDocuments() async throws {
+        nativePDF?.flush()
         let result = try await shell.callAsyncJavaScript("""
         if (typeof window.__bandalFlushNative !== 'function') return {ok:false,pending:[]};
         return await window.__bandalFlushNative();
@@ -459,8 +490,11 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         flushTask = Task { [weak self] in
             guard let self else { return }
             defer { self.flushTask = nil; self.finishBackgroundSave() }
-            do { try await self.flushDocuments() }
+            do {
+                try await self.flushDocuments()
+            }
             catch { NSLog("[Desktop lifecycle] Could not finish document save: %@", error.localizedDescription) }
+            await self.browser.pauseDownloadsForBackground()
         }
     }
 

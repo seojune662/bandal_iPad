@@ -10,6 +10,7 @@ final class DesktopBrowserHost: NSObject {
     var onDownload: ((URL, String?) async throws -> String?)?
     var onCourseForURL: ((URL) -> String?)?
     var onDeleteProfile: ((String) throws -> Void)?
+    var isImportingProfile: (String) -> Bool = { _ in false }
     var onAgentAttachment: ((String, String) async throws -> (name: String, mimeType: String, data: Data))?
     var onLayout: (() -> Void)?
     weak var presenter: UIViewController?
@@ -17,6 +18,8 @@ final class DesktopBrowserHost: NSObject {
     weak var container: UIView?
     let root: URL
     private(set) var persistence: DesktopBrowserPersistence?
+    private(set) var presentationStore: BrowserPresentationStore?
+    private(set) var downloadStore: BrowserDownloadStore?
     private var initializationError: String?
     private(set) var pages: [String: DesktopBrowserPage] = [:]
     var downloads: [String: DesktopBrowserDownload] = [:]
@@ -25,6 +28,7 @@ final class DesktopBrowserHost: NSObject {
     private var recentPopups: [Date] = []
     private var releasingInactivePages = false
     private var deletingProfileIDs = Set<String>()
+    var isPresentingPageShare = false
     private(set) var popupBehavior = "balanced"
     private(set) var swipeNavigation = true
     private(set) var agentUse = true
@@ -37,7 +41,15 @@ final class DesktopBrowserHost: NSObject {
     init(root: URL) {
         self.root = root.appendingPathComponent("DesktopBrowser", isDirectory: true)
         super.init()
-        do { persistence = try DesktopBrowserPersistence(root: self.root) }
+        do {
+            persistence = try DesktopBrowserPersistence(root: self.root)
+            presentationStore = try BrowserPresentationStore(root: self.root)
+            downloadStore = try BrowserDownloadStore(root: self.root)
+            for record in downloadStore?.records ?? [] where persistence?.state.profiles.contains(where: { $0.id == record.profileID }) == true {
+                let item = DesktopBrowserDownload(restoring: record, host: self)
+                downloads[item.id] = item
+            }
+        }
         catch { initializationError = error.localizedDescription }
         NotificationCenter.default.addObserver(self, selector: #selector(memoryWarning), name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
     }
@@ -74,6 +86,11 @@ final class DesktopBrowserHost: NSObject {
         }
     }
     func waitForPrivacySettings() async throws { try await privacyTask?.value }
+    func prepareBrowserNetwork() async throws {
+        if privacyTask == nil { applySettings([:]) }
+        try await waitForPrivacySettings()
+        try await DesktopBrowserIdentity.prepare()
+    }
     func validateSettings(_ settings: [String: Any]) async throws {
         _ = try await BrowserPrivacy.compile(tracking: settings["trackingProtection"] as? String ?? trackingProtection,
                                              doNotTrack: settings["doNotTrack"] as? Bool ?? doNotTrack)
@@ -137,9 +154,13 @@ final class DesktopBrowserHost: NSObject {
     func handle(channel: String, request: [String: Any]) async throws -> Any {
         guard let persistence else { throw DesktopBrowserError.unavailable(initializationError ?? "브라우저 저장소를 열지 못했습니다.") }
         switch channel {
+        case "browser:sharePage": return try await sharePage(owned(request))
+        case "browser:dismissDownload": return try dismissDownload(request)
+        case "browser:downloadsSnapshot": return downloads.values.map(\.payload)
+        case "browser:sitePresentation": return try await presentationRequest(request, page: owned(request), update: false)
+        case "browser:setSitePresentation": return try await presentationRequest(request, page: owned(request), update: true)
         case "browser:createPage":
-            if privacyTask == nil { applySettings([:]) }
-            try await waitForPrivacySettings()
+            try await prepareBrowserNetwork()
             let tab = try Self.string(request, "tabId")
             let profile = try profileID(request)
             let privateMode = request["isPrivate"] as? Bool ?? false
@@ -204,11 +225,17 @@ final class DesktopBrowserHost: NSObject {
             let id = try Self.string(request, "id")
             guard id != "default" else { throw DesktopBrowserError.invalid("기본 프로필은 삭제할 수 없습니다") }
             guard isProfileAvailable(id) else { throw DesktopBrowserError.invalid("존재하지 않거나 삭제 중인 프로필") }
+            guard !isImportingProfile(id) else { throw DesktopBrowserError.unavailable("이 프로필에 북마크를 가져오는 중입니다. 완료한 뒤 삭제해 주세요.") }
+            guard !downloads.values.contains(where: { $0.profileID == id && $0.isChangingTransfer }) else { throw DesktopBrowserError.unavailable("다운로드 상태를 변경하는 중입니다. 잠시 후 프로필을 삭제해 주세요.") }
             guard !pages.values.contains(where: { $0.profileID == id }) else { throw DesktopBrowserError.unavailable("해당 프로필의 브라우저 탭을 먼저 닫아 주세요.") }
             deletingProfileIDs.insert(id)
             defer { deletingProfileIDs.remove(id) }
             try onDeleteProfile?(id)
+            for item in downloads.values where item.profileID == id { await item.cancel(pause: false) }
             try await persistence.forgetProfileStore(id)
+            try presentationStore?.forget(id)
+            try downloadStore?.forgetProfile(id)
+            downloads = downloads.filter { $0.value.profileID != id }
             var state = persistence.state; state.profiles.removeAll { $0.id == id }; state.visits.removeAll { $0.profileID == id }; state.permissions.removeAll { $0.profileID == id }
             try persistence.commit(state); return ["ok": true]
         case "browser:recordVisit":
@@ -321,7 +348,7 @@ final class DesktopBrowserHost: NSObject {
             let data = try await BrowserPrint.pdf(webView: view, options: args.first as? [String: Any] ?? [:])
             return ["__bandalBytes": data.base64EncodedString()]
         case "downloadURL":
-            let url = try Self.navigationURL(string(0)); let download = await view.startDownload(using: URLRequest(url: url)); track(download, page: page)
+            let url = try Self.navigationURL(string(0)); let download = await view.startDownload(using: navigationRequest(url)); track(download, page: page)
         case "copy", "cut", "paste", "selectAll":
             let selectors = ["copy": #selector(UIResponderStandardEditActions.copy(_:)), "cut": #selector(UIResponderStandardEditActions.cut(_:)), "paste": #selector(UIResponderStandardEditActions.paste(_:)), "selectAll": #selector(UIResponderStandardEditActions.selectAll(_:))]
             view.becomeFirstResponder()
@@ -330,8 +357,8 @@ final class DesktopBrowserHost: NSObject {
         case "redo": view.undoManager?.redo()
         case "copyImageAt":
             guard args.count > 1, let x = args[0] as? Double, let y = args[1] as? Double, x.isFinite, y.isFinite else { throw DesktopBrowserError.invalid("이미지 위치") }
-            let raw = try await view.callAsyncJavaScript(BrowserScripts.image, arguments: ["x": x, "y": y], in: nil, contentWorld: .defaultClient) as? String
-            guard let raw, let comma = raw.firstIndex(of: ","), let data = Data(base64Encoded: String(raw[raw.index(after: comma)...])), let image = UIImage(data: data) else { throw DesktopBrowserError.unavailable("이 이미지의 원본을 복사할 수 없습니다.") }
+            let image = try await DesktopBrowserImageCopy.image(in: view, at: CGPoint(x: x, y: y), doNotTrack: doNotTrack)
+            guard pages[page.tabID] === page, page.liveWebView === view else { throw DesktopBrowserError.unavailable("이미지를 복사하던 브라우저 탭이 닫혔습니다.") }
             UIPasteboard.general.image = image
         case "openDevTools": throw DesktopBrowserError.unsupported("Chromium 개발자 도구")
         default: throw DesktopBrowserError.unsupported(action)
@@ -358,7 +385,7 @@ final class DesktopBrowserHost: NSObject {
     func destroy(_ id: String) {
         guard let page = pages.removeValue(forKey: id) else { return }
         page.close()
-        if page.isPrivate, !pages.values.contains(where: { $0.profileID == page.profileID && $0.isPrivate }) { persistence?.discardPrivateStore(page.profileID) }
+        if page.isPrivate, !pages.values.contains(where: { $0.profileID == page.profileID && $0.isPrivate }) { persistence?.discardPrivateStore(page.profileID); presentationStore?.discardPrivate(page.profileID) }
     }
     func popup(from opener: DesktopBrowserPage, configuration: WKWebViewConfiguration, action: WKNavigationAction) -> WKWebView? {
         guard let url = action.request.url, (try? Self.navigationURL(url.absoluteString)) != nil else { return nil }

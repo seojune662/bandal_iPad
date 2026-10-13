@@ -57,7 +57,10 @@ function rowToDrawing(row: DrawingRow): Drawing {
   }
 }
 
-export function createDrawingsRepo(db: Database): DrawingsRepo {
+export function createDrawingsRepo(db: Database, options: { documentRevision?: (courseId: string, relPath: string) => string } = {}): DrawingsRepo {
+  db.exec(`CREATE TABLE IF NOT EXISTS drawing_create_receipts (
+    operation_id TEXT PRIMARY KEY, request_json TEXT NOT NULL, drawing_id TEXT NOT NULL
+  )`)
   function assertCourseExists(courseId: string): void {
     const row = db
       .prepare('SELECT id FROM courses WHERE id = ? AND deleted_at IS NULL')
@@ -95,35 +98,58 @@ export function createDrawingsRepo(db: Database): DrawingsRepo {
       const kind = assertDrawingKind(input.kind, DRAWING_KINDS)
       const data = assertDrawingData(input.data, kind)
       const style = assertDrawingStyle(input.style)
-      const now = nowIso()
-      const drawing: Drawing = {
-        id: randomUUID(),
-        courseId,
-        relPath,
-        page,
-        kind,
-        data,
-        style,
-        createdAt: now,
-        updatedAt: now
+      const operationID = input.clientMutationId
+      if (operationID !== undefined && (typeof operationID !== 'string' ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(operationID))) {
+        throw new ValidationError('clientMutationId must be a UUID')
       }
-      db.prepare(
-        `INSERT INTO pdf_drawings
-           (id, course_id, rel_path, page, kind, data_json, style_json,
-            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(
-        drawing.id,
-        courseId,
-        relPath,
-        page,
-        kind,
-        JSON.stringify(data),
-        JSON.stringify(style),
-        now,
-        now
-      )
-      return drawing
+      const documentRevision = input.documentRevision
+      if (documentRevision !== undefined && (typeof documentRevision !== 'string' || !/^[0-9a-f]{64}$/.test(documentRevision))) {
+        throw new ValidationError('documentRevision must be a SHA-256 digest')
+      }
+      const fingerprint = JSON.stringify({ courseId, relPath, page, kind, data, style, documentRevision })
+      return db.transaction(() => {
+        if (operationID !== undefined) {
+          const receipt = db.prepare('SELECT request_json, drawing_id FROM drawing_create_receipts WHERE operation_id = ?').get(operationID) as { request_json: string; drawing_id: string } | undefined
+          if (receipt) {
+            if (receipt.request_json !== fingerprint) throw new ValidationError('A drawing operation cannot be reused for different content')
+            return rowToDrawing(getRowOrThrow(receipt.drawing_id))
+          }
+        }
+        if (documentRevision !== undefined && options.documentRevision?.(courseId, relPath) !== documentRevision) {
+          throw new ValidationError('PDF 원본이 변경되어 새 필기를 적용하지 않았습니다. 원래 PDF와 필기 복구 기록을 보존했습니다.')
+        }
+        const now = nowIso()
+        const drawing: Drawing = {
+          id: randomUUID(),
+          courseId,
+          relPath,
+          page,
+          kind,
+          data,
+          style,
+          createdAt: now,
+          updatedAt: now
+        }
+        db.prepare(
+          `INSERT INTO pdf_drawings
+             (id, course_id, rel_path, page, kind, data_json, style_json,
+              created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          drawing.id,
+          courseId,
+          relPath,
+          page,
+          kind,
+          JSON.stringify(data),
+          JSON.stringify(style),
+          now,
+          now
+        )
+        if (operationID !== undefined) db.prepare('INSERT INTO drawing_create_receipts (operation_id, request_json, drawing_id) VALUES (?, ?, ?)').run(operationID, fingerprint, drawing.id)
+        return drawing
+      })()
     },
 
     update(input) {

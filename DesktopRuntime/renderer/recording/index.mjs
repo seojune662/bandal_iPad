@@ -7,6 +7,12 @@ function replace(source, needle, value, count = 1) {
 export default function nativeRecordingPlugin() {
   return { name: 'bandal-native-recording', enforce: 'pre', transform(source, id) {
     if (id.endsWith('/features/recordings/captureStore.ts')) return { code: `export * from ${JSON.stringify(adapter)}`, map: null }
+    if (id.endsWith('/features/settings/TabsSettingsPanel.tsx')) {
+      let code = `import { nativeAudioDevices, localRecordingModel } from ${JSON.stringify(adapter)}\n` + source
+      code = replace(code, 'navigator.mediaDevices', 'nativeAudioDevices', 3)
+      code = replace(code, "value={prefs?.recordingModel ?? 'whisper-large-v3-turbo'}", "value={localRecordingModel(prefs?.recordingModel ?? 'whisper-large-v3-turbo')}")
+      return { code, map: null }
+    }
     if (!id.endsWith('/features/recordings/RecordingTab.tsx')) return null
     let code = `import { nativeAudioDevices, localRecordingModel } from ${JSON.stringify(adapter)}\n` + source
     code = replace(code, 'navigator.mediaDevices', 'nativeAudioDevices', 3)

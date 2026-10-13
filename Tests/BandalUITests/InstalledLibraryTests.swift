@@ -32,7 +32,7 @@ final class InstalledLibraryTests: XCTestCase {
         noDelayedFailure.isInverted = true
         wait(for: [noDelayedFailure], timeout: 5)
         XCTAssertEqual(app.state, .runningForeground)
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "Installed welcome.pdf after update, existing library retained"
         screenshot.lifetime = .keepAlways
         add(screenshot)

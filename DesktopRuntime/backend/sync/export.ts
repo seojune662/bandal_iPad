@@ -29,7 +29,12 @@ export function snapshotProjection(deps: any) {
       if (item.deleted_at || !existsSync(path)) continue
       const mid = item.id, fileName = basename(item.rel_path), extension = extname(fileName).toLowerCase()
       const kind = extension === '.pdf' ? 'pdf' : ['.md', '.markdown'].includes(extension) ? 'note' : ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic'].includes(extension) ? 'image' : 'file'
+      // Resolve the durable binding before naming either the material revision
+      // or any ink envelope. A replacement must never relabel historical rows.
+      const binding = kind === 'pdf' ? deps.pdfBindings.check({ courseId: course.id, relPath: item.rel_path }) : undefined
+      if (binding && binding.materialID !== mid) throw new Error('PDF material identity changed during sync projection; retry after refreshing the index')
       const revision = asset(mid, path), source = { courseID: course.id, relPath: item.rel_path, path, hash: revision.sha256 }
+      if (binding && binding.documentRevision !== revision.sha256) throw new Error('PDF changed while preparing sync; ink and original revision were preserved')
       add(`material:${mid}`, 'material', { id: mid, courseID: course.id, title: fileName.slice(0, fileName.length - extension.length), fileName, revision: revision.sha256, kind,
         byteCount: revision.byteCount, createdAt: item.created_at, desktop: { relPath: item.rel_path } }, source)
       if (kind === 'note') add(`note:${mid}`, 'note', { materialID: mid, markdown: readFileSync(path, 'utf8') }, source)

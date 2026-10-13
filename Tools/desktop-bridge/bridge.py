@@ -227,14 +227,59 @@ def ink_fingerprint(drawings, annotations):
                            "annotations": sorted([normalize(row) for row in annotations], key=lambda r: r["id"])}))
 
 
+def bound_pdf_identity(db, course_id, relative, revision):
+    """Honor the canonical revision even in the old projector migration path.
+
+    This fallback is read-only: it cannot invent historical evidence for old
+    path-only drawings. The current TypeScript projector owns new bindings.
+    """
+    identity = None
+    revisions = set()
+    if table_exists(db, "pdf_document_aliases") and table_exists(db, "pdf_document_bindings"):
+        binding = db.execute("""SELECT b.material_id,b.bound_sha FROM pdf_document_aliases a
+            JOIN pdf_document_bindings b ON b.material_id=a.material_id
+            WHERE a.course_id=? AND a.rel_path=?""", (course_id, relative)).fetchone()
+        if binding:
+            identity = binding["material_id"]; revisions.add(binding["bound_sha"])
+    if table_exists(db, "drawing_create_receipts"):
+        for receipt in db.execute("""SELECT r.request_json FROM drawing_create_receipts r
+                JOIN pdf_drawings d ON d.id=r.drawing_id WHERE d.course_id=? AND d.rel_path=?""", (course_id, relative)):
+            value = json.loads(receipt["request_json"]).get("documentRevision")
+            if value is not None: revisions.add(value)
+    if any(not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value) for value in revisions):
+        raise ValueError("Invalid preserved PDF revision; recovery records were retained")
+    if revisions and revisions != {revision}:
+        raise ValueError("PDF revision differs from its preserved ink; original files and drawings were retained")
+    return identity
+
+
+@contextlib.contextmanager
+def material_path_lock(desktop):
+    # Same OS-released SQLite lock as the application and current projector.
+    # Legacy migration must never scan half of a live rename into tombstones.
+    lock = sqlite3.connect(Path(desktop).parent / "material-path-lock.db", timeout=0, isolation_level=None)
+    try:
+        lock.execute("BEGIN EXCLUSIVE")
+        yield
+    finally:
+        if lock.in_transaction: lock.execute("ROLLBACK")
+        lock.close()
+
+
+def require_settled_material_paths(db):
+    if table_exists(db, "material_path_intents") and db.execute("SELECT 1 FROM material_path_intents LIMIT 1").fetchone():
+        raise ValueError("Recover interrupted material paths in Bandal before using the legacy bridge; files and records were retained")
+
+
 def export_desktop(desktop, exchange, geometry_reader=geometry_for, use_projector=True):
     if exchange.projection_pending(): raise ValueError("Recover pending desktop import before exporting local documents")
     if use_projector and os.environ.get("BANDAL_DESKTOP_PROJECTOR"):
         return projector_export(desktop, exchange)
     counts = {"courses": 0, "materials": 0, "pages": 0, "tasks": 0}
-    with contextlib.closing(open_desktop(desktop)) as db:
+    with material_path_lock(desktop), contextlib.closing(open_desktop(desktop)) as db:
         # A consistent DB read snapshot; each source file is hash-checked separately.
         db.execute("BEGIN")
+        require_settled_material_paths(db)
         for course in rows(db, "courses"):
             cid = course["id"]
             course_payload = {"id": cid, "name": course["name"], "color": course["color"]}
@@ -261,8 +306,13 @@ def export_desktop(desktop, exchange, geometry_reader=geometry_for, use_projecto
                 extension = path.suffix.lower()
                 kind = "pdf" if extension == ".pdf" else "note" if extension in (".md", ".markdown") else "image" if extension in (".png", ".jpg", ".jpeg", ".heic", ".webp", ".gif") else "file"
                 sha = exchange.asset(path)
+                if kind == "pdf":
+                    material_id = bound_pdf_identity(db, cid, relative, sha) or material_id
                 source = dict(item or {}); source.update(course_id=cid, rel_path=relative, hash=sha)
                 previous_material = exchange.get("material:" + material_id)
+                if kind == "pdf" and previous_material and json.loads(previous_material["payload"])["revision"] != sha:
+                    if rows(db, "pdf_drawings", "WHERE course_id=? AND rel_path=?", (cid, relative)) or rows(db, "annotations", "WHERE course_id=? AND rel_path=?", (cid, relative)):
+                        raise ValueError("PDF revision changed since the previous ink export; old ink was not relabeled")
                 # Desktop has no folder/page-note columns. Retain all unprojected
                 # fields so a roundtrip cannot detach iPad relationships.
                 payload = json.loads(previous_material["payload"]) if previous_material else {}
@@ -364,7 +414,8 @@ def import_desktop(desktop, exchange, course_root=None, use_projector=True):
     if use_projector and os.environ.get("BANDAL_DESKTOP_PROJECTOR"):
         return projector_import(desktop, exchange, course_root)
     counts = {"courses": 0, "materials": 0, "pages": 0, "tasks": 0}
-    with contextlib.closing(open_desktop(desktop, write=True)) as db:
+    with material_path_lock(desktop), contextlib.closing(open_desktop(desktop, write=True)) as db:
+        require_settled_material_paths(db)
         recover_import(db, exchange)
         db.execute("CREATE TABLE IF NOT EXISTS _bandal_bridge_commits(id TEXT PRIMARY KEY)")
         db.commit()
@@ -409,7 +460,14 @@ def import_desktop(desktop, exchange, course_root=None, use_projector=True):
                     old = dict(db.execute("SELECT * FROM materials_index WHERE id=?", (mid,)).fetchone())
                     old.update(deleted_at=timestamp, updated_at=timestamp); changes.append(("materials_index", old))
                 continue
+            identity = bound_pdf_identity(db, payload["courseID"], source["rel_path"], payload["revision"])
+            if identity is not None and (identity != mid or payload["kind"] != "pdf"):
+                raise ValueError("PDF material identity or kind differs from its preserved binding")
+            if identity is not None and target.exists():
+                bound_pdf_identity(db, payload["courseID"], source["rel_path"], file_hash(target))
             if payload["kind"] == "whiteboard": continue
+            if payload["kind"] == "note" and target.suffix.lower() not in (".md", ".markdown"):
+                raise ValueError("A note cannot overwrite a non-Markdown material")
             note = exchange.get("note:" + mid) if payload["kind"] == "note" else None
             content = json.loads(note["payload"])["markdown"].encode() if note and not note["deleted"] else None
             asset = exchange.assets / payload["revision"]

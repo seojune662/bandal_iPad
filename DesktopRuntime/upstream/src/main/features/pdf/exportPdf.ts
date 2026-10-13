@@ -1,3 +1,4 @@
+import { strokePathV2 } from '../../../shared/inkV2'
 /** Burn stored annotations and drawings into a new PDF without touching the source. */
 
 import { randomUUID } from 'node:crypto'
@@ -7,6 +8,9 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import fontkit from '@pdf-lib/fontkit'
 import {
   BlendMode,
+  concatTransformationMatrix,
+  popGraphicsState,
+  pushGraphicsState,
   LineCapStyle,
   PDFDocument,
   rgb,
@@ -111,6 +115,21 @@ function linePoints(drawing: Drawing): [DrawingPoint, DrawingPoint] | null {
   ]
 }
 
+/** Existing drawing rows use the displayed CropBox, matching PDF.js's default
+ * rotated viewport. Transform output once instead of rewriting stored objects.
+ * PDF operators below use a bottom-left origin; the display model is top-left. */
+function annotationPageSpace(page: PDFPage): { width: number; height: number; matrix: [number, number, number, number, number, number] } {
+  const { x, y, width, height } = page.getCropBox()
+  const rotation = ((page.getRotation().angle % 360) + 360) % 360
+  switch (rotation) {
+    case 0: return { width, height, matrix: [1, 0, 0, 1, x, y] }
+    case 90: return { width: height, height: width, matrix: [0, 1, -1, 0, x + width, y] }
+    case 180: return { width, height, matrix: [-1, 0, 0, -1, x + width, y + height] }
+    case 270: return { width: height, height: width, matrix: [0, -1, 1, 0, x, y + height] }
+    default: throw new ValidationError('PDF page rotation must be a multiple of 90 degrees')
+  }
+}
+
 function drawInk(page: PDFPage, drawing: Drawing, width: number, height: number): void {
   const points = drawing.data.points ?? []
   if (points.length === 0) return
@@ -120,6 +139,11 @@ function drawInk(page: PDFPage, drawing: Drawing, width: number, height: number)
     ? Math.min(drawing.style.opacity, 0.38)
     : drawing.style.opacity
   const blendMode = drawing.kind === 'highlighter' ? BlendMode.Multiply : BlendMode.Normal
+  if (drawing.data.inkVersion === 2) {
+    const path = strokePathV2(points, drawing.style.width, height / width, drawing.kind === 'highlighter', width, height)
+    if (path) page.drawSvgPath(path, { x: 0, y: height, color, opacity, blendMode })
+    return
+  }
   const first = points[0]
   if (points.length === 1 && first !== undefined) {
     const point = pdfPoint(first, width, height)
@@ -414,31 +438,36 @@ export function createPdfExporter(deps: PdfExporterDeps): {
     for (const annotation of annotations) {
       const page = pages[annotation.page - 1]
       if (page === undefined) continue
-      const { width, height } = page.getSize()
-      drawAnnotation(page, annotation, width, height)
+      const { width, height, matrix } = annotationPageSpace(page)
+      page.pushOperators(pushGraphicsState(), concatTransformationMatrix(...matrix))
+      try { drawAnnotation(page, annotation, width, height) }
+      finally { page.pushOperators(popGraphicsState()) }
     }
     for (const drawing of drawings) {
       const page = pages[drawing.page - 1]
       if (page === undefined) continue
-      const { width, height } = page.getSize()
-      if (drawing.kind === 'ink' || drawing.kind === 'highlighter') {
-        drawInk(page, drawing, width, height)
-      } else if (drawing.kind === 'rect' || drawing.kind === 'ellipse') {
-        if (drawing.data.box !== undefined) {
-          drawBoxShape(page, drawing, drawing.data.box, width, height)
+      const { width, height, matrix } = annotationPageSpace(page)
+      page.pushOperators(pushGraphicsState(), concatTransformationMatrix(...matrix))
+      try {
+        if (drawing.kind === 'ink' || drawing.kind === 'highlighter') {
+          drawInk(page, drawing, width, height)
+        } else if (drawing.kind === 'rect' || drawing.kind === 'ellipse') {
+          if (drawing.data.box !== undefined) {
+            drawBoxShape(page, drawing, drawing.data.box, width, height)
+          }
+        } else if (drawing.kind === 'line' || drawing.kind === 'arrow') {
+          drawStraightLine(page, drawing, width, height)
+        } else if (drawing.kind === 'image' && drawing.data.image && drawing.data.box) {
+          const canonicalImage = resolveInsideReal(deps.getCourseFolder(courseId), drawing.data.image.relPath)
+          const { nativeImage } = await import('electron')
+          const png = nativeImage.createFromBuffer(await readFile(canonicalImage)).toPNG()
+          const image = await pdf.embedPng(png)
+          const box = drawing.data.box
+          page.drawImage(image, { x: box.x * width, y: (1 - box.y - box.height) * height, width: box.width * width, height: box.height * height, opacity: drawing.style.opacity })
+        } else if (drawing.kind === 'textbox' && fonts !== null && drawing.data.box !== undefined) {
+          drawTextbox(page, drawing, drawing.data.box, fonts, width, height)
         }
-      } else if (drawing.kind === 'line' || drawing.kind === 'arrow') {
-        drawStraightLine(page, drawing, width, height)
-      } else if (drawing.kind === 'image' && drawing.data.image && drawing.data.box) {
-        const canonicalImage = resolveInsideReal(deps.getCourseFolder(courseId), drawing.data.image.relPath)
-        const { nativeImage } = await import('electron')
-        const png = nativeImage.createFromBuffer(await readFile(canonicalImage)).toPNG()
-        const image = await pdf.embedPng(png)
-        const box = drawing.data.box
-        page.drawImage(image, { x: box.x * width, y: (1 - box.y - box.height) * height, width: box.width * width, height: box.height * height, opacity: drawing.style.opacity })
-      } else if (drawing.kind === 'textbox' && fonts !== null && drawing.data.box !== undefined) {
-        drawTextbox(page, drawing, drawing.data.box, fonts, width, height)
-      }
+      } finally { page.pushOperators(popGraphicsState()) }
     }
 
   }

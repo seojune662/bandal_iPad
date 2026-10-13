@@ -4,6 +4,9 @@ export interface InkPointerSample {
   clientY: number
   pressure: number
   pointerType?: string
+  timestamp?: number
+  tiltX?: number
+  tiltY?: number
 }
 
 /** Predicted points are intentionally excluded: they must never become saved ink. */
@@ -15,7 +18,8 @@ export function pencilSamples(event: PointerEvent): InkPointerSample[] {
   for (const sample of samples) {
     if (sample.pointerId !== event.pointerId || !Number.isFinite(sample.clientX) || !Number.isFinite(sample.clientY)) continue
     const point = { pointerId: sample.pointerId, pointerType: event.pointerType, clientX: sample.clientX, clientY: sample.clientY,
-      pressure: Number.isFinite(sample.pressure) ? Math.min(1, Math.max(0, sample.pressure)) : 0.5 }
+      pressure: Number.isFinite(sample.pressure) ? Math.min(1, Math.max(0, sample.pressure)) : 0.5,
+      timestamp: sample.timeStamp, tiltX: sample.tiltX, tiltY: sample.tiltY }
     const last = result[result.length - 1]
     if (!last || last.clientX !== point.clientX || last.clientY !== point.clientY || last.pressure !== point.pressure) result.push(point)
   }
@@ -23,7 +27,10 @@ export function pencilSamples(event: PointerEvent): InkPointerSample[] {
 }
 
 export function pencilPressure<T extends { p: number }>(point: T | null, sample: InkPointerSample): T | null {
-  return point && sample.pointerType === 'pen' ? { ...point, p: sample.pressure } : point
+  if (!point || sample.pointerType !== 'pen') return point
+  return { ...point, p: Number.isFinite(sample.pressure) ? Math.min(1, Math.max(0, sample.pressure)) : 0.5,
+    ...(Number.isFinite(sample.tiltX) ? { tiltX: Math.min(90, Math.max(-90, sample.tiltX!)) } : {}),
+    ...(Number.isFinite(sample.tiltY) ? { tiltY: Math.min(90, Math.max(-90, sample.tiltY!)) } : {}) }
 }
 
 export function acceptsInkPointer(event: Pick<PointerEvent, 'pointerType' | 'pointerId'>, activeID?: number): boolean {

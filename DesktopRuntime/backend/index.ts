@@ -12,8 +12,6 @@ import { createCourseGroupsRepo } from '../upstream/src/main/features/courses/co
 import { createCourseLinksRepo } from '../upstream/src/main/features/courses/courseLinksRepo'
 import { createMaterialsRepo } from '../upstream/src/main/features/materials/materialsRepo'
 import { createNotesRepo } from '../upstream/src/main/features/notes/notesRepo'
-import { createAnnotationsRepo } from '../upstream/src/main/features/annotations/annotationsRepo'
-import { createDrawingsRepo } from '../upstream/src/main/features/pdf/drawingsRepo'
 import { createPdfViewStateRepo } from '../upstream/src/main/features/pdf/pdfViewStateRepo'
 import { createMediaProgressRepo } from '../upstream/src/main/features/materials/mediaProgressRepo'
 import { createBoardRepo } from '../upstream/src/main/features/board/boardRepo'
@@ -54,6 +52,9 @@ import { installApplication } from './application'
 import { installMail } from './mail'
 import { installNotifications } from './notifications'
 import { installBrowserShortcuts } from './browser-shortcuts'
+import { importBookmarkHTML } from './bookmark-import'
+import { createBoundPDFRepositories, createPDFDocumentBindings, nativePDFMutationStatus } from './native-pdf'
+import { createPDFOriginalPreserver } from './pdf-binding-originals'
 import { installPresentation } from './presentation'
 import { installStudy } from './study'
 import { resolveInsideReal } from '../upstream/src/main/db/validate'
@@ -105,19 +106,28 @@ export function initialize() {
   }
   let learning: ReturnType<typeof installLearning>
   const repoint = (change: any) => {
-    repointMaterialPath({ db, courseFolder: courses.getFolder(change.courseId), ...change })
-    materials.repointAddedState(change.courseId, change.fromRelPath, change.toRelPath, change.isDirectory)
+    db.transaction(() => {
+      pdfBindings.repoint(change)
+      repointMaterialPath({ db, courseFolder: courses.getFolder(change.courseId), ...change })
+      materials.repointAddedState(change.courseId, change.fromRelPath, change.toRelPath, change.isDirectory)
+    })()
     recordings.repoint(change.courseId, change.fromRelPath, change.toRelPath, change.isDirectory)
     // Learning's source references use its own serialized atomic file writer.
     void learning.repo.repoint(change).catch(error => emit('backend:error', { message: String(error), operation: 'learning.repoint' }))
   }
   const materials = createMaterialsRepo({ db, getCourseFolder: id => courses.getFolder(id),
+    pathLock: { tryAcquire() {
+      const token = native<number | null>('fs.lockAcquire', { path: join(env().userDataPath, 'material-path-lock.db') })
+      return token === null ? undefined : () => { native('fs.lockRelease', { token }) }
+    } },
     revealItem: path => native('platform.reveal', { path }), trashItem: trash, onPathChanged: repoint })
   handlePrivate('nativeMaterial:path', req => materials.absolutePathForAsync(req.courseId,req.relPath))
   const notes = createNotesRepo({ getCourseFolder: id => courses.getFolder(id), onPathChanged: repoint,
     onCreated: ref => materials.recordAdded(ref.courseId, ref.relPath) })
   installHoverPreview({handle,materials})
-  const annotations = createAnnotationsRepo(db), drawings = createDrawingsRepo(db)
+  const pdfSourcePath = (courseId: string, relPath: string) => resolveInsideReal(courses.getFolder(courseId), relPath)
+  const pdfBindings = createPDFDocumentBindings(db, (courseId, relPath) => native<string>('fs.sha256', { path: pdfSourcePath(courseId, relPath) }), createPDFOriginalPreserver(pdfSourcePath))
+  const { annotations, drawings } = createBoundPDFRepositories(db, pdfBindings)
   const media = createMediaProgressRepo(db), pdf = createPdfViewStateRepo(db)
   const board = createBoardRepo(db), canvas = createCanvasRepo(db), favorites = createFavoritesRepo(db), layout = createLayoutRepo(db)
   const linkService = createLinkService({ notes, getCourseFolder: id => courses.getFolder(id) })
@@ -164,6 +174,8 @@ export function initialize() {
   handle('annotations:create', req => annotations.create(req)); handle('annotations:update', req => annotations.update(req)); handle('annotations:delete', req => annotations.softDelete(req))
   handle('drawings:listForFile', req => drawings.listForFile(req.courseId, req.relPath))
   handle('drawings:create', req => drawings.create(req)); handle('drawings:update', req => drawings.update(req))
+  handlePrivate('nativePDF:mutationStatus', req => nativePDFMutationStatus(db, req))
+  handlePrivate('nativePDF:binding', req => pdfBindings.check(req))
   handle('drawings:delete', req => { drawings.softDelete(req.ids); return OK })
   handle('media:getProgress', req => media.get(req.courseId, req.relPath)); handle('media:setProgress', req => media.set(req))
   handle('pdf:getViewState', req => pdf.get(req.courseId, req.relPath)); handle('pdf:setViewState', req => pdf.set(req))
@@ -179,6 +191,7 @@ export function initialize() {
   handle('canvas:putShape', req => canvas.putShape(req)); handle('canvas:removeShapes', req => { canvas.removeShapes(req); return OK })
   handle('favorites:list', req => favorites.list(req.courseId)); handle('favorites:add', req => favorites.add(req)); handle('favorites:rename', req => favorites.rename(req))
   handle('favorites:remove', req => { favorites.softDelete(req.id); return OK }); handle('favorites:reorder', req => { favorites.reorder(req); return OK })
+  handlePrivate('nativeBookmark:import', req => importBookmarkHTML(db, favorites, req))
   handle('layout:get', req => layout.get(req.courseId)); handle('layout:save', req => layout.save(req.courseId, req.layout)); handle('layout:saveMany', req => layout.saveMany(req.layouts))
   handle('links:create', materialMutation(req => links.create({ ...req, label: req.label ?? '' })))
   handle('links:remove', materialMutation(req => links.remove(req.courseId, req.id)))
@@ -225,6 +238,7 @@ export function initialize() {
   // Enabling executable plugin code is supplied by the sandbox runtime; the
   // persistent registry is available independently for metadata/settings.
   learning = installLearning({ db, courses, packs, handle, changed: () => courseChanged(OK), changedMaterials: changed })
+  materials.recoverPathChanges()
   const calendarPath = join(env().userDataPath, 'apple-calendar.json')
   const platform = (channel: string, request: unknown) => {
     if (!(globalThis as any).__bandalPlatform?.invoke) unsupported(channel)
@@ -238,10 +252,10 @@ export function initialize() {
     changed: () => emit('appleCalendar:changed', {}), task: id => board.list({ includeDone: true }).find(task => task.id === id) })
   for (const action of ['state', 'connect', 'disconnect', 'configure', 'events'] as const) handle(`appleCalendar:${action}`, req => calendar[action](req))
   handle('appleCalendar:export', req => calendar.exportTask(req.taskId))
-  const pdfExport=installPdfExport({ handle, courses, drawings, annotations, canvas, materials, changed })
+  const pdfExport=installPdfExport({ handle, courses, drawings, annotations, canvas, materials, changed, pdfBindings })
   installMarket({handle,courses,materials,annotations,pdfExport:pdfExport.exportAnnotated})
   installPresentation({ handle,courses,drawings,annotations,materials,changed })
-  installSync({ handlePrivate, db, courses, materials, notes, drawings, annotations, board, canvas, recordings, learning })
+  installSync({ handlePrivate, db, courses, materials, notes, drawings, annotations, board, canvas, recordings, learning, pdfBindings })
   installNotifications({ db,handlePrivate })
   installBrowserShortcuts({ handlePrivate })
   handlePrivate('nativeRecording:create', req => recordings.create(req.courseId,req.title,req.modelId))

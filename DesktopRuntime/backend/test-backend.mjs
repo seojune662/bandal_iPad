@@ -41,7 +41,8 @@ if (process.argv.includes('--legacy')) {
 }
 environment.fsConstants={O_RDONLY:fs.constants.O_RDONLY,O_NOFOLLOW:fs.constants.O_NOFOLLOW}
 const mcpFixtureKey = crypto.randomBytes(32)
-const timers = new Set(), pushes = [], hashes = new Map()
+const timers = new Set(), pushes = [], hashes = new Map(), materialLocks = new Map()
+let materialLockSequence = 0
 const decode = value => value && typeof value === 'object' && value.__buffer ? Buffer.from(value.__buffer, 'base64') : Array.isArray(value) ? value.map(decode) : value
 const native = (op, a) => {
   switch (op) {
@@ -52,12 +53,18 @@ const native = (op, a) => {
     case 'sqlite.exec': database.exec(a.sql); return null
     case 'sqlite.query': { const s = database.prepare(a.sql), args = Array.isArray(a.params) ? a.params.map(decode) : [a.params]; if (s.reader) return s.all(...args); s.run(...args); return [] }
     case 'sqlite.run': { const result = database.prepare(a.sql).run(...(Array.isArray(a.params) ? a.params.map(decode) : [a.params])); return { ...result, lastInsertRowid: Number(result.lastInsertRowid) } }
+    case 'fs.lockAcquire': {
+      const lock = new SQLite(a.path, { timeout: 0 })
+      try { lock.exec('BEGIN EXCLUSIVE') } catch (error) { lock.close(); if (error.code === 'SQLITE_BUSY') return null; throw error }
+      const token = ++materialLockSequence; materialLocks.set(token, lock); return token
+    }
+    case 'fs.lockRelease': { const lock = materialLocks.get(a.token); if (lock) { materialLocks.delete(a.token); try { lock.exec('ROLLBACK') } finally { lock.close() } } return null }
     case 'fs.exists': return fs.existsSync(a.path)
     case 'fs.sha256': return crypto.createHash('sha256').update(fs.readFileSync(a.path)).digest('hex')
     case 'fs.realpath': return fs.realpathSync(a.path)
     case 'fs.readdir': return fs.readdirSync(a.path, { withFileTypes: true }).map(v => ({ name: v.name, isFile: v.isFile(), isDirectory: v.isDirectory(), isSymbolicLink: v.isSymbolicLink() }))
-    case 'fs.stat': { const s = (a.followSymlinks ? fs.statSync : fs.lstatSync)(a.path, { bigint: true }); return { size: Number(s.size), mtimeMs: Number(s.mtimeNs) / 1e6, mtimeNs: String(s.mtimeNs), mode: Number(s.mode), isFile: s.isFile(), isDirectory: s.isDirectory(), isSymbolicLink: s.isSymbolicLink() } }
-    case 'fs.fstat': { const s=fs.fstatSync(a.fd,{bigint:true});return{size:Number(s.size),mtimeMs:Number(s.mtimeNs)/1e6,mtimeNs:String(s.mtimeNs),mode:Number(s.mode),isFile:s.isFile(),isDirectory:s.isDirectory(),isSymbolicLink:s.isSymbolicLink()} }
+    case 'fs.stat': { const s = (a.followSymlinks ? fs.statSync : fs.lstatSync)(a.path, { bigint: true }); return { size: Number(s.size), mtimeMs: Number(s.mtimeNs) / 1e6, mtimeNs: String(s.mtimeNs), dev: String(s.dev), ino: String(s.ino), ctimeNs: String(s.ctimeNs), mode: Number(s.mode), isFile: s.isFile(), isDirectory: s.isDirectory(), isSymbolicLink: s.isSymbolicLink() } }
+    case 'fs.fstat': { const s=fs.fstatSync(a.fd,{bigint:true});return{size:Number(s.size),mtimeMs:Number(s.mtimeNs)/1e6,mtimeNs:String(s.mtimeNs),dev:String(s.dev),ino:String(s.ino),ctimeNs:String(s.ctimeNs),mode:Number(s.mode),isFile:s.isFile(),isDirectory:s.isDirectory(),isSymbolicLink:s.isSymbolicLink()} }
     case 'fs.readFile': return fs.readFileSync(a.path).toString(a.encoding)
     case 'fs.writeFile': fs.writeFileSync(a.path, Buffer.from(a.data, a.encoding), { flag: a.flag, mode: a.mode }); return null
     case 'fs.mkdir': fs.mkdirSync(a.path, { recursive: a.recursive, mode: a.mode }); return null
@@ -84,15 +91,15 @@ const native = (op, a) => {
     default: throw new Error(`Missing native test operation ${op}`)
   }
 }
-function runtime() {
+function runtime(platform) {
   const context = vm.createContext({ console, setTimeout, clearTimeout, AbortController,
-    __bandalPlatform: { invoke: async (channel, input) => { if (channel !== 'native:saveFile') throw new Error(`Unmocked platform channel: ${channel}`); const output = path.join(qaPath, input.suggestedName); fs.writeFileSync(output, Buffer.from(input.data, 'base64')); return { saved: true, path: output } } },
+    __bandalPlatform: platform ?? { invoke: async (channel, input) => { if (channel !== 'native:saveFile') throw new Error(`Unmocked platform channel: ${channel}`); const output = path.join(qaPath, input.suggestedName); fs.writeFileSync(output, Buffer.from(input.data, 'base64')); return { saved: true, path: output } } },
     setInterval: (fn, delay) => { const timer = setInterval(fn, delay); timers.add(timer); return timer },
     clearInterval: timer => { timers.delete(timer); clearInterval(timer) },
     __bandalNative: { perform: json => { try { const { op, args } = JSON.parse(json); return JSON.stringify({ ok: true, value: native(op, args) }) }
       catch (error) { return JSON.stringify({ ok: false, error: { message: error.message, code: error.code } }) } },
     emit: (channel, payload) => pushes.push({ channel, payload: JSON.parse(payload) }), log: console.log } })
-  vm.runInContext(fs.readFileSync(fileURLToPath(new URL('./dist/backend.js', import.meta.url)), 'utf8'), context)
+  vm.runInContext(fs.readFileSync(process.env.BANDAL_TEST_BACKEND ?? fileURLToPath(new URL('./dist/backend.js', import.meta.url)), 'utf8'), context)
   return context.BandalBackend
 }
 try {
@@ -207,14 +214,28 @@ try {
   assert.equal((await reopened.invoke('learning:get', { binding: project.binding })).name, '새 학습 이름')
   assert.equal((await reopened.invoke('drawings:listForFile', { courseId: course.id, relPath: 'renamed.pdf' }))[0].id, drawing.id)
   if (legacy.records.length) assert.equal(database.prepare('SELECT COUNT(*) n FROM pdf_drawings').get().n, pdfQA ? 18 : 10)
-  if (process.argv.includes('--sync')) await (await import('./test-sync.mjs')).testSync({ backend,database,environment,runtime,course,note })
+  if (process.argv.includes('--sync')) {
+    const held = native('fs.lockAcquire', { path: path.join(environment.userDataPath, 'material-path-lock.db') })
+    assert.notEqual(held, null)
+    const before = database.prepare('SELECT * FROM ipad_sync_projection ORDER BY id').all()
+    try {
+      await assert.rejects(backend.invokePrivate('nativeSync:export', {}), /자료 경로 변경/)
+      await assert.rejects(backend.invokePrivate('nativeSync:import', { records: [], assets: [] }), /자료 경로 변경/)
+      assert.deepEqual(database.prepare('SELECT * FROM ipad_sync_projection ORDER BY id').all(), before)
+    } finally { native('fs.lockRelease', { token: held }) }
+    await (await import('./test-sync.mjs')).testSync({ backend,database,environment,runtime,course,note })
+  }
   if (process.argv.includes('--features')) await (await import('./test-features.mjs')).testFeatures({ invoke,course,note,environment,require,qaPath })
+  if (process.argv.includes('--settings-controls')) await (await import('./test-settings-controls.mjs')).testSettingsControls({ invoke,runtime,environment,course,note })
+  if (process.argv.includes('--ink-v2')) await (await import('./test-ink-v2.mjs')).testInkV2({ invoke,runtime,database,course })
+  if (process.argv.includes('--pdf-binding')) await (await import('./test-pdf-binding.mjs')).testPDFBinding({backend,database,environment,runtime,course})
   if (process.argv.includes('--view-state')) await (await import('./test-legacy-view-state.mjs')).testLegacyViewState({ backend,database,environment,runtime })
   if (process.argv.includes('--projector')) { assert.ok(pdfQA,'--projector requires --pdf for real document geometry');assert.equal(legacy.records.length,0,'Use separate --legacy fixture');await (await import('./test-projector.mjs')).testProjector({backend,database,environment,course,note}) }
   if (process.argv.includes('--relocation')) await (await import('./test-relocation-runtime.mjs')).testRelocationRuntime({backend,database,environment,runtime,sourcePdf})
   assert.ok(pushes.some(item => item.channel === 'settings:changed'))
   console.log(`PASS: original 37 migrations, ${initialized.supportedChannels.length} channels; settings, courses/groups, notes/conflicts, files, ink/rename, board, canvas, layout, learning, rollback, persistence`)
 } finally {
+  for (const lock of materialLocks.values()) { try { lock.exec('ROLLBACK') } finally { lock.close() } }
   for (const timer of timers) clearInterval(timer)
   database.close(); fs.rmSync(directory, { recursive: true, force: true })
 }

@@ -17,12 +17,15 @@ import type { ImportResult, MaterialFileContent, MaterialKind,
   MaterialNode, MaterialSearchHit } from '../../../shared/types/materials'
 import { scanMaterialTree, type MaterialWalk, type ScanTruncation } from './scanMaterialTree'
 import { renameWithRetry } from './renameWithRetry'
+import { assertMaterialPathAvailable, createMaterialPathJournal, type MaterialPathLock } from './materialPathJournal'
 import { createMaterialAddedState } from './materialAddedState'
 import { ConflictError, NotFoundError, ValidationError } from '../../db/errors'
 import { assertRealInside, nowIso, requireId, requireNonEmptyString,
   resolveInside } from '../../db/validate'
 
 export interface MaterialsRepo {
+  /** Called after dependent repositories are initialized, before exposing data. */
+  recoverPathChanges(): void
   tree(courseId: string): Promise<MaterialNode[]>
   snapshot(courseId: string): MaterialNode[] | null
   search(courseId: string, query: string): Promise<MaterialSearchHit[]>
@@ -79,6 +82,8 @@ export interface MaterialsRepoDeps {
   revealItem: (absPath: string) => void
   /** Moves an absolute path to the OS trash (electron shell.trashItem). */
   trashItem: (absPath: string) => Promise<void>
+  /** Required in production: shared with every process using this material DB. */
+  pathLock?: MaterialPathLock
   /** Production uses the exported defaults; tests may lower them. */
   scan?: typeof scanMaterialTree
   scanLimits?: MaterialsScanLimits
@@ -269,14 +274,41 @@ export function createMaterialsRepo(deps: MaterialsRepoDeps): MaterialsRepo {
     course_id TEXT PRIMARY KEY REFERENCES courses(id) ON DELETE CASCADE,
     folder TEXT NOT NULL, tree TEXT NOT NULL
   )`)
+  const journal = createMaterialPathJournal(db, getCourseFolder)
+  let localLockHeld = false
+  const pathLock = deps.pathLock ?? { tryAcquire() {
+    if (localLockHeld) return undefined
+    localLockHeld = true
+    return () => { localLockHeld = false }
+  } }
+  const applyPathChange = (change: { courseId: string; fromRelPath: string; toRelPath: string; isDirectory: boolean }) => {
+    addedState.repoint(change.courseId, change.fromRelPath, change.toRelPath, change.isDirectory)
+    deps.onPathChanged?.(change)
+    invalidate(change.courseId)
+  }
+  const recoverLocked = () => journal.recover(applyPathChange, error => console.error('[materials] preserved interrupted path change:', error))
+  function recoverPathChanges(): void {
+    // A local-only test repository must not recover a live, other process.
+    if (!deps.pathLock) return
+    const unlock = pathLock.tryAcquire()
+    if (!unlock) return
+    try { recoverLocked() } finally { unlock() }
+  }
   function invalidate(courseId: string): void {
     treeCache.delete(courseId)
     generations.set(courseId, (generations.get(courseId) ?? 0) + 1)
   }
 
-  function notifyPathChanged(courseId: string, fromRelPath: string, toRelPath: string, isDirectory: boolean): void {
-    try { deps.onPathChanged?.({ courseId, fromRelPath, toRelPath, isDirectory }) }
-    catch (error) { console.warn(`[materials] path-change hook failed for "${fromRelPath}" -> "${toRelPath}"`, error) }
+  function completePathChange(courseId: string, fromRelPath: string, toRelPath: string, intent: string): void {
+    try {
+      journal.markMoved(intent)
+      // Backlink files may already have been atomically rewritten by the
+      // callback. Keep filesystem movement monotonic; a retry completes SQL
+      // and PDF identity at the same new path instead of undoing those links.
+      journal.complete(intent, applyPathChange)
+    } catch (error) {
+      throw new Error(`자료 경로 변경을 마무리하지 못했습니다. "${fromRelPath}" → "${toRelPath}"의 파일과 이전 필기 기록을 보존했으며 다음 실행에서 다시 확인합니다. ${String(error)}`, { cause: error })
+    } finally { invalidate(courseId) }
   }
 
   function mutatePath<T>(courseId: string, operation: () => Promise<T>): Promise<T> {
@@ -287,13 +319,19 @@ export function createMaterialsRepo(deps: MaterialsRepoDeps): MaterialsRepo {
       const gate = new Promise<void>(resolve => { release = resolve })
       scanGates.set(id, gate)
       let resume: (() => Promise<void>) | undefined
+      let unlock: (() => void) | undefined
       try {
         resume = await deps.pauseWatching?.(id)
         // Drain the real walk/index work, not scans' invalidation continuation:
         // that continuation may need to rescan and therefore await our gate.
         await scanWork.get(id)?.catch(() => undefined)
+        unlock = pathLock.tryAcquire()
+        if (!unlock) throw new ConflictError('다른 반달 작업에서 자료 경로를 변경 중입니다. 잠시 후 다시 시도해 주세요.')
+        if (deps.pathLock) recoverLocked()
+        assertMaterialPathAvailable(db, id)
         return await operation()
       } finally {
+        unlock?.()
         try { await resume?.() } catch (error) {
           console.error(`[materials] watcher restoration failed for ${id}:`, error)
         }
@@ -308,6 +346,7 @@ export function createMaterialsRepo(deps: MaterialsRepoDeps): MaterialsRepo {
 
   function requireCourseFolder(courseId: string): { id: string; folder: string } {
     const id = requireId(courseId, 'courseId')
+    assertMaterialPathAvailable(db, id)
     const folder = getCourseFolder(id)
     if (!existsSync(folder)) {
       throw new NotFoundError('course folder', folder)
@@ -371,6 +410,7 @@ export function createMaterialsRepo(deps: MaterialsRepoDeps): MaterialsRepo {
   async function cachedTree(courseId: string, folder: string): Promise<MaterialNode[]> {
     const gate = scanGates.get(courseId)
     if (gate) { await gate; return cachedTree(courseId, getCourseFolder(courseId)) }
+    assertMaterialPathAvailable(db, courseId)
     const cached = treeCache.get(courseId)
     if (cached?.folder === folder) return cached.nodes
     const pending = scans.get(courseId)
@@ -415,6 +455,7 @@ export function createMaterialsRepo(deps: MaterialsRepoDeps): MaterialsRepo {
   }
 
   async function absolutePathForAsync(courseId: string, relPath: string): Promise<string> {
+    assertMaterialPathAvailable(db, courseId, relPath)
     const folder = getCourseFolder(requireId(courseId, 'courseId'))
     const abs = resolveInside(folder, requireNonEmptyString(relPath, 'relPath'))
     const [root, target] = await Promise.all([realpath(folder), realpath(abs)])
@@ -424,6 +465,7 @@ export function createMaterialsRepo(deps: MaterialsRepoDeps): MaterialsRepo {
   }
 
   return {
+    recoverPathChanges,
     absolutePathForAsync,
     absolutePathFor(courseId, relPath) {
       return resolveMaterialAbs(courseId, relPath)
@@ -595,25 +637,29 @@ export function createMaterialsRepo(deps: MaterialsRepoDeps): MaterialsRepo {
           : posix.join(input.toDirRelPath, targetName)
       const destAbs = resolveCoursePath(folder, relPath)
       return mutatePath(input.courseId, async () => {
-        await renameWithRetry(sourceAbs, destAbs, () => {
-          if (getCourseFolder(input.courseId) !== folder) throw new ValidationError('과목 폴더가 변경되었습니다. 자료 목록을 새로고침하고 다시 시도하세요.')
-          assertRealInside(folder, sourceAbs)
-          assertRealInside(folder, destDirAbs)
-          assertRealInside(folder, destAbs)
-          assertFileOrDirectory(sourceAbs, input.fromRelPath)
-          if (!existsSync(destDirAbs) || !lstatSync(destDirAbs).isDirectory()) {
-            throw new NotFoundError('material directory', input.toDirRelPath)
-          }
-          if (destDirAbs === sourceAbs || destDirAbs.startsWith(sourceAbs + sep)) {
-            throw new ValidationError('폴더를 자기 안으로 옮길 수 없습니다')
-          }
-          if (existsSync(destAbs)) throw new ConflictError(`material "${relPath}" already exists`)
-        })
-        const courseId = requireId(input.courseId, 'courseId')
-        addedState.repoint(courseId, input.fromRelPath, relPath, sourceKind === 'dir')
-        invalidate(courseId)
-        notifyPathChanged(courseId, input.fromRelPath, relPath, sourceKind === 'dir')
-        return { relPath }
+        const intent = journal.begin({ courseId: input.courseId, fromRelPath: input.fromRelPath, toRelPath: relPath, isDirectory: sourceKind === 'dir' }, folder)
+        try {
+          await renameWithRetry(sourceAbs, destAbs, () => {
+            if (getCourseFolder(input.courseId) !== folder) throw new ValidationError('과목 폴더가 변경되었습니다. 자료 목록을 새로고침하고 다시 시도하세요.')
+            assertRealInside(folder, sourceAbs)
+            assertRealInside(folder, destDirAbs)
+            assertRealInside(folder, destAbs)
+            assertFileOrDirectory(sourceAbs, input.fromRelPath)
+            if (!existsSync(destDirAbs) || !lstatSync(destDirAbs).isDirectory()) {
+              throw new NotFoundError('material directory', input.toDirRelPath)
+            }
+            if (destDirAbs === sourceAbs || destDirAbs.startsWith(sourceAbs + sep)) {
+              throw new ValidationError('폴더를 자기 안으로 옮길 수 없습니다')
+            }
+            if (existsSync(destAbs)) throw new ConflictError(`material "${relPath}" already exists`)
+          })
+          const courseId = requireId(input.courseId, 'courseId')
+          completePathChange(courseId, input.fromRelPath, relPath, intent)
+          return { relPath }
+        } catch (error) {
+          try { journal.discardIfOriginal(intent) } catch { /* Preserve unresolved intent and the original error. */ }
+          throw error
+        }
       })
     },
 
@@ -665,18 +711,22 @@ export function createMaterialsRepo(deps: MaterialsRepoDeps): MaterialsRepo {
         throw new ConflictError(`material "${destinationRelPath}" already exists`)
       }
       return mutatePath(input.courseId, async () => {
-        await renameWithRetry(sourceAbs, destinationAbs, () => {
-          if (getCourseFolder(input.courseId) !== folder) throw new ValidationError('과목 폴더가 변경되었습니다. 자료 목록을 새로고침하고 다시 시도하세요.')
-          assertRealInside(folder, sourceAbs)
-          assertRealInside(folder, destinationAbs)
-          assertFileOrDirectory(sourceAbs, input.relPath)
-          if (existsSync(destinationAbs)) throw new ConflictError(`material "${destinationRelPath}" already exists`)
-        })
-        const courseId = requireId(input.courseId, 'courseId')
-        addedState.repoint(courseId, input.relPath, destinationRelPath, sourceKind === 'dir')
-        invalidate(courseId)
-        notifyPathChanged(courseId, input.relPath, destinationRelPath, sourceKind === 'dir')
-        return { relPath: destinationRelPath }
+        const intent = journal.begin({ courseId: input.courseId, fromRelPath: input.relPath, toRelPath: destinationRelPath, isDirectory: sourceKind === 'dir' }, folder)
+        try {
+          await renameWithRetry(sourceAbs, destinationAbs, () => {
+            if (getCourseFolder(input.courseId) !== folder) throw new ValidationError('과목 폴더가 변경되었습니다. 자료 목록을 새로고침하고 다시 시도하세요.')
+            assertRealInside(folder, sourceAbs)
+            assertRealInside(folder, destinationAbs)
+            assertFileOrDirectory(sourceAbs, input.relPath)
+            if (existsSync(destinationAbs)) throw new ConflictError(`material "${destinationRelPath}" already exists`)
+          })
+          const courseId = requireId(input.courseId, 'courseId')
+          completePathChange(courseId, input.relPath, destinationRelPath, intent)
+          return { relPath: destinationRelPath }
+        } catch (error) {
+          try { journal.discardIfOriginal(intent) } catch { /* Preserve unresolved intent and the original error. */ }
+          throw error
+        }
       })
     },
 

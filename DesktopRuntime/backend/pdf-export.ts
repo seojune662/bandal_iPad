@@ -1,4 +1,5 @@
 import { PDFDocument, degrees } from 'pdf-lib'
+import { createHash } from 'node:crypto'
 import { createPdfExporter } from '../upstream/src/main/features/pdf/exportPdf'
 import { createBoardPdfExporter } from '../upstream/src/main/features/canvas/exportBoardPdf'
 import { resolveInsideReal } from '../upstream/src/main/db/validate'
@@ -7,7 +8,7 @@ import { Buffer } from './shims/buffer'
 import { readFile, writeFile } from './shims/fs-promises'
 import { join, basename } from './shims/path'
 
-export function installPdfExport(deps: { handle: (channel: string, fn: (request: any) => any) => void; courses: any; drawings: any; annotations: any; canvas: any; materials: any; changed: (id: string) => void }) {
+export function installPdfExport(deps: { handle: (channel: string, fn: (request: any) => any) => void; courses: any; drawings: any; annotations: any; canvas: any; materials: any; pdfBindings: any; changed: (id: string) => void }) {
   const fontPath = (file: string) => join((env() as any).pdfFontPath ?? join(env().userDataPath, 'PDF', 'fonts'), file)
   const exporter = createPdfExporter({ getCourseFolder: id => deps.courses.getFolder(id),
     listDrawings: (id, path) => deps.drawings.listForFile(id, path), listAnnotations: (id, path) => deps.annotations.listForFile({ courseId: id, relPath: path }), resolveFontPath: fontPath })
@@ -19,7 +20,9 @@ export function installPdfExport(deps: { handle: (channel: string, fn: (request:
   })
   async function annotatedBytes(request:any):Promise<Uint8Array> {
     const source = resolveInsideReal(deps.courses.getFolder(request.courseId), request.relPath)
-    const pdf = await PDFDocument.load(await readFile(source)), overlay = await PDFDocument.create()
+    const bytes = await readFile(source)
+    deps.pdfBindings.check({ courseId: request.courseId, relPath: request.relPath, documentRevision: createHash('sha256').update(bytes).digest('hex') })
+    const pdf = await PDFDocument.load(bytes), overlay = await PDFDocument.create()
     const sourcePages = pdf.getPages()
     for (const page of sourcePages) {
       const { width, height } = page.getCropBox(), rotation = ((page.getRotation().angle % 360) + 360) % 360

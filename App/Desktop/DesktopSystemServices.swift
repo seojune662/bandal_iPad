@@ -7,7 +7,7 @@ import UserNotifications
 @MainActor
 final class DesktopSystemServices {
     var emit: ((String, Any) -> Void)?
-    private let store = EKEventStore()
+    private let store: EKEventStore
     private let iso = ISO8601DateFormatter()
     private let day: DateFormatter = {
         let formatter = DateFormatter()
@@ -18,8 +18,15 @@ final class DesktopSystemServices {
         return formatter
     }()
     private var observer: NSObjectProtocol?
+    private let permissions: DesktopPermissionAccess
+    private let scheduleTestNotification: () async throws -> Void
+    private static let permissionIDs = ["screen", "accessibility", "notifications", "microphone", "calendar", "documents"]
 
-    init() {
+    init(permissionAccess: DesktopPermissionAccess? = nil, scheduleTestNotification: (() async throws -> Void)? = nil) {
+        let store = EKEventStore()
+        self.store = store
+        permissions = permissionAccess ?? .live(calendar: store)
+        self.scheduleTestNotification = scheduleTestNotification ?? Self.scheduleNotification
         observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.emit?("appleCalendar:changed", [:]) }
         }
@@ -38,40 +45,43 @@ final class DesktopSystemServices {
         case "native:calendarEvents": return try calendarEvents(request)
         case "native:calendarExport": return try exportCalendarEvent(request)
         case "appleCalendar:permissions", "permissions:openSettings":
-            guard let url = URL(string: UIApplication.openSettingsURLString), await UIApplication.shared.open(url) else { throw DesktopRuntimeError("시스템 설정을 열지 못했습니다.") }
+            if channel == "permissions:openSettings" {
+                guard let id = request["id"] as? String, Self.permissionIDs.contains(id) else { throw DesktopRuntimeError("권한 항목을 확인해 주세요.") }
+            }
+            guard await permissions.openSettings() else { throw DesktopRuntimeError("시스템 설정을 열지 못했습니다.") }
             return ["ok": true]
         case "permissions:status":
             var rows: [[String: Any]] = []
-            for id in ["screen", "accessibility", "notifications", "documents"] { rows.append(await permission(id)) }
+            for id in Self.permissionIDs { rows.append(await permission(id)) }
             return ["platform": "ios", "permissions": rows, "checkedAt": iso.string(from: Date())]
         case "permissions:request":
-            guard let id = request["id"] as? String else { throw DesktopRuntimeError("권한 항목을 확인해 주세요.") }
-            if id == "notifications" { _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) }
+            guard let id = request["id"] as? String, Self.permissionIDs.contains(id) else { throw DesktopRuntimeError("권한 항목을 확인해 주세요.") }
+            let current = await permission(id)
+            if current["canRequest"] as? Bool == true { try await permissions.request(id) }
             return await permission(id)
         case "notifications:test":
-            let allowed = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
-            guard allowed else { return ["ok": false, "reason": "unsupported"] }
-            let content = UNMutableNotificationContent()
-            content.title = "반달"
-            content.body = "알림이 정상적으로 연결되었습니다."
-            content.sound = .default
-            try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "bandal-settings-test", content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)))
+            if await permissions.state("notifications") == "not-determined" { try await permissions.request("notifications") }
+            guard await permissions.state("notifications") == "granted" else {
+                throw DesktopRuntimeError("설정 앱의 반달 → 알림에서 알림을 허용해 주세요.")
+            }
+            try await scheduleTestNotification()
             return ["ok": true, "reason": NSNull()]
         default: throw DesktopRuntimeError("Unknown system service: \(channel)", code: "ENOSYS")
         }
     }
 
+    private static func scheduleNotification() async throws {
+        let content = UNMutableNotificationContent()
+        content.title = "반달"
+        content.body = "알림이 정상적으로 연결되었습니다."
+        content.sound = .default
+        try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "bandal-settings-test", content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)))
+    }
+
     private func permission(_ id: String) async -> [String: Any] {
-        if id == "notifications" {
-            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
-            let state: String
-            switch status {
-            case .authorized, .provisional, .ephemeral: state = "granted"
-            case .denied: state = "denied"
-            case .notDetermined: state = "not-determined"
-            @unknown default: state = "unknown"
-            }
-            return ["id": id, "state": state, "canRequest": status == .notDetermined, "canOpenSettings": true]
+        if ["notifications", "microphone", "calendar"].contains(id) {
+            let state = await permissions.state(id)
+            return ["id": id, "state": state, "canRequest": state == "not-determined", "canOpenSettings": true]
         }
         // iPad grants external documents individually through its file picker.
         // It offers no global desktop screen/accessibility automation grant.

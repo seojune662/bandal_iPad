@@ -1,4 +1,5 @@
-import { emit } from '../native'
+import { emit, env, native } from '../native'
+import { join } from '../shims/path'
 import { canonical, decodePage, digest, encodePage, type SharedRecord } from './format'
 import { snapshotProjection } from './export'
 import { createFileJournal } from './journal'
@@ -58,9 +59,17 @@ export function installSync(deps: any) {
       const id=mapped.id.slice('material:'.length), item=db.prepare('SELECT id FROM materials_index WHERE course_id=? AND rel_path=?').get(source.courseID,source.relPath)
       if (item&&item.id!==id&&!db.prepare('SELECT id FROM materials_index WHERE id=?').get(id)) db.prepare('UPDATE materials_index SET id=? WHERE id=?').run(id,item.id)
     } })()
+    deps.pdfBindings.reconcileIndex()
   }
   let running = false
-  const exclusive = (callback: (request: any) => Promise<any>) => async (request: any) => { if (running) throw new Error('A sync projection operation is already running'); running = true; try { return await callback(request) } finally { running = false } }
+  const exclusive = (callback: (request: any) => Promise<any>) => async (request: any) => {
+    if (running) throw new Error('A sync projection operation is already running')
+    const token = native<number | null>('fs.lockAcquire', { path: join(env().userDataPath, 'material-path-lock.db') })
+    if (token === null) throw new Error('자료 경로 변경 중에는 동기화를 시작할 수 없습니다. 잠시 후 다시 시도합니다.')
+    running = true
+    try { return await callback(request) }
+    finally { running = false; native('fs.lockRelease', { token }) }
+  }
   handlePrivate('nativeSync:export', exclusive(async () => {
     await refresh(); const projected = await snapshot()
     for (const record of projected.records) validate(record)

@@ -45,11 +45,23 @@ final class SettingsRoutesTests: XCTestCase {
             }
             button.tap()
             XCTAssertTrue(app.staticTexts[description].waitForExistence(timeout: 8), "Original route did not render: \(label)\n\(app.debugDescription)")
-            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "반달 실행 연결을 확인해 주세요.")).firstMatch.exists, app.debugDescription)
+            if label == "탭" {
+                for title in ["마크다운", "브라우저", "AI", "녹음", "화이트보드", "학업 보드"] {
+                    // WebKit exposes role=tab as a non-button on some iPadOS versions.
+                    let tab = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", title)).allElementsBoundByIndex.last { $0.isHittable }
+                    try XCTUnwrap(tab, "Missing settings subtab: \(title)").tap()
+                    XCTAssertFalse(runtimeFailure(app).exists, "Settings subtab failed: \(title)\n\(app.debugDescription)")
+                }
+            }
+            XCTAssertFalse(runtimeFailure(app).exists, app.debugDescription)
         }
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "All 20 original settings routes completed"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+    }
+
+    private func runtimeFailure(_ app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "반달 실행 연결을 확인해 주세요.")).firstMatch
     }
 }

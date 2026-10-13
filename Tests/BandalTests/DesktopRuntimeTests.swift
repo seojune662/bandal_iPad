@@ -76,6 +76,15 @@ final class DesktopRuntimeTests: XCTestCase {
         try Data([1, 2]).write(to: source)
         let status = try XCTUnwrap(native.perform("fs.fstat", args: ["fd": fd]) as? [String: Any])
         XCTAssertEqual((status["size"] as? NSNumber)?.intValue, data.count)
+        let movedStatus = try XCTUnwrap(native.perform("fs.stat", args: ["path": moved.path, "followSymlinks": false]) as? [String: Any])
+        let replacedStatus = try XCTUnwrap(native.perform("fs.stat", args: ["path": source.path, "followSymlinks": false]) as? [String: Any])
+        var exact = Darwin.stat()
+        XCTAssertEqual(Darwin.fstat(Int32(fd), &exact), 0)
+        XCTAssertEqual(status["dev"] as? String, String(exact.st_dev))
+        XCTAssertEqual(status["ino"] as? String, String(exact.st_ino))
+        XCTAssertEqual(status["ctimeNs"] as? String, String(Int64(exact.st_ctimespec.tv_sec) * 1_000_000_000 + Int64(exact.st_ctimespec.tv_nsec)))
+        XCTAssertEqual(status["ino"] as? String, movedStatus["ino"] as? String, "A rename must retain the exact identity used by pending move recovery")
+        XCTAssertNotEqual(status["ino"] as? String, replacedStatus["ino"] as? String, "A replacement at the old path must never be mistaken for the moved original")
         let id = try XCTUnwrap(native.perform("crypto.hashCreate", args: ["algorithm": "sha256"]) as? String)
         var readCount = 0
         while true {
@@ -99,6 +108,21 @@ final class DesktopRuntimeTests: XCTestCase {
         let error = context.evaluateScript("JSON.parse(__bandalNative.perform(JSON.stringify({op:'fs.readFile',args:{path:'/etc/passwd'}}))).error.code")
         XCTAssertNil(context.exception)
         XCTAssertEqual(error?.toString(), "EACCES")
+    }
+
+    func testMoveRecoveryLockExcludesAnotherRuntimeAndReleasesWithItsOwner() throws {
+        var owner: DesktopNativePrimitives? = try DesktopNativePrimitives(root: directory, legacyRoot: directory.appendingPathComponent("Legacy"))
+        let contender = try DesktopNativePrimitives(root: directory, legacyRoot: directory.appendingPathComponent("Legacy"))
+        let path = directory.appendingPathComponent("material-path-lock.db").path
+        let token = try XCTUnwrap(owner?.perform("fs.lockAcquire", args: ["path": path]) as? Int)
+        XCTAssertTrue(try contender.perform("fs.lockAcquire", args: ["path": path]) is NSNull)
+        XCTAssertThrowsError(try contender.perform("fs.lockRelease", args: ["token": token]))
+        owner = nil
+        let next = try XCTUnwrap(contender.perform("fs.lockAcquire", args: ["path": path]) as? Int)
+        _ = try contender.perform("fs.lockRelease", args: ["token": next])
+        let again = try XCTUnwrap(contender.perform("fs.lockAcquire", args: ["path": path]) as? Int)
+        _ = try contender.perform("fs.lockRelease", args: ["token": again])
+        XCTAssertThrowsError(try contender.perform("fs.lockAcquire", args: ["path": "/private/bandal-path-lock"]))
     }
 
     @MainActor

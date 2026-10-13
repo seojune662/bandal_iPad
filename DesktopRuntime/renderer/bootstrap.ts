@@ -1,6 +1,7 @@
 import { installNativeBridge } from './bridge'
 import { installFileInputAdapter } from './fileInput'
 import { installPencilNavigation } from './pencil/navigation'
+import { installScribblePolicy } from './pencil/scribble'
 import { installNativeLifecycle } from './lifecycle'
 import { installNativeKeyboardCompatibility } from './keyboard'
 import { rendererDiagnostic, type DiagnosticSource } from './diagnostics'
@@ -44,6 +45,7 @@ try {
   })
   installFileInputAdapter(showFailure)
   installPencilNavigation()
+  installScribblePolicy()
   installNativeLifecycle()
   // Stores subscribe during module evaluation. No product module may be
   // statically imported before this bridge exists.

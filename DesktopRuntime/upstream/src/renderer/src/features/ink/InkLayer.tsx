@@ -297,7 +297,7 @@ function boxForShape(shape: DrawingShape, gesture: Gesture | null, resolveId?: (
 // Existing strokes do not change as the pen moves. Keep perfect-freehand's
 // outline calculation out of the pointer frame for every previously drawn line.
 const InkStroke = memo(function InkStroke({ shape, aspect }: { shape: DrawingShape; aspect: number }): JSX.Element | null {
-  const path = strokePath(shape.data.points ?? [], shape.style, aspect, shape.kind === 'highlighter')
+  const path = strokePath(shape.data.points ?? [], shape.style, aspect, shape.kind === 'highlighter', shape.data.inkVersion)
   return path ? <path className={shape.kind === 'highlighter' ? 'ink-layer__mark is-highlighter' : 'ink-layer__mark'}
     d={path} fill={drawingColorVariable(shape.style.color)} opacity={shape.style.opacity} /> : null
 })
@@ -529,7 +529,8 @@ export function InkLayer(props: InkLayerProps): JSX.Element {
       const previous = current.points[current.points.length - 1]
       if (
         previous !== undefined &&
-        Math.hypot(point.x - previous.x, point.y - previous.y) < 0.0005
+        Math.hypot(point.x - previous.x, point.y - previous.y) < 0.0005 &&
+        point.p === previous.p
       ) {
         return
       }

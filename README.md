@@ -4,7 +4,7 @@
 
 현재 기본 진입점은 `App/BandalApp.swift → DesktopShell`입니다. 초기 SwiftUI 작업 공간과 PDFKit/PencilKit 화면은 기본 화면이 아닙니다. 전체 계획이나 정식 출시가 완료된 상태는 아니며, 실제 계정·학교 사이트·Pencil·장시간 녹음 검증이 남아 있습니다. [구현 현황](docs/implementation-status.md)과 [기능별 연결 감사](DesktopRuntime/docs/feature-parity-audit.md)를 확인하세요.
 
-**현재 실기기에는 빌드 6이 설치돼 있습니다.** 빌드 4에서 사용자가 PDF를 열 때 빨간 오류 배너가 남는다고 보고했습니다. 키 이름이 없는 `keydown`을 원본 화면에 전달하면 같은 `undefined … t.trim` 오류가 발생하는 경로를 재현해, iPad 입력 경계에서 잘못된 이벤트만 차단했습니다. 정상 단축키·텍스트·한글 조합 입력을 보존하는 WebKit 회귀와 실기기 PDF 자료 목록·필기 도구 검사 2개가 통과했습니다. 빌드 6은 2026-10-14 03:38 KST에 일반 실행했고, 이후 사용자가 **“지금은 상자가 안 뜸”**이라고 확인했습니다. 실제 사용자 오류의 스택은 확보하지 못해 해당 입력 경로가 원인이었다고 단정하지 않습니다. 재발 시 확인할 오류 종류·번들 위치와 잘못된 입력 발생 여부만 기록합니다.
+**직전 사용자 확인 빌드는 6입니다.** 빌드 4에서 사용자가 PDF를 열 때 빨간 오류 배너가 남는다고 보고했습니다. 키 이름이 없는 `keydown`을 원본 화면에 전달하면 같은 `undefined … t.trim` 오류가 발생하는 경로를 재현해, iPad 입력 경계에서 잘못된 이벤트만 차단했습니다. 정상 단축키·텍스트·한글 조합 입력을 보존하는 WebKit 회귀와 실기기 PDF 자료 목록·필기 도구 검사 2개가 통과했습니다. 빌드 6은 2026-10-14 03:38 KST에 일반 실행했고, 이후 사용자가 **“지금은 상자가 안 뜸”**이라고 확인했습니다. 실제 사용자 오류의 스택은 확보하지 못해 해당 입력 경로가 원인이었다고 단정하지 않습니다. 재발 시 확인할 오류 종류·번들 위치와 잘못된 입력 발생 여부만 기록합니다.
 
 iPadOS 경로 별칭·컨테이너 변경 대응, PDF 터치 대상 교체 처리, PDF.js 로컬 자산·라이선스 193개는 적용했습니다. 기존 PDF 바이트·필기 7획 보존도 별도 백업 대조로 확인했습니다. Apple Pencil 직접 필압·팜 리젝션 검증은 남아 있습니다.
 
@@ -33,7 +33,7 @@ bash Scripts/build.sh
 
 | 경로 | 역할 |
 |---|---|
-| `DesktopRuntime/upstream/` | 데스크톱 0.84.1 스냅샷. 1,013개 파일의 해시·바이트 수를 manifest로 검증 |
+| `DesktopRuntime/upstream/` | 데스크톱 0.84.1 스냅샷. 1,018개 파일의 해시·바이트 수를 manifest로 검증 |
 | `DesktopRuntime/renderer/` | 원본 엔트리 앞에 설치하는 WK IPC와 입력·파일·녹음 등의 플랫폼 어댑터 |
 | `DesktopRuntime/backend/` | 원본 저장소·서비스를 JavaScriptCore에서 실행하는 어댑터, 동기화 투영·이전 데이터 이행 |
 | `App/Desktop/` | WK 셸, 외부 브라우저, 실제 SQLite·파일·Keychain·AVFoundation·계정·메일·알림 등 Swift 연결 |
@@ -41,7 +41,7 @@ bash Scripts/build.sh
 | `backend/` | Supabase 동기화 스키마와 별도 PPT 변환 서버 |
 | `Tests/` | 실제 SQLite·WK·오디오 파일을 사용하는 단위 테스트와 원본 화면 XCUITest |
 
-원본 스냅샷을 직접 수정하지 않고, 소스 구문을 확인하는 빌드 변환으로 iPad 입력과 연결부를 적용합니다. PDF는 원본 PDF.js 뷰어·필기 도구를, 노트와 화이트보드는 원본 편집기를 사용합니다. 외부 웹사이트는 별도 WKWebView에 표시하며 앱 IPC를 노출하지 않습니다.
+원본 스냅샷을 직접 수정하지 않고, 소스 구문을 확인하는 빌드 변환으로 iPad 입력과 연결부를 적용합니다. PDF는 원본 PDF.js 뷰어·필기 도구를 기본으로 사용하며, DEBUG 실험실에서 PDFKit/UIKit/Metal 본문을 비교할 수 있습니다. 새 본문도 원본 필기 객체·저장·실행 취소를 사용합니다. 노트와 화이트보드는 원본 편집기입니다. 외부 웹사이트는 별도 WKWebView에 표시하며 앱 IPC를 노출하지 않습니다.
 
 ## 계정·저장·기존 데이터
 
@@ -72,6 +72,12 @@ pnpm --dir DesktopRuntime run typecheck
 pnpm --dir DesktopRuntime exec playwright install chromium webkit
 pnpm --dir DesktopRuntime test
 pnpm --dir DesktopRuntime run test:backend
+pnpm --dir DesktopRuntime run test:pencil
+pnpm --dir DesktopRuntime run test:browser
+pnpm --dir DesktopRuntime run test:settings
+pnpm --dir DesktopRuntime run test:ink
+pnpm --dir DesktopRuntime run test:workspace
+pnpm --dir DesktopRuntime run test:pdf-export
 ```
 
 네이티브·원본 화면 테스트는 canonical 빌드 후 사용 가능한 iPad 시뮬레이터를 지정합니다.

@@ -71,7 +71,7 @@ extension DesktopBrowserHost {
         if tool == "open" {
             let address = try Self.navigationURL(Self.string(input, "url", limit: 8192))
             guard ["http", "https"].contains(address.scheme ?? ""), address.user == nil, address.password == nil else { throw DesktopBrowserError.invalid("AI 웹 주소") }
-            try await waitForPrivacySettings()
+            try await prepareBrowserNetwork()
             let page = try createPage(tabID: UUID().uuidString, profileID: "default", isPrivate: false, courseID: courseID)
             page.webView.load(navigationRequest(address))
             emit("browser:open-url", ["tabId": page.tabID, "courseId": courseID, "url": address.absoluteString, "profileId": page.profileID, "isPrivate": false, "webContentsId": page.id])

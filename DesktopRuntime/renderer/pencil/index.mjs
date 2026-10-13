@@ -17,6 +17,38 @@ function replaceExactly(source, original, replacement, count = 1) {
  * geometry, history, styling and persistence remain the desktop implementation. */
 export function transformInkLayer(source) {
   let code = `import { pencilSamples, pencilPressure, acceptsInkPointer } from ${JSON.stringify(samples)}\n` + source
+  code = replaceExactly(code, '      ref={svgRef}', '      data-bandal-ink-tool={activeTool}\n      ref={svgRef}')
+  code = replaceExactly(code, '      points: DrawingPoint[]', '      points: DrawingPoint[]\n      style: DrawingStyle\n      startedAt: number')
+  code = replaceExactly(code, '      setGesture({ ...current, points: [...current.points, point] })', `      const measured = { ...point, t: Math.max(0, (sample.timestamp ?? current.startedAt) - current.startedAt) }
+      current.points.push(measured)
+      gestureRef.current = current`)
+  code = replaceExactly(code, 'interface PointerSample {', 'interface PointerSample {\n  timestamp?: number\n  tiltX?: number\n  tiltY?: number')
+  code = replaceExactly(code, `    const point = normalizedPoint(
+      event.currentTarget,
+      event.clientX,
+      event.clientY,
+      event.pressure,
+      clampToBounds
+    )`, `    const point = pencilPressure(normalizedPoint(
+      event.currentTarget, event.clientX, event.clientY, event.pressure, clampToBounds
+    ), event.nativeEvent)!`)
+  code = replaceExactly(code, '        points: [point]', `        points: [{ ...point, t: 0 }],
+        style: drawingStyle(activeTool, width, opacity, color),
+        startedAt: event.timeStamp`)
+  code = replaceExactly(code, '      const nextStyle = drawingStyle(completed.tool, width, opacity, color)', '      const nextStyle = completed.style')
+  code = replaceExactly(code, "          completed.tool === 'highlighter'", "          completed.tool === 'highlighter', 2")
+  code = replaceExactly(code, '        data: { points: completed.points },', '        data: { points: completed.points, inkVersion: 2 },')
+  code = replaceExactly(code, `          gesture.points,
+          style,
+          aspect,
+          gesture.tool === 'highlighter'`, `          gesture.points,
+          gesture.style,
+          aspect,
+          gesture.tool === 'highlighter', 2`)
+  code = replaceExactly(code, `                fill={drawingColorVariable(style.color)}
+                opacity={style.opacity}`, `                fill={drawingColorVariable(gesture.style.color)}
+                opacity={gesture.style.opacity}`)
+  code = replaceExactly(code, '    setGesture, startTextBox, surfaceReady])', '    setGesture, startTextBox, surfaceReady, width, opacity, color])')
   code = replaceExactly(code, 'interface PointerSample {', 'interface PointerSample {\n  pointerType?: string')
   code = replaceExactly(code, `return svg === null || !surfaceReady || !hasMeasuredBounds(svg)
       ? null
@@ -37,7 +69,7 @@ export function transformInkLayer(source) {
       ), sample)`)
   code = replaceExactly(code, 'const pendingSample = useRef<PointerSample | null>(null)', 'const pendingSample = useRef<PointerSample[]>([])')
   code = replaceExactly(code, 'pendingSample.current = null', 'pendingSample.current = []', 3)
-  code = replaceExactly(code, 'if (sample !== null) processSample(sample)', 'for (const point of sample) processSample(point)', 2)
+  code = replaceExactly(code, 'if (sample !== null) processSample(sample)', 'for (const point of sample) processSample(point)\n    if (gestureRef.current?.kind === \'stroke\') setGesture({ ...gestureRef.current })', 2)
   code = replaceExactly(code, 'if (!interactive || event.button !== 0) return',
     'if (!interactive || event.button !== 0 || !acceptsInkPointer(event, gestureRef.current?.pointerId)) return', 2)
   code = replaceExactly(code, 'if (gestureRef.current === null) return',

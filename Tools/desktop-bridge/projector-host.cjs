@@ -36,7 +36,7 @@ async function run(input){
     const environment={userDataPath:userData,dataRoot:input.courseRoot,homePath:userData,tempPath:temp,legacyDataPath:path.join(userData,'unused-native-legacy'),platform:process.platform,version:appVersion,fsConstants:{O_RDONLY:fs.constants.O_RDONLY,O_NOFOLLOW:fs.constants.O_NOFOLLOW}}
     const encode=v=>Buffer.isBuffer(v)?{__buffer:v.toString('base64')}:Array.isArray(v)?v.map(encode):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,encode(x)])):v
     const decode=v=>v?.__buffer?Buffer.from(v.__buffer,'base64'):v
-    const fds=new Set(),timers=new Set(),hashes=new Map()
+    const fds=new Set(),timers=new Set(),hashes=new Map(),pathLocks=new Map();let nextPathLock=1
     const native=(op,a)=>{
       for(const key of ['path','from','to'])if(typeof a[key]==='string')safe(a[key])
       switch(op){
@@ -46,11 +46,20 @@ async function run(input){
         case'sqlite.query':{const s=database.prepare(a.sql),args=Array.isArray(a.params)?a.params.map(decode):[a.params];if(s.reader)return encode(s.all(...args));s.run(...args);return[]}
         case'sqlite.run':{const r=database.prepare(a.sql).run(...(Array.isArray(a.params)?a.params.map(decode):[a.params]));return{changes:r.changes,lastInsertRowid:Number(r.lastInsertRowid)}}
         case'fs.exists':return fs.existsSync(a.path)
+        case'fs.lockAcquire':{
+          const lock=new SQLite(a.path,{timeout:0})
+          try{lock.exec('BEGIN EXCLUSIVE');const token=nextPathLock++;pathLocks.set(token,lock);return token}
+          catch(error){lock.close();if(error.code==='SQLITE_BUSY'||error.code==='SQLITE_LOCKED')return null;throw error}
+        }
+        case'fs.lockRelease':{
+          const lock=pathLocks.get(a.token);if(!lock)throw new Error('Unknown path lock')
+          pathLocks.delete(a.token);try{lock.exec('ROLLBACK')}finally{lock.close()}return null
+        }
         case'fs.sha256':return hash(a.path)
         case'fs.realpath':return fs.realpathSync(a.path)
         case'fs.readdir':return fs.readdirSync(a.path,{withFileTypes:true}).map(v=>({name:v.name,isFile:v.isFile(),isDirectory:v.isDirectory(),isSymbolicLink:v.isSymbolicLink()}))
-        case'fs.stat':{const s=(a.followSymlinks?fs.statSync:fs.lstatSync)(a.path,{bigint:true});return{size:Number(s.size),mtimeMs:Number(s.mtimeNs)/1e6,mtimeNs:String(s.mtimeNs),ctimeMs:Number(s.ctimeNs)/1e6,birthtimeMs:Number(s.birthtimeNs)/1e6,mode:Number(s.mode),isFile:s.isFile(),isDirectory:s.isDirectory(),isSymbolicLink:s.isSymbolicLink()}}
-        case'fs.fstat':{if(!fds.has(a.fd))throw new Error('Unknown file descriptor');const s=fs.fstatSync(a.fd,{bigint:true});return{size:Number(s.size),mtimeMs:Number(s.mtimeNs)/1e6,mtimeNs:String(s.mtimeNs),ctimeMs:Number(s.ctimeNs)/1e6,birthtimeMs:Number(s.birthtimeNs)/1e6,mode:Number(s.mode),isFile:s.isFile(),isDirectory:s.isDirectory(),isSymbolicLink:s.isSymbolicLink()}}
+        case'fs.stat':{const s=(a.followSymlinks?fs.statSync:fs.lstatSync)(a.path,{bigint:true});return{dev:String(s.dev),ino:String(s.ino),size:Number(s.size),mtimeMs:Number(s.mtimeNs)/1e6,mtimeNs:String(s.mtimeNs),ctimeNs:String(s.ctimeNs),ctimeMs:Number(s.ctimeNs)/1e6,birthtimeMs:Number(s.birthtimeNs)/1e6,mode:Number(s.mode),isFile:s.isFile(),isDirectory:s.isDirectory(),isSymbolicLink:s.isSymbolicLink()}}
+        case'fs.fstat':{if(!fds.has(a.fd))throw new Error('Unknown file descriptor');const s=fs.fstatSync(a.fd,{bigint:true});return{dev:String(s.dev),ino:String(s.ino),size:Number(s.size),mtimeMs:Number(s.mtimeNs)/1e6,mtimeNs:String(s.mtimeNs),ctimeNs:String(s.ctimeNs),ctimeMs:Number(s.ctimeNs)/1e6,birthtimeMs:Number(s.birthtimeNs)/1e6,mode:Number(s.mode),isFile:s.isFile(),isDirectory:s.isDirectory(),isSymbolicLink:s.isSymbolicLink()}}
         case'fs.readFile':return fs.readFileSync(a.path).toString(a.encoding)
         case'fs.writeFile':fs.writeFileSync(a.path,Buffer.from(a.data,a.encoding),{flag:a.flag,mode:a.mode});return null
         case'fs.mkdir':fs.mkdirSync(a.path,{recursive:a.recursive,mode:a.mode});return null
@@ -88,7 +97,7 @@ async function run(input){
         database.prepare('INSERT OR IGNORE INTO ipad_sync_projection(id,kind,payload_json,deleted,source_json,baseline_json) VALUES(?,?,?,?,?,?)').run(r.id,r.kind,canonical(r.payload),r.deleted?1:0,canonical(source),canonical({kind:r.kind,payload:r.payload,deleted:r.deleted}))
       }
       return await context.BandalBackend.invokePrivate(`nativeSync:${input.action}`,input.request??{})
-    }finally{for(const timer of timers)clearInterval(timer);for(const fd of fds)try{fs.closeSync(fd)}catch{}}
+    }finally{for(const timer of timers)clearInterval(timer);for(const fd of fds)try{fs.closeSync(fd)}catch{};for(const lock of pathLocks.values())try{lock.close()}catch{}}
   }finally{database.close()}
 }
 module.exports={run}

@@ -51,11 +51,19 @@ function assertPoint(value: unknown, field: string): DrawingPoint {
     throw new ValidationError(`${field} must be a drawing point`)
   }
   const point = value as Partial<DrawingPoint>
-  return {
-    x: assertUnit(point.x, `${field}.x`),
-    y: assertUnit(point.y, `${field}.y`),
-    p: assertUnit(point.p, `${field}.p`)
+  const result: DrawingPoint = {
+    x: assertUnit(point.x, `${field}.x`), y: assertUnit(point.y, `${field}.y`), p: assertUnit(point.p, `${field}.p`)
   }
+  for (const key of ['t', 'tiltX', 'tiltY'] as const) {
+    const sample = point[key]
+    if (sample === undefined) continue
+    const min = key === 't' ? 0 : -90, max = key === 't' ? 86_400_000 : 90
+    if (typeof sample !== 'number' || !Number.isFinite(sample) || sample < min || sample > max) {
+      throw new ValidationError(`${field}.${key} is outside its measured sample range`)
+    }
+    result[key] = sample
+  }
+  return result
 }
 
 function assertBox(value: unknown, field: string): DrawingBox {
@@ -266,6 +274,10 @@ export function assertDrawingData(
   }
 
   const result: DrawingData = {}
+  if (candidate.inkVersion !== undefined) {
+    if (candidate.inkVersion !== 2 || (kind !== 'ink' && kind !== 'highlighter')) throw new ValidationError('Unsupported ink renderer version')
+    result.inkVersion = 2
+  }
   if (points !== undefined) result.points = points
   if (box !== undefined) result.box = box
   if (text !== undefined) result.text = text

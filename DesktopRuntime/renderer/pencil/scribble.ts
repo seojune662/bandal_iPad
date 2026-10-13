@@ -1,0 +1,95 @@
+type Rect = { x: number; y: number; width: number; height: number }
+export type ScribbleRegions = { revision: number; viewport: { width: number; height: number }; protected: Rect[]; editors: Rect[] }
+const protectedSelector = '.ink-layer, .pdf-tool-rail-shell, .pdf-tool-rail__menu, .pdf-toolbar, [data-bandal-native-pdf], [data-native-pdf="true"]'
+const controlSelector = '.pdf-tool-rail-shell button, .pdf-toolbar button, .pdf-tool-rail__menu button'
+
+/** Publish geometry only. Never send text, input values or document identities. */
+export function scribbleRegions(document: Document, revision: number): ScribbleRegions {
+  const view = document.defaultView!
+  const rect = (element: Element): Rect[] => {
+    const bounds = element.getBoundingClientRect()
+    const x = Math.max(0, bounds.left), y = Math.max(0, bounds.top)
+    const width = Math.min(view.innerWidth, bounds.right) - x, height = Math.min(view.innerHeight, bounds.bottom) - y
+    return width > 0 && height > 0 && view.getComputedStyle(element).visibility !== 'hidden'
+      ? [{ x, y, width, height }] : []
+  }
+  return { revision, viewport: { width: view.innerWidth, height: view.innerHeight },
+    protected: [...document.querySelectorAll(protectedSelector)].flatMap(rect).slice(0, 512),
+    editors: [...document.querySelectorAll('.ink-layer[data-bandal-ink-tool="text"] .ink-layer__textbox-editor [contenteditable="true"], [data-bandal-native-text-editor="true"]')].flatMap(rect).slice(0, 64) }
+}
+
+export function installScribblePolicy(document: Document = window.document,
+  publish: (value: ScribbleRegions) => Promise<unknown> = value => window.webkit!.messageHandlers!.bandal!.postMessage({ channel: 'runtime:scribbleRegions', request: value })): () => void {
+  const view = document.defaultView!
+  let frame = 0, revision = 0, last = '', disposed = false
+  const flush = (): void => {
+    frame = 0
+    const value = scribbleRegions(document, ++revision)
+    const signature = JSON.stringify({ ...value, revision: 0 })
+    if (signature === last) return
+    last = signature
+    void publish(value).catch(() => { last = '' })
+  }
+  const schedule = (): void => { if (!disposed && !frame) frame = view.requestAnimationFrame(flush) }
+  const observer = new MutationObserver(schedule)
+  observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true,
+    attributeFilter: ['class', 'style', 'hidden', 'data-bandal-ink-tool', 'data-bandal-native-text-editor', 'contenteditable'] })
+  const resize = new ResizeObserver(schedule)
+  resize.observe(document.documentElement)
+  let control: { id: number; button: HTMLButtonElement } | undefined
+  let lastActivation: { button: HTMLButtonElement; until: number } | undefined
+  const down = (event: PointerEvent): void => {
+    if (event.pointerType !== 'pen') lastActivation = undefined
+    if (event.pointerType !== 'pen' || !(event.target instanceof Element)) return
+    const button = event.target.closest<HTMLButtonElement>(controlSelector)
+    if (!button || button.disabled) return
+    // A Pencil button press owns the whole gesture; it cannot begin a stroke
+    // on the underlying document or focus a nearby text editor.
+    event.preventDefault(); event.stopImmediatePropagation()
+    const focused = document.activeElement
+    if (focused instanceof HTMLElement && focused.closest('.ink-layer')) focused.blur()
+    control = { id: event.pointerId, button }
+    try { button.setPointerCapture(event.pointerId) } catch { /* Synthetic fixture pointer. */ }
+  }
+  const end = (event: PointerEvent): void => {
+    if (!control || event.pointerId !== control.id) return
+    const { button } = control
+    control = undefined
+    event.preventDefault(); event.stopImmediatePropagation()
+    try { button.releasePointerCapture(event.pointerId) } catch { /* Capture already ended. */ }
+    const bounds = button.getBoundingClientRect()
+    if (event.type !== 'pointercancel' && button.isConnected && !button.disabled &&
+      event.clientX >= bounds.left && event.clientX <= bounds.right && event.clientY >= bounds.top && event.clientY <= bounds.bottom) {
+      lastActivation = { button, until: view.performance.now() + 800 }
+      button.click() // Preserve the original React action and its single owner.
+      schedule()
+    }
+  }
+  const click = (event: MouseEvent): void => {
+    if (event.isTrusted && lastActivation && view.performance.now() < lastActivation.until &&
+      event.target instanceof Node && lastActivation.button.contains(event.target)) {
+      event.preventDefault(); event.stopImmediatePropagation()
+      lastActivation = undefined
+    }
+  }
+  const beforeInput = (event: Event): void => {
+    if (!(event.target instanceof Element)) return
+    const layer = event.target.closest('.ink-layer')
+    if (layer && layer.getAttribute('data-bandal-ink-tool') !== 'text') event.preventDefault()
+  }
+  document.addEventListener('pointerdown', down, true)
+  document.addEventListener('pointerup', end, true)
+  document.addEventListener('pointercancel', end, true)
+  document.addEventListener('click', click, true)
+  document.addEventListener('beforeinput', beforeInput, true)
+  document.addEventListener('scroll', schedule, true)
+  view.addEventListener('resize', schedule)
+  schedule()
+  return () => {
+    disposed = true; observer.disconnect(); resize.disconnect(); view.cancelAnimationFrame(frame)
+    document.removeEventListener('pointerdown', down, true); document.removeEventListener('pointerup', end, true)
+    document.removeEventListener('pointercancel', end, true); document.removeEventListener('click', click, true)
+    document.removeEventListener('beforeinput', beforeInput, true); document.removeEventListener('scroll', schedule, true)
+    view.removeEventListener('resize', schedule)
+  }
+}

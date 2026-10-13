@@ -1,3 +1,4 @@
+import nativePDFPlugin from '../renderer/nativePDF/index.mjs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -9,6 +10,7 @@ import syncPlugin from '../renderer/sync/index.mjs'
 import nativeRecordingPlugin from '../renderer/recording/index.mjs'
 import ipadPlatformPlugin from '../renderer/platform/index.mjs'
 import nativeMiniPlayerPlugin from '../renderer/pip/index.mjs'
+import browserPlugin from '../renderer/browser/index.mjs'
 
 await verifySnapshot()
 await import('./build-article-extraction.mjs')
@@ -22,7 +24,7 @@ const outDir = resolve(runtime, '../App/Resources/Desktop')
 const built = await build({
   configFile: false, root: resolve(runtime, 'renderer'), base: './',
   define: { __APP_VERSION__: JSON.stringify(snapshot.appVersion) },
-  plugins: [pencilInputPlugin(), ipadPlatformPlugin(), nativeRecordingPlugin(), syncPlugin(), nativeMiniPlayerPlugin(), react()],
+  plugins: [pencilInputPlugin(), ipadPlatformPlugin(), nativeRecordingPlugin(), browserPlugin(), nativePDFPlugin(), syncPlugin(), nativeMiniPlayerPlugin(), react()],
   resolve: { dedupe: ['react', 'react-dom', '@milkdown/core', '@milkdown/ctx', '@milkdown/utils', '@milkdown/prose', '@milkdown/transformer', '@milkdown/exception'] },
   build: { target: 'safari18', outDir, emptyOutDir: true, reportCompressedSize: false, sourcemap: false, manifest: true,
     rollupOptions: { input: { main: resolve(runtime, 'renderer/index.html'), pip: resolve(runtime, 'renderer/pip.html'), capture: resolve(runtime, 'renderer/capture.html') } } }

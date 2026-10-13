@@ -1,3 +1,4 @@
+import { strokePathV2 } from '../../../shared/inkV2'
 import { createBoardMediaRenderer } from './boardMediaPdf'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -184,6 +185,11 @@ function drawInk(
   const blendMode = shape.kind === 'highlighter'
     ? surface === 'dark' ? BlendMode.Screen : BlendMode.Multiply
     : BlendMode.Normal
+  if (shape.data.inkVersion === 2) {
+    const path = strokePathV2(points, shape.style.width, height / width, shape.kind === 'highlighter', width, height)
+    if (path) page.drawSvgPath(path, { x: 0, y: height, color, opacity, blendMode })
+    return
+  }
   if (points.length === 1) {
     page.drawCircle({
       ...pdfPoint(first, width, height),

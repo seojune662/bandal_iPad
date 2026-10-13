@@ -11,8 +11,6 @@ const { createServer } = await import(pathToFileURL(require.resolve('vite')).hre
 const { default: react } = await import(pathToFileURL(require.resolve('@vitejs/plugin-react')).href)
 const source = await readFile(resolve(runtime, 'upstream/src/renderer/src/features/ink/InkLayer.tsx'), 'utf8')
 assert.throws(() => transformInkLayer(source.replace('const pendingSample = useRef', 'const staleInput = useRef')), /expected 1 source anchor/)
-// Markup and every visible tool/render branch remain byte-for-byte upstream.
-assert.equal(transformInkLayer(source).split('      ref={svgRef}')[1], source.split('      ref={svgRef}')[1])
 
 const server = await createServer({ configFile: false, root: runtime, server: { host: '127.0.0.1', port: 0 },
   plugins: [pencilPlugin(), react()], resolve: { dedupe: ['react', 'react-dom'] } })
@@ -83,7 +81,18 @@ try {
   assert.ok(state.zooms[0] < 0, 'outward pinch reaches original PDF zoom handler')
   assert.ok(state.created[2].data.points.length >= 2, 'interrupted stroke preserves measured points')
   assert.deepEqual(failures, [])
-  console.log('WebKit: original InkLayer real mouse capture, pressure/coalesced samples, palm ownership, finger pan, pinch dispatch, interrupted stroke preservation and unchanged markup passed')
+  await page.evaluate(() => {
+    const send = window.dispatchInkFixture
+    send('pointerdown', 'pen', 111, 250, 200, 0)
+    send('pointermove', 'pen', 111, 250, 200, 0.9)
+    send('pointerup', 'pen', 111, 250, 200, 0.9)
+  })
+  await page.waitForFunction(() => window.__pencilTest.created.length === 4)
+  const dot = await page.evaluate(() => window.__pencilTest.created[3])
+  assert.deepEqual(dot.data.points.map(p => Math.round(p.p * 100)), [0, 90], 'A dot and stationary pressure are preserved, including the first zero pressure')
+  assert.equal(dot.data.inkVersion, 2)
+  assert.ok(await page.locator('.ink-layer__mark').last().getAttribute('d'), 'Dots render as visible ink')
+  console.log('WebKit: original InkLayer mouse, Pencil sample fixtures, first-zero pressure, dots, stationary pressure, palm ownership, finger pan, pinch and interruption passed')
 } finally { await browser.close(); await server.close() }
 
 await import('./navigation-test.mjs')

@@ -39,9 +39,9 @@
     mod
   ));
 
-  // ../bandal/node_modules/.pnpm/base64-js@1.5.1/node_modules/base64-js/index.js
+  // ../../bandal/node_modules/.pnpm/base64-js@1.5.1/node_modules/base64-js/index.js
   var require_base64_js = __commonJS({
-    "../bandal/node_modules/.pnpm/base64-js@1.5.1/node_modules/base64-js/index.js"(exports) {
+    "../../bandal/node_modules/.pnpm/base64-js@1.5.1/node_modules/base64-js/index.js"(exports) {
       "use strict";
       exports.byteLength = byteLength;
       exports.toByteArray = toByteArray;
@@ -140,9 +140,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/ieee754@1.2.1/node_modules/ieee754/index.js
+  // ../../bandal/node_modules/.pnpm/ieee754@1.2.1/node_modules/ieee754/index.js
   var require_ieee754 = __commonJS({
-    "../bandal/node_modules/.pnpm/ieee754@1.2.1/node_modules/ieee754/index.js"(exports) {
+    "../../bandal/node_modules/.pnpm/ieee754@1.2.1/node_modules/ieee754/index.js"(exports) {
       exports.read = function(buffer, offset, isLE, mLen, nBytes) {
         var e, m;
         var eLen = nBytes * 8 - mLen - 1;
@@ -223,9 +223,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/buffer@5.7.1/node_modules/buffer/index.js
+  // ../../bandal/node_modules/.pnpm/buffer@5.7.1/node_modules/buffer/index.js
   var require_buffer = __commonJS({
-    "../bandal/node_modules/.pnpm/buffer@5.7.1/node_modules/buffer/index.js"(exports) {
+    "../../bandal/node_modules/.pnpm/buffer@5.7.1/node_modules/buffer/index.js"(exports) {
       "use strict";
       var base64 = require_base64_js();
       var ieee754 = require_ieee754();
@@ -1594,9 +1594,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/utils/common.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/utils/common.js
   var require_common = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/utils/common.js"(exports) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/utils/common.js"(exports) {
       "use strict";
       var TYPED_OK = typeof Uint8Array !== "undefined" && typeof Uint16Array !== "undefined" && typeof Int32Array !== "undefined";
       function _has(obj, key) {
@@ -1685,9 +1685,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/trees.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/trees.js
   var require_trees = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/trees.js"(exports) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/trees.js"(exports) {
       "use strict";
       var utils2 = require_common();
       var Z_FIXED = 4;
@@ -2327,9 +2327,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/adler32.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/adler32.js
   var require_adler32 = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/adler32.js"(exports, module) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/adler32.js"(exports, module) {
       "use strict";
       function adler32(adler, buf, len, pos) {
         var s1 = adler & 65535 | 0, s2 = adler >>> 16 & 65535 | 0, n = 0;
@@ -2349,9 +2349,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/crc32.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/crc32.js
   var require_crc32 = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/crc32.js"(exports, module) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/crc32.js"(exports, module) {
       "use strict";
       function makeTable() {
         var c, table = [];
@@ -2377,9 +2377,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/messages.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/messages.js
   var require_messages = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/messages.js"(exports, module) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/messages.js"(exports, module) {
       "use strict";
       module.exports = {
         2: "need dictionary",
@@ -2404,9 +2404,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/deflate.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/deflate.js
   var require_deflate = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/deflate.js"(exports) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/deflate.js"(exports) {
       "use strict";
       var utils2 = require_common();
       var trees = require_trees();
@@ -3453,9 +3453,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/utils/strings.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/utils/strings.js
   var require_strings = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/utils/strings.js"(exports) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/utils/strings.js"(exports) {
       "use strict";
       var utils2 = require_common();
       var STR_APPLY_OK = true;
@@ -3595,9 +3595,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/zstream.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/zstream.js
   var require_zstream = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/zstream.js"(exports, module) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/zstream.js"(exports, module) {
       "use strict";
       function ZStream() {
         this.input = null;
@@ -3617,9 +3617,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/deflate.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/deflate.js
   var require_deflate2 = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/deflate.js"(exports) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/deflate.js"(exports) {
       "use strict";
       var zlib_deflate = require_deflate();
       var utils2 = require_common();
@@ -3778,9 +3778,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inffast.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inffast.js
   var require_inffast = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inffast.js"(exports, module) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inffast.js"(exports, module) {
       "use strict";
       var BAD = 30;
       var TYPE = 12;
@@ -4007,9 +4007,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inftrees.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inftrees.js
   var require_inftrees = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inftrees.js"(exports, module) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inftrees.js"(exports, module) {
       "use strict";
       var utils2 = require_common();
       var MAXBITS = 15;
@@ -4323,9 +4323,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inflate.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inflate.js
   var require_inflate = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inflate.js"(exports) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/inflate.js"(exports) {
       "use strict";
       var utils2 = require_common();
       var adler32 = require_adler32();
@@ -5562,9 +5562,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/constants.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/constants.js
   var require_constants = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/constants.js"(exports, module) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/constants.js"(exports, module) {
       "use strict";
       module.exports = {
         /* Allowed flush values; see deflate() and inflate() below for details */
@@ -5609,9 +5609,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/gzheader.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/gzheader.js
   var require_gzheader = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/gzheader.js"(exports, module) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/zlib/gzheader.js"(exports, module) {
       "use strict";
       function GZheader() {
         this.text = 0;
@@ -5629,9 +5629,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/inflate.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/inflate.js
   var require_inflate2 = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/inflate.js"(exports) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/lib/inflate.js"(exports) {
       "use strict";
       var zlib_inflate = require_inflate();
       var utils2 = require_common();
@@ -5803,9 +5803,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/index.js
+  // ../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/index.js
   var require_pako = __commonJS({
-    "../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/index.js"(exports, module) {
+    "../../bandal/node_modules/.pnpm/pako@1.0.11/node_modules/pako/index.js"(exports, module) {
       "use strict";
       var assign = require_common().assign;
       var deflate = require_deflate2();
@@ -5817,9 +5817,9 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/jszip@3.10.1/node_modules/jszip/dist/jszip.min.js
+  // ../../bandal/node_modules/.pnpm/jszip@3.10.1/node_modules/jszip/dist/jszip.min.js
   var require_jszip_min = __commonJS({
-    "../bandal/node_modules/.pnpm/jszip@3.10.1/node_modules/jszip/dist/jszip.min.js"(exports, module) {
+    "../../bandal/node_modules/.pnpm/jszip@3.10.1/node_modules/jszip/dist/jszip.min.js"(exports, module) {
       !(function(e) {
         if ("object" == typeof exports && "undefined" != typeof module) module.exports = e();
         else if ("function" == typeof define && define.amd) define([], e);
@@ -8183,7 +8183,7 @@
     }
   });
 
-  // ../bandal/node_modules/.pnpm/xlsx@file+vendor+xlsx-0.20.3.tgz/node_modules/xlsx/xlsx.mjs
+  // ../../bandal/node_modules/.pnpm/xlsx@file+vendor+xlsx-0.20.3.tgz/node_modules/xlsx/xlsx.mjs
   var xlsx_exports = {};
   __export(xlsx_exports, {
     CFB: () => CFB,
@@ -29214,7 +29214,7 @@
   }
   var XLSX, current_codepage, current_ansi, $cptable, VALID_ANSI, CS2CP, set_ansi, set_cp, debom, _getchar, _getansi, DENSE, DIF_XL, Base64_map, has_buf, Buffer_from, buf_utf16le, s2a, bconcat, chr0, chr1, p2_32, days, months, table_fmt, SSF_default_map, SSF_default_str, pct1, frac1, dec1, closeparen, phone, SSF_abstime, cfregex2, SSF, SSFImplicit, dateNFregex, bad_formats, CRC32, CFB, _fs, dnthresh, dnthresh1, dnthresh2, pdre1, pdre2, pdre3, FDRE1, FDRE2, FDISO, utc_append_works, lower_months, split_regex, xml_boundary, str_match_xml_ns, str_match_xml_ns_g, str_remove_xml_ns_g, str_match_xml_ig, XML_HEADER, attregexg, tagregex1, tagregex2, tagregex, nsregex, nsregex2, encodings, rencoding, unescapexml, decregex, charegex, htmlcharegex, xlml_fixstr, utf8corpus, utf8read, utf8write, htmldecode, vtvregex, vtmregex, wtregex, xlmlregex, XMLNS, XMLNS_main, XLMLNS, ___toBuffer, __toBuffer, ___utf16le, __utf16le, ___hexlify, __hexlify, ___utf8, __utf8, ___lpstr, __lpstr, ___cpstr, __cpstr, ___lpwstr, __lpwstr, ___lpp4, __lpp4, ___8lpp4, __8lpp4, ___double, __double, is_buf, __readUInt8, __readUInt16LE, __readInt16LE, __readUInt32LE, __readInt32LE, __readInt32BE, __writeUInt32LE, __writeInt32LE, __writeUInt16LE, parse_BrtCommentText, parse_XLSBCodeName, write_XLSBCodeName, parse_XLNameWideString, parse_RelID, write_RelID, parse_UncheckedRfX, write_UncheckedRfX, VT_I2, VT_I4, VT_BOOL, VT_VARIANT, VT_UI4, VT_FILETIME, VT_BLOB, VT_CF, VT_VECTOR_VARIANT, VT_VECTOR_LPSTR, VT_STRING, VT_USTR, VT_CUSTOM, DocSummaryPIDDSI, SummaryPIDSI, CountryEnum, XLSFillPattern, _XLSIcv, XLSIcv, BErr, RBErr, XLSLblBuiltIn, ct2type, CT_LIST, RELS, CT_ODS, CORE_PROPS, EXT_PROPS, PseudoPropsPairs, custregex, XLMLDocPropsMap, evert_XLMLDPM, XLSPSSkip, parse_Ref, FtTab, parse_BIFF2Format, write_BIFF4XF, parse_XLHeaderFooter, parse_BIFF5OT, parse_Blank, parse_Scl, parse_String, DBF_SUPPORTED_VERSIONS, DBF, SYLK, DIF, ETH, PRN, WK_, parse_rs, rs_to_html, sitregex, sirregex, sstr1, sstr2, straywsregex, write_BrtSSTItem, crypto_CreateXorArray_Method1, crypto_DecryptData_Method1, crypto_MakeXorDecryptor, DEF_MDW, MAX_MDW, MIN_MDW, MDW, DEF_PPI, PPI, XLMLPatternTypeMap, cellXF_uint, cellXF_bool, parse_sty_xml, XLSBFillPTNames, rev_XLSBFillPTNames, parse_BrtFill, parse_BrtBorder, XLSXThemeClrScheme, parse_BrtCommentAuthor, CT_VBA, VBAFMTS, rc_to_a1, crefregex, a1_to_rc, parse_PtgMemErr, parse_PtgMemNoMem, parse_PtgTbl, parse_PtgElfCol, parse_PtgElfColS, parse_PtgElfColSV, parse_PtgElfColV, parse_PtgElfRadical, parse_PtgElfRadicalLel, parse_PtgElfRadicalS, parse_PtgElfRw, parse_PtgElfRwV, PtgListRT, PtgTypes, PtgDupes, Ptg18, Ptg19, PtgBinOp, parse_XLSBArrayParsedFormula, parse_XLSBCellParsedFormula, parse_XLSBNameParsedFormula, parse_XLSBSharedParsedFormula, write_XLSBNameParsedFormula, Cetab, Ftab, FtabArgc, strs, _ssfopts, browser_has_Map, mergecregex, hlinkregex, dimregex, colregex, afregex, marginregex, sheetprregex, sheetprot_deffalse, sheetprot_deftrue, sviewregex, parse_ws_xml_data, parse_BrtWsDim, write_BrtWsDim, parse_BrtMergeCell, write_BrtMergeCell, BrtMarginKeys, WBPropsDef, WBViewDef, SheetDef, CalcPrDef, badchars, wbnsregex, attregexg2, attregex2, XLMLFormatMap, CONTINUE_RT, PSCLSID, XLSBRecordEnum, XLSRecordEnum, b8oid, b8ocnts, HTML_BEGIN, HTML_END, write_styles_ods, write_content_ods, subarray, numbers_lut_new, USE_WIDE_ROWS, qreg, utils, _Readable, __stream, version, xlsx_default;
   var init_xlsx = __esm({
-    "../bandal/node_modules/.pnpm/xlsx@file+vendor+xlsx-0.20.3.tgz/node_modules/xlsx/xlsx.mjs"() {
+    "../../bandal/node_modules/.pnpm/xlsx@file+vendor+xlsx-0.20.3.tgz/node_modules/xlsx/xlsx.mjs"() {
       XLSX = {};
       XLSX.version = "0.20.3";
       current_codepage = 1200;
@@ -42167,7 +42167,7 @@
     }
   });
 
-  // DesktopRuntime/backend/hover/worker/globals.ts
+  // backend/hover/worker/globals.ts
   var import_buffer = __toESM(require_buffer(), 1);
   var worker = globalThis;
   worker.Buffer = import_buffer.Buffer;
@@ -42175,10 +42175,10 @@
   worker.clearImmediate = (id) => clearTimeout(id);
   for (const name of ["fetch", "XMLHttpRequest", "WebSocket", "EventSource", "importScripts"]) Object.defineProperty(worker, name, { value: void 0, writable: false, configurable: false });
 
-  // DesktopRuntime/backend/hover/worker/version.ts
+  // backend/hover/worker/version.ts
   var OFFICE_RUNTIME_VERSION = "26.2.6";
 
-  // DesktopRuntime/backend/hover/worker/files.ts
+  // backend/hover/worker/files.ts
   var files = /* @__PURE__ */ new Map();
   var source;
   var sha256 = "";
@@ -42226,7 +42226,7 @@
     } };
   }
 
-  // DesktopRuntime/backend/hover/worker/zip.ts
+  // backend/hover/worker/zip.ts
   var import_buffer2 = __toESM(require_buffer(), 1);
   async function readWorkerZipEntry(entry, limit, limitError) {
     const chunks = [];
@@ -42267,7 +42267,7 @@
     }
   }
 
-  // DesktopRuntime/backend/shims/path.ts
+  // backend/shims/path.ts
   var sep = "/";
   function isAbsolute(value) {
     return value.startsWith("/");
@@ -42319,7 +42319,7 @@
   }
   var posix = { sep, isAbsolute, normalize, join, resolve, dirname, basename, extname, relative };
 
-  // DesktopRuntime/backend/hover/worker/zlib.ts
+  // backend/hover/worker/zlib.ts
   var import_pako = __toESM(require_pako());
   var import_buffer3 = __toESM(require_buffer());
   function inflateRawSync(bytes, options = {}) {
@@ -42336,7 +42336,7 @@
     return import_buffer3.Buffer.concat(chunks);
   }
 
-  // DesktopRuntime/upstream/src/shared/hwpText.ts
+  // upstream/src/shared/hwpText.ts
   var HWP_SIGNATURE = "HWP Document File";
   var FLAGS_OFFSET = 36;
   var HWPTAG_PARA_TEXT = 67;
@@ -42434,7 +42434,7 @@
     return parts.join("\n").replaceAll(/\n{3,}/gu, "\n\n").trim();
   }
 
-  // DesktopRuntime/upstream/src/main/features/materials/hoverPreviewImage.ts
+  // upstream/src/main/features/materials/hoverPreviewImage.ts
   var HOVER_IMAGE_BYTES = 4 * 1024 * 1024;
   var HOVER_IMAGE_PIXELS = 16 * 1024 * 1024;
   var HOVER_IMAGE_EDGE = 8192;
@@ -42630,7 +42630,7 @@
     return { kind: "image", width: info.width, height: info.height, sourceDataUrl: `data:${info.mime};base64,${bytes.toString("base64")}` };
   }
 
-  // DesktopRuntime/upstream/src/main/features/materials/hoverPreviewExtract.ts
+  // upstream/src/main/features/materials/hoverPreviewExtract.ts
   var HOVER_TEXT_READ_BYTES = 64 * 1024;
   var HOVER_OFFICE_READ_BYTES = 32 * 1024 * 1024;
   var HOVER_TEXT_CHARS = 1200;
@@ -42850,7 +42850,7 @@
     }
   }
 
-  // DesktopRuntime/backend/hover/worker/entry.ts
+  // backend/hover/worker/entry.ts
   var worker2 = globalThis;
   worker2.onmessage = async (event) => {
     const snapshot = event.data;

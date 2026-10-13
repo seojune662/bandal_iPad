@@ -34,6 +34,9 @@ export function planImport(record: SharedRecord, deps: any, assets: Map<string, 
   } else if (record.kind === 'material') {
     const id = identity(p.id), c = course(p.courseID), old = db.prepare('SELECT * FROM materials_index WHERE id=?').get(id)
     if (record.id !== `material:${id}` || old && old.course_id !== p.courseID) throw new Error('Material identity mismatch')
+    if (old && /\.pdf$/i.test(old.rel_path) && p.kind !== 'pdf') throw new Error('A preserved PDF material cannot change its kind')
+    const oldBoard = db.prepare('SELECT id FROM whiteboards WHERE id=?').get(id)
+    if (p.kind === 'whiteboard' && old || p.kind !== 'whiteboard' && oldBoard) throw new Error('File and whiteboard identities cannot be reused for each other')
     if (p.kind === 'whiteboard') {
       row('whiteboards', { id, course_id: p.courseID, title: p.title, sort_order: p.desktop?.sortOrder ?? 0, created_at: p.createdAt ?? now, updated_at: now, deleted_at: deleted,
         background: p.desktop?.background ?? 'blank', surface: p.desktop?.surface ?? 'light', page_count: p.desktop?.pageCount ?? 1, added_at: null }); source = { courseID: p.courseID, whiteboard: true }
@@ -45,6 +48,10 @@ export function planImport(record: SharedRecord, deps: any, assets: Map<string, 
         for (let i = 2; existsSync(target); i++) { if (i > 10000) throw new Error('Too many material name collisions'); relPath = join(directory, `${stem} (${i})${extension}`); target = resolveInsideReal(c.folder_path, relPath) }
       }
       source = { courseID: p.courseID, relPath, path: target, hash: p.revision }
+      if (!record.deleted && old && /\.pdf$/i.test(old.rel_path) && existsSync(target)) {
+        const binding = deps.pdfBindings.check({ courseId: p.courseID, relPath: old.rel_path })
+        if (binding.documentRevision !== p.revision) throw new Error('PDF replacement conflicts with its preserved drawing revision; import as a separate material')
+      }
       if (record.deleted) files.push({ target, remove: true })
       else if (!existsSync(target) || native('fs.sha256', { path: target }) !== p.revision) { const path = asset(p.revision, p.byteCount); files.push({ target, source: path }) }
       row('materials_index', { id, course_id: p.courseID, rel_path: relPath, kind: p.kind === 'file' ? 'other' : p.kind, size: p.byteCount ?? old?.size ?? 0,
@@ -52,6 +59,7 @@ export function planImport(record: SharedRecord, deps: any, assets: Map<string, 
     }
   } else if (record.kind === 'note') {
     const m = material(identity(p.materialID)); if (typeof p.markdown !== 'string' || record.id !== `note:${p.materialID}`) throw new Error('Invalid note payload')
+    if (m.kind !== 'note' || !/\.(md|markdown)$/i.test(m.rel_path)) throw new Error('A note record can only write to its Markdown material')
     source = { courseID: m.course_id, relPath: m.rel_path, path: m.path }
     files.push(record.deleted ? { target: m.path, remove: true } : { target: m.path, text: p.markdown })
   } else if (record.kind === 'drawing') {
@@ -61,7 +69,8 @@ export function planImport(record: SharedRecord, deps: any, assets: Map<string, 
     const m = board ? { course_id: board.course_id, rel_path: '', path: '', id: board.id } : material(page.materialID)
     courseID = m.course_id
     if (!board) {
-      if (native('fs.sha256', { path: m.path }) !== page.documentRevision) throw new Error('Ink belongs to a different document revision')
+      const binding = deps.pdfBindings.check({ courseId: m.course_id, relPath: m.rel_path, documentRevision: page.documentRevision })
+      if (binding.materialID !== page.materialID) throw new Error('Ink belongs to a different material identity')
       const actual = native<any[]>('pdf.geometry', { path: m.path }).find(value => value.page === page.page)
       if (!actual || actual.rotation !== g.rotation || [actual.cropBox.x-g.cropX,actual.cropBox.y-g.cropY,actual.cropBox.width-g.width,actual.cropBox.height-g.height].some(delta => !Number.isFinite(delta) || Math.abs(delta) > .001)) throw new Error('Ink geometry does not match PDF')
     }

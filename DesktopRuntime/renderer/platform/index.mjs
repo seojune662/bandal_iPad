@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url'
+import { adaptSettingsSource } from '../settings/index.mjs'
 const apiPath = fileURLToPath(new URL('./api.ts', import.meta.url))
 const pdfResourcesPath = fileURLToPath(new URL('./pdfResources.ts', import.meta.url))
 const keyboardFiles = new Map([
@@ -12,7 +13,7 @@ function replace(source, needle, value, count = 1) {
   return source.split(needle).join(value)
 }
 export function adaptPlatformSource(source, id) {
-  let code = source
+  let code = adaptSettingsSource(source, id)?.code ?? source
   if (id.endsWith('/renderer/src/features/pdf/PdfTab.tsx')) {
     code = `import { pdfResourceOptions } from ${JSON.stringify(pdfResourcesPath)}\n` + code
     code = replace(code, 'const PDF_DOCUMENT_OPTIONS = {', 'const PDF_DOCUMENT_OPTIONS = {\n  ...pdfResourceOptions,')

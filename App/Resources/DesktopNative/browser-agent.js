@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // DesktopRuntime/upstream/src/main/features/browserAgent/actionPolicy.ts
+  // upstream/src/main/features/browserAgent/actionPolicy.ts
   var TYPEABLE_TAGS = /* @__PURE__ */ new Set(["input", "textarea"]);
   var NON_TEXT_INPUT_TYPES = /* @__PURE__ */ new Set([
     "button",
@@ -84,7 +84,7 @@
     return { allowed: true };
   }
 
-  // DesktopRuntime/upstream/src/main/features/browserAgent/snapshot.ts
+  // upstream/src/main/features/browserAgent/snapshot.ts
   var DEFAULT_SNAPSHOT_CHARS = 6e3;
   var MAX_SNAPSHOT_CHARS = 2e4;
   var TARGET_SELECTOR = "a, button, input, select, textarea, h1, h2, h3, [role=button], [role=link], [role=tab], [role=menuitem], [role=checkbox], [onclick], label, summary";
@@ -348,7 +348,7 @@ ${TARGET_INDEX_SOURCE}
   return { url: location.href, text: text.replace(/\\n{3,}/g, '\\n\\n') };
 })()`;
 
-  // DesktopRuntime/upstream/src/main/features/browserAgent/pageDriver.ts
+  // upstream/src/main/features/browserAgent/pageDriver.ts
   function toElements(raw) {
     if (!Array.isArray(raw)) return [];
     return raw.flatMap((entry, index) => {
@@ -655,7 +655,7 @@ ${TARGET_INDEX_SOURCE}
     return canSelect(facts2);
   }
 
-  // DesktopRuntime/upstream/src/main/features/browserAgent/refs.ts
+  // upstream/src/main/features/browserAgent/refs.ts
   var REF_PATTERN = /^f(\d+):e(\d+)@(\d+)$/;
   function parseRef(ref) {
     if (typeof ref !== "string") return null;
@@ -691,7 +691,7 @@ ${TARGET_INDEX_SOURCE}
     };
   }
 
-  // DesktopRuntime/native/browser-agent.ts
+  // native/browser-agent.ts
   var captured = [];
   var capturedGeneration = -1;
   var focused = null;

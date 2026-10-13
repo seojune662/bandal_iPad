@@ -24,6 +24,7 @@ final class DesktopNativePrimitives: NSObject, DesktopNativeExports {
     let database: DesktopSQLite
     var onEmit: ((String, Any) -> Void)?
     private var descriptors: Set<Int32> = []
+    private var pathLocks: Set<Int32> = []
     private var hashes: [String: SHA256] = [:]
     private let fileDigests = FileDigestCache()
     private lazy var mcpVault = DesktopMCPVault(namespace: root.lastPathComponent)
@@ -40,7 +41,7 @@ final class DesktopNativePrimitives: NSObject, DesktopNativeExports {
         }
     }
 
-    deinit { for descriptor in descriptors { Darwin.close(descriptor) } }
+    deinit { for descriptor in descriptors.union(pathLocks) { Darwin.close(descriptor) } }
 
     func perform(_ request: String) -> String {
         do {
@@ -148,6 +149,26 @@ final class DesktopNativePrimitives: NSObject, DesktopNativeExports {
             }
             return ["text": sections.joined(separator: "\n\n"), "pages": pages, "truncated": truncated]
         case "fs.exists": return files.fileExists(atPath: try path().path)
+        case "fs.lockAcquire":
+            let url = try path(write: true)
+            let fd = Darwin.open(url.path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+            guard fd >= 0 else { throw posixError() }
+            guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+                let code = errno
+                Darwin.close(fd)
+                if code == EWOULDBLOCK || code == EAGAIN { return NSNull() }
+                errno = code
+                throw posixError()
+            }
+            pathLocks.insert(fd)
+            return Int(fd)
+        case "fs.lockRelease":
+            guard let token = args["token"] as? Int, let fd = Int32(exactly: token), pathLocks.remove(fd) != nil else {
+                throw DesktopRuntimeError("Unknown path lock", code: "EBADF")
+            }
+            // Closing releases the advisory lock, including on process exit.
+            guard Darwin.close(fd) == 0 else { throw posixError() }
+            return NSNull()
         case "fs.realpath":
             let url = try path()
             guard files.fileExists(atPath: url.path) else { throw DesktopRuntimeError("No such file: \(url.lastPathComponent)", code: "ENOENT") }
@@ -325,8 +346,10 @@ final class DesktopNativePrimitives: NSObject, DesktopNativeExports {
 
     private func statValue(_ value: Darwin.stat) -> [String: Any] {
         let kind = value.st_mode & S_IFMT
-        return ["size": value.st_size, "mtimeMs": Double(value.st_mtimespec.tv_sec) * 1000 + Double(value.st_mtimespec.tv_nsec) / 1_000_000,
+        return ["dev": String(value.st_dev), "ino": String(value.st_ino),
+                "size": value.st_size, "mtimeMs": Double(value.st_mtimespec.tv_sec) * 1000 + Double(value.st_mtimespec.tv_nsec) / 1_000_000,
                 "mtimeNs": String(Int64(value.st_mtimespec.tv_sec) * 1_000_000_000 + Int64(value.st_mtimespec.tv_nsec)),
+                "ctimeNs": String(Int64(value.st_ctimespec.tv_sec) * 1_000_000_000 + Int64(value.st_ctimespec.tv_nsec)),
                 "ctimeMs": Double(value.st_ctimespec.tv_sec) * 1000 + Double(value.st_ctimespec.tv_nsec) / 1_000_000,
                 "birthtimeMs": Double(value.st_birthtimespec.tv_sec) * 1000 + Double(value.st_birthtimespec.tv_nsec) / 1_000_000,
                 "mode": value.st_mode, "isFile": kind == S_IFREG, "isDirectory": kind == S_IFDIR, "isSymbolicLink": kind == S_IFLNK]

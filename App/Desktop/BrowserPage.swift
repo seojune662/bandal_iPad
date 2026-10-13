@@ -52,7 +52,9 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
     init(host: DesktopBrowserHost, id: Int, tabID: String, profileID: String, isPrivate: Bool, courseID: String?, configuration supplied: WKWebViewConfiguration?) {
         self.host = host; self.id = id; self.tabID = tabID; self.profileID = profileID; self.isPrivate = isPrivate; self.courseID = courseID
         let configuration = supplied ?? WKWebViewConfiguration()
+        DesktopBrowserIdentity.configure(configuration)
         if supplied == nil { configuration.websiteDataStore = host.persistence!.dataStore(profile: profileID, isPrivate: isPrivate) }
+        configuration.defaultWebpagePreferences.preferredContentMode = .recommended
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = .audio
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
@@ -141,14 +143,15 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         }
     }
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+        guard let url = navigationAction.request.url else { decisionHandler(.cancel, preferences); return }
+        preferences.preferredContentMode = host?.presentation(for: self, url: url).contentMode ?? .recommended
         let scheme = url.scheme?.lowercased() ?? ""
         guard ["http", "https", "about", "data", "blob"].contains(scheme) else {
             host?.emit("browser:external-scheme", ["url": url.absoluteString, "origin": webView.url.flatMap(DesktopBrowserHost.origin) ?? "", "outcome": "blocked"])
-            decisionHandler(.cancel); return
+            decisionHandler(.cancel, preferences); return
         }
-        decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow)
+        decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow, preferences)
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if navigationResponse.isForMainFrame { httpStatus = (navigationResponse.response as? HTTPURLResponse)?.statusCode ?? 0 }
@@ -250,15 +253,25 @@ enum BrowserScripts {
     static let observation = """
     (()=>{const original=console.log;console.log=function(...args){try{if(typeof args[0]==='string'&&args[0].startsWith('__bandal')&&args[0].length<150000)window.webkit.messageHandlers.browserObservation.postMessage({console:args[0]})}catch{};return original.apply(this,args)}})();
     """
-    static let find = """
+    static let find = #"""
     const previous=globalThis.__bandalNativeFind;
     let ranges=[];
-    if(next&&previous?.query===query&&previous.matchCase===matchCase){ranges=previous.ranges.filter(r=>r.startContainer.isConnected)}
-    else if(query){const walker=document.createTreeWalker(document.body||document.documentElement,NodeFilter.SHOW_TEXT,{acceptNode(node){const p=node.parentElement;if(!p||p.closest('script,style,noscript,textarea,input,[hidden]')||!p.getClientRects().length)return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});let node;while((node=walker.nextNode())&&ranges.length<10000){const text=matchCase?node.textContent:node.textContent.toLocaleLowerCase();const q=matchCase?query:query.toLocaleLowerCase();let pos=0;while((pos=text.indexOf(q,pos))>=0){const r=document.createRange();r.setStart(node,pos);r.setEnd(node,pos+query.length);ranges.push(r);pos+=Math.max(query.length,1);if(ranges.length>=10000)break}}}
-    let index=next&&previous?.query===query?previous.index+(forward?1:-1):0;
+    if(next&&previous?.query===query&&previous.matchCase===matchCase){ranges=previous.ranges.filter(r=>r.startContainer.isConnected&&r.endContainer.isConnected)}
+    else if(query){
+      const segments=[], blocks=new WeakMap();let text='',lastBlock=null;
+      const blockOf=element=>{if(blocks.has(element))return blocks.get(element);let block=element;while(block.parentElement&&getComputedStyle(block).display==='inline')block=block.parentElement;blocks.set(element,block);return block};
+      const walker=document.createTreeWalker(document.body||document.documentElement,NodeFilter.SHOW_TEXT,{acceptNode(node){const p=node.parentElement;if(!p||p.closest('script,style,noscript,textarea,input,[hidden]')||!p.getClientRects().length||getComputedStyle(p).visibility==='hidden')return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+      let node;while((node=walker.nextNode())&&text.length<2000000){const block=blockOf(node.parentElement);if(lastBlock&&lastBlock!==block)text+='\n';lastBlock=block;const start=text.length;text+=node.textContent;segments.push({node,start,end:text.length})}
+      const escaped=query.split(/(\s+)/).map(part=>/^\s+$/.test(part)?'\\s+':part.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('');
+      const expression=new RegExp(escaped,matchCase?'gu':'giu');let match;
+      const startAt=offset=>{let lo=0,hi=segments.length;while(lo<hi){const mid=(lo+hi)>>1;if(segments[mid].end<=offset)lo=mid+1;else hi=mid}const segment=segments[lo];return segment?{node:segment.node,offset:Math.max(0,offset-segment.start)}:null};
+      const endAt=offset=>{let lo=0,hi=segments.length;while(lo<hi){const mid=(lo+hi)>>1;if(segments[mid].start<offset)lo=mid+1;else hi=mid}const segment=segments[lo-1];return segment?{node:segment.node,offset:Math.min(segment.node.length,offset-segment.start)}:null};
+      while((match=expression.exec(text))&&ranges.length<10000){if(!match[0].length){expression.lastIndex++;continue}const start=startAt(match.index),end=endAt(match.index+match[0].length);if(!start||!end)continue;const range=document.createRange();range.setStart(start.node,start.offset);range.setEnd(end.node,end.offset);if(!range.collapsed)ranges.push(range)}
+    }
+    let index=next&&previous?.query===query&&previous.matchCase===matchCase?previous.index+(forward?1:-1):0;
     if(ranges.length){index=(index%ranges.length+ranges.length)%ranges.length;const selection=getSelection();selection.removeAllRanges();selection.addRange(ranges[index]);ranges[index].startContainer.parentElement?.scrollIntoView({block:'center',inline:'nearest'})}else{index=-1;getSelection()?.removeAllRanges()}
     globalThis.__bandalNativeFind={query,matchCase,ranges,index};return {matches:ranges.length,ordinal:index+1};
-    """
+    """#
     static let image = """
     const image=document.elementFromPoint(x,y)?.closest('img');if(!image)return null;
     try{const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;if(!canvas.width||canvas.width*canvas.height>16000000)return null;canvas.getContext('2d').drawImage(image,0,0);return canvas.toDataURL('image/png')}catch{return null}

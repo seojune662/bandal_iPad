@@ -25,11 +25,12 @@ export async function testSync({ backend, database, environment, runtime, course
   }
   const whiteboard=snapshot.records.find(r=>r.kind==='material'&&r.payload.kind==='whiteboard')
   assert.ok(whiteboard)
-  const object={id:crypto.randomUUID(),kind:'ink',data:{points:[{x:.1,y:.2,p:.4},{x:.2,y:.3,p:.8}]},style:{color:'ink',width:.003,opacity:1},createdAt:'2026-10-13T00:00:00Z',updatedAt:'2026-10-13T00:00:00Z'}
+  const object={id:crypto.randomUUID(),kind:'ink',data:{inkVersion:2,points:[{x:.1,y:.2,p:.4,t:0,tiltX:-30,tiltY:15},{x:.2,y:.3,p:.8,t:12,tiltX:25,tiltY:-12}]},style:{color:'ink',width:.003,opacity:1},createdAt:'2026-10-13T00:00:00Z',updatedAt:'2026-10-13T00:00:00Z'}
   const pageRecord={schemaVersion:1,materialID:whiteboard.payload.id,documentRevision:whiteboard.payload.revision,page:1,coordinateSpace:'unrotated-crop-box-top-left-normalized',geometry:{cropX:0,cropY:0,width:595.28,height:841.89,rotation:0},objects:[object],highlights:[],deletedObjectIDs:[],deletedHighlightIDs:[]}
   const boardInk={id:`drawing:${pageRecord.materialID}:${pageRecord.documentRevision}:1`,kind:'drawing',payload:{materialID:pageRecord.materialID,documentRevision:pageRecord.documentRevision,page:1,data:Buffer.from(JSON.stringify(pageRecord)).toString('base64')},deleted:false,formatVersion:1}
   assert.equal((await invoke('import',{records:[boardInk],assets})).applied,1)
   assert.equal(database.prepare('SELECT id FROM whiteboard_local_shapes WHERE id=?').get(object.id).id,object.id)
+  assert.deepEqual(JSON.parse(database.prepare('SELECT data_json FROM whiteboard_local_shapes WHERE id=?').get(object.id).data_json),object.data,'Whiteboard import preserves v2 measured metadata')
   const unchanged = await invoke('import',{records:[original],assets})
   assert.equal(unchanged.applied,1); assert.equal(unchanged.conflicts.length,0)
   const originalMtime=fs.statSync(path.join(course.folderPath,note.relPath)).mtimeMs
@@ -136,5 +137,84 @@ export async function testSync({ backend, database, environment, runtime, course
   const targetPath=path.join(course.folderPath,note.relPath),backup=path.join(interrupted,'0.original'),originalBytes=fs.readFileSync(targetPath)
   fs.writeFileSync(backup,originalBytes); fs.writeFileSync(path.join(interrupted,'intent.json'),JSON.stringify({id:'uncommitted-test',entries:[{target:targetPath,backup,existed:true}]}));fs.writeFileSync(targetPath,'interrupted replacement')
   runtime().initialize();assert.deepEqual(fs.readFileSync(targetPath),originalBytes)
+  await testV2InkSync({ backend, invoke, runtime, course })
   console.log('PASS: sync projection stable IDs/assets, private surface, note conflicts/restore, ink union, SQL/file rollback, malformed preflight, persistent roundtrip')
+}
+
+async function testV2InkSync({ backend, invoke, runtime, course }) {
+  const plain = value => JSON.parse(JSON.stringify(value))
+  const decode = record => JSON.parse(Buffer.from(record.payload.data,'base64'))
+  const encode = (record, page) => ({...record,payload:{...record.payload,data:Buffer.from(JSON.stringify(page)).toString('base64')}})
+  const exported = await invoke('export',{})
+  const material = exported.records.find(record=>record.kind==='material'&&record.payload.courseID===course.id&&record.payload.kind==='pdf')
+  assert.ok(material)
+  const relPath=material.payload.desktop.relPath, pageCount=process.argv.includes('--pdf')?4:1
+  const points=[{x:.125,y:.25,p:0,t:0,tiltX:-45,tiltY:20},{x:.125,y:.25,p:1,t:8,tiltX:35,tiltY:-40},{x:.75,y:.875,p:.6,t:32,tiltX:5,tiltY:70}]
+  const shapes=[]
+  for(let page=1;page<=pageCount;page++)shapes.push(plain(await backend.invoke('drawings:create',{courseId:course.id,relPath,page,kind:page%2?'ink':'highlighter',data:{inkVersion:2,points},style:{color:'violet',width:.006,opacity:.3}})))
+  let snapshot=await invoke('export',{}), assets=snapshot.assets.map(asset=>({sha256:asset.sha256,path:asset.path}))
+  const pages=shapes.map(shape=>snapshot.records.find(record=>record.kind==='drawing'&&record.payload.materialID===material.payload.id&&record.payload.page===shape.page))
+  if(pageCount===4)assert.deepEqual(pages.map(record=>decode(record).geometry.rotation),[0,90,180,270])
+  const expectedFirst={0:[.125,.25],90:[.25,.875],180:[.875,.75],270:[.75,.125]}
+  for(let index=0;index<shapes.length;index++){
+    const shape=shapes[index], record=pages[index], page=decode(record), object=page.objects.find(object=>object.id===shape.id)
+    assert.equal(page.coordinateSpace,'unrotated-crop-box-top-left-normalized')
+    assert.equal(page.documentRevision,material.payload.revision)
+    assert.ok(page.geometry.cropX>0&&page.geometry.cropY>0,'Use actual cropped PDF geometry instead of a zero-origin fixture')
+    assert.equal(object.data.inkVersion,2)
+    assert.deepEqual([object.data.points[0].x,object.data.points[0].y],expectedFirst[page.geometry.rotation])
+    assert.deepEqual(object.data.points.map(({p,t,tiltX,tiltY})=>({p,t,tiltX,tiltY})),points.map(({p,t,tiltX,tiltY})=>({p,t,tiltX,tiltY})))
+    const width=shape.style.width*([90,270].includes(page.geometry.rotation)?page.geometry.height/page.geometry.width:1)
+    assert.ok(Math.abs(object.style.width-width)<1e-12)
+    const edited={...object,data:{...object.data,points:object.data.points.map((point,index)=>({...point,t:point.t+64,tiltX:index===2?-55:point.tiltX}))},style:{...object.style,color:'red'}}
+    const incoming=encode(record,{...page,objects:page.objects.map(object=>object.id===shape.id?edited:object)})
+    for(let retry=0;retry<2;retry++){
+      const result=await invoke('import',{records:[incoming],assets})
+      assert.equal(result.applied,1);assert.equal(result.conflicts.length,0)
+    }
+    const current=plain(await backend.invoke('drawings:listForFile',{courseId:course.id,relPath})).find(object=>object.id===shape.id)
+    assert.equal(current.data.inkVersion,2);assert.equal(current.kind,shape.kind);assert.equal(current.style.color,'red')
+    for(let i=0;i<points.length;i++){
+      assert.ok(Math.abs(current.data.points[i].x-points[i].x)<1e-12)
+      assert.ok(Math.abs(current.data.points[i].y-points[i].y)<1e-12)
+      assert.equal(current.data.points[i].p,points[i].p);assert.equal(current.data.points[i].t,points[i].t+64)
+      assert.equal(current.data.points[i].tiltX,i===2?-55:points[i].tiltX);assert.equal(current.data.points[i].tiltY,points[i].tiltY)
+    }
+    assert.ok(Math.abs(current.style.width-shape.style.width)<1e-12)
+  }
+  const reopened=runtime();reopened.initialize()
+  snapshot=await reopened.invokePrivate('nativeSync:export',{})
+  const target=shapes[0], base=snapshot.records.find(record=>record.id===pages[0].id), page=decode(base), original=page.objects.find(object=>object.id===target.id)
+  assert.equal(original.data.inkVersion,2);assert.equal(original.data.points[2].tiltX,-55)
+  // Matching concurrent changes to the SAME ID converge without dropping any
+  // measured metadata or manufacturing another object.
+  const local=plain(await backend.invoke('drawings:update',{id:target.id,style:{...target.style,color:'blue'}}))
+  const matching={...original,style:{...original.style,color:'blue'},updatedAt:local.updatedAt}
+  const same=encode(base,{...page,objects:page.objects.map(object=>object.id===target.id?matching:object)})
+  const sameResult=await invoke('import',{records:[same],assets})
+  assert.equal(sameResult.applied,1);assert.equal(sameResult.conflicts.length,0)
+  const afterSame=plain(await backend.invoke('drawings:listForFile',{courseId:course.id,relPath})).filter(object=>object.id===target.id)
+  assert.equal(afterSame.length,1);assert.deepEqual(afterSame[0].data,local.data)
+  // Incompatible changes to one ID must preserve BOTH complete v2 variants,
+  // not quietly merge style while losing pressure/time/tilt data.
+  snapshot=await invoke('export',{});const conflictBase=snapshot.records.find(record=>record.id===base.id), conflictPage=decode(conflictBase)
+  const remoteObject=conflictPage.objects.find(object=>object.id===target.id)
+  const localPoints=local.data.points.map(point=>({...point,t:point.t+10,tiltY:-25}))
+  await backend.invoke('drawings:update',{id:target.id,data:{inkVersion:2,points:localPoints}})
+  const remotePoints=remoteObject.data.points.map(point=>({...point,t:point.t+20,tiltY:50}))
+  const remote=encode(conflictBase,{...conflictPage,objects:conflictPage.objects.map(object=>object.id===target.id?{...object,data:{inkVersion:2,points:remotePoints}}:object)})
+  const conflicted=await invoke('import',{records:[remote],assets})
+  assert.equal(conflicted.applied,0);assert.equal(conflicted.conflicts.length,1)
+  const current=plain(await backend.invoke('drawings:listForFile',{courseId:course.id,relPath})).find(object=>object.id===target.id)
+  assert.deepEqual(current.data,{inkVersion:2,points:localPoints})
+  const conflict=(await invoke('conflicts',{})).find(conflict=>conflict.id===conflicted.conflicts[0].id)
+  const localVariant=decode(conflict.local).objects.find(object=>object.id===target.id), remoteVariant=decode(conflict.remote).objects.find(object=>object.id===target.id)
+  assert.equal(localVariant.data.inkVersion,2);assert.equal(localVariant.data.points[0].tiltY,-25)
+  assert.deepEqual(remoteVariant.data,{inkVersion:2,points:remotePoints})
+  const restored=await invoke('restoreConflict',{conflictID:conflict.id,variant:'remote',assets})
+  assert.equal(restored.applied,1)
+  const resolved=plain(await backend.invoke('drawings:listForFile',{courseId:course.id,relPath})).find(object=>object.id===target.id)
+  assert.equal(resolved.data.inkVersion,2);assert.equal(resolved.data.points[0].tiltY,50);assert.equal(resolved.data.points[0].t,remotePoints[0].t)
+  assert.equal(resolved.data.points[0].p,points[0].p)
+  console.log(`PASS: v2 sync metadata/portable coordinate roundtrip (${pageCount} rotated cropped page(s)), same-ID convergence, incompatible-edit copies and explicit v2 recovery`)
 }
