@@ -52,12 +52,12 @@ final class PortableInkTests: XCTestCase {
         var saved: [PortableInkPageRecord] = []
         canvas.save = { saved.append($0) }
         let drawing = makeDrawing()
-        canvas.drawing = drawing; canvas.canvasViewDidEndUsingTool(canvas)
+        canvas.drawing = drawing; canvas.delegate?.canvasViewDidEndUsingTool?(canvas)
         let original = try XCTUnwrap(saved.last?.objects.first?.id)
-        canvas.drawing = PKDrawing(); canvas.canvasViewDidEndUsingTool(canvas)
+        canvas.drawing = PKDrawing(); canvas.delegate?.canvasViewDidEndUsingTool?(canvas)
         XCTAssertEqual(saved.last?.objects.count, 0)
         XCTAssertTrue(try XCTUnwrap(saved.last).deletedObjectIDs.contains(original))
-        canvas.drawing = drawing; canvas.canvasViewDidEndUsingTool(canvas)
+        canvas.drawing = drawing; canvas.delegate?.canvasViewDidEndUsingTool?(canvas)
         XCTAssertNotEqual(saved.last?.objects.first?.id, original)
         XCTAssertTrue(try XCTUnwrap(saved.last).deletedObjectIDs.contains(original))
     }
@@ -68,8 +68,85 @@ final class PortableInkTests: XCTestCase {
         var writes = 0
         canvas.save = { _ in writes += 1 }
         canvas.restore(.empty(materialID: "material", revision: "1", page: 1, geometry: mapper.geometry), mapper: mapper)
-        canvas.canvasViewDrawingDidChange(canvas); canvas.flush()
+        canvas.delegate?.canvasViewDrawingDidChange?(canvas); canvas.flush()
         XCTAssertEqual(writes, 0)
+    }
+
+    func testCanvasUsesSeparateDelegateAndCompletedToolSavesExactlyOnce() throws {
+        let canvas = PersistentInkCanvas(frame: CGRect(x: 0, y: 0, width: 800, height: 1000))
+        let delegate = try XCTUnwrap(canvas.delegate)
+        XCTAssertFalse((delegate as AnyObject) === canvas)
+        XCTAssertFalse(delegate is PKCanvasView)
+        let mapper = InkCoordinateMapper.whiteboard(size: canvas.bounds.size)
+        canvas.restore(.empty(materialID: "material", revision: "1", page: 1, geometry: mapper.geometry), mapper: mapper)
+        var writes: [PortableInkPageRecord] = []
+        var beginnings = 0
+        canvas.save = { writes.append($0) }
+        canvas.onBegin = { beginnings += 1 }
+        delegate.canvasViewDidBeginUsingTool?(canvas)
+        XCTAssertTrue(canvas.hasActiveTool)
+        XCTAssertEqual(beginnings, 1)
+        canvas.drawing = makeDrawing()
+        delegate.canvasViewDrawingDidChange?(canvas)
+        XCTAssertTrue(writes.isEmpty)
+        delegate.canvasViewDidEndUsingTool?(canvas)
+        XCTAssertFalse(canvas.hasActiveTool)
+        XCTAssertEqual(writes.count, 1)
+        XCTAssertEqual(writes.first?.objects.count, 1)
+        XCTAssertTrue(canvas.accessibilityValue?.hasPrefix("1개의 획") == true)
+        canvas.flush()
+        XCTAssertEqual(writes.count, 1)
+    }
+
+    func testCanvasRetainsItsDelegateWithoutDelegateRetainingCanvas() throws {
+        weak var releasedCanvas: PersistentInkCanvas?
+        weak var releasedDelegate: AnyObject?
+        var retainedDelegate: (any PKCanvasViewDelegate)?
+        autoreleasepool {
+            let canvas = PersistentInkCanvas(frame: CGRect(x: 0, y: 0, width: 200, height: 300))
+            releasedCanvas = canvas
+            retainedDelegate = canvas.delegate
+            releasedDelegate = canvas.delegate
+            XCTAssertNotNil(canvas.delegate)
+        }
+        XCTAssertNil(releasedCanvas)
+        XCTAssertNotNil(releasedDelegate)
+        retainedDelegate = nil
+        XCTAssertNil(releasedDelegate)
+    }
+
+    func testWhiteboardFingerDrawingUsesTwoFingerPan() {
+        let controller = WhiteboardController(materialID: "board", revision: "1", load: { nil }, save: { _ in })
+        controller.install()
+        let tools = InkToolState()
+        controller.configure(tools)
+        XCTAssertEqual(controller.scrollView.panGestureRecognizer.minimumNumberOfTouches, 1)
+        tools.fingerDrawing = true
+        controller.configure(tools)
+        XCTAssertEqual(controller.scrollView.panGestureRecognizer.minimumNumberOfTouches, 2)
+        XCTAssertEqual(controller.canvas.drawingPolicy, .anyInput)
+        XCTAssertFalse(controller.scrollView.canCancelContentTouches)
+        tools.fingerDrawing = false
+        controller.configure(tools)
+        XCTAssertEqual(controller.scrollView.panGestureRecognizer.minimumNumberOfTouches, 1)
+        XCTAssertEqual(controller.canvas.drawingPolicy, .pencilOnly)
+    }
+
+    func testWhiteboardRefitsResizedPaneAndPreservesManualZoom() {
+        let controller = WhiteboardController(materialID: "board", revision: "1", load: { nil }, save: { _ in })
+        controller.install()
+        controller.scrollView.frame = CGRect(x: 0, y: 0, width: 400, height: 800)
+        controller.scrollView.layoutIfNeeded()
+        controller.fit()
+        XCTAssertEqual(controller.scrollView.zoomScale, 1.0 / 3.0, accuracy: 0.001)
+        controller.scrollView.frame = CGRect(x: 0, y: 0, width: 800, height: 1000)
+        controller.scrollView.layoutIfNeeded()
+        XCTAssertEqual(controller.scrollView.zoomScale, 0.625, accuracy: 0.001)
+        controller.scrollViewWillBeginZooming(controller.scrollView, with: controller.canvas)
+        controller.scrollView.setZoomScale(1.2, animated: false)
+        controller.scrollView.frame = CGRect(x: 0, y: 0, width: 500, height: 700)
+        controller.scrollView.layoutIfNeeded()
+        XCTAssertEqual(controller.scrollView.zoomScale, 1.2, accuracy: 0.001)
     }
 
     func testChangedPortableInkCannotBeMaskedByStaleNativeCache() throws {

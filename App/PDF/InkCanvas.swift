@@ -159,10 +159,31 @@ enum PortableInkCodec {
     }
 }
 
+/// PencilKit forwards internal canvas events to its delegate. A PKCanvasView
+/// must never be its own delegate: device Pencil input can recurse through
+/// PencilKit's private forwarding methods until the main-thread stack overflows.
+@MainActor
+private final class InkCanvasDelegate: NSObject, PKCanvasViewDelegate {
+    weak var canvas: PersistentInkCanvas?
+
+    func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
+        guard canvasView === canvas else { return }
+        canvas?.didBeginUsingTool()
+    }
+    func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+        guard canvasView === canvas else { return }
+        canvas?.didEndUsingTool()
+    }
+    func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+        guard canvasView === canvas else { return }
+        canvas?.drawingDidChange()
+    }
+}
+
 /// Keeps canvas instances stable across SwiftUI redraws, suppresses programmatic
 /// load callbacks, and persists both tool-end and delayed PencilKit final changes.
 @MainActor
-final class PersistentInkCanvas: PKCanvasView, PKCanvasViewDelegate {
+final class PersistentInkCanvas: PKCanvasView {
     var record: PortableInkPageRecord?
     var mapper: InkCoordinateMapper?
     var save: ((PortableInkPageRecord) -> Void)?
@@ -175,15 +196,20 @@ final class PersistentInkCanvas: PKCanvasView, PKCanvasViewDelegate {
     private var dirty = false
     private var lastSavedDrawing: Data?
     private var saveTask: Task<Void, Never>?
+    private let inkDelegate = InkCanvasDelegate()
     var hasActiveTool: Bool { usingTool }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        delegate = self
+        inkDelegate.canvas = self
+        delegate = inkDelegate
         backgroundColor = .clear; isOpaque = false; isScrollEnabled = false
         contentInset = .zero; drawingPolicy = .pencilOnly
         overrideUserInterfaceStyle = .light
+        isAccessibilityElement = true
+        accessibilityIdentifier = "bandal-ink-canvas"
         accessibilityLabel = "필기 캔버스"
+        updateAccessibilitySummary()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
@@ -220,6 +246,7 @@ final class PersistentInkCanvas: PKCanvasView, PKCanvasViewDelegate {
         acceptsFingerDrawing = state.fingerDrawing
         drawingPolicy = state.fingerDrawing ? .anyInput : .pencilOnly
         isUserInteractionEnabled = state.tool != .read && !isReadOnly
+        updateAccessibilitySummary()
     }
 
     func restore(_ record: PortableInkPageRecord, mapper: InkCoordinateMapper) {
@@ -237,6 +264,7 @@ final class PersistentInkCanvas: PKCanvasView, PKCanvasViewDelegate {
         lastSavedDrawing = drawing.dataRepresentation()
         isRestoring = false; dirty = false
         undoManager?.removeAllActions()
+        updateAccessibilitySummary()
     }
 
     func reload(_ record: PortableInkPageRecord) {
@@ -245,13 +273,13 @@ final class PersistentInkCanvas: PKCanvasView, PKCanvasViewDelegate {
         restore(record, mapper: mapper)
     }
 
-    func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
+    fileprivate func didBeginUsingTool() {
         usingTool = true; onBegin?(); saveTask?.cancel()
     }
-    func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+    fileprivate func didEndUsingTool() {
         usingTool = false; dirty = true; flush()
     }
-    func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+    fileprivate func drawingDidChange() {
         guard !isRestoring, record != nil, !isReadOnly else { return }
         dirty = true
         guard !usingTool else { return }
@@ -275,7 +303,13 @@ final class PersistentInkCanvas: PKCanvasView, PKCanvasViewDelegate {
         record.nativeCache = NativeInkCache(drawing: data, canvasWidth: bounds.width,
                                            canvasHeight: bounds.height, portableDigest: PortableInkCodec.digest(record.objects))
         self.record = record; lastSavedDrawing = data; dirty = false
+        updateAccessibilitySummary()
         save?(record)
+    }
+
+    private func updateAccessibilitySummary() {
+        accessibilityValue = "\(drawing.strokes.count)개의 획 · \(acceptsFingerDrawing ? "손가락 필기" : "Pencil 필기")"
+        accessibilityHint = acceptsFingerDrawing ? "한 손가락으로 쓰고 두 손가락으로 이동합니다." : "Pencil로 쓰고 손가락으로 이동합니다."
     }
 
     func performUndo() { undoManager?.undo(); dirty = true; flush() }

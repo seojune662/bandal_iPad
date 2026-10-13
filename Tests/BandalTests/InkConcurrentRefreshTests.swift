@@ -25,7 +25,7 @@ final class InkConcurrentRefreshTests: XCTestCase {
         let canvas = try XCTUnwrap(overlay.subviews.compactMap { $0 as? PersistentInkCanvas }.first)
         canvas.frame = CGRect(x: 0, y: 0, width: 600, height: 800)
         canvas.restore(baseline, mapper: mapper)
-        canvas.canvasViewDidBeginUsingTool(canvas)
+        canvas.delegate?.canvasViewDidBeginUsingTool?(canvas)
         canvas.drawing = PKDrawing(strokes: canvas.drawing.strokes + drawing(at: CGPoint(x: 180, y: 180)).strokes)
 
         var remote = baseline
@@ -34,7 +34,7 @@ final class InkConcurrentRefreshTests: XCTestCase {
         remote.objects.append(remoteObject); remote.nativeCache = nil
         backing = try PortableInkPersistence.encode(remote)
         NotificationCenter.default.post(name: Notification.Name("app.bandal.records.changed"), object: nil)
-        canvas.canvasViewDidEndUsingTool(canvas)
+        canvas.delegate?.canvasViewDidEndUsingTool?(canvas)
 
         let saved = try JSONDecoder().decode(PortableInkPageRecord.self, from: backing)
         XCTAssertTrue(saved.objects.contains { $0.id == "remote-stroke" })

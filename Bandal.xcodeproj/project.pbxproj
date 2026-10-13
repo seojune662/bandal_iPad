@@ -55,6 +55,7 @@
 		D8F9CAEA16CE35B2F4E3374F /* LocalSaveJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = E581D20C7B7A462C7B3E6D17 /* LocalSaveJournal.swift */; };
 		E1367F12E42845E00542D970 /* Dictionary in Resources */ = {isa = PBXBuildFile; fileRef = 40264C49310E70238305600F /* Dictionary */; };
 		E1CC202E6AD3CE4EE7077553 /* DictionaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAE2776FE9F117D023DF30D5 /* DictionaryService.swift */; };
+		E23967AC7A22B2B1D77EC052 /* PencilInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5ADEBE941A85719E96C831B /* PencilInputTests.swift */; };
 		E3244A773AB30302BE1C782A /* WorkspacePersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3650B761A30E09CCFEA40C5B /* WorkspacePersistenceTests.swift */; };
 		F0D47F4485E41508A1CF6894 /* LearningQuizGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78CDE7492CE90DA84C0A0419 /* LearningQuizGenerator.swift */; };
 		FDC1B1E4AD5F88D8F06E3230 /* BandalApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 465F23C06AE823EE2C2B71EF /* BandalApp.swift */; };
@@ -123,6 +124,7 @@
 		D9D4542083E18EF2463D408E /* BrowserSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSession.swift; sourceTree = "<group>"; };
 		E3679A3BBA545B6E0634FFA2 /* Bandal.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Bandal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E581D20C7B7A462C7B3E6D17 /* LocalSaveJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSaveJournal.swift; sourceTree = "<group>"; };
+		E5ADEBE941A85719E96C831B /* PencilInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PencilInputTests.swift; sourceTree = "<group>"; };
 		E7F535FE5E97E065EB7A9BDF /* PCMRecordingWriterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PCMRecordingWriterTests.swift; sourceTree = "<group>"; };
 		F2C33E3525B582CB5F27DDBC /* OAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthSession.swift; sourceTree = "<group>"; };
 		F352840E23B3A5CF4DE22B76 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -313,6 +315,7 @@
 		D9D6523F31150F3E81DD32D5 /* BandalUITests */ = {
 			isa = PBXGroup;
 			children = (
+				E5ADEBE941A85719E96C831B /* PencilInputTests.swift */,
 				5194361A685917D6DE93ED7F /* WorkspaceTests.swift */,
 			);
 			name = BandalUITests;
@@ -476,6 +479,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E23967AC7A22B2B1D77EC052 /* PencilInputTests.swift in Sources */,
 				10B92750739C63B9E089E050 /* WorkspaceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

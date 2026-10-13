@@ -34,8 +34,8 @@ struct WhiteboardWorkspaceView: View {
 private struct WhiteboardCanvasHost: UIViewRepresentable {
     @ObservedObject var controller: WhiteboardController
     @ObservedObject var tools: InkToolState
-    func makeUIView(context: Context) -> UIScrollView { controller.install(); controller.canvas.configure(tools); return controller.scrollView }
-    func updateUIView(_ view: UIScrollView, context: Context) { controller.canvas.configure(tools) }
+    func makeUIView(context: Context) -> UIScrollView { controller.install(); controller.configure(tools); return controller.scrollView }
+    func updateUIView(_ view: UIScrollView, context: Context) { controller.configure(tools) }
     static func dismantleUIView(_ uiView: UIScrollView, coordinator: ()) {
         (uiView.delegate as? WhiteboardController)?.canvas.flush()
     }
@@ -44,7 +44,7 @@ private struct WhiteboardCanvasHost: UIViewRepresentable {
 @MainActor
 final class WhiteboardController: NSObject, ObservableObject, UIScrollViewDelegate {
     @Published var warning: String?
-    let scrollView = UIScrollView()
+    let scrollView: UIScrollView = BoardScrollView()
     let canvas = PersistentInkCanvas()
     private let paper = BoardPaperView(frame: CGRect(x: 0, y: 0, width: 1200, height: 1600))
     private let materialID: String
@@ -55,6 +55,8 @@ final class WhiteboardController: NSObject, ObservableObject, UIScrollViewDelega
     private var loadedData: Data?
     private var refreshTask: Task<Void, Never>?
     private var incomingPage: (base: PortableInkPageRecord, remote: PortableInkPageRecord)?
+    private var followsWindowSize = true
+    private var applyingFit = false
 
     init(materialID: String, revision: String, load: @escaping () -> Data?, save: @escaping (Data) -> Void) {
         self.materialID = materialID; self.revision = revision; self.load = load; self.save = save
@@ -63,6 +65,12 @@ final class WhiteboardController: NSObject, ObservableObject, UIScrollViewDelega
     func install() {
         guard !installed else { return }; installed = true
         scrollView.delegate = self
+        (scrollView as? BoardScrollView)?.onViewportResize = { [weak self] in
+            guard let self else { return }
+            if self.followsWindowSize { self.fit() } else { self.centerPaper() }
+        }
+        scrollView.delaysContentTouches = false
+        scrollView.panGestureRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         scrollView.minimumZoomScale = 0.15; scrollView.maximumZoomScale = 4
         scrollView.backgroundColor = .secondarySystemBackground
         scrollView.contentSize = paper.bounds.size
@@ -102,10 +110,17 @@ final class WhiteboardController: NSObject, ObservableObject, UIScrollViewDelega
         NotificationCenter.default.addObserver(self, selector: #selector(recordsChanged), name: Notification.Name("app.bandal.records.changed"), object: nil)
         DispatchQueue.main.async { [weak self] in self?.fit() }
     }
+    func configure(_ tools: InkToolState) {
+        canvas.configure(tools)
+        scrollView.panGestureRecognizer.minimumNumberOfTouches = tools.fingerDrawing ? 2 : 1
+        scrollView.canCancelContentTouches = !tools.fingerDrawing
+    }
     func fit() {
-        guard scrollView.bounds.width > 0 else { return }
+        guard scrollView.bounds.width > 0, scrollView.bounds.height > 0 else { return }
+        followsWindowSize = true; applyingFit = true
         let scale = min(scrollView.bounds.width / paper.bounds.width, scrollView.bounds.height / paper.bounds.height)
         scrollView.setZoomScale(max(scrollView.minimumZoomScale, scale), animated: false)
+        applyingFit = false
         centerPaper()
     }
     @objc private func flush() { canvas.flush() }
@@ -138,11 +153,26 @@ final class WhiteboardController: NSObject, ObservableObject, UIScrollViewDelega
         }
     }
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { paper }
+    func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+        if !applyingFit { followsWindowSize = false }
+    }
     func scrollViewDidZoom(_ scrollView: UIScrollView) { centerPaper() }
     private func centerPaper() {
         let horizontal = max(0, (scrollView.bounds.width - scrollView.contentSize.width) / 2)
         let vertical = max(0, (scrollView.bounds.height - scrollView.contentSize.height) / 2)
         scrollView.contentInset = UIEdgeInsets(top: vertical, left: horizontal, bottom: vertical, right: horizontal)
+    }
+}
+
+@MainActor
+private final class BoardScrollView: UIScrollView {
+    var onViewportResize: (() -> Void)?
+    private var lastViewport = CGSize.zero
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.size != lastViewport else { return }
+        lastViewport = bounds.size
+        onViewportResize?()
     }
 }
 
