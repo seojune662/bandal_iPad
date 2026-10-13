@@ -1,5 +1,7 @@
 import './ai/abort'
 import { createLearningRepo } from '../upstream/src/main/features/learning/learningRepo'
+import { createLearningPathOutbox } from '../upstream/src/main/features/learning/learningPathOutbox'
+import type { MaterialPathLock } from '../upstream/src/main/features/materials/materialPathJournal'
 import { createLearningCache } from '../upstream/src/main/features/learning/learningCache'
 import { createLearningRuntime } from '../upstream/src/main/features/learning/learningRuntime'
 import { createLearningGrounding } from '../upstream/src/main/features/learning/learningGrounding'
@@ -11,14 +13,17 @@ import type { installAI } from './ai'
 import { platform } from './ai/adapter'
 import { emit } from './native'
 
-export function installLearning(deps: { db: any; courses: any; packs: any; handle: (channel: string, fn: (req: any) => any) => void; changed: () => void; changedMaterials: (courseId: string) => void }) {
+export function installLearning(deps: { db: any; pathLock: MaterialPathLock; courses: any; packs: any; handle: (channel: string, fn: (req: any) => any) => void; changed: () => void; changedMaterials: (courseId: string) => void }) {
   let ai: ReturnType<typeof installAI> | undefined
   const connected = () => { if (!ai) throw new Error('학습 AI 연결을 준비 중입니다.'); return ai }
   const cache = createLearningCache(deps.db)
-  const repo = createLearningRepo({ getCourseFolder: id => deps.courses.getFolder(id),
+  let paths: ReturnType<typeof createLearningPathOutbox>
+  const repo = createLearningRepo({ pathLock: deps.pathLock, beforePathAccess: () => paths.flush(), getCourseFolder: id => deps.courses.getFolder(id),
     getCourseFolderIncludingDeleted: id => deps.courses.getFolderIncludingDeleted(id),
-    listCourseIds: () => deps.courses.list().map((course: any) => course.id),
+    listCourseIds: () => deps.courses.list({ includeArchived: true, includeDeleted: true }).filter((course: any) => !course.deletedAt || course.workspaceKind === 'study-space').map((course: any) => course.id),
     onChanged: binding => { emit('learning:changed', { binding }); deps.changedMaterials(binding.courseId) } })
+  paths = createLearningPathOutbox({ db: deps.db, pathLock: deps.pathLock, repoint: input => repo.repoint(input),
+    onError: error => emit('backend:error', { message: String(error), operation: 'learning.pathRecovery' }) })
   const grounding = createLearningGrounding(id => deps.courses.getFolder(id))
   function validateRefs(result: LearningDraft) {
     const refs = [...(result.words?.map(word => word.sourceRef) ?? []), ...(result.artifacts?.flatMap(artifact => [
@@ -94,6 +99,6 @@ export function installLearning(deps: { db: any; courses: any; packs: any; handl
       return validateRefs(result)
     }
   })
-  return { repo, runtime, pauseProject: <T>(binding: LearningBinding, work: () => Promise<T>) => runtime.withProjectPaused(binding, work),
+  return { repo, paths, runtime, pauseProject: <T>(binding: LearningBinding, work: () => Promise<T>) => runtime.withProjectPaused(binding, work),
     connectAI(value: ReturnType<typeof installAI>) { ai = value; value.connectLearning(runtime) } }
 }

@@ -196,7 +196,7 @@ export interface LearningProjectState extends Partial<LearningProjectSettings> {
   runs: LearningRun[]; history: LearningHistoryEntry[]
   exports: Array<{ relPath: string; contentHash: string }>
   /** Immutable source citations resolve through subsequent filesystem moves. */
-  pathAliases?: Array<{ fromRelPath: string; toRelPath: string; isDirectory: boolean; scope: 'project' | 'course'; sourceCourseId?: string }>
+  pathAliases?: Array<{ fromRelPath: string; toRelPath: string; isDirectory: boolean; scope: 'project' | 'course'; sourceCourseId?: string; operationId?: string }>
 }
 export interface LearningProjectSnapshot extends LearningProjectState {
   binding: LearningBinding

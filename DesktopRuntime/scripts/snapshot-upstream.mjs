@@ -42,9 +42,9 @@ const manifest = {
   sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(),
   appVersion: packageJSON.version,
   capturedAt: new Date().toISOString(),
-  sourceWorkingChanges: execFileSync('git', ['status', '--porcelain', '--', ...directories, ...files], { cwd: source, encoding: 'utf8' }).trim().split('\n').filter(Boolean),
+  sourceWorkingChanges: execFileSync('git', ['status', '--porcelain', '--', ...directories, ...files], { cwd: source, encoding: 'utf8' }).trimEnd().split('\n').filter(Boolean),
   policy: 'Original renderer, styles, fonts imports, shared contracts and native backend sources are copied byte-for-byte. Platform code lives outside upstream.',
-  files: entries.sort((a, b) => a.path.localeCompare(b.path))
+  files: entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
 }
 await writeFile(resolve(destination, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
 if (previous && previous.sourceCommit !== manifest.sourceCommit) {

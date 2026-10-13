@@ -9,7 +9,7 @@ import { adaptBrowserSource } from '../renderer/browser/index.mjs'
 const { require } = dependencies(), { build } = createRequire(require.resolve('vite'))('esbuild'), { webkit } = require('@playwright/test')
 const temporary = await mkdtemp(resolve(tmpdir(), 'bandal-browser-ui-'))
 // Every transformed source anchor must still match the original snapshot.
-for (const name of ['BrowserPanel.tsx', 'BrowserToolbarOverflow.tsx', 'BrowserProfilePicker.tsx', 'BrowserContextMenu.tsx', 'downloadsStore.ts', 'BrowserDownloadsPanel.tsx', 'BrowserDownloadPage.tsx']) {
+for (const name of ['BrowserGuestView.tsx', 'BrowserPanel.tsx', 'BrowserToolbarOverflow.tsx', 'BrowserProfilePicker.tsx', 'BrowserContextMenu.tsx', 'downloadsStore.ts', 'BrowserDownloadsPanel.tsx', 'BrowserDownloadPage.tsx']) {
   const path = resolve(runtime, 'upstream/src/renderer/src/features/browser', name)
   assert.ok(adaptBrowserSource(await readFile(path, 'utf8'), path))
 }

@@ -497,6 +497,7 @@ export function validateLearningState(value: unknown): LearningProjectState {
   }
   if (state['pathAliases'] !== undefined) for (const entry of learningArray(state['pathAliases'], 'pathAliases')) {
     const alias = learningObject(entry, 'pathAlias')
+    if (alias['operationId'] !== undefined) learningId(alias['operationId'], 'operationId')
     if (alias['sourceCourseId'] !== undefined) learningId(alias['sourceCourseId'], 'sourceCourseId')
     learningString(alias['fromRelPath'], 'fromRelPath', 8_192); learningString(alias['toRelPath'], 'toRelPath', 8_192)
     if (typeof alias['isDirectory'] !== 'boolean' || !['project', 'course'].includes(String(alias['scope']))) throw new ValidationError('올바르지 않은 이동 경로입니다.')

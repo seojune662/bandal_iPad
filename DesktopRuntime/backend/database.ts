@@ -16,7 +16,9 @@ function decode(value: any): any {
 function parameters(args: any[]): any { return encode(args.length === 1 && (Array.isArray(args[0]) || args[0] && typeof args[0] === 'object' && !(args[0] instanceof Uint8Array)) ? args[0] : args) }
 export function createDatabase(): any {
   let sequence = 0
+  let transactionDepth = 0
   return {
+    get inTransaction() { return transactionDepth > 0 },
     exec(sql: string) { native('sqlite.exec', { sql }); return this },
     pragma(sql: string, options?: { simple?: boolean }) { const rows = native<any[]>('sqlite.query', { sql: `PRAGMA ${sql}`, params: [] }); return options?.simple ? Object.values(rows[0] ?? {})[0] : rows },
     prepare(sql: string) { return {
@@ -28,6 +30,7 @@ export function createDatabase(): any {
       return ((...args: any[]) => {
         const name = `bandal_tx_${++sequence}`
         native('sqlite.exec', { sql: `SAVEPOINT ${name}` })
+        transactionDepth += 1
         try {
           const result = callback(...args)
           if (result && typeof result.then === 'function') throw new Error('SQLite transaction callback must be synchronous')
@@ -35,7 +38,7 @@ export function createDatabase(): any {
         } catch (error) {
           try { native('sqlite.exec', { sql: `ROLLBACK TO SAVEPOINT ${name}; RELEASE SAVEPOINT ${name}` }) } catch { /* Preserve original error. */ }
           throw error
-        }
+        } finally { transactionDepth -= 1 }
       }) as T
     }
   }

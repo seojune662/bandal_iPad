@@ -71,12 +71,21 @@ final class DesktopSQLite {
             if let values = params as? [Any] {
                 for (offset, value) in values.enumerated() { try bind(value, at: Int32(offset + 1), in: handle) }
             } else if let values = params as? [String: Any] {
-                for (key, value) in values {
-                    let names = [key, ":" + key, "@" + key, "$" + key]
-                    guard let index = names.map({ sqlite3_bind_parameter_index(handle, $0) }).first(where: { $0 > 0 }) else {
-                        throw DesktopRuntimeError("Unknown SQL parameter: \(key)", code: "SQLITE_RANGE")
+                // better-sqlite3 accepts a repository object with extra fields.
+                // Bind the statement's parameters, not every object property:
+                // learning cache rows also contain arrays and derived metadata.
+                let count = sqlite3_bind_parameter_count(handle)
+                for index in 0..<count {
+                    let position = index + 1
+                    guard let rawName = sqlite3_bind_parameter_name(handle, position) else {
+                        throw DesktopRuntimeError("An unnamed SQL parameter requires a positional value", code: "SQLITE_RANGE")
                     }
-                    try bind(value, at: index, in: handle)
+                    let name = String(cString: rawName)
+                    let key = String(name.dropFirst())
+                    guard let value = values[key] else {
+                        throw DesktopRuntimeError("Missing SQL parameter: \(key)", code: "SQLITE_RANGE")
+                    }
+                    try bind(value, at: position, in: handle)
                 }
             }
             return handle

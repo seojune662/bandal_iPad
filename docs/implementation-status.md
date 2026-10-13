@@ -21,9 +21,23 @@ PDFKit의 `isInMarkupMode` 활성화와 실제 오버레이로의 Pencil hit-tes
 - 원본 WebKit 필기 회귀: 도구별 합성 Pencil 100회, 실제 포털 색/두께 메뉴, 포인터 이동 소유권, 선택 모드 키보드 편집, text 전용 Scribble 영역, SVG 변환 후 영역 재계산 통과. 실제 `useNativePDF`와 원본 스타일/주석 팝오버의 native 유지·정확한 구멍·실제 모달 전환도 통과했다.
 - `PencilWorkspace8b`: 페이지 이미지→화이트보드·시스템 PDF 찾기·분할 복귀 **3개 통과**. 새 스타일 메뉴 검사는 WebKit의 popup/switch 접근성 항목을 일반 Button으로 찾는 선택자 오류로 실패했다. 선택자를 수정해 8c에서 PDF 유지·파랑 선택은 확인했지만 XCTest의 WebKit range 직접 조절 API가 실패했다. 전체 배치를 성공으로 세지 않는다.
 - `PencilFinal8d`: **네이티브 2개 + UI 1개 통과**. 메뉴 구멍은 HTML에 남기고 보이는 본문 시작만 전달하며, UIKit 획/점/형광펜 저장을 재확인했다. 실제 iPad에서 색 선택 반영·터치 드래그로 두께 변경·본문 탭 후 메뉴 닫기·100%→142% 두 손가락 확대·도구 전환 후 획 0건을 확인했다. 물리 Pencil 결과와 구분한다.
+- `PencilMinimumOS8`: iPadOS 18.3.1 시뮬레이터에서 실제 WebKit 하위 뷰 Scribble 정책·PDF 입력 구멍·UIKit 획 저장/재생 등 **6개 통과**. 최소 지원 OS 계열 확인이며 물리 Pencil 인수와 구분한다.
 - 전체 canonical 빌드, strict TypeScript, SQLite backend의 PDF binding/공통 획/이동 보존 및 별도 Electron ABI projector 왕복 통과. 노트 복구 공통 커밋은 `2cf3ab0`, 동기화 변환기 반영은 `0a0e469`다.
 
 새 기기 진단은 입력 종류·도구·시작/종료/거절 횟수·저장 단계와 Scribble 허용/거부 숫자만 기록한다. 문서 경로·본문·획 좌표는 기록하지 않는다. 사용자 최신 백업 `/private/tmp/bandal-before-build8-20261014`에서 27개 필기 행(새 활성 사각형 1개 포함)과 원본 PDF를 보존했다. 물리 Pencil 인수 실패는 수정본을 사용자가 재확인하기 전까지 해소로 표시하지 않는다.
+
+## 빌드 9 후속 구현 검증 — 아직 기기 설치 전
+
+빌드 8의 물리 Pencil 확인을 중단하지 않도록 연결된 iPad는 그대로 두었다. 아래 변경은 코드와 시뮬레이터·격리 저장소에서 검증했으며, 현재 기기에 반영됐다는 뜻은 아니다. PDF/Pencil 입력 코드는 빌드 8과 같다.
+
+- **브라우저 기본 확대:** 설정과 표시만 바뀌고 실제 웹페이지는 100%였던 결함을 수정했다. 새 탭의 기본값을 WebKit에 적용하고 성공 후 확정한다. 기존 탭·명시적 100%·재탐색·재마운트는 보존한다. 실패 안내/재시도와 사용자 변경 뒤 늦게 도착한 실패 응답을 검사했다. 원본 WebKit 회귀와 strict TypeScript 통과.
+- **학습 경로 복구:** 파일 이동의 SQL 확정과 함께 outbox를 남긴다. 학습 JSON에 처리 ID를 저장하므로 종료 후 재시도와 ACK 실패에도 같은 변경을 다시 적용하지 않는다. 원본 변경·읽기 불가·저장 실패를 덮지 않는다. 공통 `a0bc44b`의 16 suites / 209 tests에서 SIGKILL·외부 수정·중복 재생·과목 병렬 접근·프로세스 잠금을 검증했다.
+- **동기화:** 학습 저장과 자료 이동에 같은 잠금을 사용하며, 명시적으로 빌린 저장소로 동기화한다. 빈 기기로 과목과 학습 프로젝트를 함께 처음 받기, 두 과목 갱신, AI 작업 취소/충돌 보존/사용자가 고른 사본 복원, 손상 JSON 보존을 검사했다. 잘못된/중복 요청은 진행 중인 AI를 취소하기 전에 거부한다. 실제 계정 서버 통신 검증과는 구분한다.
+- **실제 SQLite 연결 차이:** `LearningBrowser9a`에서는 브라우저 검사는 통과했지만 학습 목록이 `Unknown SQL parameter: readingMinutes`로 실패했다. 원본 저장소는 객체의 여러 속성을 넘기며 데스크톱 better-sqlite3는 SQL에서 쓰지 않는 속성을 무시한다. iPad 연결부를 같은 방식으로 수정하고, 필요한 이름이 없으면 쓰기 전 오류로 처리한다.
+- **`LearningBrowser9b`: iPadOS 18.3.1 시뮬레이터 11개 통과.** 실제 JavaScriptCore/SQLite로 두 과목 학습 목록·단어 출처 이름 변경·재실행·처리 ID 유지, 노트 H1/자기 링크·네이티브 파일/잠금/SQL을 확인했다. 브라우저 설정 저장→실행부 재생성→실제 WKWebView.pageZoom·재탐색·기존 탭 100% 보존도 통과했다.
+- 최종 canonical 빌드/패키지 검증, strict TypeScript, 원본 1,019개 파일 검증, 실제 backend `--pdf --sync --learning-paths` 및 별도 Electron ABI `--pdf --projector` 왕복 통과. 데스크톱 projector 패키지 커밋은 `79ad9e4`다.
+
+학습 프로젝트가 손상되거나 접근할 수 없으면 경로 변경 기록을 남기고 전체 경로 재생을 보류한다. 일반 학습 접근도 오류를 표시하며 원본 복구를 기다린다. 부분 성공을 전체 완료로 처리하거나 손상된 원본을 자동 교체하지 않는다.
 
 ## 빌드 7의 입력·브라우저·설정 검증
 
@@ -52,7 +66,7 @@ PDF 본문과 필기는 PDFKit의 같은 페이지 좌표계에서 움직인다.
 
 `App/BandalApp.swift`는 `DesktopShell`을 연다. 앱 WKWebView에 원본 `main.tsx`, AppShell, Dockview, SettingsApp을 포함하고, JavaScriptCore에서 원본 데스크톱 저장소·서비스를 실행한다. Swift가 SQLite·파일·네트워크·Keychain·AVFoundation·EventKit 등 플랫폼 API를 제공한다. 외부 브라우저 WKWebView에는 앱 IPC를 설치하지 않는다.
 
-원본 기준은 **데스크톱 0.84.1 / 2cf3ab0**와 [manifest](../DesktopRuntime/upstream/manifest.json)이다. 공통 필기 호환성 수정까지 포함한 1,018개 파일의 해시와 바이트 수를 검증하며, 원본 CSS·로고·Pretendard·화면 구성을 사용한다. iPad 배포 버전은 별도 0.1.0이다. 지원 대상은 iPadOS 18 이상, iPad 전용이다.
+원본 기준은 **데스크톱 0.84.1 / a0bc44b**와 [manifest](../DesktopRuntime/upstream/manifest.json)이다. 공통 필기 호환성 수정까지 포함한 1,019개 파일의 해시와 바이트 수를 검증하며, 원본 CSS·로고·Pretendard·화면 구성을 사용한다. iPad 배포 버전은 별도 0.1.0이다. 지원 대상은 iPadOS 18 이상, iPad 전용이다.
 
 원본 파일을 직접 수정하지 않고 검사되는 빌드 변환으로 Pencil·손가락 입력, Command 키, WK 파일 선택, API 키, 녹음, 계정 동기화 및 지원 불가 플랫폼 항목을 연결한다. 이전 `App/WorkspaceView.swift`, `App/PDF/`, `WebEditor/` 등에 남아 있는 초기 검증 코드는 현재 기본 UI의 구현 근거로 사용하지 않는다.
 
@@ -99,7 +113,7 @@ AI, 도우미, 계정, 일반, 학교, 학습 팩, 캘린더, 브라우저, 화�
 
 자료 저장소의 파일·폴더 이동은 SQLite에 복구 의도를 먼저 FULL 동기화한 뒤 실행한다. 데스크톱 앱·동기화 변환기·기존 Python 도구가 같은 이동 잠금을 사용하고, 완료되지 않은 경로는 내보내거나 새 PDF에 연결하지 않는다. 같은 파일이면 재시작 후 새 경로로 SQL 필기·별칭을 함께 완료한다. 원래 경로에 새 파일이 생기거나 이동한 PDF가 교체되면 파일·필기·복구 의도를 보존하고 접근을 차단한다. 실제 프로세스 강제 종료, 폴더 안 노트 링크 재작성, PDF 교체, 같은 inode의 컨테이너 경로 변경을 포함한 공통 저장소 회귀 82개를 통과했다.
 
-노트 이름·H1·자기 링크와 backlink 본문도 이제 이동 전 의도에 원본/수정본으로 남긴다. 파일 이름 변경과 원자적 Markdown 쓰기 뒤 앱이 종료되어도 이미 수정된 본문을 확인해 새 경로로 완료하며, 외부에서 달라진 본문은 덮지 않는다. 관련 7개 suite 141개 검사를 통과했고, iPad의 실제 JavaScriptCore·파일 저장소에서도 제목/자기 링크·재실행을 확인했다. 별도 learning JSON의 비동기 경로 갱신은 아직 durable outbox 적용 작업 중이다. 원본 PDF 해시 근거가 없던 오래된 자료는 최초 관찰 기준이라는 상태를 남기며, 과거 어느 시점에 이미 교체된 PDF인지 추측하지 않는다.
+노트 이름·H1·자기 링크와 backlink 본문도 이제 이동 전 의도에 원본/수정본으로 남긴다. 파일 이름 변경과 원자적 Markdown 쓰기 뒤 앱이 종료되어도 이미 수정된 본문을 확인해 새 경로로 완료하며, 외부에서 달라진 본문은 덮지 않는다. 관련 7개 suite 141개 검사를 통과했고, iPad의 실제 JavaScriptCore·파일 저장소에서도 제목/자기 링크·재실행을 확인했다. 별도 learning JSON의 경로 갱신은 빌드 9에서 durable outbox와 공유 파일 잠금으로 연결했고, 위 회귀 검증을 통과했다. 연결된 iPad에는 빌드 8이 설치되어 있어 이 후속 수정은 아직 적용 전이다. 원본 PDF 해시 근거가 없던 오래된 자료는 최초 관찰 기준이라는 상태를 남기며, 과거 어느 시점에 이미 교체된 PDF인지 추측하지 않는다.
 
 실제 Supabase 계정으로 데스크톱과 iPad가 동시에 편집하고, 오프라인 변경·대용량 파일·재로그인·앱 강제 종료를 거치는 종단 검증은 남아 있다. 기존 [데스크톱 연결 도구](../Tools/desktop-bridge/README.md)와 `.bandalpack` 코드는 별도 호환 경로이며, 이전 SwiftUI 패키지 가져오기 화면을 현재 기본 UI 기능으로 표시하지 않는다.
 

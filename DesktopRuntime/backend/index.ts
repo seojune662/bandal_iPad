@@ -105,21 +105,22 @@ export function initialize() {
     mkdirSync(directory, { recursive: true }); renameSync(path, join(directory, basename(path)))
   }
   let learning: ReturnType<typeof installLearning>
+  const materialPathLock = { tryAcquire() {
+    const token = native<number | null>('fs.lockAcquire', { path: join(env().userDataPath, 'material-path-lock.db') })
+    return token === null ? undefined : () => { native('fs.lockRelease', { token }) }
+  } }
   const repoint = (change: any) => {
     db.transaction(() => {
+      learning.paths.enqueue(change)
       pdfBindings.repoint(change)
       repointMaterialPath({ db, courseFolder: courses.getFolder(change.courseId), ...change })
       materials.repointAddedState(change.courseId, change.fromRelPath, change.toRelPath, change.isDirectory)
     })()
     recordings.repoint(change.courseId, change.fromRelPath, change.toRelPath, change.isDirectory)
-    // Learning's source references use its own serialized atomic file writer.
-    void learning.repo.repoint(change).catch(error => emit('backend:error', { message: String(error), operation: 'learning.repoint' }))
+    learning.paths.schedule()
   }
   const materials = createMaterialsRepo({ db, getCourseFolder: id => courses.getFolder(id),
-    pathLock: { tryAcquire() {
-      const token = native<number | null>('fs.lockAcquire', { path: join(env().userDataPath, 'material-path-lock.db') })
-      return token === null ? undefined : () => { native('fs.lockRelease', { token }) }
-    } },
+    pathLock: materialPathLock,
     revealItem: path => native('platform.reveal', { path }), trashItem: trash, onPathChanged: repoint })
   handlePrivate('nativeMaterial:path', req => materials.absolutePathForAsync(req.courseId,req.relPath))
   const notes = createNotesRepo({ renameWithMarkdown: input => materials.renameWithMarkdown(input),
@@ -238,8 +239,9 @@ export function initialize() {
   handle('packs:remove', req => { packs.remove(req.id); return OK }); handle('packs:setEnabled', req => { packs.setEnabled(req.id, req.enabled); return OK })
   // Enabling executable plugin code is supplied by the sandbox runtime; the
   // persistent registry is available independently for metadata/settings.
-  learning = installLearning({ db, courses, packs, handle, changed: () => courseChanged(OK), changedMaterials: changed })
+  learning = installLearning({ db, courses, packs, handle, pathLock: materialPathLock, changed: () => courseChanged(OK), changedMaterials: changed })
   materials.recoverPathChanges()
+  learning.paths.schedule()
   const calendarPath = join(env().userDataPath, 'apple-calendar.json')
   const platform = (channel: string, request: unknown) => {
     if (!(globalThis as any).__bandalPlatform?.invoke) unsupported(channel)

@@ -114,6 +114,10 @@ try {
     ink.payload.data = original
   }
   const backend = runtime(), initialized = backend.initialize(), invoke = async (channel, req) => JSON.parse(JSON.stringify(await backend.invoke(channel, req)))
+  const firstPullIndex = process.argv.indexOf('--learning-first-pull')
+  if (firstPullIndex >= 0) {
+    await (await import('./test-learning-paths.mjs')).testLearningFirstPull({ backend, database, fixture: process.argv[firstPullIndex + 1] })
+  } else {
   assert.equal(initialized.schemaVersion, 37)
   assert.equal(database.prepare('SELECT COUNT(*) n FROM migrations').get().n, 37)
   if (legacy.records.length) {
@@ -225,6 +229,7 @@ try {
     } finally { native('fs.lockRelease', { token: held }) }
     await (await import('./test-sync.mjs')).testSync({ backend,database,environment,runtime,course,note })
   }
+  if (process.argv.includes('--learning-paths')) await (await import('./test-learning-paths.mjs')).testLearningPaths({ backend, database, environment })
   if (process.argv.includes('--features')) await (await import('./test-features.mjs')).testFeatures({ invoke,course,note,environment,require,qaPath })
   if (process.argv.includes('--settings-controls')) await (await import('./test-settings-controls.mjs')).testSettingsControls({ invoke,runtime,environment,course,note })
   if (process.argv.includes('--ink-v2')) await (await import('./test-ink-v2.mjs')).testInkV2({ invoke,runtime,database,course })
@@ -234,6 +239,7 @@ try {
   if (process.argv.includes('--relocation')) await (await import('./test-relocation-runtime.mjs')).testRelocationRuntime({backend,database,environment,runtime,sourcePdf})
   assert.ok(pushes.some(item => item.channel === 'settings:changed'))
   console.log(`PASS: original 37 migrations, ${initialized.supportedChannels.length} channels; settings, courses/groups, notes/conflicts, files, ink/rename, board, canvas, layout, learning, rollback, persistence`)
+  }
 } finally {
   for (const lock of materialLocks.values()) { try { lock.exec('ROLLBACK') } finally { lock.close() } }
   for (const timer of timers) clearInterval(timer)

@@ -18,6 +18,7 @@ import { assertRealInside, resolveInside } from '../../db/validate'
 import { articleMarkdown, gradeLearningAnswer, learningHash, normalizeLearningAnswer,
   normalizeLearningLemma, scheduleLearningCard } from './model'
 import { renameWithRetry } from '../materials/renameWithRetry'
+import type { MaterialPathLock } from '../materials/materialPathJournal'
 import { learningArray, learningId, learningNumber, learningObject, learningString,
   normalizeLearningArticle, normalizeLearningDraft, validateLearningArtifact,
   validateLearningRun, validateLearningWordDraft, validateLearningState, validateLearningSettings, requireEnglishReadingSettings,
@@ -36,14 +37,21 @@ export interface LearningRepoDeps {
   getCourseFolderIncludingDeleted?: (courseId: string) => string
   listCourseIds?: () => string[]
   now?: () => string
+  /** Complete durable material-path updates before exposing mutable learning state. */
+  beforePathAccess?: () => Promise<void>
+  pathLock?: MaterialPathLock
   onChanged?: (binding: LearningBinding) => void
   /** Testable storage boundary; invoked just before publishing state.json. */
   beforeCommit?: () => void | Promise<void>
 }
 export interface LearningRepointInput {
   courseId: string; fromRelPath: string; toRelPath: string; isDirectory: boolean
+  /** Internal durable outbox receipt; never supplied by renderer mutations. */
+  operationId?: string
 }
 export interface LearningRepo {
+  /** Holds the shared material path lock; only the scoped repository may be used inside work. */
+  withExclusivePathAccess<T>(work: (scoped: LearningRepo) => Promise<T>): Promise<T>
   create(input: CreateLearningProjectInput): Promise<LearningProjectSnapshot>
   updateSettings(input: UpdateLearningSettingsInput): Promise<LearningProjectSnapshot>
   rename(input: RenameLearningProjectInput): Promise<LearningProjectSnapshot>
@@ -123,6 +131,7 @@ function replacePath(path: string, from: string, to: string, directory: boolean)
 
 export function createLearningRepo(deps: LearningRepoDeps): LearningRepo {
   const queues = new Map<string, Promise<unknown>>()
+  let pathAccessQueue: Promise<unknown> = Promise.resolve()
   const now = deps.now ?? (() => new Date().toISOString())
 
   function courseFolder(binding: LearningBinding, includeDeleted = false): string {
@@ -140,11 +149,24 @@ export function createLearningRepo(deps: LearningRepoDeps): LearningRepo {
   function pathInside(root: string, relPath: string): string {
     return assertRealInside(root, resolveInside(root, relPath))
   }
-  async function serial<T>(binding: LearningBinding, work: () => Promise<T>, allowMissing = false, includeDeleted = false): Promise<T> {
+  function withPathLock<T>(work: () => Promise<T>): Promise<T> {
+    if (!deps.pathLock) return work()
+    // Concurrent windows and course discovery share one repository. Queue our
+    // own requests; the OS lock still rejects a genuinely independent writer.
+    const task = pathAccessQueue.catch(() => undefined).then(async () => {
+      const release = deps.pathLock!.tryAcquire()
+      if (!release) throw new ConflictError('자료 경로 변경 또는 학습 저장이 진행 중입니다. 잠시 뒤 다시 시도해 주세요.')
+      try { return await work() } finally { release() }
+    })
+    pathAccessQueue = task
+    return task
+  }
+  async function serial<T>(binding: LearningBinding, work: () => Promise<T>, allowMissing = false, includeDeleted = false, recoveringPaths = false): Promise<T> {
+    if (!recoveringPaths) await deps.beforePathAccess?.()
     const root = projectRoot(binding, allowMissing, includeDeleted)
     const key = existsSync(root) ? realpathSync.native(root) : root
     const previous = queues.get(key) ?? Promise.resolve()
-    const task = previous.catch(() => undefined).then(work)
+    const task = previous.catch(() => undefined).then(() => recoveringPaths ? work() : withPathLock(work))
     queues.set(key, task)
     try { return await task } finally { if (queues.get(key) === task) queues.delete(key) }
   }
@@ -356,7 +378,7 @@ export function createLearningRepo(deps: LearningRepoDeps): LearningRepo {
     try { deps.onChanged?.(binding) } catch { /* A UI notification cannot undo durable learning data. */ }
     return snapshot(binding, { root: tx.root, state: tx.state, bytes: json(tx.state), recovery: loaded.recovery, warnings })
   }
-  async function mutate(input: LearningMutation, work: (tx: Transaction) => Promise<boolean | void> | boolean | void, includeDeleted = false): Promise<LearningProjectSnapshot> {
+  async function mutate(input: LearningMutation, work: (tx: Transaction) => Promise<boolean | void> | boolean | void, includeDeleted = false, recoveringPaths = false): Promise<LearningProjectSnapshot> {
     return serial(input.binding, async () => {
       const loaded = await load(input.binding, includeDeleted)
       if (!includeDeleted) requireActive(loaded.state)
@@ -364,7 +386,7 @@ export function createLearningRepo(deps: LearningRepoDeps): LearningRepo {
       const tx: Transaction = { state: structuredClone(loaded.state), root: loaded.root, binding: input.binding, now: now(), exports: [], articles: new Map() }
       if (await work(tx) === false) return snapshot(input.binding, loaded)
       return commit(input.binding, loaded, tx)
-    }, false, includeDeleted)
+    }, false, includeDeleted, recoveringPaths)
   }
   async function addArticle(tx: Transaction, input: LearningArticleInput): Promise<string> {
     let article = normalizeLearningArticle(input, input.id ?? randomUUID(), tx.now)
@@ -476,7 +498,71 @@ export function createLearningRepo(deps: LearningRepoDeps): LearningRepo {
     return true
   }
 
+  async function discoverProjects(courseId: string, input: { includeDeleted?: boolean } = {}, strict = false): Promise<LearningProjectSummary[]> {
+    const binding = { courseId, rootRelPath: '' }
+    const course = courseFolder(binding, input.includeDeleted)
+    const found: LearningProjectSummary[] = []
+    let count = 0
+    async function walk(rootRelPath: string, depth: number): Promise<void> {
+      if (depth > 12 || count >= 20_000) {
+        if (strict) throw new ConflictError('학습 프로젝트 탐색 한도를 넘었습니다. 경로 변경 기록을 보존했습니다.')
+        return
+      }
+      const root = projectRoot({ courseId, rootRelPath }, false, input.includeDeleted)
+      if (existsSync(join(root, MANIFEST))) {
+        const projectBinding = { courseId, rootRelPath }
+        try {
+          const loaded = await load(projectBinding, input.includeDeleted); const state = loaded.state
+          if (state.deletedAt && !input.includeDeleted) return
+          found.push({ binding: projectBinding, projectId: state.projectId, name: state.name, topic: state.topic,
+            purpose: state.purpose ?? 'unclassified', topicIds: state.topicIds ?? [], readingSetupConfirmed: state.readingSetupConfirmed ?? false,
+            ...(state.ai ? { ai: state.ai } : {}), ...(state.linkedCourseId ? { linkedCourseId: state.linkedCourseId } : {}), ...(state.packId ? { packId: state.packId } : {}),
+            level: state.level, readingMinutes: state.readingMinutes, articleCount: state.articles.length,
+            completedArticleCount: state.articles.filter((article) => article.status === 'completed').length,
+            wordCount: state.words.length, knownWordCount: state.words.filter((word) => word.status === 'known').length,
+            dueCardCount: state.cards.filter((card) => Date.parse(card.dueAt) <= Date.parse(now())).length,
+            updatedAt: state.updatedAt, warning: loaded.warnings[0] ?? null, ...(state.deletedAt ? { deletedAt: state.deletedAt } : {}) })
+        } catch (error) {
+          found.push({ binding: projectBinding, projectId: '', name: basename(root), topic: '', purpose: 'unclassified', topicIds: [], readingSetupConfirmed: false, level: 'intermediate',
+            readingMinutes: 5, articleCount: 0, completedArticleCount: 0, wordCount: 0, knownWordCount: 0,
+            dueCardCount: 0, updatedAt: '', warning: error instanceof Error ? error.message : '학습 데이터를 읽지 못했습니다.' })
+        }
+        return
+      }
+      const entries = await readdir(root, { withFileTypes: true })
+      for (const entry of entries) {
+        count += 1
+        if (count >= 20_000) {
+          if (strict) throw new ConflictError('학습 프로젝트 탐색 한도를 넘었습니다. 경로 변경 기록을 보존했습니다.')
+          return
+        }
+        if (entry.isDirectory() && !entry.name.startsWith('.')) await walk(rootRelPath ? posix.join(rootRelPath, entry.name) : entry.name, depth + 1)
+      }
+    }
+    assertRealInside(course, course); await walk('', 0)
+    return found
+  }
+
   const repo: LearningRepo = {
+    async withExclusivePathAccess(work) {
+      await deps.beforePathAccess?.()
+      return withPathLock(async () => {
+        const scopedDeps = { ...deps }
+        delete scopedDeps.pathLock; delete scopedDeps.beforePathAccess
+        const inner = createLearningRepo(scopedDeps)
+        let active = true
+        const pending = new Set<Promise<unknown>>()
+        const scoped = Object.fromEntries(Object.entries(inner).map(([name, action]) => [name, (...args: unknown[]) => {
+          if (!active) return Promise.reject(new ConflictError('학습 경로 접근 범위가 종료되었습니다.'))
+          const task = Promise.resolve().then(() => (action as (...args: unknown[]) => unknown)(...args))
+          pending.add(task)
+          void task.then(() => pending.delete(task), () => pending.delete(task))
+          return task
+        }])) as unknown as LearningRepo
+        try { return await work(scoped) }
+        finally { active = false; await Promise.allSettled([...pending]) }
+      })
+    },
     async create(input) {
       return serial(input.binding, async () => {
         const root = projectRoot(input.binding, true)
@@ -490,7 +576,7 @@ export function createLearningRepo(deps: LearningRepoDeps): LearningRepo {
           return snapshot(input.binding, loaded)
         }
         if (existsSync(root)) {
-          const descendants = await repo.discover(input.binding.courseId)
+          const descendants = await discoverProjects(input.binding.courseId)
           if (descendants.some((entry) => entry.binding.rootRelPath !== input.binding.rootRelPath
             && (!input.binding.rootRelPath || entry.binding.rootRelPath.startsWith(`${input.binding.rootRelPath}/`)))) throw new ConflictError('기존 학습 프로젝트를 포함하는 상위 프로젝트를 만들 수 없습니다.')
         }
@@ -579,42 +665,8 @@ export function createLearningRepo(deps: LearningRepoDeps): LearningRepo {
     async readArticle(binding, id) { return serial(binding, async () => { const loaded = await load(binding); requireActive(loaded.state); return articleFrom(loaded.root, loaded.state, id) }) },
     async readArtifact(binding, id) { return serial(binding, async () => { const loaded = await load(binding); requireActive(loaded.state); return artifactFrom(loaded.root, loaded.state, id, binding) }) },
     async discover(courseId, input = {}) {
-      const binding = { courseId, rootRelPath: '' }
-      const course = courseFolder(binding, input.includeDeleted)
-      const found: LearningProjectSummary[] = []
-      let count = 0
-      async function walk(rootRelPath: string, depth: number): Promise<void> {
-        if (depth > 12 || count >= 20_000) return
-        const root = projectRoot({ courseId, rootRelPath }, false, input.includeDeleted)
-        if (existsSync(join(root, MANIFEST))) {
-          const projectBinding = { courseId, rootRelPath }
-          try {
-            const loaded = await load(projectBinding, input.includeDeleted); const state = loaded.state
-            if (state.deletedAt && !input.includeDeleted) return
-            found.push({ binding: projectBinding, projectId: state.projectId, name: state.name, topic: state.topic,
-              purpose: state.purpose ?? 'unclassified', topicIds: state.topicIds ?? [], readingSetupConfirmed: state.readingSetupConfirmed ?? false,
-              ...(state.ai ? { ai: state.ai } : {}), ...(state.linkedCourseId ? { linkedCourseId: state.linkedCourseId } : {}), ...(state.packId ? { packId: state.packId } : {}),
-              level: state.level, readingMinutes: state.readingMinutes, articleCount: state.articles.length,
-              completedArticleCount: state.articles.filter((article) => article.status === 'completed').length,
-              wordCount: state.words.length, knownWordCount: state.words.filter((word) => word.status === 'known').length,
-              dueCardCount: state.cards.filter((card) => Date.parse(card.dueAt) <= Date.parse(now())).length,
-              updatedAt: state.updatedAt, warning: loaded.warnings[0] ?? null, ...(state.deletedAt ? { deletedAt: state.deletedAt } : {}) })
-          } catch (error) {
-            found.push({ binding: projectBinding, projectId: '', name: basename(root), topic: '', purpose: 'unclassified', topicIds: [], readingSetupConfirmed: false, level: 'intermediate',
-              readingMinutes: 5, articleCount: 0, completedArticleCount: 0, wordCount: 0, knownWordCount: 0,
-              dueCardCount: 0, updatedAt: '', warning: error instanceof Error ? error.message : '학습 데이터를 읽지 못했습니다.' })
-          }
-          return
-        }
-        const entries = await readdir(root, { withFileTypes: true })
-        for (const entry of entries) {
-          count += 1
-          if (count >= 20_000) return
-          if (entry.isDirectory() && !entry.name.startsWith('.')) await walk(rootRelPath ? posix.join(rootRelPath, entry.name) : entry.name, depth + 1)
-        }
-      }
-      assertRealInside(course, course); await walk('', 0)
-      return found
+      await deps.beforePathAccess?.()
+      return withPathLock(() => discoverProjects(courseId, input))
     },
     addArticle(input) { return mutate(input, async (tx) => { const size = tx.state.articles.length; await addArticle(tx, input.article); return tx.state.articles.length !== size }) },
     saveWord(input) {
@@ -787,15 +839,23 @@ export function createLearningRepo(deps: LearningRepoDeps): LearningRepo {
       })
     },
     async repoint(input) {
+      // The outbox owns the interprocess path lock until all projects acknowledge this ID.
+      if (input.operationId !== undefined) learningId(input.operationId, 'operationId')
       // Called after filesystem rename. Rediscovery naturally mounts a moved project root.
       const projects: LearningProjectSummary[] = []
       for (const courseId of new Set([input.courseId, ...(deps.listCourseIds?.() ?? [])])) {
-        try { projects.push(...await repo.discover(courseId, { includeDeleted: true })) } catch { /* Missing linked folders retain their records. */ }
+        try { projects.push(...await discoverProjects(courseId, { includeDeleted: true }, input.operationId !== undefined)) }
+        catch (error) { if (input.operationId !== undefined) throw error /* Keep durable event pending; no silent partial acknowledgement. */ }
       }
       for (const project of projects) {
+        // A corrupt project cannot tell us whether it cites this course. Keep
+        // the event until it can be read, even when its owner is another course.
+        if (project.warning) {
+          if (input.operationId !== undefined) throw new ConflictError(`학습 경로 변경을 완료하지 못했습니다: ${project.warning}`)
+          continue
+        }
         const ownsPaths = project.binding.courseId === input.courseId
         if (!ownsPaths && project.linkedCourseId !== input.courseId) continue
-        if (project.warning) continue
         const root = project.binding.rootRelPath
         const withinRoot = (path: string): string | null => {
           if (!root) return path
@@ -803,6 +863,13 @@ export function createLearningRepo(deps: LearningRepoDeps): LearningRepo {
         }
         const from = withinRoot(input.fromRelPath); const to = withinRoot(input.toRelPath)
         await mutate({ binding: project.binding }, (tx) => {
+          if (input.operationId !== undefined) {
+            const receipt = tx.state.pathAliases?.find(alias => alias.operationId === input.operationId)
+            if (receipt) {
+              if (receipt.scope !== 'course' || receipt.fromRelPath !== input.fromRelPath || receipt.toRelPath !== input.toRelPath || receipt.isDirectory !== input.isDirectory || (receipt.sourceCourseId ?? project.binding.courseId) !== input.courseId) throw new ConflictError('학습 경로 변경 식별자가 다른 변경에 재사용되었습니다.')
+              return false
+            }
+          }
           let changed = false
           const update = (path: string, scope: 'project' | 'course' = 'project', sourceCourseId = project.binding.courseId): string => {
             if (sourceCourseId !== input.courseId || (scope === 'project' && !ownsPaths)) return path
@@ -833,12 +900,13 @@ export function createLearningRepo(deps: LearningRepoDeps): LearningRepo {
           // Immutable artifact JSON retains its original citation. Resolve moved files at read time.
           tx.state.pathAliases ??= []
           tx.state.pathAliases.push({ fromRelPath: input.fromRelPath, toRelPath: input.toRelPath,
-            isDirectory: input.isDirectory, scope: 'course', ...(ownsPaths ? {} : { sourceCourseId: input.courseId }) })
+            isDirectory: input.isDirectory, scope: 'course', ...(ownsPaths ? {} : { sourceCourseId: input.courseId }),
+            ...(input.operationId === undefined ? {} : { operationId: input.operationId }) })
           if (ownsPaths && from !== null && to !== null) tx.state.pathAliases.push({ fromRelPath: from, toRelPath: to,
             isDirectory: input.isDirectory, scope: 'project' })
           changed = true
           return changed
-        }, true)
+        }, true, input.operationId !== undefined)
       }
     }
   }

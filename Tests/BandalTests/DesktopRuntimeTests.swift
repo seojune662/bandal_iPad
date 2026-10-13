@@ -28,6 +28,21 @@ final class DesktopRuntimeTests: XCTestCase {
         }
     }
 
+    func testNamedSQLBindingsMatchRepositoryObjectsAndRejectMissingValues() throws {
+        let database = try DesktopSQLite(url: directory.appendingPathComponent("named-bindings.db"))
+        try database.exec("CREATE TABLE bindings(id TEXT PRIMARY KEY, value TEXT)")
+        _ = try database.run("INSERT INTO bindings VALUES (@id, :value)", params: ["id": "kept", "value": NSNull(), "unused": ["nested": [1, 2, 3]]])
+        let rows = try database.query("SELECT id, value, @id AS repeated, $id AS alternate FROM bindings WHERE id=@id", params: ["id": "kept", "readingMinutes": 5])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?["repeated"] as? String, "kept")
+        XCTAssertEqual(rows.first?["alternate"] as? String, "kept")
+        XCTAssertTrue(rows.first?["value"] is NSNull)
+        XCTAssertThrowsError(try database.run("INSERT INTO bindings VALUES (@id, @value)", params: ["id": "missing", "unused": "present"])) { error in
+            XCTAssertEqual((error as? DesktopRuntimeError)?.code, "SQLITE_RANGE")
+        }
+        XCTAssertEqual(try database.query("SELECT id FROM bindings", params: [:]).count, 1, "A missing named value must not insert an accidental SQL NULL")
+    }
+
     func testFilesystemBlocksEscapesAndKeepsOriginalOnExclusiveWriteFailure() throws {
         let native = try DesktopNativePrimitives(root: directory, legacyRoot: directory.appendingPathComponent("Legacy"))
         let path = directory.appendingPathComponent("필기.md").path
@@ -151,6 +166,57 @@ final class DesktopRuntimeTests: XCTestCase {
             _ = try await reopened.invoke("notes:read", request: ["courseId": courseId, "relPath": oldPath])
             XCTFail("The old note must not reappear after recovery")
         } catch {}
+    }
+
+    @MainActor
+    func testLearningSourcesFollowRenamesAcrossTwoCoursesAndNativeRestart() async throws {
+        let runtime = DesktopRuntime(root: directory, legacyRoot: directory.appendingPathComponent("Legacy"))
+        try await runtime.start()
+        var projects: [(courseID: String, binding: [String: Any], wordID: String)] = []
+        for name in ["학습 연결 A", "학습 연결 B"] {
+            let courseValue = try await runtime.invoke("courses:create", request: ["name": name, "color": "green"])
+            let course = try XCTUnwrap(courseValue as? [String: Any])
+            let courseID = try XCTUnwrap(course["id"] as? String)
+            _ = try await runtime.invoke("materials:writeFile", request: ["courseId": courseID, "dirRelPath": "", "fileName": "source.md", "data": "# Source\n\nVectors belong to a vector space.", "encoding": "utf8"])
+            let createdValue = try await runtime.invoke("learning:create", request: ["placement": "in-course", "courseId": courseID, "name": "Study", "topic": "Vectors"])
+            let created = try XCTUnwrap(createdValue as? [String: Any])
+            let binding = try XCTUnwrap(created["binding"] as? [String: Any])
+            let savedValue = try await runtime.invoke("learning:saveWord", request: ["binding": binding, "surface": "Vectors", "sentence": "Vectors belong to a vector space.", "sourceRef": ["kind": "material", "pathScope": "course", "relPath": "source.md", "quote": "Vectors belong to a vector space."]])
+            let saved = try XCTUnwrap(savedValue as? [String: Any])
+            let words = try XCTUnwrap(saved["words"] as? [[String: Any]])
+            projects.append((courseID, binding, try XCTUnwrap(words.first?["id"] as? String)))
+        }
+        // These enter one JSCore runtime together. Their shared OS-backed path
+        // lock must serialize our own readers, rather than reject one course.
+        async let firstList = runtime.invoke("learning:list", request: ["courseId": projects[0].courseID])
+        async let secondList = runtime.invoke("learning:list", request: ["courseId": projects[1].courseID])
+        _ = try await (firstList, secondList)
+        var receipts: [String] = []
+        for project in projects {
+            _ = try await runtime.invoke("notes:rename", request: ["courseId": project.courseID, "relPath": "source.md", "newName": "renamed.md"])
+            let stateValue = try await runtime.invoke("learning:get", request: ["binding": project.binding])
+            let state = try XCTUnwrap(stateValue as? [String: Any])
+            let occurrences = try XCTUnwrap(state["occurrences"] as? [[String: Any]])
+            let source = try XCTUnwrap(occurrences.first?["sourceRef"] as? [String: Any])
+            XCTAssertEqual(source["relPath"] as? String, "renamed.md")
+            XCTAssertEqual(occurrences.first?["wordId"] as? String, project.wordID)
+            let aliases = try XCTUnwrap(state["pathAliases"] as? [[String: Any]])
+            XCTAssertEqual(aliases.count, 1)
+            receipts.append(try XCTUnwrap(aliases.first?["operationId"] as? String))
+        }
+        let reopened = DesktopRuntime(root: directory, legacyRoot: directory.appendingPathComponent("Legacy"))
+        try await reopened.start()
+        for (index, project) in projects.enumerated() {
+            let stateValue = try await reopened.invoke("learning:get", request: ["binding": project.binding])
+            let state = try XCTUnwrap(stateValue as? [String: Any])
+            let aliases = try XCTUnwrap(state["pathAliases"] as? [[String: Any]])
+            XCTAssertEqual(aliases.count, 1, "Restart must not apply an acknowledged rename twice")
+            XCTAssertEqual(aliases.first?["operationId"] as? String, receipts[index])
+            let occurrences = try XCTUnwrap(state["occurrences"] as? [[String: Any]])
+            XCTAssertEqual((occurrences.first?["sourceRef"] as? [String: Any])?["relPath"] as? String, "renamed.md")
+            let sourceValue = try await reopened.invoke("notes:read", request: ["courseId": project.courseID, "relPath": "renamed.md"])
+            XCTAssertTrue(((sourceValue as? [String: Any])?["markdown"] as? String ?? "").contains("Vectors belong to a vector space."))
+        }
     }
 
     @MainActor

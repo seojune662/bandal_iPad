@@ -8,6 +8,29 @@ function replace(source, needle, value, count = 1) {
 }
 export function adaptBrowserSource(source, id) {
   let code = source
+  if (id.endsWith('/features/browser/BrowserGuestView.tsx')) {
+    code = replace(code, "import { isDefaultZoom } from './zoom'", "import { settingsSnapshot } from '../../stores/settingsSnapshot'\nimport { showToast } from '../../app/toast'")
+    code = replace(code, '    const applyZoom = (): void => {', `    const initialZoomLevel = settingsSnapshot().browser.defaultZoomLevel
+    let zoomAttempt = 0, zoomFailureShown = false
+    const applyZoom = (): void => {`)
+    code = replace(code, `      const level = useBrowserGuests.getState().zoom[tabId]
+      if (level === undefined || isDefaultZoom(level)) return`, `      const store = useBrowserGuests.getState()
+      const saved = store.zoom[tabId]
+      const level = saved ?? initialZoomLevel
+      // The preference is a new-tab default. Once chosen, retain this tab's
+      // value when settings change, it navigates, or its native page remounts.
+      const attempt = ++zoomAttempt`)
+    code = replace(code, `        void element.setZoomLevel(level).catch(() => undefined)`, `        void element.setZoomLevel(level).then(() => {
+          if (disposed || attempt !== zoomAttempt) return
+          zoomFailureShown = false
+          const current = useBrowserGuests.getState()
+          if (saved === undefined && current.zoom[tabId] === undefined) current.setZoom(tabId, level)
+        }).catch(() => {
+          if (disposed || attempt !== zoomAttempt || zoomFailureShown || useBrowserGuests.getState().zoom[tabId] !== saved) return
+          zoomFailureShown = true
+          showToast('페이지 크기를 적용하지 못했어요. 다시 불러오면 재시도합니다.', 'danger')
+        })`)
+  }
   if (id.endsWith('/features/browser/BrowserPanel.tsx')) {
     code = `import { BrowserSiteControls } from ${JSON.stringify(controls)}\n` + code
     code = `import { BrowserPageControls } from ${JSON.stringify(pageControls)}\n` + code

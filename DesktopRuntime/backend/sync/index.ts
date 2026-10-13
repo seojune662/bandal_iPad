@@ -37,8 +37,7 @@ export function installSync(deps: any) {
     CREATE TABLE IF NOT EXISTS ipad_sync_commits(id TEXT PRIMARY KEY);`)
   if(!db.prepare('PRAGMA table_info(ipad_sync_conflicts)').all().some((c:any)=>c.name==='assets_json'))db.exec("ALTER TABLE ipad_sync_conflicts ADD COLUMN assets_json TEXT NOT NULL DEFAULT '[]'")
   const journal = createFileJournal(db)
-  const learning = createLearningProjection(deps)
-  const snapshot = async () => { const base=snapshotProjection(deps),extra=await learning.snapshot();const ids=new Set(extra.records.map(r=>r.id));return {records:[...base.records.filter(r=>!ids.has(r.id)),...extra.records],assets:[...base.assets,...extra.assets],sources:new Map([...base.sources,...extra.sources])} }
+  const snapshot = async (learning: ReturnType<typeof createLearningProjection>) => { const base=snapshotProjection(deps),extra=await learning.snapshot();const ids=new Set(extra.records.map(r=>r.id));return {records:[...base.records.filter(r=>!ids.has(r.id)),...extra.records],assets:[...base.assets,...extra.assets],sources:new Map([...base.sources,...extra.sources])} }
   const save = (record: SharedRecord, source: any, accepted: SharedRecord = record) => db.prepare(`INSERT INTO ipad_sync_projection(id,kind,payload_json,deleted,source_json,baseline_json) VALUES(?,?,?,?,?,?)
     ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,payload_json=excluded.payload_json,deleted=excluded.deleted,source_json=excluded.source_json,baseline_json=excluded.baseline_json`).run(record.id,record.kind,canonical(record.payload),record.deleted?1:0,canonical(source),comparable(accepted))
   const conflict = (local: SharedRecord | undefined, remote: SharedRecord, reason: string,provided=new Map<string,string>()) => {
@@ -62,16 +61,59 @@ export function installSync(deps: any) {
     deps.pdfBindings.reconcileIndex()
   }
   let running = false
-  const exclusive = (callback: (request: any) => Promise<any>) => async (request: any) => {
-    if (running) throw new Error('A sync projection operation is already running')
-    const token = native<number | null>('fs.lockAcquire', { path: join(env().userDataPath, 'material-path-lock.db') })
-    if (token === null) throw new Error('자료 경로 변경 중에는 동기화를 시작할 수 없습니다. 잠시 후 다시 시도합니다.')
-    running = true
-    try { return await callback(request) }
-    finally { running = false; native('fs.lockRelease', { token }) }
+  const preflightPause = (request: any): any[] => {
+    if (!Array.isArray(request?.records) || !Array.isArray(request.assets ?? [])) throw new Error('Invalid sync import')
+    const seen = new Set<string>()
+    for (const record of request.records) {
+      validate(record)
+      if (seen.has(record.id)) throw new Error('Duplicate sync record')
+      seen.add(record.id)
+      const prior = db.prepare('SELECT kind FROM ipad_sync_projection WHERE id=?').get(record.id)
+      if (prior && prior.kind !== record.kind) throw new Error('Sync record kind changed')
+    }
+    for (const item of request.conflicts ?? []) { validate(item.local); validate(item.remote) }
+    return request.records
   }
-  handlePrivate('nativeSync:export', exclusive(async () => {
-    await refresh(); const projected = await snapshot()
+  const exclusive = (callback: (request: any, learning: ReturnType<typeof createLearningProjection>) => Promise<any>,
+    affectedProjects: (request: any) => any[] = () => []) => async (request: any) => {
+    if (running) throw new Error('A sync projection operation is already running')
+    running = true
+    try {
+      if (deps.learning?.repo.withExclusivePathAccess) {
+        // Stop and settle active AI writes before acquiring the OS lock. Inside
+        // the lease, only this scoped repo is allowed to read/write learning JSON.
+        const projects = new Map<string, any>()
+        for (const record of affectedProjects(request)) {
+          const p = record?.payload
+          if (record?.kind !== 'artifact' || p?.recordType !== 'desktop-learning-project' || typeof p.courseID !== 'string' || typeof p.rootRelPath !== 'string') continue
+          const binding = { courseId: p.courseID, rootRelPath: p.rootRelPath }
+          projects.set(JSON.stringify(binding), binding)
+        }
+        const bindings = [...projects.values()]
+        const run = () => deps.learning.repo.withExclusivePathAccess((scopedRepo: any) => callback(request,
+          createLearningProjection({ ...deps, learning: { ...deps.learning, repo: scopedRepo, pauseProject: (_binding: any, work: () => Promise<any>) => work() } })))
+        const pause = async (index: number): Promise<any> => {
+          if (index >= bindings.length) return run()
+          const binding = bindings[index]
+          if (!db.prepare('SELECT 1 FROM courses WHERE id=?').get(binding.courseId)) return pause(index + 1)
+          const existing = await deps.learning.repo.discover(binding.courseId, { includeDeleted: true })
+          const project = existing.find((project: any) => project.binding.rootRelPath === binding.rootRelPath)
+          if (!project) return pause(index + 1)
+          if (project.warning) throw new Error(`학습 원본을 확인한 뒤 동기화를 다시 시도해 주세요: ${project.warning}`)
+          return deps.learning.pauseProject(binding, () => pause(index + 1))
+        }
+        return await pause(0)
+      }
+      // Fixtures without learning and older host integrations still need the
+      // same interprocess material-path lock around the entire projection.
+      const token = native<number | null>('fs.lockAcquire', { path: join(env().userDataPath, 'material-path-lock.db') })
+      if (token === null) throw new Error('자료 경로 변경 중에는 동기화를 시작할 수 없습니다. 잠시 후 다시 시도합니다.')
+      try { return await callback(request, createLearningProjection(deps)) }
+      finally { native('fs.lockRelease', { token }) }
+    } finally { running = false }
+  }
+  handlePrivate('nativeSync:export', exclusive(async (_request, learning) => {
+    await refresh(); const projected = await snapshot(learning)
     for (const record of projected.records) validate(record)
     // A local document which could not accept a remote version remains visible
     // for review. Do not turn it into a new server edit on the next timer tick:
@@ -81,7 +123,7 @@ export function installSync(deps: any) {
     db.transaction(() => { for (const record of records) save(record,projected.sources.get(record.id) ?? {}) })()
     return { records, assets: projected.assets }
   }))
-  const importRecords = async (request: any, force = false) => {
+  const importRecords = async (request: any, force: boolean, learning: ReturnType<typeof createLearningProjection>) => {
     if (!Array.isArray(request.records) || !Array.isArray(request.assets ?? [])) throw new Error('Invalid sync import')
     const seen = new Set<string>()
     const assets = new Map<string,string>((request.assets ?? []).map((a: any) => [a.sha256,a.path]))
@@ -90,7 +132,7 @@ export function installSync(deps: any) {
     // Engine conflicts preserve both complete envelopes before projection can
     // materialize the accepted server version over current desktop files.
     for (const item of request.conflicts ?? []) { validate(item.local); validate(item.remote); conflict(item.local,item.remote,'Concurrent edits from another device',assets) }
-    await refresh(); const current = new Map((await snapshot()).records.map(record => [record.id, record]))
+    await refresh(); const current = new Map((await snapshot(learning)).records.map(record => [record.id, record]))
     const order: Record<string,number> = { course:0,material:1,note:2,drawing:3,task:4,recording:5 }, priority = (r:any) => r.kind==='artifact'&&r.payload.recordType==='desktop-course-group'?-1:r.payload.recordType==='desktop-chat-session'?6:r.payload.recordType==='desktop-chat-message'?7:order[r.kind]??9
     const conflicts: any[] = [], changed = new Set<string>(); let applied = 0
     for (let incoming of [...request.records].sort((a,b) => priority(a)-priority(b))) {
@@ -123,7 +165,7 @@ export function installSync(deps: any) {
     if (conflicts.length) emit('sync:conflictsChanged',{count:conflicts.length})
     return { applied, changedCourseIDs:[...changed],conflicts }
   }
-  handlePrivate('nativeSync:import',exclusive(request => importRecords(request)))
+  handlePrivate('nativeSync:import',exclusive((request, learning) => importRecords(request, false, learning), preflightPause))
   handlePrivate('nativeSync:conflicts',() => db.prepare('SELECT * FROM ipad_sync_conflicts WHERE resolved_at IS NULL ORDER BY created_at DESC').all().map((r: any) => {
     const local=r.local_json?JSON.parse(r.local_json):null,remote=JSON.parse(r.remote_json),p=(local??remote).payload,mapped=db.prepare('SELECT source_json FROM ipad_sync_projection WHERE id=?').get(r.record_id),source=mapped?JSON.parse(mapped.source_json):{}
     const material=p.materialID?db.prepare('SELECT course_id,rel_path FROM materials_index WHERE id=?').get(p.materialID):undefined
@@ -132,14 +174,19 @@ export function installSync(deps: any) {
     const title=p.title??p.name??material?.rel_path??board?.title??source.relPath??p.rootRelPath??r.record_id,label=course?`${course.name} · ${title}`:title
     return{id:r.id,recordID:r.record_id,label,reason:r.reason,local,remote,assets:JSON.parse(r.assets_json),createdAt:r.created_at}
   }))
-  handlePrivate('nativeSync:restoreConflict',exclusive(async request => {
+  handlePrivate('nativeSync:restoreConflict',exclusive(async (request, learning) => {
     const item = db.prepare('SELECT * FROM ipad_sync_conflicts WHERE id=? AND resolved_at IS NULL').get(request.conflictID)
     if (!item || !['local','remote'].includes(request.variant)) throw new Error('Conflict or selected variant is unavailable')
     const value = request.variant === 'local' ? item.local_json : item.remote_json
     if (!value) throw new Error('Selected conflict version is unavailable')
     const reviewedVariants=[item.local_json,item.remote_json].filter(Boolean).map(value=>JSON.parse(value))
-    const result = await importRecords({ records:[JSON.parse(value)],assets:[...(request.assets ?? []),...JSON.parse(item.assets_json)],reviewedVariants },true)
+    const result = await importRecords({ records:[JSON.parse(value)],assets:[...(request.assets ?? []),...JSON.parse(item.assets_json)],reviewedVariants },true,learning)
     if (result.applied === 1) db.prepare('UPDATE ipad_sync_conflicts SET resolved_at=? WHERE id=?').run(new Date().toISOString(),item.id)
     return result
+  }, request => {
+    const item = db.prepare('SELECT local_json,remote_json FROM ipad_sync_conflicts WHERE id=? AND resolved_at IS NULL').get(request.conflictID)
+    if (!item || !['local','remote'].includes(request.variant)) return []
+    const selected = request.variant === 'local' ? item.local_json : item.remote_json
+    return selected ? preflightPause({ records: [JSON.parse(selected)] }) : []
   }))
 }

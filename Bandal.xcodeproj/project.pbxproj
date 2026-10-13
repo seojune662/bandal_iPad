@@ -149,6 +149,7 @@
 		CC399AD59379031E5FA6D4CE /* DesktopPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A318ED55AC20F528A765F7AC /* DesktopPresentationTests.swift */; };
 		CC55FCD7568CA6628730045C /* BrowserKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 354FA2A1223BA20E48128602 /* BrowserKeyboard.swift */; };
 		CCCD5F6E4C2CBB89A713D7CD /* BrowserSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9D4542083E18EF2463D408E /* BrowserSession.swift */; };
+		CD06CBD8EC63FFE3A38A857D /* BrowserDefaultZoomTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 289A1E289AE40591E940655D /* BrowserDefaultZoomTests.swift */; };
 		CD0FB28E4A25DB5DB99B73EA /* DesktopCredentialsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C696794CDD530C377066F0EB /* DesktopCredentialsTests.swift */; };
 		CEF2A302689580D3E3EF1A24 /* DesktopRecordingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8983E6321BBD9C5B212C03F1 /* DesktopRecordingService.swift */; };
 		D00098D433F94A7D2AAB86B5 /* DesktopRendererDiagnosticTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11AFB1D2B76F0D0FE3DE09B3 /* DesktopRendererDiagnosticTests.swift */; };
@@ -218,6 +219,7 @@
 		21B2ABD135E9B6543B6E9108 /* DesktopAccountTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAccountTests.swift; sourceTree = "<group>"; };
 		21C544E80F4C164E8AA40549 /* DesktopBrowserAgentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopBrowserAgentTests.swift; sourceTree = "<group>"; };
 		24D9C7FB7F1E310FF294B8C6 /* DesktopNative */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesktopNative; path = App/Resources/DesktopNative; sourceTree = SOURCE_ROOT; };
+		289A1E289AE40591E940655D /* BrowserDefaultZoomTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserDefaultZoomTests.swift; sourceTree = "<group>"; };
 		2A3984908F3358245819B09B /* InkCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkCanvas.swift; sourceTree = "<group>"; };
 		2AB9700435C1BE3E536AC68D /* NativePDFObjectRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFObjectRendererTests.swift; sourceTree = "<group>"; };
 		2B7ECF554331814EB37E8F9E /* DesktopMCPTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopMCPTests.swift; sourceTree = "<group>"; };
@@ -540,6 +542,7 @@
 			children = (
 				38B31C7795916BCFC6267070 /* AIClientTests.swift */,
 				11D550F2DF672C50A7C9D3FE /* AppModelSafetyTests.swift */,
+				289A1E289AE40591E940655D /* BrowserDefaultZoomTests.swift */,
 				306868B6A963ADD099E5CD18 /* BrowserDownloadRecoveryTests.swift */,
 				A83B7003D0B0826DE327AE74 /* BrowserIdentityTests.swift */,
 				6584D74EE0DFE37DC66FDFD9 /* BrowserImageCopyTests.swift */,
@@ -824,6 +827,7 @@
 			files = (
 				D3C6CD4C123DD67290F30560 /* AIClientTests.swift in Sources */,
 				A7224E5D644C59BE3BF72DAB /* AppModelSafetyTests.swift in Sources */,
+				CD06CBD8EC63FFE3A38A857D /* BrowserDefaultZoomTests.swift in Sources */,
 				9F36843EB417B04E821EAE55 /* BrowserDownloadRecoveryTests.swift in Sources */,
 				82FDA236DCF2507CC5F939A0 /* BrowserIdentityTests.swift in Sources */,
 				5D8B0E6542FF1D59F8D7D4D0 /* BrowserImageCopyTests.swift in Sources */,
@@ -1050,7 +1054,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -1120,7 +1124,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

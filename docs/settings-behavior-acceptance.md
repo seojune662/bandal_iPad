@@ -16,6 +16,7 @@
 | 달력 권한 복귀 | Mac/macOS 전용 안내를 iPad 설정 안내로 변경하고 foreground 복귀 시 상태 재조회 | 실제 WebKit에서 거부→설정 이동→허용 상태 재조회, 선택/저장 실패/연결 해제 검사 | 실제 EventKit 사용자 캘린더 접근 |
 | 시험 알림 | 권한 거부를 미지원으로 잘못 표시하던 경로 수정. 최초 요청/거부/설정에서 재허용 구분 | WebKit에 복구 안내 표시. Swift handler는 OS 권한/스케줄 경계 주입으로 요청 중복·거부·재허용·실패 검사 | 실제 OS 수신/권한 prompt |
 | HTML 북마크 | 파일 picker, 선택 프로필 유지, 원본 parser/repo로 URL·중복 처리, 일괄 저장 | SQLite rollback/용량·항목 한도/부정 URL, WebKit 성공·취소·실패·프로필 귀속 | Files 앱 실제 선택과 브라우저 열기 |
+| 브라우저 기본 확대 (빌드 8 이후 수정) | 설정에는 125%가 표시되지만 신규 native guest에 명령을 보내지 않아 본문이 100%였던 누락 수정. 원본 `BrowserSettings.defaultZoomLevel`의 새 탭 기본값 계약에 따라 최초 값을 캡처하고 native 성공 후 tab 값을 확정. 기존 tab의 명시 배율은 유지 | 실제 원본 BrowserGuestView/nativePageHandle + WebKit에서 신규·비공개·재시작·재탐색·재마운트·명시 100%·native 실패 안내/미확정/재시도 검사. `LearningBrowser9b` iPadOS 18.3.1 시뮬레이터에서 실제 backend 설정 재조회→WKWebView.pageZoom 소비·재탐색·기존 100% 보존 통과 | 다음 빌드 설치 후 실제 사이트 시각 확대. 현재 사용자 기기의 빌드 8에는 이 후속 수정이 포함되지 않음 |
 | Chromium 확장 | 실행할 수 없는 설치 버튼 비활성화 및 미지원 이유 사전 표시 | WebKit에서 설명 표시·버튼 비활성·설치 호출 없음 확인 | 좁은 화면·VoiceOver 설명 읽기 |
 | 고급·개인정보·정보 | iPad 자료 폴더를 macOS 홈 경로로 축약하던 표시 수정, 로그·진단의 실제 미리보기 동작 안내, 진단 실패 사유 보존, iPad 업데이트 경로 안내 | 실제 원본 React에서 경로 선택/취소/오류, 초기화 확인/취소/실패 후 재시도, 로그/캐시 호출, 진단 성공 후 실패 시 기존 결과 보존, KO/EN 배포 안내 WebKit 통과 | 실제 Files 접근·Quick Look 공유·배포 채널 업데이트 |
 | 개발용 PDF 비교 | native DEBUG capability가 허용한 경우에만 실험실에 toggle 표시. 저장 후 PDF를 다시 열어야 적용됨을 안내 | 실제 React의 조회/저장/저장 실패 시 원상태/재진입 조회, Release·native 조회 실패 시 숨김 WebKit 통과. 셸 reload·PDF 자동 종료 요청 없음 | 실제 Native Host flag 저장과 PDF 재열기 효과는 기기 검사로 확인 |
@@ -33,7 +34,7 @@
 | 학교 | 학교 선택·검색, 서비스 추가·수정·삭제·정렬, 표시할 즐겨찾기. 사이드바·메일 서비스에 반영 | 실제 학교 store 선택·서비스 숨기기/복원 및 위젯 메일 선택지 반영 **통과**. 모든 학교 검색/커스텀 편집 UI **미검증** |
 | 플러그인 | 설치·활성·설정·초기화·제거, 카탈로그 검색/실패, 학습 팩 import/실행, HTTPS MCP 연결/테스트/삭제 | 팩·MCP·카탈로그 서비스 검사 존재. UI 전체 왕복 **미검증**. 로컬 Node/stdio **플랫폼 제한** |
 | 달력 | 연결·해제, 캘린더 선택, 표시·내보내기 설정, 권한 이동, 과제 중복 없이 일정 반영 | 실제 UI 연결·선택·저장 실패/권한 복구, 실제 backend 서비스의 표시 필터·읽기전용 거절·재시작 영속·종일 종료일·중복 없는 재내보내기·빈 선택 재연결·해제 시 일정 보존 **통과**. EventKit OS 경계는 fixture이며 실캘린더 왕복 **미검증** |
-| 브라우저 | 프로필 추가·수정·삭제, 홈페이지 저장·유효성, 검색엔진, 기본 확대, 링크 처리, 스와이프, 팝업, 추적 보호, DNT, 사이트별 쿠키/저장소/권한 제거, AI 접근권한·감사 | backend 저장·잘못된 URL 거절·재실행 **통과**, 기존 네이티브 브라우저 서비스 검사 존재. 모든 설정의 실사이트 효과 **미검증** |
+| 브라우저 | 프로필 추가·수정·삭제, 홈페이지 저장·유효성, 검색엔진, 기본 확대, 링크 처리, 스와이프, 팝업, 추적 보호, DNT, 사이트별 쿠키/저장소/권한 제거, AI 접근권한·감사 | backend 저장·잘못된 URL 거절·재실행 **통과**. 기본 확대는 빌드 8 이후 누락 수정 및 원본 guest가 실제 native 명령을 내보내는 WebKit 경계 **통과**, 실패 후 재시도·기존 tab 보존 포함. 실제 WK 적용 XCTest 실행은 별도 기록. 모든 설정의 실사이트 효과 **미검증** |
 | 브라우저 가져오기 | HTML 북마크/CSV 파일 선택·취소·확인·중복, 프로필별 반영; 다른 앱 저장소 직접 읽기와 구분 | HTML parser+실제 SQLite repo와 WebKit 프로필 귀속/취소/오류 **통과**. 네이티브 picker 경계 XCTest 존재, 실제 파일 선택 왕복 **미검증**. 타 앱 저장소 직접 읽기 **플랫폼 제한** |
 | 화면 | 시스템·밝음·어두움, 글자 크기 4단계, 편집기 글꼴 3종, 밀도 2종. 현재 모든 탭 즉시 적용·재실행 유지 | backend 변경·재실행, 실제 화면 controls와 applyTheme의 theme/fontScale/editorFont/density DOM 효과, 시스템 테마·키보드 선택 **통과**. 모든 탭 시각 비교·VoiceOver **미검증** |
 | 탭 → Markdown | 본문 글꼴·제목 접두어, 저장·빈 값; 열린 노트 글꼴과 신규 파일 이름 적용 | 원본 UI 저장·backend 재실행, 원본 createMarkdownTab이 변경 접두어로 notes:create를 호출하고 실제 Dockview 노트 탭 생성 **통과**. native 파일 picker와 무관한 메모리 IPC fixture 경계는 별도 실제 notes repo 검사로 확인 |
@@ -57,6 +58,7 @@
 ## 재현 가능한 검사
 
 - `node DesktopRuntime/scripts/test-settings-controls.mjs`: 원본 컴포넌트 + iPad 변환을 실제 WebKit에서 실행. 네이티브 경계는 통제된 fixture이며 유료 제공자·사용자 계정은 호출하지 않는다. 원본 stores/탭 명령/BoardPanel와 실제 DockviewReact를 함께 실행해 저장 값을 소비하는 경로도 확인한다. AppearancePanel callback→settings bridge는 fixture이고 실제 DOM 적용 함수는 원본이다.
+- `node DesktopRuntime/renderer/browser/test-default-zoom.mjs`: 실제 원본 BrowserGuestView/nativePageHandle/settingsSnapshot/store를 WebKit에서 실행. native IPC와 저장소는 fixture이며, 기본 배율 명령·100% 재적용·실패 시 미확정/안내·재시도·재실행을 확인한다. `BrowserDefaultZoomTests`는 실제 backend 설정 영속/재조회와 Swift 명령의 WKWebView.pageZoom 효과·문서 재탐색·기존 100% 보존을 검증한다. 서로 다른 두 경계 검사이며 앱 전체 실기기 시각 확대 검사를 대신하지 않는다.
 - `node DesktopRuntime/backend/test-backend.mjs --settings-controls`: 현재 backend bundle을 임시 SQLite/파일 저장소에서 실행. 재시작·실제 신규 보드·쓰기 실패·초기화의 자료 보존을 확인한다. 달력은 실제 backend/원본 서비스/파일 저장을 실행하고 EventKit 결과만 fixture로 주입한다. 일정 생성/조회는 사용자 캘린더에 쓰지 않는다. 검사한 bundle SHA는 통합 빌드 증거와 함께 기록한다.
 - `node DesktopRuntime/scripts/test-bookmark-import.mjs`: 실제 SQLite favorites repo와 원본 북마크 parser의 프로필 격리·안전 URL·중복·용량/항목 한도·쓰기 실패 일괄 rollback.
 - `DesktopBookmarkImportTests`: 실제 Swift picker 서비스의 파일 타입·크기·인코딩·취소·프로필 삭제 race·진행중 프로필 삭제 guard. OS picker 자체는 주입 경계.

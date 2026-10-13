@@ -5,6 +5,7 @@ import { registerStudyMarketHandlers } from './studyMarketHandlers'
 import { assertAppRendererSender } from './appRendererSender'
 import { forgetGoogleAccountNavigation } from '../features/browser/googleAccountNavigation'
 import { createLearningRepo, normalizeLearningDraft } from '../features/learning'
+import { createLearningPathOutbox } from '../features/learning/learningPathOutbox'
 import { createLearningApprovalDialogs } from '../features/learning/approvalDialogs'
 import { createLearningCache } from '../features/learning/learningCache'
 import { createDictionaryService } from '../features/learning/dictionary'
@@ -426,7 +427,10 @@ export function registerHandlers(deps: RegisterHandlersDeps): IpcRouter {
   const learningCache = createLearningCache(db)
   const dictionary = createDictionaryService({ directory: app.isPackaged
     ? join(process.resourcesPath, 'dictionary') : join(__dirname, '../../resources/dictionary') })
+  const materialPathLock = createMaterialPathLock(join(deps.userDataPath, 'material-path-lock.db'))
+  let learningPaths: ReturnType<typeof createLearningPathOutbox>
   const learningRepo = createLearningRepo({
+    pathLock: materialPathLock, beforePathAccess: () => learningPaths.flush(),
     getCourseFolder: courseId => coursesRepo.getFolder(courseId),
     getCourseFolderIncludingDeleted: courseId => coursesRepo.getFolderIncludingDeleted(courseId),
     listCourseIds: () => coursesRepo.list({ includeArchived: true, includeDeleted: true }).filter(course => !course.deletedAt || course.workspaceKind === 'study-space').map(course => course.id),
@@ -437,6 +441,8 @@ export function registerHandlers(deps: RegisterHandlersDeps): IpcRouter {
       void learningRepo.readDeleted(binding).then(snapshot => learningCache.index(snapshot)).catch(error => console.warn('[learning] cache rebuild failed', error))
     }
   })
+  learningPaths = createLearningPathOutbox({ db, pathLock: materialPathLock, repoint: input => learningRepo.repoint(input),
+    onError: error => console.error('[learning] durable path update pending', error) })
   const onMaterialPathChanged = (change: {
     courseId: string
     fromRelPath: string
@@ -444,6 +450,7 @@ export function registerHandlers(deps: RegisterHandlersDeps): IpcRouter {
     isDirectory: boolean
   }): void => {
     db.transaction(() => {
+      learningPaths.enqueue(change)
       pdfBindings.repoint(change)
       materialsRepo.repointAddedState(change.courseId, change.fromRelPath, change.toRelPath, change.isDirectory)
       repointMaterialPath({
@@ -453,9 +460,9 @@ export function registerHandlers(deps: RegisterHandlersDeps): IpcRouter {
       })
     })()
     recordings.repoint(change.courseId, change.fromRelPath, change.toRelPath, change.isDirectory)
-    void learningRepo.repoint(change).catch(error => console.error('[learning] path update failed', error))
-    // Notes bypass materialsRepo, and a rewritten backlink can change more
-    // than the renamed path. Invalidate before telling renderers to re-read.
+    learningPaths.schedule()
+    // A rewritten backlink can change more than the renamed path.
+    // Invalidate before telling renderers to re-read.
     materialsRepo.invalidateTree(change.courseId)
     broadcast('materials:changed', { courseId: change.courseId })
   }
@@ -467,7 +474,7 @@ export function registerHandlers(deps: RegisterHandlersDeps): IpcRouter {
   // Derived search writes must never hold the user database's write lock.
   const searchCachePath = join(deps.userDataPath, 'search-cache.db')
   const materialsRepo = createMaterialsRepo({
-    pathLock: createMaterialPathLock(join(deps.userDataPath, 'material-path-lock.db')),
+    pathLock: materialPathLock,
     onIndexBuilt: () => { pdfBindings.reconcileIndex(); checkpoints.request() },
     scan: (folder, limits) => background.request('scan', { folder, limits }),
     db,
@@ -490,6 +497,7 @@ export function registerHandlers(deps: RegisterHandlersDeps): IpcRouter {
   })
   const recordings = createRecordingRepo(db, (id) => coursesRepo.getFolder(id), session => materialsRepo.recordAdded(session.courseId, session.audioRelPath))
   materialsRepo.recoverPathChanges()
+  learningPaths.schedule()
   const speechModels = createModelManager(
     join(deps.userDataPath, 'speech-models'),
     (models) => broadcast('recordings:modelsChanged', models)
