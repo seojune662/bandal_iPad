@@ -320,8 +320,12 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
             let fetched = try await browser.fetchLinkedFile(url: address, tabID: request["tabId"] as? String)
             return try await runtime.invoke("materials:writeFile", request: ["courseId": courseID, "dirRelPath": directory, "fileName": fetched.fileName, "encoding": "base64", "data": fetched.dataBase64])
         case "runtime:diagnostic":
-            runtime.log.record("renderer.error")
-            NSLog("[Desktop renderer] %@", String(describing: request).prefix(8_192).description)
+            runtime.log.recordRendererDiagnostic(request)
+            return NSNull()
+        case "runtime:inputDiagnostic":
+            if request["event"] as? String == "keyboard.missing-key" {
+                runtime.log.record("renderer.input", code: "keyboard.missing-key")
+            }
             return NSNull()
         case "runtime:stageFileBegin", "runtime:stageFileWrite", "runtime:stageFileFinish", "runtime:stageFileCancel":
             return try fileStaging.handle(channel, request)

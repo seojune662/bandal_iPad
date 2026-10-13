@@ -8,7 +8,7 @@
     "snapshot": "node scripts/snapshot-upstream.mjs",
     "verify": "node scripts/verify-snapshot.mjs",
     "build": "node scripts/build.mjs",
-    "test": "node scripts/test-renderer.mjs && node scripts/test-file-input.mjs && node scripts/test-lifecycle.mjs && node scripts/test-package.mjs && node scripts/test-sync-ui.mjs && node scripts/test-platform-routing.mjs && node scripts/test-pdf-resources.mjs",
+    "test": "node scripts/test-renderer.mjs && node scripts/test-renderer-diagnostics.mjs && node scripts/test-keyboard.mjs && node scripts/test-file-input.mjs && node scripts/test-lifecycle.mjs && node scripts/test-package.mjs && node scripts/test-sync-ui.mjs && node scripts/test-platform-routing.mjs && node scripts/test-pdf-resources.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && node scripts/typecheck-platform.mjs",
     "build:renderer": "node scripts/build-renderer.mjs",
     "build:backend": "node backend/build-backend.mjs",

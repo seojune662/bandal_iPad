@@ -118,6 +118,7 @@
 		CCCD5F6E4C2CBB89A713D7CD /* BrowserSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9D4542083E18EF2463D408E /* BrowserSession.swift */; };
 		CD0FB28E4A25DB5DB99B73EA /* DesktopCredentialsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C696794CDD530C377066F0EB /* DesktopCredentialsTests.swift */; };
 		CEF2A302689580D3E3EF1A24 /* DesktopRecordingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8983E6321BBD9C5B212C03F1 /* DesktopRecordingService.swift */; };
+		D00098D433F94A7D2AAB86B5 /* DesktopRendererDiagnosticTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11AFB1D2B76F0D0FE3DE09B3 /* DesktopRendererDiagnosticTests.swift */; };
 		D15B5FAFB32A2F10FFDB7000 /* DesktopCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D662FF6C5104FBDC75E766B2 /* DesktopCaptureService.swift */; };
 		D3C6CD4C123DD67290F30560 /* AIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B31C7795916BCFC6267070 /* AIClientTests.swift */; };
 		D54D3FA4ACAC34E028013EA6 /* Configuration.plist in Resources */ = {isa = PBXBuildFile; fileRef = FE3907FDC9F00DE41A03C71C /* Configuration.plist */; };
@@ -163,6 +164,7 @@
 		0AD34EC55862EE8B434AB0FD /* DesktopPluginCatalogTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopPluginCatalogTransport.swift; sourceTree = "<group>"; };
 		0CC3C887A81C0FB0A7823ED9 /* DesktopMCPVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopMCPVault.swift; sourceTree = "<group>"; };
 		0FFDC618F080A604EF22EAF1 /* Desktop */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Desktop; path = App/Resources/Desktop; sourceTree = SOURCE_ROOT; };
+		11AFB1D2B76F0D0FE3DE09B3 /* DesktopRendererDiagnosticTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopRendererDiagnosticTests.swift; sourceTree = "<group>"; };
 		11D550F2DF672C50A7C9D3FE /* AppModelSafetyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelSafetyTests.swift; sourceTree = "<group>"; };
 		14357BED4A0081E69687FAD7 /* PublicArticleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicArticleTests.swift; sourceTree = "<group>"; };
 		18495B166F0E6D5CBCC89A17 /* LearningWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningWorkspaceView.swift; sourceTree = "<group>"; };
@@ -463,6 +465,7 @@
 				A318ED55AC20F528A765F7AC /* DesktopPresentationTests.swift */,
 				EE2E9BF9DB1B42F4C031F28B /* DesktopRecordingCheckpointTests.swift */,
 				3A6528ED9B8660BF2E3E0671 /* DesktopRecordingTests.swift */,
+				11AFB1D2B76F0D0FE3DE09B3 /* DesktopRendererDiagnosticTests.swift */,
 				7ADF8907B382BF8DB91BCD0C /* DesktopRuntimeTests.swift */,
 				57AF1148BFEC6E764E836FF1 /* DesktopSyncTests.swift */,
 				AFAE7185E0CD3126D783D5BE /* DesktopTemporaryFileTests.swift */,
@@ -727,6 +730,7 @@
 				CC399AD59379031E5FA6D4CE /* DesktopPresentationTests.swift in Sources */,
 				5E63597A1DD500A74F221F8A /* DesktopRecordingCheckpointTests.swift in Sources */,
 				A7371F307887FE39468ECCBA /* DesktopRecordingTests.swift in Sources */,
+				D00098D433F94A7D2AAB86B5 /* DesktopRendererDiagnosticTests.swift in Sources */,
 				CC1357404923138374BF16CE /* DesktopRuntimeTests.swift in Sources */,
 				9A6831FBA7FCD80868091E04 /* DesktopSyncTests.swift in Sources */,
 				65E066C8529448ECE9A9C587 /* DesktopTemporaryFileTests.swift in Sources */,
@@ -890,7 +894,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -960,7 +964,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

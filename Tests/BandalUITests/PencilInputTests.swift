@@ -1,6 +1,41 @@
 import XCTest
 
 final class PencilInputTests: XCTestCase {
+    func testPDFPenControlsAndFingerNavigationDoNotShowRuntimeFailure() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--reset-ui-testing", "--desktop-parity-fixture", "--desktop-pdf-fixture"]
+        app.launch()
+        let file = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "PDF pinch fixture.pdf")).firstMatch
+        XCTAssertTrue(file.waitForExistence(timeout: 30))
+        file.tap()
+        let paper = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "1 페이지,")).firstMatch
+        XCTAssertTrue(paper.waitForExistence(timeout: 30))
+        let failure = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "반달 실행 연결을 확인해 주세요.")).firstMatch
+        XCTAssertFalse(failure.exists)
+        let controls = app.descendants(matching: .any).matching(identifier: "주석 도구").firstMatch
+        XCTAssertTrue(controls.waitForExistence(timeout: 10))
+        controls.tap()
+        let pen = app.descendants(matching: .any).matching(identifier: "펜").firstMatch
+        XCTAssertTrue(pen.waitForExistence(timeout: 10))
+        pen.tap()
+        XCTAssertFalse(failure.exists, failure.exists ? failure.label : "")
+        app.descendants(matching: .any).matching(identifier: "필기 스타일").firstMatch.tap()
+        let color = app.descendants(matching: .any).matching(identifier: "파랑").firstMatch
+        XCTAssertTrue(color.waitForExistence(timeout: 10))
+        color.tap()
+        pen.tap()
+        let visible = paper.frame.intersection(app.windows.firstMatch.frame).insetBy(dx: 36, dy: 36)
+        XCTAssertGreaterThan(visible.height, 180)
+        let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+        let start = origin.withOffset(CGVector(dx: visible.midX, dy: visible.minY + 180))
+        let end = origin.withOffset(CGVector(dx: visible.midX, dy: visible.minY + 30))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.05)
+        XCTAssertFalse(failure.exists, failure.exists ? failure.label : "")
+        XCTAssertFalse(app.buttons["되돌리기"].isEnabled, "Finger navigation must not draw")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     func testPDFRegionPinchViaMaterialRowChangesOnlyDocumentScale() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
@@ -17,7 +52,7 @@ final class PencilInputTests: XCTestCase {
             paper.staticTexts.allElementsBoundByIndex.map(\.label).joined().replacingOccurrences(of: " ", with: "").contains("한글표시검증")
         }, evaluatedWith: paper)
         wait(for: [koreanText], timeout: 10)
-        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "반달 실행 연결을 확인해 주세요.")).firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "반달 실행 연결을 확인해 주세요.")).firstMatch.exists)
         let zoom = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "현재 배율 ")).firstMatch
         XCTAssertTrue(zoom.waitForExistence(timeout: 15), app.debugDescription)
         let toolbarButton = app.buttons["축소"]

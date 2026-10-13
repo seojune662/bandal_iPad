@@ -31,6 +31,22 @@ final class DesktopLog: @unchecked Sendable {
             } catch { NSLog("[Desktop diagnostics] write failed (%ld)", (error as NSError).code) }
         }
     }
+    /// Revalidate the already-redacted renderer envelope. No raw error message,
+    /// stack, document path, function label or URL is accepted by this boundary.
+    func recordRendererDiagnostic(_ payload: [String: Any]) {
+        let classes: Set<String> = ["Error", "TypeError", "RangeError", "ReferenceError", "SyntaxError", "EvalError", "URIError", "AggregateError", "DOMException", "UnknownError"]
+        let name = payload["errorClass"] as? String ?? "UnknownError"
+        record("renderer.error", code: classes.contains(name) ? name : "UnknownError")
+        if name == "TypeError", let expression = payload["expression"] as? String, expression.count <= 64,
+           expression.range(of: "^[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*){1,3}$", options: .regularExpression) != nil {
+            record("renderer.expression", code: expression)
+        }
+        for (index, frame) in (payload["frames"] as? [String] ?? []).prefix(5).enumerated() {
+            guard frame.utf8.count <= 112,
+                  frame.range(of: "^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79}\\.(js|mjs):[1-9][0-9]{0,8}:[1-9][0-9]{0,8}$", options: .regularExpression) != nil else { continue }
+            record("renderer.frame", channel: String(index), code: frame)
+        }
+    }
     func flush() async {
         await withCheckedContinuation { continuation in queue.async { continuation.resume() } }
     }

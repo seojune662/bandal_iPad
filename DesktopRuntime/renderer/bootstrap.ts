@@ -2,10 +2,12 @@ import { installNativeBridge } from './bridge'
 import { installFileInputAdapter } from './fileInput'
 import { installPencilNavigation } from './pencil/navigation'
 import { installNativeLifecycle } from './lifecycle'
+import { installNativeKeyboardCompatibility } from './keyboard'
+import { rendererDiagnostic, type DiagnosticSource } from './diagnostics'
 
-// Diagnostics are added only when startup fails; product markup and CSS are
-// entirely the original desktop renderer loaded below.
-function showFailure(reason: unknown): void {
+// Runtime failures remain visible; product markup and CSS are otherwise
+// the original desktop renderer loaded below.
+function showFailure(reason: unknown, source?: DiagnosticSource): void {
   const text = reason instanceof Error ? reason.message : String(reason ?? 'Unknown error')
   let panel = document.getElementById('bandal-native-diagnostic')
   if (!panel) {
@@ -16,9 +18,9 @@ function showFailure(reason: unknown): void {
     document.body.append(panel)
   }
   panel.textContent = `반달 실행 연결을 확인해 주세요.\n\n${text}\n\n앱을 다시 열어도 계속되면 이 내용을 진단 기록과 함께 확인해 주세요.`
-  void window.webkit?.messageHandlers?.bandal?.postMessage({ channel: 'runtime:diagnostic', request: { message: text.slice(0, 8192) } }).catch(() => undefined)
+  void window.webkit?.messageHandlers?.bandal?.postMessage({ channel: 'runtime:diagnostic', request: rendererDiagnostic(reason, source) }).catch(() => undefined)
 }
-window.addEventListener('error', event => showFailure(event.error ?? event.message))
+window.addEventListener('error', event => showFailure(event.error ?? event.message, { filename: event.filename, lineno: event.lineno, colno: event.colno }))
 window.addEventListener('unhandledrejection', event => showFailure(event.reason))
 if (!window.requestIdleCallback) {
   window.requestIdleCallback = callback => window.setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 15 }), 1)
@@ -37,6 +39,9 @@ if (!crypto.randomUUID && crypto.getRandomValues) {
 }
 try {
   installNativeBridge()
+  installNativeKeyboardCompatibility(window, () => {
+    void window.webkit?.messageHandlers?.bandal?.postMessage({ channel: 'runtime:inputDiagnostic', request: { event: 'keyboard.missing-key' } }).catch(() => undefined)
+  })
   installFileInputAdapter(showFailure)
   installPencilNavigation()
   installNativeLifecycle()
