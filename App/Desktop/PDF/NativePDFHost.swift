@@ -91,8 +91,16 @@ final class NativePDFHost {
             for record in pending where record.provisional == true { try journal.append(record.input, documentRevision: record.documentRevision) }
             try documents[identifier]?.close()
             documents.removeValue(forKey: identifier)
+            var testingDirectPencil = false
+            #if DEBUG
+            // Exercise UIKit's real recognizer dispatch with XCTest fingers in
+            // a separate fixture library. Never enable it in the user's data.
+            testingDirectPencil = root.lastPathComponent == "BandalDesktop-UI-Tests" &&
+                ProcessInfo.processInfo.arguments.contains("--ui-testing") &&
+                ProcessInfo.processInfo.arguments.contains("--native-pencil-dispatch-fixture")
+            #endif
             let item = NativePDFDocument(id: identifier, generation: generation, courseID: course, relativePath: path,
-                                         revision: snapshot.revision, document: pdf)
+                                         revision: snapshot.revision, document: pdf, testingDirectPencil: testingDirectPencil)
             item.onDiagnostic = { [weak self] event, code in self?.onDiagnostic(event, code) }
             item.onEvent = { [weak self] type, body in
                 self?.emit("pdfNative:event", ["surfaceId": identifier, "generation": generation, "type": type, "payload": body])
@@ -286,6 +294,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private var suspended = false
     private var suspendedViewport: [String: Any]?
     private var nativePinch: UIPinchGestureRecognizer!
+    private let pencilGesture: NativePDFPencilGestureRecognizer
     private var pinchStartScale = 1.0
     private var pinchAnchor: (page: PDFPage, point: CGPoint)?
     private var selectedTextRects: [Int: [[String: Double]]] = [:]
@@ -314,8 +323,13 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                     return ["page": index + 1, "width": rotated ? crop.height : crop.width, "height": rotated ? crop.width : crop.height]
                 }]
     }
-    init(id: String, generation: String, courseID: String, relativePath: String, revision: String, document: PDFDocument) {
+    init(id: String, generation: String, courseID: String, relativePath: String, revision: String, document: PDFDocument, testingDirectPencil: Bool = false) {
         self.id = id; self.generation = generation; self.courseID = courseID; self.relativePath = relativePath; self.revision = revision; self.document = document
+        #if DEBUG
+        pencilGesture = NativePDFPencilGestureRecognizer(testTouchType: testingDirectPencil ? .direct : .pencil)
+        #else
+        pencilGesture = NativePDFPencilGestureRecognizer()
+        #endif
         super.init(); images.totalCostLimit = 64 * 1024 * 1024
         pdfView.accessibilityIdentifier = "bandal-native-pdf-body"
         pdfView.accessibilityLabel = "PDF 본문"
@@ -340,12 +354,20 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         pdfView.pageShadowsEnabled = false; pdfView.backgroundColor = .secondarySystemBackground
         pdfView.document = document; pdfView.autoScales = true
         pdfView.isFindInteractionEnabled = true
+        // Consume measured Pencil events in the recognizer phase. Waiting for
+        // UIView.touchesBegan lets PDFKit's ancestors delay or absorb the stream.
+        pencilGesture.targetAtLocation = { [weak self] point in
+            self?.pdfView.pencilInputTarget(at: point) as? NativePDFInkSurface
+        }
+        pencilGesture.onDiagnostic = { [weak self] code in self?.onDiagnostic("nativePDF.gesture", code) }
+        pdfView.addGestureRecognizer(pencilGesture)
         nativePinch = UIPinchGestureRecognizer(target: self, action: #selector(pinchChanged(_:)))
         nativePinch.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         pdfView.addGestureRecognizer(nativePinch)
         let annotationTap = UITapGestureRecognizer(target: self, action: #selector(annotationTapped(_:)))
         annotationTap.cancelsTouchesInView = false
         annotationTap.delaysTouchesBegan = false; annotationTap.delaysTouchesEnded = false
+        annotationTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         pdfView.addGestureRecognizer(annotationTap)
         var buttonStyle = UIButton.Configuration.gray()
         buttonStyle.image = UIImage(systemName: "ellipsis")
@@ -606,6 +628,9 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             pdfView.scaleFactor/max(fit,0.001), pdfView.scaleFactor, pdfView.bounds.width, pdfView.bounds.height,
             pinchEvents, lastPinchScale, scaleChanges, navigateCommands, lastRequestedZoom, submissionP95, submissionSamples,
             scrollView?.zoomScale ?? 0, scrollView?.minimumZoomScale ?? 0, scrollView?.maximumZoomScale ?? 0, pdfView.autoScales ? 1 : 0, workspaceActive ? 1 : 0)
+        #if DEBUG
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " drawings=\(objects.count) pending=\(pending.count)"
+        #endif
     }
     private func selectionChanged() {
         selectedTextRects.removeAll()

@@ -3,6 +3,51 @@ import XCTest
 /// Tests the actual native body inside the original desktop workspace. XCTest
 /// synthesizes fingers; these checks make no claim about physical Pencil feel.
 final class NativePDFWorkspaceTests: XCTestCase {
+    /// Real XCTest touch dispatch through the production recognizer and PDFKit
+    /// hierarchy. A DEBUG-only isolated fixture accepts direct touches in place
+    /// of Pencil; this does not validate physical Pencil pressure or palm rejection.
+    func testNativeInkSurvivesUIKitGestureArbitrationAndCanonicalSave() throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--reset-ui-testing", "--desktop-parity-fixture", "--desktop-pdf-fixture", "--native-pencil-dispatch-fixture", "-bandal.nativePDF.enabled", "YES"]
+        app.launch()
+        let file = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "PDF pinch fixture.pdf")).firstMatch
+        XCTAssertTrue(file.waitForExistence(timeout: 30)); file.tap()
+        let body = app.descendants(matching: .any).matching(identifier: "bandal-native-pdf-body").firstMatch
+        XCTAssertTrue(body.waitForExistence(timeout: 30))
+        func saved(_ count: Int) {
+            let state = expectation(for: NSPredicate { _, _ in
+                let value = body.value as? String ?? ""
+                return value.contains("drawings=\(count) ") && value.contains("pending=0")
+            }, evaluatedWith: app)
+            wait(for: [state], timeout: 15)
+        }
+        app.descendants(matching: .any).matching(identifier: "주석 도구").firstMatch.tap()
+        app.descendants(matching: .any).matching(identifier: "펜").firstMatch.tap()
+        saved(0)
+        body.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.45))
+            .press(forDuration: 0.02, thenDragTo: body.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.55)))
+        saved(1)
+        XCTAssertTrue(app.buttons["되돌리기"].isEnabled)
+        app.buttons["되돌리기"].tap(); saved(0)
+        app.buttons["다시 실행"].tap(); saved(1)
+        // A second contact must work after UIKit resets the recognizer.
+        body.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.65)).tap()
+        saved(2)
+        let picture = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        picture.name = "Native ink line and dot through real UIKit dispatch"
+        picture.lifetime = .keepAlways; add(picture)
+        app.terminate()
+        // Retain fixture data without regenerating/reimporting its PDF.
+        app.launchArguments.removeAll { ["--reset-ui-testing", "--desktop-pdf-fixture"].contains($0) }
+        app.launch()
+        if !body.waitForExistence(timeout: 10) {
+            XCTAssertTrue(file.waitForExistence(timeout: 20)); file.tap()
+        }
+        XCTAssertTrue(body.waitForExistence(timeout: 20)); saved(2)
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "반달 실행 연결을 확인해 주세요.")).firstMatch.exists)
+    }
     func testNativePDFRegainsActiveSplitFromPageNotesOnFirstBodyContact() throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .landscapeLeft

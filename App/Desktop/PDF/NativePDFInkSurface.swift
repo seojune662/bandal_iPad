@@ -36,6 +36,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     private let decorations = NativePDFViewportDecorations()
     private(set) var renderViewport: NativePDFRenderViewport?
     private var active: UITouch?
+    private weak var gestureContact: UITouch?
     private var startTime: TimeInterval = 0
     private var measured: [NativePDFPoint] = []
     private var predicted: [NativePDFPoint] = []
@@ -162,9 +163,31 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         return nil
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // Pencil has exactly one owner: the recognizer attached to PDFView.
+        // PDFKit may delay/cancel UIResponder delivery, and when UIKit does
+        // deliver it this path must not create a duplicate stroke.
+        beginInput(Set(touches.filter { $0.type != .pencil && $0 !== gestureContact }), with: event)
+    }
+    @discardableResult
+    func beginPencilGesture(_ touch: UITouch, with event: UIEvent?, directFixture: Bool = false) -> Bool {
+        var allowDirectInk = false
+        #if DEBUG
+        allowDirectInk = directFixture && touch.type == .direct
+        #endif
+        guard touch.type == .pencil || allowDirectInk, !isLoading else { return false }
+        gestureContact = touch
+        beginInput([touch], with: event, allowDirectInk: allowDirectInk)
+        if active !== touch { gestureContact = nil }
+        return active === touch
+    }
+    func movePencilGesture(_ touch: UITouch, with event: UIEvent?) { moveInput([touch], with: event) }
+    func endPencilGesture(_ touch: UITouch, with event: UIEvent?) { endInput([touch], with: event); gestureContact = nil }
+    func cancelPencilGesture(_ touch: UITouch, with event: UIEvent?) { cancelInput([touch], with: event); gestureContact = nil }
+    func updatePencilGestureProperties(_ touches: Set<UITouch>) { updateEstimatedInput(touches) }
+    private func beginInput(_ touches: Set<UITouch>, with event: UIEvent?, allowDirectInk: Bool = false) {
         if ending { finishMeasuredStroke() }
         if let touch = touches.first { recordInput("begin", type: touch.type) }
-        guard !journalBlocked, active == nil, let touch = touches.first(where: { $0.type == .pencil }) ?? touches.first(where: { $0.type == .direct && ["select", "text"].contains(tool.name) }), mapper != nil else { return }
+        guard !journalBlocked, active == nil, let touch = touches.first(where: { $0.type == .pencil }) ?? touches.first(where: { $0.type == .direct && (allowDirectInk || ["select", "text"].contains(tool.name)) }), mapper != nil else { return }
         if tool.name == "highlighter", prepareBackdrop() == nil {
             onFailure?(NativePDFError.invalid("형광펜 배경을 준비하지 못했습니다. 필기를 보존한 채 PDF를 다시 열어 주세요.")); return
         }
@@ -175,6 +198,9 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         publishPointer("down", points: Array(measured.prefix(1)))
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        moveInput(Set(touches.filter { $0.type != .pencil && $0 !== gestureContact }), with: event)
+    }
+    private func moveInput(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = active, touches.contains(touch) else { return }
         let start = measured.count
         append(event?.coalescedTouches(for: touch) ?? [touch])
@@ -183,6 +209,9 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         schedulePreview()
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        endInput(Set(touches.filter { $0.type != .pencil && $0 !== gestureContact }), with: event)
+    }
+    private func endInput(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = active, touches.contains(touch) else { return }
         recordInput("end", type: touch.type)
         append(event?.coalescedTouches(for: touch) ?? [touch]); predicted = []
@@ -196,6 +225,9 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         }
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        cancelInput(Set(touches.filter { $0.type != .pencil && $0 !== gestureContact }), with: event)
+    }
+    private func cancelInput(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = active, touches.contains(touch) else { return }
         recordInput("cancel", type: touch.type)
         // Only measured points survive interruptions. Predictions are never
@@ -203,6 +235,9 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         finishMeasuredStroke(cancelObjectEdit: true)
     }
     override func touchesEstimatedPropertiesUpdated(_ touches: Set<UITouch>) {
+        updateEstimatedInput(Set(touches.filter { $0.type != .pencil }))
+    }
+    private func updateEstimatedInput(_ touches: Set<UITouch>) {
         for touch in touches {
             guard let key = touch.estimationUpdateIndex else { continue }
             if let index = estimated[key], measured.indices.contains(index), var corrected = sample(touch), corrected.isValid {

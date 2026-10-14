@@ -6,7 +6,8 @@ import WebKit
 @MainActor
 final class NativePDFHostTests: XCTestCase {
     /// Public UITouch/UIEvent fixtures exercise UIKit hit testing and the real
-    /// measured-touch callbacks. They do not synthesize hardware Pencil input
+    /// measured gesture callbacks. This fixture does not exercise UIKit dispatch
+    /// arbitration; the workspace UI test does. Neither synthesizes hardware Pencil input
     /// or claim to exercise the system's handwriting recognizer.
     func testPencilRoutesThroughPDFBodyAndCompletesMeasuredInkWithoutScribble() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-pdf-input-\(UUID())")
@@ -61,11 +62,19 @@ final class NativePDFHostTests: XCTestCase {
         let inkScribble = try XCTUnwrap(surface.interactions.compactMap { $0 as? UIScribbleInteraction }.first)
         XCTAssertFalse(body.scribbleInteraction(bodyScribble, shouldBeginAt: body.convert(point, from: window)))
         XCTAssertFalse(surface.scribbleInteraction(inkScribble, shouldBeginAt: surface.convert(point, from: window)))
-        target?.touchesBegan([touch], with: event)
+        func recognizer() -> NativePDFPencilGestureRecognizer {
+            let value = NativePDFPencilGestureRecognizer()
+            value.targetAtLocation = { body.pencilInputTarget(at: $0) as? NativePDFInkSurface }
+            body.addGestureRecognizer(value)
+            return value
+        }
+        let gesture = recognizer()
+        gesture.touchesBegan([touch], with: event)
         touch.currentPhase = .moved; touch.currentTime += 0.012; touch.point.x += 25
-        target?.touchesMoved([touch], with: event)
+        gesture.touchesMoved([touch], with: event)
         touch.currentPhase = .ended; touch.currentTime += 0.012; touch.point.x += 25
-        target?.touchesEnded([touch], with: event)
+        gesture.touchesEnded([touch], with: event)
+        body.removeGestureRecognizer(gesture)
         XCTAssertEqual(completions.count, 1)
         let points = try XCTUnwrap((completions.first?["data"] as? [String: Any])?["points"] as? [[String: Any]])
         XCTAssertGreaterThanOrEqual(points.count, 3)
@@ -79,15 +88,17 @@ final class NativePDFHostTests: XCTestCase {
             if !moves { contact.currentForce = 0 }
             let contactEvent = NativePDFTestEvent(touch: contact), recipient = window.hitTest(point, with: contactEvent)
             XCTAssertTrue(recipient === surface, tool)
-            recipient?.touchesBegan([contact], with: contactEvent)
+            let contactGesture = recognizer()
+            contactGesture.touchesBegan([contact], with: contactEvent)
             if moves {
                 contact.currentPhase = .moved; contact.currentTime += 0.012; contact.point.x += 30
-                recipient?.touchesMoved([contact], with: contactEvent)
+                contactGesture.touchesMoved([contact], with: contactEvent)
                 contact.currentTime += 0.012; contact.point.x += 30
             }
             // A dot contains one actual sample: do not invent a move or time.
             contact.currentPhase = .ended
-            recipient?.touchesEnded([contact], with: contactEvent)
+            contactGesture.touchesEnded([contact], with: contactEvent)
+            body.removeGestureRecognizer(contactGesture)
         }
         XCTAssertEqual(completions.compactMap { $0["kind"] as? String }, ["ink", "ink", "highlighter"])
         let dotPoints = try XCTUnwrap((completions[1]["data"] as? [String: Any])?["points"] as? [[String: Any]])
