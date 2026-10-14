@@ -36,15 +36,15 @@ export function transformInkLayer(source) {
         style: drawingStyle(activeTool, width, opacity, color),
         startedAt: event.timeStamp`)
   code = replaceExactly(code, '      const nextStyle = drawingStyle(completed.tool, width, opacity, color)', '      const nextStyle = completed.style')
-  code = replaceExactly(code, "          completed.tool === 'highlighter'", "          completed.tool === 'highlighter', 2")
-  code = replaceExactly(code, '        data: { points: completed.points },', '        data: { points: completed.points, inkVersion: 2 },')
+  code = replaceExactly(code, "          completed.tool === 'highlighter'", "          completed.tool === 'highlighter', 3")
+  code = replaceExactly(code, '        data: { points: completed.points },', '        data: { points: completed.points, inkVersion: 3 },')
   code = replaceExactly(code, `          gesture.points,
           style,
           aspect,
           gesture.tool === 'highlighter'`, `          gesture.points,
           gesture.style,
           aspect,
-          gesture.tool === 'highlighter', 2`)
+          gesture.tool === 'highlighter', 3`)
   code = replaceExactly(code, `                fill={drawingColorVariable(style.color)}
                 opacity={style.opacity}`, `                fill={drawingColorVariable(gesture.style.color)}
                 opacity={gesture.style.opacity}`)

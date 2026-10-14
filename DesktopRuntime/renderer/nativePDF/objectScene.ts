@@ -1,6 +1,5 @@
 import type { DrawingShape, DrawingStyle, DrawingBox, DrawingPoint } from '../../upstream/src/shared/types/drawing'
 import { strokePath } from '../../upstream/src/renderer/src/features/ink/inkGeometry'
-import { strokePathV2 } from '../../upstream/src/shared/inkV2'
 
 interface SceneInput {
   shapes: readonly DrawingShape[]
@@ -19,9 +18,7 @@ export function publishNativePDFScene(svg: SVGSVGElement | null, input: SceneInp
   const objects = input.shapes.filter(shape => shape.id !== input.editingId).map(shape => {
     if (shape.kind !== 'ink' && shape.kind !== 'highlighter') return shape
     const points = shape.data.points ?? []
-    const nativePath = shape.data.inkVersion === 2
-      ? strokePathV2(points, shape.style.width, input.aspect, shape.kind === 'highlighter')
-      : strokePath(points, shape.style, input.aspect, shape.kind === 'highlighter')
+    const nativePath = strokePath(points, shape.style, input.aspect, shape.kind === 'highlighter', shape.data.inkVersion)
     return { ...shape, nativePath }
   })
   if (input.preview) objects.push({ ...input.preview, id: 'native-object-preview', createdAt: '', updatedAt: '' } as DrawingShape)

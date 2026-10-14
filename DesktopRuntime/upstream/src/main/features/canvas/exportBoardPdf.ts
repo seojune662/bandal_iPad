@@ -1,4 +1,5 @@
 import { strokePathV2 } from '../../../shared/inkV2'
+import { strokePathV3 } from '../../../shared/inkV3'
 import { createBoardMediaRenderer } from './boardMediaPdf'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -185,8 +186,9 @@ function drawInk(
   const blendMode = shape.kind === 'highlighter'
     ? surface === 'dark' ? BlendMode.Screen : BlendMode.Multiply
     : BlendMode.Normal
-  if (shape.data.inkVersion === 2) {
-    const path = strokePathV2(points, shape.style.width, height / width, shape.kind === 'highlighter', width, height)
+  if (shape.data.inkVersion === 2 || shape.data.inkVersion === 3) {
+    const renderPath = shape.data.inkVersion === 3 ? strokePathV3 : strokePathV2
+    const path = renderPath(points, shape.style.width, height / width, shape.kind === 'highlighter', width, height)
     if (path) page.drawSvgPath(path, { x: 0, y: height, color, opacity, blendMode })
     return
   }

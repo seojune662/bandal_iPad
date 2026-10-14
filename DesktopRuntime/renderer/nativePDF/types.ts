@@ -20,7 +20,7 @@ export function isJournaledDrawing(value: unknown, identity: Pick<NativePDFIdent
     && typeof input.clientMutationId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.clientMutationId)
     && Number.isInteger(input.page) && input.page! > 0 && ['ink', 'highlighter'].includes(input.kind ?? '')
     && (input.documentRevision === undefined || typeof input.documentRevision === 'string' && /^[0-9a-f]{64}$/i.test(input.documentRevision))
-    && input.data?.inkVersion === 2 && Array.isArray(input.data.points) && input.data.points.length > 0
+    && (input.data?.inkVersion === 2 || input.data?.inkVersion === 3) && Array.isArray(input.data.points) && input.data.points.length > 0
     && input.data.points.length <= 250_000 && input.data.points.every(point => !!point && typeof point === 'object'
       && [point.x, point.y, point.p].every(n => Number.isFinite(n) && n >= 0 && n <= 1)
       && [point.t, point.tiltX, point.tiltY].every(n => n === undefined || Number.isFinite(n))

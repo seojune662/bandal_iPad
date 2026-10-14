@@ -1,4 +1,5 @@
 import { strokePathV2 } from '../../../../shared/inkV2'
+import { strokePathV3 } from '../../../../shared/inkV3'
 import { getStroke } from 'perfect-freehand'
 import type {
   DrawingBox,
@@ -172,8 +173,9 @@ export function strokePath(
   style: DrawingStyle,
   aspect: number,
   isHighlighter: boolean,
-  inkVersion?: 2
+  inkVersion?: 2 | 3
 ): string {
+  if (inkVersion === 3) return strokePathV3(points, style.width, aspect, isHighlighter)
   if (inkVersion === 2) return strokePathV2(points, style.width, aspect, isHighlighter)
   if (
     points.length < 1 ||

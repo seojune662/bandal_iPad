@@ -31,9 +31,16 @@ export async function testPDFBinding({backend,database,environment,runtime,cours
   await assert.rejects(privateCall('nativePDF:binding',{courseId:course.id,relPath:'pending-completion.pdf'}),/복구/)
   await assert.rejects(privateCall('nativeSync:export',{}),/복구/)
   const restarted=runtime();restarted.initialize()
+  // initialize recovers canonical paths synchronously, then schedules learning
+  // JSON replay under the same OS path lock. Await that real startup work
+  // rather than racing a rename against it (these VM "restarts" coexist).
+  await restarted.repositories.learning.withExclusivePathAccess(async()=>{})
+  assert.equal(database.prepare('SELECT COUNT(*) n FROM learning_path_outbox').get().n,0)
   assert.equal((await restarted.invokePrivate('nativePDF:binding',{courseId:course.id,relPath:'pending-completion.pdf'})).materialID,binding.materialID)
   assert.deepEqual(database.prepare('SELECT id FROM pdf_drawings WHERE course_id=? AND rel_path=? ORDER BY id').all(course.id,'pending-completion.pdf').map(r=>r.id),originalRows.map(r=>r.id))
   await restarted.invoke('materials:rename',{courseId:course.id,relPath:'pending-completion.pdf',newName:relPath})
+  // Finish this VM's scheduled replay before resuming the original VM below.
+  await restarted.repositories.learning.withExclusivePathAccess(async()=>{})
   originalRows=database.prepare('SELECT * FROM pdf_drawings WHERE course_id=? AND rel_path=? ORDER BY id').all(course.id,relPath)
   assert.deepEqual(fs.readFileSync(path.join(course.folderPath,relPath)),original)
   assert.equal((await privateCall('nativePDF:binding',{courseId:course.id,relPath})).materialID,binding.materialID)

@@ -7,7 +7,6 @@ import type { DrawingsApi } from '../../upstream/src/renderer/src/features/pdf/t
 import { usePdfToolStore } from '../../upstream/src/renderer/src/features/pdf/tools/toolStore'
 import { openHttpLink } from '../../upstream/src/renderer/src/app/openHttpLink'
 import { strokePath } from '../../upstream/src/renderer/src/features/ink/inkGeometry'
-import { strokePathV2 } from '../../upstream/src/shared/inkV2'
 import { registerNativeInk } from '../pencil/persistence'
 import { NativePDFSession } from './session'
 import { NativePDFPointerRelay } from './pointerRelay'
@@ -38,9 +37,7 @@ function transport(): NativePDFTransport { return window.bandal as unknown as Na
 function originalPath(drawing: Drawing, aspect: number): string | undefined {
   if (drawing.kind !== 'ink' && drawing.kind !== 'highlighter') return undefined
   const points = drawing.data.points ?? []
-  return drawing.data.inkVersion === 2
-    ? strokePathV2(points, drawing.style.width, aspect, drawing.kind === 'highlighter')
-    : strokePath(points, drawing.style, aspect, drawing.kind === 'highlighter')
+  return strokePath(points, drawing.style, aspect, drawing.kind === 'highlighter', drawing.data.inkVersion)
 }
 
 /** Keeps the desktop viewer's semantic model and chrome. The original DOM

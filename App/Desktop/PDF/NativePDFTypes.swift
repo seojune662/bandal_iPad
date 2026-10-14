@@ -30,7 +30,7 @@ struct NativePDFInkStyle: Codable, Equatable {
 
 struct NativePDFStrokeData: Codable, Equatable {
     var points: [NativePDFPoint]
-    var inkVersion = 2
+    var inkVersion = 3
 }
 
 struct NativePDFStrokeInput: Codable, Equatable {
@@ -49,7 +49,7 @@ struct NativePDFStrokeInput: Codable, Equatable {
 
     func validate() throws {
         guard !courseId.isEmpty, !relPath.isEmpty, page > 0,
-              ["ink", "highlighter"].contains(kind), data.inkVersion == 2,
+              ["ink", "highlighter"].contains(kind), [2, 3].contains(data.inkVersion),
               !data.points.isEmpty, data.points.count <= 250_000,
               data.points.allSatisfy(\.isValid), style.isValid,
               UUID(uuidString: clientMutationId) != nil else {

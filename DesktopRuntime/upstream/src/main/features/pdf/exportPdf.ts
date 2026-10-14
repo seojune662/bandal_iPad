@@ -1,4 +1,5 @@
 import { strokePathV2 } from '../../../shared/inkV2'
+import { strokePathV3 } from '../../../shared/inkV3'
 /** Burn stored annotations and drawings into a new PDF without touching the source. */
 
 import { randomUUID } from 'node:crypto'
@@ -139,8 +140,9 @@ function drawInk(page: PDFPage, drawing: Drawing, width: number, height: number)
     ? Math.min(drawing.style.opacity, 0.38)
     : drawing.style.opacity
   const blendMode = drawing.kind === 'highlighter' ? BlendMode.Multiply : BlendMode.Normal
-  if (drawing.data.inkVersion === 2) {
-    const path = strokePathV2(points, drawing.style.width, height / width, drawing.kind === 'highlighter', width, height)
+  if (drawing.data.inkVersion === 2 || drawing.data.inkVersion === 3) {
+    const renderPath = drawing.data.inkVersion === 3 ? strokePathV3 : strokePathV2
+    const path = renderPath(points, drawing.style.width, height / width, drawing.kind === 'highlighter', width, height)
     if (path) page.drawSvgPath(path, { x: 0, y: height, color, opacity, blendMode })
     return
   }

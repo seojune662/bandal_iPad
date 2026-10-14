@@ -11,9 +11,15 @@ export async function testInkV2({ invoke, runtime, database, course }) {
     data: { inkVersion: 2, points: [{ x: .3, y: .3, p: 0, t: 0, tiltX: 30, tiltY: -20 }, { x: .3, y: .3, p: 1, t: 14, tiltX: 31, tiltY: -21 }] },
     style: { color: 'blue', width: .004, opacity: .8 } }
   const first = await invoke('drawings:create', input)
+  const stable = { ...input, clientMutationId: randomUUID(), data: { ...input.data, inkVersion: 3 } }
+  const v3 = await invoke('drawings:create', stable)
+  assert.deepEqual(v3.data, stable.data, 'V3 retains measured pressure/time, with smoothing only at rendering')
+  assert.equal((await invoke('drawings:create', stable)).id, v3.id)
+
   assert.deepEqual(first.data, input.data, 'Actual backend validates and preserves all measured metadata')
   assert.equal((await invoke('drawings:create', input)).id, first.id)
   const reopened = runtime(); reopened.initialize()
+  assert.equal((await reopened.invokePrivate('nativePDF:mutationStatus', stable)).status, 'live')
   assert.equal((await reopened.invoke('drawings:create', input)).id, first.id, 'Lost reply + process restart cannot duplicate a committed stroke')
   assert.equal(database.prepare('SELECT COUNT(*) n FROM pdf_drawings WHERE id=?').get(first.id).n, 1)
   await assert.rejects(invoke('drawings:create', { ...input, page: 2 }), /operation.*reused/i)
@@ -25,7 +31,7 @@ export async function testInkV2({ invoke, runtime, database, course }) {
     assert.equal((await invoke('drawings:create', input)).id, first.id, 'Already committed receipt remains recoverable without creating another stroke')
   } finally { writeFileSync(pdfPath, originalBytes) }
   await assert.rejects(invoke('drawings:create', { ...input, clientMutationId: randomUUID(), documentRevision: 'invalid' }), /SHA-256/)
-  for (const data of [{ ...input.data, inkVersion: 3 }, { ...input.data, points: [{ x: .3, y: .3, p: .5, t: -1 }] },
+  for (const data of [{ ...input.data, inkVersion: 4 }, { ...input.data, points: [{ x: .3, y: .3, p: .5, t: -1 }] },
     { ...input.data, points: [{ x: .3, y: .3, p: .5, tiltX: 91 }] }]) {
     await assert.rejects(invoke('drawings:create', { ...input, clientMutationId: randomUUID(), data }))
   }

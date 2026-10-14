@@ -11,6 +11,9 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
         var color: UIColor
         var opacity: Float
         var multiply = false
+        /// Polygon space -> this cropped Metal view's local points. Native
+        /// geometry can stay normalized until the GPU vertex stage.
+        var transform: CGAffineTransform = .identity
     }
     var strokes: [Stroke] = [] { didSet { setNeedsDisplay() } }
     /// Transparent Metal cannot multiply UIKit layers below it. This bounded
@@ -28,11 +31,17 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
     var receivedAt: CFTimeInterval?
     var onSubmission: ((Double) -> Void)?
     private let commands: MTLCommandQueue
-    private let fillPipeline: MTLRenderPipelineState
+    private let fillPipelines: [Int: MTLRenderPipelineState]
     private let compositePipeline: MTLRenderPipelineState
     private let multiplyPipeline: MTLRenderPipelineState
     private var backdropTexture: MTLTexture?
     private var scratch: MTLTexture?
+    private var multisampleScratch: MTLTexture?
+    private(set) var rasterSampleCount = 1
+    private struct InkProjection {
+        var x: SIMD4<Float>
+        var y: SIMD4<Float>
+    }
 
     init?(renderer: Void = ()) {
         guard let gpu = MTLCreateSystemDefaultDevice(), let commands = gpu.makeCommandQueue() else { return nil }
@@ -41,8 +50,12 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
         #include <metal_stdlib>
         using namespace metal;
         struct Out { float4 position [[position]]; float2 uv; };
-        vertex Out inkVertex(uint i [[vertex_id]], const device float2* points [[buffer(0)]]) {
-            Out o; o.position=float4(points[i],0,1); o.uv=float2(0); return o;
+        struct InkProjection { float4 x; float4 y; };
+        vertex Out inkVertex(uint i [[vertex_id]], const device float2* points [[buffer(0)]],
+                             constant InkProjection& projection [[buffer(1)]]) {
+            const float3 point=float3(points[i],1);
+            Out o; o.position=float4(dot(projection.x.xyz,point),dot(projection.y.xyz,point),0,1);
+            o.uv=float2(0); return o;
         }
         fragment float4 inkColor(constant float4& color [[buffer(0)]]) { return color; }
         vertex Out quadVertex(uint i [[vertex_id]]) {
@@ -61,7 +74,13 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
             fill.fragmentFunction = library.makeFunction(name: "inkColor")
             fill.colorAttachments[0].pixelFormat = .bgra8Unorm
             fill.colorAttachments[0].isBlendingEnabled = false
-            fillPipeline = try gpu.makeRenderPipelineState(descriptor: fill)
+            var pipelines: [Int: MTLRenderPipelineState] = [:]
+            for samples in [4, 2, 1] where gpu.supportsTextureSampleCount(samples) {
+                fill.rasterSampleCount = samples
+                if let pipeline = try? gpu.makeRenderPipelineState(descriptor: fill) { pipelines[samples] = pipeline }
+            }
+            guard pipelines[1] != nil else { return nil }
+            fillPipelines = pipelines
             let composition = MTLRenderPipelineDescriptor()
             composition.vertexFunction = library.makeFunction(name: "quadVertex")
             composition.fragmentFunction = library.makeFunction(name: "composite")
@@ -84,7 +103,9 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
         accessibilityElementsHidden = true
     }
     required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { scratch = nil }
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        scratch = nil; multisampleScratch = nil
+    }
     func draw(in view: MTKView) {
         guard let drawable = currentDrawable,
               let command = commands.makeCommandBuffer() else { return }
@@ -102,8 +123,22 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
             descriptor.usage = [.renderTarget, .shaderRead]; descriptor.storageMode = .private
             scratch = gpu.makeTexture(descriptor: descriptor)
+            multisampleScratch = nil; rasterSampleCount = 1
+            // Rasterize the union per sample, then resolve exactly once. A
+            // separate AA pass per polygon would repeatedly blend overlaps
+            // and make translucent ink darker at joins/self-crossings.
+            // Memoryless MSAA stays in the iPad GPU's tile memory; the resolved
+            // single-sample texture is the only persistent ink allocation.
+            for samples in [4, 2] where fillPipelines[samples] != nil {
+                let multisample = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+                multisample.textureType = .type2DMultisample; multisample.sampleCount = samples
+                multisample.usage = [.renderTarget]; multisample.storageMode = .memoryless
+                if let texture = gpu.makeTexture(descriptor: multisample) {
+                    multisampleScratch = texture; rasterSampleCount = samples; break
+                }
+            }
         }
-        guard let scratch else { return }
+        guard let scratch, let fillPipeline = fillPipelines[rasterSampleCount] else { return }
         var first = true
         if !strokes.isEmpty, let backdropTexture {
             let pass = MTLRenderPassDescriptor()
@@ -118,21 +153,39 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
         }
         for stroke in strokes {
             var vertices: [SIMD2<Float>] = []
-            func vertex(_ point: CGPoint) -> SIMD2<Float> { SIMD2(Float(point.x / max(bounds.width, 1) * 2 - 1), Float(1 - point.y / max(bounds.height, 1) * 2)) }
+            vertices.reserveCapacity(stroke.polygons.reduce(0) { $0 + max(0, $1.count - 2) * 3 })
+            func vertex(_ point: CGPoint) -> SIMD2<Float> { SIMD2(Float(point.x), Float(point.y)) }
             for polygon in stroke.polygons where polygon.count >= 3 {
-                for index in 1..<(polygon.count - 1) { vertices += [vertex(polygon[0]), vertex(polygon[index]), vertex(polygon[index + 1])] }
+                let first = vertex(polygon[0])
+                for index in 1..<(polygon.count - 1) {
+                    vertices.append(first); vertices.append(vertex(polygon[index])); vertices.append(vertex(polygon[index + 1]))
+                }
             }
             guard !vertices.isEmpty, let buffer = gpu.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<SIMD2<Float>>.stride, options: .storageModeShared) else { continue }
             let union = MTLRenderPassDescriptor()
-            union.colorAttachments[0].texture = scratch; union.colorAttachments[0].loadAction = .clear
-            union.colorAttachments[0].storeAction = .store; union.colorAttachments[0].clearColor = clearColor
+            union.colorAttachments[0].texture = multisampleScratch ?? scratch
+            union.colorAttachments[0].loadAction = .clear
+            union.colorAttachments[0].clearColor = clearColor
+            if multisampleScratch != nil {
+                union.colorAttachments[0].resolveTexture = scratch
+                union.colorAttachments[0].storeAction = .multisampleResolve
+            } else {
+                union.colorAttachments[0].storeAction = .store
+            }
             guard let encoder = command.makeRenderCommandEncoder(descriptor: union) else { continue }
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             stroke.color.getRed(&r, green: &g, blue: &b, alpha: &a)
             let alpha = stroke.opacity * Float(a)
             var color = SIMD4(Float(r) * alpha, Float(g) * alpha, Float(b) * alpha, alpha)
+            // Compose the affine and viewport projection once per stroke,
+            // not for every point of every triangle on the CPU.
+            let affine = stroke.transform, sx = 2 / max(bounds.width, 1), sy = -2 / max(bounds.height, 1)
+            var projection = InkProjection(
+                x: SIMD4(Float(affine.a * sx), Float(affine.c * sx), Float(affine.tx * sx - 1), 0),
+                y: SIMD4(Float(affine.b * sy), Float(affine.d * sy), Float(affine.ty * sy + 1), 0))
             encoder.setRenderPipelineState(fillPipeline)
             encoder.setVertexBuffer(buffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&projection, length: MemoryLayout<InkProjection>.stride, index: 1)
             encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
             encoder.endEncoding()

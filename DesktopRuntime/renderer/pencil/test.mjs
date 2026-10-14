@@ -90,7 +90,7 @@ try {
   await page.waitForFunction(() => window.__pencilTest.created.length === 4)
   const dot = await page.evaluate(() => window.__pencilTest.created[3])
   assert.deepEqual(dot.data.points.map(p => Math.round(p.p * 100)), [0, 90], 'A dot and stationary pressure are preserved, including the first zero pressure')
-  assert.equal(dot.data.inkVersion, 2)
+  assert.equal(dot.data.inkVersion, 3)
   assert.ok(await page.locator('.ink-layer__mark').last().getAttribute('d'), 'Dots render as visible ink')
   console.log('WebKit: original InkLayer mouse, Pencil sample fixtures, first-zero pressure, dots, stationary pressure, palm ownership, finger pan, pinch and interruption passed')
 } finally { await browser.close(); await server.close() }

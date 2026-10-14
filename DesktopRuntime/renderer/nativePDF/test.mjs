@@ -17,7 +17,7 @@ try {
   const identity = { surfaceId: 'pdf-panel', generation: 'one-open', courseId: 'course', relPath: 'file.pdf' }
   const input = { courseId: 'course', relPath: 'file.pdf', page: 1, kind: 'ink',
     clientMutationId: 'fdc2af33-57eb-42ae-8356-44847901099c', documentRevision: 'a'.repeat(64),
-    data: { inkVersion: 2, points: [{ x: .1, y: .2, p: 0, t: 3, tiltX: 15, tiltY: -12 }] },
+    data: { inkVersion: 3, points: [{ x: .1, y: .2, p: 0, t: 3, tiltX: 15, tiltY: -12 }] },
     style: { color: 'ink', width: .004, opacity: .9 } }
   let writes = 0, failedAck = true, pending = [input], flushed = false
   const trace = []

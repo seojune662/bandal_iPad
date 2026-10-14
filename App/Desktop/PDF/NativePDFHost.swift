@@ -45,7 +45,7 @@ final class NativePDFHost {
             let development = false
             #endif
             return ["enabled": isEnabled,
-                    "development": development, "version": 1, "inkVersion": 2, "renderer": "PDFKit/UIKit/Metal"]
+                    "development": development, "version": 1, "inkVersion": 3, "renderer": "PDFKit/UIKit/Metal"]
         }
         if channel == "pdfNative:setEnabled" {
             #if DEBUG
@@ -550,7 +550,9 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                 }
                 guard let page = document.page(at: number - 1), var object = try? NativePDFHost.json(input) else { continue }
                 let coordinates = NativePDFPageCoordinates(page: page)
-                let polygons = NativePDFInkGeometry.polygons(points: input.data.points, width: input.style.width, aspect: coordinates.height / coordinates.width, highlighter: input.kind == "highlighter")
+                let polygons = input.data.inkVersion == 3
+                    ? NativePDFInkGeometryV3.polygons(points: input.data.points, width: input.style.width, aspect: coordinates.height / coordinates.width, highlighter: input.kind == "highlighter")
+                    : NativePDFInkGeometry.polygons(points: input.data.points, width: input.style.width, aspect: coordinates.height / coordinates.width, highlighter: input.kind == "highlighter")
                 object["nativePath"] = polygons.map { polygon in
                     polygon.enumerated().map { "\($0.offset == 0 ? "M" : "L") \($0.element.x) \($0.element.y)" }.joined(separator: " ") + " Z"
                 }.joined(separator: " ")

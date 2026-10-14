@@ -39,6 +39,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     private weak var gestureContact: UITouch?
     private var startTime: TimeInterval = 0
     private var measured: [NativePDFPoint] = []
+    private let previewGeometry = NativePDFInkGeometryV3Cache()
     private var predicted: [NativePDFPoint] = []
     private var strokeTool = Tool()
     private var displayLink: CADisplayLink?
@@ -191,7 +192,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         if tool.name == "highlighter", prepareBackdrop() == nil {
             onFailure?(NativePDFError.invalid("형광펜 배경을 준비하지 못했습니다. 필기를 보존한 채 PDF를 다시 열어 주세요.")); return
         }
-        active = touch; startTime = touch.timestamp; strokeTool = tool
+        active = touch; startTime = touch.timestamp; strokeTool = tool; previewGeometry.reset()
         onInputOwnership?(true)
         measured = []; predicted = []; estimated = [:]; ending = false
         append(event?.coalescedTouches(for: touch) ?? [touch]); schedulePreview()
@@ -204,7 +205,11 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         guard let touch = active, touches.contains(touch) else { return }
         let start = measured.count
         append(event?.coalescedTouches(for: touch) ?? [touch])
-        predicted = (event?.predictedTouches(for: touch) ?? []).compactMap { sample($0) }
+        predicted = (event?.predictedTouches(for: touch) ?? []).compactMap { prediction in
+            guard var point = sample(prediction) else { return nil }
+            point.p = measured.last?.p ?? point.p
+            return point
+        }
         publishPointer("move", points: Array(measured.dropFirst(start)))
         schedulePreview()
     }
@@ -238,6 +243,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         updateEstimatedInput(Set(touches.filter { $0.type != .pencil }))
     }
     private func updateEstimatedInput(_ touches: Set<UITouch>) {
+        var changedCompletions: Set<String> = []
         for touch in touches {
             guard let key = touch.estimationUpdateIndex else { continue }
             if let index = estimated[key], measured.indices.contains(index), var corrected = sample(touch), corrected.isValid {
@@ -252,12 +258,21 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
                 entry.stroke.points[index] = corrected
                 if touch.estimatedPropertiesExpectingUpdates.isEmpty { entry.indices.removeValue(forKey: key) }
                 estimatedCompletions[id] = entry
-                do {
+                changedCompletions.insert(id)
+            }
+        }
+        if !changedCompletions.isEmpty {
+            do {
+                // UIKit batches several corrected samples in one event. Save
+                // each stroke's final batch once, in completion order, before
+                // any ready stroke can enter canonical history.
+                for id in estimatedCompletions.ids where changedCompletions.contains(id) {
+                    guard let entry = estimatedCompletions[id] else { continue }
                     guard let onCheckpoint else { throw NativePDFError.invalid("필기 보정 저장 연결을 확인해 주세요.") }
                     try onCheckpoint(entry.stroke)
-                    try drainCorrectedStrokes()
-                } catch { journalBlocked = true; onFailure?(error) }
-            }
+                }
+                try drainCorrectedStrokes()
+            } catch { journalBlocked = true; onFailure?(error) }
         }
         schedulePreview()
         if ending && estimated.isEmpty { finishMeasuredStroke() }
@@ -325,12 +340,18 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         let points = pending?.points ?? measured + predicted
         let style = pending?.style ?? strokeTool.style
         let highlighter = pending?.kind == "highlighter" || (pending == nil && strokeTool.name == "highlighter")
-        guard !points.isEmpty, pending != nil || ["pen", "highlighter"].contains(strokeTool.name) else { metal.strokes = []; return }
-        let polygons = NativePDFInkGeometry.polygons(points: points, width: style.width,
+        guard !points.isEmpty, pending != nil || ["pen", "highlighter"].contains(strokeTool.name) else { metal.strokes = []; previewGeometry.reset(); return }
+        let polygons = previewGeometry.polygons(points: points, width: style.width,
             aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter)
         metal.backdrop = prepareBackdrop()?.cgImage
-        metal.strokes = [.init(polygons: polygons.map { $0.map { viewport.localPoint(mapper.canvasPoint(InkPoint(x: $0.x, y: $0.y, p: 0.5))) } },
-                               color: Self.color(style.color), opacity: Float(style.opacity), multiply: highlighter)]
+        // One affine uniform replaces thousands of per-frame CPU point maps.
+        let origin = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 0, y: 0, p: 0.5)))
+        let xAxis = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 1, y: 0, p: 0.5)))
+        let yAxis = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 0, y: 1, p: 0.5)))
+        let transform = CGAffineTransform(a: xAxis.x-origin.x, b: xAxis.y-origin.y,
+                                         c: yAxis.x-origin.x, d: yAxis.y-origin.y, tx: origin.x, ty: origin.y)
+        metal.strokes = [.init(polygons: polygons, color: Self.color(style.color),
+                               opacity: Float(style.opacity), multiply: highlighter, transform: transform)]
     }
     func finishMeasuredStroke(cancelObjectEdit: Bool = false) {
         do { try flush(cancelObjectEdit: cancelObjectEdit) }
@@ -355,7 +376,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
                 guard let onStroke else { throw NativePDFError.invalid("필기 저장 연결을 확인해 주세요.") }
                 try onStroke(stroke)
             }
-            journalBlocked = false; metal.strokes = []; metal.backdrop = nil; needsPreview = false
+            journalBlocked = false; metal.strokes = []; metal.backdrop = nil; previewGeometry.reset(); needsPreview = false
         } catch {
             // Model snapshots cannot unlock this independent durability gate.
             journalBlocked = true; schedulePreview(); throw error

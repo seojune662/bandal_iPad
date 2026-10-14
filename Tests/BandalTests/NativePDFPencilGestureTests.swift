@@ -61,6 +61,35 @@ final class NativePDFPencilGestureTests: XCTestCase {
         XCTAssertEqual(saved.first?.points.first?.p, 0.8)
         XCTAssertEqual(saved.first?.points.first?.t, 0)
     }
+    func testBatchedEstimatedSamplesCheckpointOnceBeforeCanonicalCompletion() throws {
+        let surface = try surface(), host = UIView(frame: surface.bounds)
+        host.addSubview(surface)
+        let gesture = NativePDFPencilGestureRecognizer()
+        host.addGestureRecognizer(gesture); gesture.targetAtLocation = { _ in surface }
+        let first = PencilGestureTouch(kind: .pencil), second = PencilGestureTouch(kind: .pencil)
+        first.estimateIndex = 31; second.estimateIndex = 32
+        first.expecting = .force; second.expecting = .force
+        first.pressure = 0.1; second.pressure = 0.2
+        second.point.x += 20; second.currentTime += 0.004
+        let event = PencilGestureEvent(first); event.coalesced = [first, second]
+        var checkpoints: [NativePDFCompletedStroke] = [], saved: [NativePDFCompletedStroke] = [], order: [String] = []
+        surface.onCheckpoint = { checkpoints.append($0); order.append("checkpoint") }
+        surface.onStroke = { saved.append($0); order.append("commit") }
+        gesture.touchesBegan([first], with: event)
+        gesture.touchesEnded([first], with: event)
+        XCTAssertEqual(checkpoints.count, 1); XCTAssertTrue(saved.isEmpty)
+        gesture.reset()
+        first.pressure = 0.3; second.pressure = 0.7
+        first.expecting = []; second.expecting = []
+        gesture.touchesEstimatedPropertiesUpdated([first, second])
+        XCTAssertEqual(checkpoints.count, 2, "One corrected stroke gets one durable checkpoint for the whole UIKit event")
+        XCTAssertEqual(saved.count, 1)
+        XCTAssertEqual(order, ["checkpoint", "checkpoint", "commit"])
+        XCTAssertEqual(checkpoints.last?.points.map(\.p), [0.3, 0.7])
+        XCTAssertEqual(saved.first, checkpoints.last, "Canonical completion uses both final corrected samples")
+        XCTAssertEqual(saved.first?.points.map(\.t), checkpoints.first?.points.map(\.t))
+        XCTAssertEqual(saved.first?.mutationID, checkpoints.first?.mutationID)
+    }
     func testMissingTargetDoesNotStealEditorOrControlInput() throws {
         let surface = try surface(), gesture = NativePDFPencilGestureRecognizer(), host = UIView()
         var diagnostics: [String] = [], inputEvents: [String] = [], saved: [NativePDFCompletedStroke] = []
@@ -125,9 +154,10 @@ private final class PencilGestureTouch: UITouch {
 @MainActor
 private final class PencilGestureEvent: UIEvent {
     let contact: UITouch
+    var coalesced: [UITouch]?
     init(_ contact: UITouch) { self.contact = contact; super.init() }
     override var type: UIEvent.EventType { .touches }
     override var allTouches: Set<UITouch>? { [contact] }
-    override func coalescedTouches(for touch: UITouch) -> [UITouch]? { [contact] }
+    override func coalescedTouches(for touch: UITouch) -> [UITouch]? { coalesced ?? [contact] }
     override func predictedTouches(for touch: UITouch) -> [UITouch]? { nil }
 }

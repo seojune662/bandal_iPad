@@ -17,6 +17,7 @@ await build({ entryPoints: [resolve(runtime, 'upstream/src/main/features/pdf/exp
 const { createPdfExporter } = createRequire(import.meta.url)(resolve(folder, 'export.cjs'))
 const timestamp = '2026-10-14T00:00:00Z'
 const objects = [
+  { kind: 'ink', data: { inkVersion: 3, points: [{ x: .1, y: .12, p: 0, t: 0 }, { x: .2, y: .18, p: .3, t: 4 }, { x: .3, y: .13, p: .05, t: 8 }, { x: .45, y: .2, p: .35, t: 12 }] }, style: { color: 'violet', width: .012, opacity: .7 } },
   { kind: 'ink', data: { inkVersion: 2, points: [{ x: .2, y: .3, p: 0 }] }, style: { color: 'blue', width: .04, opacity: 1 } },
   { kind: 'ink', data: { inkVersion: 2, points: [{ x: .2, y: .55, p: 0 }, { x: .4, y: .7, p: .4 }, { x: .8, y: .6, p: 1 }] }, style: { color: 'ink', width: .012, opacity: 1 } },
   { kind: 'highlighter', data: { inkVersion: 2, points: [{ x: .55, y: .15, p: 1 }, { x: .7, y: .35, p: 0 }, { x: .55, y: .15, p: .5 }] }, style: { color: 'yellow', width: .05, opacity: .3 } },

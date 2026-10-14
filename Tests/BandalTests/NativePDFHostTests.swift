@@ -76,6 +76,7 @@ final class NativePDFHostTests: XCTestCase {
         gesture.touchesEnded([touch], with: event)
         body.removeGestureRecognizer(gesture)
         XCTAssertEqual(completions.count, 1)
+        XCTAssertEqual((completions.first?["data"] as? [String: Any])?["inkVersion"] as? Int, 3)
         let points = try XCTUnwrap((completions.first?["data"] as? [String: Any])?["points"] as? [[String: Any]])
         XCTAssertGreaterThanOrEqual(points.count, 3)
         XCTAssertEqual(try NativePDFJournal(root: root).pending(courseID: "course", relativePath: "input.pdf").count, 1)

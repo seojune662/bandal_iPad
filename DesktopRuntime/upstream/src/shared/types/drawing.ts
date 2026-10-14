@@ -128,8 +128,8 @@ export interface DrawingClipSource {
 }
 
 export interface DrawingData {
-  /** Absent preserves the historical renderer; v2 is shared with native ink. */
-  inkVersion?: 2
+  /** Absent preserves historical ink; each explicit version keeps its own geometry. */
+  inkVersion?: 2 | 3
   points?: DrawingPoint[]
   box?: DrawingBox
   /** textbox only. */
