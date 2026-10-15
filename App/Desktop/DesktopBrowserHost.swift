@@ -25,6 +25,11 @@ final class DesktopBrowserHost: NSObject {
     var downloads: [String: DesktopBrowserDownload] = [:]
     private var nextPageID = 1
     private var hostOccluded = false
+    private var surfaceOccluded = false
+    private var surfaceInputBlocked = false
+    private var surfaceOverlays: [CGRect] = []
+    private var rendererGeneration = 0
+    private var rendererOwnershipRevisions: [String: Int] = [:]
     private var recentPopups: [Date] = []
     private var releasingInactivePages = false
     private var deletingProfileIDs = Set<String>()
@@ -36,6 +41,7 @@ final class DesktopBrowserHost: NSObject {
     private(set) var trackingProtection = "balanced"
     private(set) var privacyRules: WKContentRuleList?
     private var privacyTask: Task<Void, Error>?
+    private var privacyGeneration = 0
     lazy var observationRelay = BrowserObservationRelay(host: self)
 
     init(root: URL) {
@@ -72,10 +78,15 @@ final class DesktopBrowserHost: NSObject {
         agentUse = browser["agentUse"] as? Bool ?? true
         doNotTrack = browser["doNotTrack"] as? Bool ?? true
         trackingProtection = browser["trackingProtection"] as? String ?? "balanced"
+        startPrivacyPreparation()
+    }
+    private func startPrivacyPreparation() {
+        privacyGeneration += 1
+        let generation = privacyGeneration
         let tracking = trackingProtection, dnt = doNotTrack
         privacyTask = Task { [weak self] in
             let rules = try await BrowserPrivacy.compile(tracking: tracking, doNotTrack: dnt)
-            guard let self, tracking == self.trackingProtection, dnt == self.doNotTrack else { return }
+            guard let self, generation == self.privacyGeneration else { return }
             self.privacyRules = rules
             for page in self.pages.values {
                 guard let view = page.liveWebView else { continue }
@@ -85,9 +96,16 @@ final class DesktopBrowserHost: NSObject {
             }
         }
     }
-    func waitForPrivacySettings() async throws { try await privacyTask?.value }
+    func waitForPrivacySettings() async throws {
+        let generation = privacyGeneration
+        do { try await privacyTask?.value }
+        catch {
+            if generation == privacyGeneration { privacyTask = nil }
+            throw error
+        }
+    }
     func prepareBrowserNetwork() async throws {
-        if privacyTask == nil { applySettings([:]) }
+        if privacyTask == nil { startPrivacyPreparation() }
         try await waitForPrivacySettings()
         try await DesktopBrowserIdentity.prepare()
     }
@@ -137,17 +155,48 @@ final class DesktopBrowserHost: NSObject {
         for page in pages.values { if let live = page.liveWebView, live.superview !== view { view.addSubview(live) } }
         layoutPages()
     }
+    func setPresentation(blocked: Bool, inputBlocked: Bool, overlays: [CGRect]) {
+        surfaceOccluded = blocked; surfaceInputBlocked = inputBlocked; surfaceOverlays = overlays
+        if blocked { shell?.becomeFirstResponder() }
+        layoutPages()
+    }
+    /// Keep website documents and unsaved forms available for adoption, but
+    /// retire every rectangle and course assignment owned by the old shell.
+    func retireRenderer() {
+        rendererGeneration += 1
+        rendererOwnershipRevisions.removeAll()
+        hostOccluded = false; surfaceOccluded = true; surfaceInputBlocked = true; surfaceOverlays = []
+        for page in pages.values {
+            page.layoutRevision += 1 // A pending preview cannot restore old bounds.
+            page.bounds = nil
+            // Host ownership stays monotonic across reloads: a prior async
+            // article/capture must not match a new renderer's revision 1.
+            page.ownershipRevision += 1
+            page.courseID = nil
+            (page.liveWebView as? DesktopBrowserWebView)?.excludedRects = []
+        }
+        layoutPages()
+    }
     func layoutPages() {
         guard let container, let shell else { return }
         defer { onLayout?() }
         for page in pages.values {
-            guard let rect = page.bounds, !hostOccluded else { page.liveWebView?.isHidden = true; continue }
+            guard let rect = page.bounds, !hostOccluded, !surfaceOccluded else {
+                page.liveWebView?.isHidden = true; page.liveWebView?.accessibilityElementsHidden = true; continue
+            }
             let scale = shell.scrollView.zoomScale
             let scaled = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
             let frame = shell.convert(scaled, to: container).intersection(shell.convert(shell.bounds, to: container)).intersection(container.bounds)
             guard !frame.isNull, frame.width > 0, frame.height > 0 else { page.webView.isHidden = true; continue }
             page.webView.frame = frame
             page.webView.isHidden = false
+            page.webView.accessibilityElementsHidden = false
+            page.webView.isUserInteractionEnabled = !surfaceInputBlocked
+            (page.webView as? DesktopBrowserWebView)?.excludedRects = surfaceOverlays.compactMap { overlay in
+                let converted = shell.convert(CGRect(x: overlay.minX * scale, y: overlay.minY * scale, width: overlay.width * scale, height: overlay.height * scale), to: container)
+                let overlap = converted.intersection(frame)
+                return overlap.isNull || overlap.isEmpty ? nil : overlap.offsetBy(dx: -frame.minX, dy: -frame.minY)
+            }
             container.bringSubviewToFront(page.webView)
         }
     }
@@ -160,7 +209,9 @@ final class DesktopBrowserHost: NSObject {
         case "browser:sitePresentation": return try await presentationRequest(request, page: owned(request), update: false)
         case "browser:setSitePresentation": return try await presentationRequest(request, page: owned(request), update: true)
         case "browser:createPage":
+            let generation = rendererGeneration
             try await prepareBrowserNetwork()
+            guard generation == rendererGeneration else { throw CancellationError() }
             let tab = try Self.string(request, "tabId")
             let profile = try profileID(request)
             let privateMode = request["isPrivate"] as? Bool ?? false
@@ -190,6 +241,12 @@ final class DesktopBrowserHost: NSObject {
             layoutPages(); return ["ok": true]
         case "browser:pageAction":
             return try await action(try owned(request), action: Self.string(request, "action"), args: request["args"] as? [Any] ?? [])
+        case "browser:retryNavigation", "browser:returnToForm":
+            let page = try owned(request)
+            guard let navigationID = request["navigationId"] as? Int, navigationID > 0 else { throw DesktopBrowserError.invalid("탐색 식별자") }
+            if channel == "browser:returnToForm" { try page.returnToForm(navigationID: navigationID) }
+            else { try page.retry(navigationID: navigationID) }
+            return ["state": page.state]
         case "browser:destroyPage":
             let id = try Self.string(request, "tabId")
             if let page = pages[id], request["expectedWebContentsId"] == nil || (request["expectedWebContentsId"] as? Int) == page.id { destroy(id) }
@@ -197,8 +254,9 @@ final class DesktopBrowserHost: NSObject {
         case "browser:setCourse":
             let page = try owned(request)
             guard let revision = request["revision"] as? Int, revision > 0 else { throw DesktopBrowserError.invalid("소유권 버전") }
-            guard request["expectedWebContentsId"] as? Int == page.id, revision > page.ownershipRevision else { return ["ok": false] }
-            page.ownershipRevision = revision; page.courseID = request["courseId"] as? String; return ["ok": true]
+            guard request["expectedWebContentsId"] as? Int == page.id, revision > (rendererOwnershipRevisions[page.tabID] ?? 0) else { return ["ok": false] }
+            rendererOwnershipRevisions[page.tabID] = revision
+            page.ownershipRevision += 1; page.courseID = request["courseId"] as? String; return ["ok": true]
         case "browser:setDownloadTarget":
             let page = try owned(request)
             guard request["webContentsId"] as? Int == page.id else { throw DesktopBrowserError.invalid("탭 식별자") }
@@ -321,12 +379,12 @@ final class DesktopBrowserHost: NSObject {
         }
         let view = page.webView
         switch action {
-        case "loadURL": view.load(navigationRequest(try Self.navigationURL(string(0))))
-        case "goBack": if view.canGoBack { view.goBack() }
+        case "loadURL": page.load(navigationRequest(try Self.navigationURL(string(0))))
+        case "goBack": try page.goBack()
         case "goForward": if view.canGoForward { view.goForward() }
-        case "reload": view.reload()
-        case "reloadIgnoringCache": view.reloadFromOrigin()
-        case "stop": view.stopLoading()
+        case "reload": try page.reload()
+        case "reloadIgnoringCache": try page.reload(ignoringCache: true)
+        case "stop": page.stop()
         case "focus": view.becomeFirstResponder(); page.send("focus", ["webContentsId": page.id])
         case "setZoomLevel":
             guard let level = args.first as? Double, level.isFinite, (-8...8).contains(level) else { throw DesktopBrowserError.invalid("확대 배율") }
@@ -384,6 +442,7 @@ final class DesktopBrowserHost: NSObject {
     }
     func destroy(_ id: String) {
         guard let page = pages.removeValue(forKey: id) else { return }
+        rendererOwnershipRevisions.removeValue(forKey: id)
         page.close()
         if page.isPrivate, !pages.values.contains(where: { $0.profileID == page.profileID && $0.isPrivate }) { persistence?.discardPrivateStore(page.profileID); presentationStore?.discardPrivate(page.profileID) }
     }
@@ -400,6 +459,7 @@ final class DesktopBrowserHost: NSObject {
         opener.preventsSuspension = true // Preserve window.opener authentication flows.
         let tabID = UUID().uuidString
         guard let child = try? createPage(tabID: tabID, profileID: opener.profileID, isPrivate: opener.isPrivate, courseID: opener.courseID, configuration: configuration) else { return nil }
+        child.expectPopupRequest(action.request)
         emit("browser:open-url", ["tabId": tabID, "openerTabId": opener.tabID, "courseId": opener.courseID as Any? ?? NSNull(), "url": url.absoluteString, "isPrivate": opener.isPrivate, "profileId": opener.profileID, "webContentsId": child.id])
         return child.webView
     }

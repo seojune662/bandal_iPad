@@ -14,7 +14,8 @@ export async function testProjector({backend,database,environment,course,note}) 
   await backend.invokePrivate('nativeRecording:status',{id:recording.id,status:'recording'})
   await backend.invokePrivate('nativeRecording:append',{id:recording.id,sequence:0,pcm:{__bandalBytes:Buffer.alloc(32000).toString('base64')}})
   await backend.invokePrivate('nativeRecording:replaceTranscript',{id:recording.id,segments:[{startSample:0,endSample:16000,text:'원본 전사 유지'}],transcribedSamples:16000})
-  const inkV3=await backend.invoke('drawings:create',{courseId:course.id,relPath:'renamed.pdf',page:1,kind:'ink',data:{inkVersion:3,points:[{x:.1,y:.2,p:.1,t:0},{x:.2,y:.3,p:.2,t:4}]},style:{color:'blue',width:.004,opacity:1}})
+  const versionedInk=[]
+  for(const inkVersion of [2,3,4,5]) versionedInk.push(await backend.invoke('drawings:create',{courseId:course.id,relPath:'renamed.pdf',page:1,kind:'ink',data:{inkVersion,points:[{x:.1,y:.2,p:.1,t:0},{x:.2,y:.3,p:.2,t:4}]},style:{color:'blue',width:.004,opacity:1}}))
   const fixture=path.join(environment.tempPath,'electron-projector'),profile=path.join(fixture,'Profile'),exchange=path.join(fixture,'Exchange')
   fs.mkdirSync(profile,{recursive:true});fs.mkdirSync(exchange,{recursive:true})
   const dbPath=path.join(profile,'bandal.db');await database.backup(dbPath)
@@ -22,8 +23,10 @@ export async function testProjector({backend,database,environment,course,note}) 
   const value={action:'export',database:dbPath,exchange,courseRoot:path.join(fixture,'Courses'),moduleRoot:desktopRoot,bundle}
   const call=input=>{const child=spawnSync(electron,[helper],{input:JSON.stringify({...value,...input}),encoding:'utf8',env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},maxBuffer:64*1024*1024});assert.equal(child.status,0,child.stderr);return JSON.parse(child.stdout)}
   const exported=call({});assert.ok(exported.records.find(r=>r.kind==='recording'));assert.ok(exported.records.find(r=>r.payload.recordType==='desktop-learning-project'))
-  const portable=exported.records.filter(r=>r.kind==='drawing').flatMap(r=>JSON.parse(Buffer.from(r.payload.data,'base64')).objects).find(object=>object.id===inkV3.id)
-  assert.equal(portable.data.inkVersion,3);assert.deepEqual(portable.data.points.map(p=>p.p),[.1,.2])
+  for (const ink of versionedInk) {
+    const portable=exported.records.filter(r=>r.kind==='drawing').flatMap(r=>JSON.parse(Buffer.from(r.payload.data,'base64')).objects).find(object=>object.id===ink.id)
+    assert.equal(portable.data.inkVersion,ink.data.inkVersion);assert.deepEqual(portable.data.points.map(p=>p.p),[.1,.2])
+  }
   const driver=String.raw`
 import importlib.util,json,os,sqlite3,sys
 from pathlib import Path

@@ -18,6 +18,8 @@ final class InstalledLibraryTests: XCTestCase {
         let file = files.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "welcome.pdf")).firstMatch
         XCTAssertTrue(file.waitForExistence(timeout: 30), "The existing welcome.pdf must be available")
         file.tap()
+        let closeMaterials = app.buttons["자료 닫기"]
+        if closeMaterials.exists && closeMaterials.isHittable { closeMaterials.tap() }
         let page = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "1 페이지,")).firstMatch
         XCTAssertTrue(page.waitForExistence(timeout: 30), "The existing PDF page must render")
         let koreanText = expectation(for: NSPredicate { _, _ in

@@ -1,5 +1,6 @@
 import XCTest
 import PDFKit
+import MetalKit
 @testable import Bandal
 
 @MainActor
@@ -45,9 +46,12 @@ final class NativePDFRenderViewportTests: XCTestCase {
 
     func testSurfaceKeepsOnlyVisibleChildrenAndMovesTheirSceneAndSelectionTogether() async throws {
         let (document, mapper) = try fixture(), page = try XCTUnwrap(document.page(at: 0))
-        let window = UIWindow(frame: CGRect(x: 0,y: 0,width: 600,height: 800)), controller = UIViewController()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first(where: { $0.activationState == .foregroundActive }))
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene), controller = UIViewController()
+        window.frame = CGRect(x: 0,y: 0,width: 600,height: 800)
         window.rootViewController = controller; window.makeKeyAndVisible()
-        defer { window.isHidden = true; window.rootViewController = nil }
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
         let holder = UIView(frame: CGRect(x: 0,y: 0,width: 600,height: 900))
         holder.layer.anchorPoint = .zero; holder.layer.position = .zero
         holder.transform = CGAffineTransform(scaleX: 4,y: 4); controller.view.addSubview(holder)
@@ -59,18 +63,39 @@ final class NativePDFRenderViewportTests: XCTestCase {
         var visible = CGRect(x: 20,y: 40,width: 100,height: 100)
         surface.viewportProvider = { visible }
         holder.addSubview(surface); surface.layoutIfNeeded(); surface.refreshViewport()
+        let imageView = try XCTUnwrap(surface.subviews.compactMap { $0 as? UIImageView }.first)
+        let metal = try XCTUnwrap(surface.subviews.compactMap { $0 as? NativePDFMetalInk }.first)
+        let metalLayer = try XCTUnwrap(metal.layer as? CAMetalLayer)
         // Keep test visibility independent of the host window's physical size.
         for region in [CGRect(x: 20,y: 40,width: 100,height: 100), CGRect(x: 40,y: 70,width: 100,height: 100)] {
+            let previousViewport = surface.renderViewport, previousImage = imageView.image
             visible = region; surface.refreshViewport()
-            try await Task.sleep(for: .milliseconds(150))
             let viewport = try XCTUnwrap(surface.renderViewport)
-            let scene = try XCTUnwrap(surface.subviews.compactMap { $0 as? UIImageView }.first)
-            let metal = try XCTUnwrap(surface.subviews.compactMap { $0 as? NativePDFMetalInk }.first)
-            let image = try XCTUnwrap(scene.image)
-            XCTAssertEqual(scene.frame, viewport.canvasRect); XCTAssertEqual(metal.frame, viewport.canvasRect)
+            let expectedGeometry = try XCTUnwrap(NativePDFMetalInk.FrameGeometry(canvasRect: viewport.canvasRect,
+                pixelScale: viewport.pixelScale, canvasToPage: mapper.canvasToPDF))
+            func isSettled() -> Bool {
+                !imageView.isHidden && imageView.image != nil &&
+                    (previousViewport == viewport || imageView.image !== previousImage) &&
+                    imageView.frame == viewport.canvasRect &&
+                    imageView.image?.cgImage?.width == Int(viewport.pixelSize.width) &&
+                    imageView.image?.cgImage?.height == Int(viewport.pixelSize.height) &&
+                    metal.pendingFrameGeometry == expectedGeometry && metal.submittedFrameGeometry == expectedGeometry &&
+                    metalLayer.drawableSize == viewport.pixelSize && metal.strokes.isEmpty &&
+                    surface.inputDiagnostics["navigationDisplayActive"] as? Bool == false &&
+                    surface.inputDiagnostics["frameRequested"] as? Bool == false
+            }
+            let deadline = CACurrentMediaTime() + 3
+            while !isSettled(), CACurrentMediaTime() < deadline { try await Task.sleep(for: .milliseconds(2)) }
+            XCTAssertTrue(isSettled(), "Wait for the actual new crop, submitted geometry, and synchronized clear; an elapsed sleep is not a handoff")
+            let image = try XCTUnwrap(imageView.image)
+            XCTAssertEqual(imageView.frame, viewport.canvasRect); XCTAssertEqual(metal.frame, viewport.canvasRect)
             XCTAssertEqual(surface.subviews.last?.frame, viewport.canvasRect, "Selection stays in the same crop above Metal")
             XCTAssertEqual(image.cgImage?.width, Int(viewport.pixelSize.width))
-            XCTAssertEqual(metal.drawableSize, viewport.pixelSize)
+            XCTAssertEqual(image.cgImage?.height, Int(viewport.pixelSize.height))
+            XCTAssertEqual(metal.pendingFrameGeometry?.pixelSize, viewport.pixelSize)
+            XCTAssertEqual(metal.submittedFrameGeometry?.pixelSize, viewport.pixelSize)
+            XCTAssertEqual(metalLayer.drawableSize, viewport.pixelSize,
+                "Staged drawing targets CAMetalLayer directly without resizing the previous front through MTKView's setter")
             XCTAssertEqual(viewport.pixelScale, window.screen.scale*4, accuracy: 0.001)
             XCTAssertLessThan(image.size.width, surface.bounds.width)
             XCTAssertNil(surface.layer.contents, "Input surface must never allocate a full-page painted backing")

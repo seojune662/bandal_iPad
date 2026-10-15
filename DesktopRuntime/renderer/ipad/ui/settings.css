@@ -1,0 +1,74 @@
+/* iPad settings retain the shared routes, controls and persistence contracts. */
+:root[data-platform='ipad'] .ipad-settings-header { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
+:root[data-platform='ipad'] .ipad-settings-header .ipad-settings-return { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: auto; min-height: 44px; margin: 0; padding: 0 10px; font-size: calc(15px * var(--font-scale, 1)); white-space: nowrap; }
+:root[data-platform='ipad'] .ipad-settings-return > .icon { flex: none; }
+:root[data-platform='ipad'] .ipad-settings .settings-content__inner {
+  width: min(100%, 760px);
+  max-width: 760px;
+  margin-inline: auto;
+  padding: 28px 24px max(32px, env(safe-area-inset-bottom));
+}
+:root[data-platform='ipad'] .ipad-settings .settings-content { background: var(--bg-app); }
+:root[data-platform='ipad'] .ipad-settings .settings-sidebar { background: var(--bg-surface); }
+:root[data-platform='ipad'] .ipad-settings .content-heading { margin-bottom: 24px; }
+:root[data-platform='ipad'] .ipad-settings .content-heading h1 { font-size: calc(26px * var(--font-scale, 1)); line-height: 1.25; letter-spacing: -.025em; font-weight: 700; }
+:root[data-platform='ipad'] .ipad-settings .content-heading > p { max-width: 56ch; margin-top: 8px; color: var(--text-secondary); font-size: calc(15px * var(--font-scale, 1)); line-height: 1.65; }
+:root[data-platform='ipad'] .ipad-settings .settings-stack { gap: 20px; }
+:root[data-platform='ipad'] .ipad-settings .settings-card { min-width: 0; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); box-shadow: none; }
+:root[data-platform='ipad'] .ipad-settings .settings-card__header { padding: 20px; }
+:root[data-platform='ipad'] .ipad-settings .settings-card__header h2 { font-size: calc(17px * var(--font-scale, 1)); line-height: 1.4; font-weight: 650; }
+:root[data-platform='ipad'] .ipad-settings .settings-card__header p,
+:root[data-platform='ipad'] .ipad-settings .setting-row__description { color: var(--text-secondary); font-size: calc(13px * var(--font-scale, 1)); line-height: 1.6; }
+:root[data-platform='ipad'] .ipad-settings .setting-row { min-height: 76px; padding: 16px 20px; gap: 12px 20px; }
+:root[data-platform='ipad'] .ipad-settings .setting-row__copy { gap: 5px; flex-basis: 200px; }
+:root[data-platform='ipad'] .ipad-settings .setting-row__label { font-size: calc(15px * var(--font-scale, 1)); line-height: 1.45; font-weight: 600; }
+:root[data-platform='ipad'] .ipad-settings :is(button, select, input:not([type='checkbox']):not([type='radio']), summary) { min-height: 44px; }
+:root[data-platform='ipad'] .ipad-settings button { min-width: 44px; touch-action: manipulation; }
+:root[data-platform='ipad'] .ipad-settings :is(input, textarea, select) { min-width: 0; max-width: 100%; font-size: calc(16px * var(--font-scale, 1)); }
+:root[data-platform='ipad'] .ipad-settings :is(input[type='checkbox'], input[type='radio']) { accent-color: var(--accent); }
+:root[data-platform='ipad'] .ipad-settings label:has(> :is(input[type='checkbox'], input[type='radio'])) { min-height: 44px; display: inline-flex; align-items: center; gap: 10px; }
+:root[data-platform='ipad'] .ipad-settings :is(.language-select, .secondary-button, .primary-button) { height: auto; min-height: 44px; border-radius: 10px; font-size: calc(15px * var(--font-scale, 1)); }
+:root[data-platform='ipad'] .ipad-settings select { appearance: none; height: 44px; padding: 10px 32px 10px 12px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%2377808f' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+:root[data-platform='ipad'] .ipad-settings :is(button, select, input, textarea, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+:root[data-platform='ipad'] .ipad-settings button:active:not(:disabled) { filter: brightness(.96); }
+:root[data-platform='ipad'] .ipad-settings .settings-search input { height: 46px; border: 1px solid var(--border-subtle); border-radius: 12px; }
+:root[data-platform='ipad'] .ipad-settings .settings-nav__group + .settings-nav__group { margin-top: 20px; }
+:root[data-platform='ipad'] .ipad-settings .settings-nav__group-label { padding-inline: 12px; margin-bottom: 6px; font-size: calc(12px * var(--font-scale, 1)); font-weight: 650; color: var(--text-secondary); }
+:root[data-platform='ipad'] .ipad-settings .settings-nav__item { align-items: center; padding: 10px 12px; gap: 12px; min-height: 48px; border-radius: 11px; font-size: calc(15px * var(--font-scale, 1)); }
+:root[data-platform='ipad'] .ipad-settings .settings-nav__item > .icon { margin-top: 0; }
+:root[data-platform='ipad'] .ipad-settings .settings-nav__item--active { background: var(--accent-muted); color: var(--accent); font-weight: 650; }
+:root[data-platform='ipad'] .ipad-settings .settings-search-hit { padding: 10px 12px; margin-left: 8px; max-width: calc(100% - 8px); border-radius: 8px; font-size: calc(13px * var(--font-scale, 1)); line-height: 1.5; }
+:root[data-platform='ipad'] .ipad-settings .settings-checklist { padding: 10px 12px; margin-bottom: 20px; border-radius: 12px; font-size: calc(13px * var(--font-scale, 1)); line-height: 1.45; }
+/* The switch track is 42 × 26; its actual button is a 52 × 44 touch target. */
+:root[data-platform='ipad'] .ipad-settings .toggle { width: 52px; min-width: 52px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: transparent; }
+:root[data-platform='ipad'] .ipad-settings .toggle::before { content: ''; position: absolute; width: 42px; height: 26px; left: 5px; top: 9px; border-radius: 20px; background: var(--border-strong); transition: background 150ms ease; }
+:root[data-platform='ipad'] .ipad-settings .toggle--checked::before { background: var(--accent); }
+:root[data-platform='ipad'] .ipad-settings .toggle__thumb { width: 20px; height: 20px; left: 8px; top: 12px; background: #fff; box-shadow: 0 1px 3px #0002; }
+:root[data-platform='ipad'] .ipad-settings .toggle--checked .toggle__thumb { transform: translateX(16px); background: #fff; }
+:root[data-platform='ipad'] .ipad-settings .settings-ai-engine__segments { gap: 8px; }
+:root[data-platform='ipad'] .ipad-settings .settings-ai-engine__segment { flex-wrap: wrap; padding: 12px; gap: 8px; min-height: 56px; border-radius: 12px; font-size: calc(15px * var(--font-scale, 1)); }
+:root[data-platform='ipad'] .ipad-settings :is(.settings-ai-engine__feedback, .settings-agent__hint, .settings-agent__description, .settings-extension-feedback, .settings-notice) { font-size: calc(13px * var(--font-scale, 1)); line-height: 1.6; }
+:root[data-platform='ipad'] .ipad-settings :is(.settings-ai-engine__feedback:empty, .settings-extension-feedback:empty) { display: none; }
+:root[data-platform='ipad'] .ipad-settings :is([role='alert'], .settings-extension-feedback) { overflow-wrap: anywhere; }
+:root[data-platform='ipad'] .ipad-settings .tab-settings__nav { display: flex; gap: 6px; overflow-x: auto; padding: 4px; scroll-padding: 4px; overscroll-behavior-inline: contain; }
+:root[data-platform='ipad'] .ipad-settings .tab-settings__nav button { flex: 0 0 auto; gap: 8px; padding: 10px 14px; border-radius: 10px; font-size: calc(15px * var(--font-scale, 1)); }
+:root[data-platform='ipad'] .ipad-settings :is(.plugin-center-row, .settings-course-row) { gap: 12px; }
+:root[data-platform='ipad'] .ipad-settings :is(.plugin-center-row__copy > span, .plugin-center-row__status) { font-size: calc(13px * var(--font-scale, 1)); line-height: 1.55; }
+:root[data-platform='ipad'] .ipad-settings :is(.settings-card, .settings-panel) :is(pre, code) { overflow-wrap: anywhere; }
+:root[data-platform='ipad'] .ipad-settings .settings-shortcuts-layout { grid-template-columns: minmax(0, 1fr); }
+:root[data-platform='ipad'] .ipad-settings .settings-shortcuts-sidebar { border-right: 0; border-bottom: 1px solid var(--border-subtle); padding: 16px; }
+:root[data-platform='ipad'] .ipad-settings .settings-shortcuts-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+:root[data-platform='ipad'] .ipad-settings .settings-shortcuts-filter { flex: 1 1 9rem; gap: 12px; }
+:root[data-platform='ipad'] .ipad-settings .settings-shortcuts-row__main { flex-wrap: wrap; gap: 8px 12px; }
+:root[data-platform='ipad'] .ipad-settings .settings-shortcuts-row__copy { flex-basis: 180px; }
+:root[data-platform='ipad'] .ipad-settings .settings-shortcuts-row__label { white-space: normal; overflow-wrap: anywhere; }
+:root[data-platform='ipad'] .ipad-settings .settings-shortcuts-keycaps { flex-wrap: wrap; }
+:root[data-platform='ipad'] .ipad-settings .settings-shortcuts-keycaps kbd { min-width: 32px; min-height: 32px; }
+@media (max-width: 699px) {
+  :root[data-platform='ipad'] .ipad-settings .settings-content__inner { padding: 24px 16px max(28px, env(safe-area-inset-bottom)); }
+  :root[data-platform='ipad'] .ipad-settings .content-heading h1 { font-size: calc(24px * var(--font-scale, 1)); }
+  :root[data-platform='ipad'] .ipad-settings :is(.setting-row, .settings-card__header) { padding: 16px; }
+  :root[data-platform='ipad'] .ipad-settings .setting-row__copy { flex-basis: 65%; }
+  :root[data-platform='ipad'] .ipad-settings .setting-row > :is(select, input, .language-select) { width: 100%; }
+  :root[data-platform='ipad'] .ipad-settings .settings-ai-engine__segment { padding: 10px 8px; font-size: calc(14px * var(--font-scale, 1)); }
+}

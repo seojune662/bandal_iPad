@@ -4,6 +4,47 @@ import WebKit
 
 @MainActor
 final class BrowserPresentationTests: XCTestCase {
+    func testChangingPresentationRetriesFailedGETAndRejectsFailedPOSTWithoutSavingMode() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("browser-mode-recovery-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let server = try NavigationRecoveryServer(), port = try await server.start()
+        defer { server.stop() }
+        let host = DesktopBrowserHost(root: root)
+        let page = try host.createPage(tabID: "mode", profileID: "default", isPrivate: true, courseID: nil)
+        defer { host.destroy("mode") }
+        var failed = false, finished = false
+        host.emit = { channel, value in
+            guard channel == "browser:page-event", let event = value as? [String: Any] else { return }
+            if event["name"] as? String == "did-fail-load" { failed = true }
+            if event["name"] as? String == "did-finish-load" { finished = true }
+        }
+        func wait(_ predicate: () -> Bool) async throws {
+            let deadline = Date().addingTimeInterval(15)
+            while !predicate() && Date() < deadline { try await Task.sleep(for: .milliseconds(30)) }
+            XCTAssertTrue(predicate())
+        }
+        let target = URL(string: "http://127.0.0.1:\(port)/drop-mode")!
+        server.dropsResponses = true; page.load(URLRequest(url: target))
+        try await wait { failed }
+        server.dropsResponses = false
+        _ = try await host.handle(channel: "browser:setSitePresentation", request: ["tabId": "mode", "mode": "desktop"])
+        try await wait { finished }
+        XCTAssertEqual(page.webView.url, target)
+        XCTAssertEqual(host.presentation(for: page, url: target), .desktop)
+        finished = false
+        page.load(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/form")!))
+        try await wait { finished }
+        failed = false; server.dropsResponses = true
+        _ = try await page.webView.evaluateJavaScript("document.forms[0].submit(); true")
+        try await wait { failed }
+        let count = server.requestCount
+        do {
+            _ = try await host.handle(channel: "browser:setSitePresentation", request: ["tabId": "mode", "mode": "mobile"])
+            XCTFail("Changing site mode cannot replay a failed POST")
+        } catch { }
+        XCTAssertEqual(server.requestCount, count)
+        XCTAssertEqual(host.presentation(for: page, url: target), .desktop)
+    }
     func testAutomaticDefaultAndExactHostProfileIsolationSurviveRestart() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("browser-presentation-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

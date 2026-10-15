@@ -5,6 +5,102 @@ import WebKit
 
 @MainActor
 final class NativePDFHostTests: XCTestCase {
+    func testLocalPrivateDocumentReplayInvestigatesRepeatedLayouts() async throws {
+        // Opt-in local diagnostic. The directory contains paper.pdf and rows.json;
+        // no private document contents or machine-specific path is stored in Git.
+        guard let fixturePath = ProcessInfo.processInfo.environment["BANDAL_PRIVATE_PDF_REPLAY_DIRECTORY"],
+              !fixturePath.isEmpty else { throw XCTSkip("Set BANDAL_PRIVATE_PDF_REPLAY_DIRECTORY for a local document replay") }
+        let fixture = URL(fileURLWithPath: fixturePath, isDirectory: true)
+        let privatePDF = fixture.appendingPathComponent("paper.pdf"), privateRows = fixture.appendingPathComponent("rows.json")
+        let rows = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: privateRows)) as? [[String: Any]])
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-pdf-private-replay-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("replay.pdf"); try FileManager.default.copyItem(at: privatePDF, to: source)
+        let old = UserDefaults.standard.object(forKey: "bandal.nativePDF.enabled")
+        UserDefaults.standard.set(true, forKey: "bandal.nativePDF.enabled")
+        defer { UserDefaults.standard.set(old, forKey: "bandal.nativePDF.enabled") }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first { $0.isKeyWindow }, window = UIWindow(windowScene: scene)
+        let controller = UIViewController(); window.rootViewController = controller; window.makeKeyAndVisible(); window.layoutIfNeeded()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        let shell = WKWebView(frame: controller.view.bounds); controller.view.addSubview(shell)
+        let host = try NativePDFHost(root: root) { channel, request in
+            if channel == "nativePDF:binding" { return ["materialID": "replay", "documentRevision": request["documentRevision"]!] }
+            return source.path
+        }
+        host.onDiagnostic = { event, code in
+            if code.contains("mapper.") || code.contains("render.") { print("[PRIVATE_REPLAY] \(event) \(code)") }
+        }
+        host.attach(to: controller.view, shell: shell); defer { host.closeAll() }
+        let identity: [String: Any] = ["surfaceId": "private-replay", "generation": "one", "courseId": "private-replay", "relPath": "replay.pdf"]
+        _ = try await host.handle("pdfNative:open", request: identity)
+        let layoutRequest = identity.merging(["visible": true,
+            "rect": ["x": 0.1,"y": 0.3,"width": 1193.8,"height": 765.6],
+            "holes": [["x": 64.1,"y": 22.5,"width": 660.0,"height": 62.0]]]) { _, new in new }
+        _ = try await host.handle("pdfNative:layout", request: layoutRequest)
+        let request = identity.merging(["loading": false,"active": true,"drawings": rows,"annotations": [],
+            "tool": ["name": "pen","style": ["color": "blue","width": 0.004,"opacity": 1.0]]]) { _, new in new }
+        _ = try await host.handle("pdfNative:snapshot", request: request)
+        func find<T: UIView>(_ type: T.Type, in view: UIView) -> [T] { (view as? T).map { [$0] } ?? view.subviews.flatMap { find(type, in: $0) } }
+        let setupDeadline = CACurrentMediaTime() + 10
+        while (find(NativePDFInkSurface.self,in: controller.view).first?.mapper == nil) && CACurrentMediaTime() < setupDeadline {
+            controller.view.layoutIfNeeded(); host.layout(); try await Task.sleep(for: .milliseconds(20))
+        }
+        let surface = try XCTUnwrap(find(NativePDFInkSurface.self,in: controller.view).first)
+        _ = try await host.handle("pdfNative:navigate", request: identity.merging(["page": 1,"zoom": 1.0,"progress": 0.3,"horizontalProgress": 0.5]) { _, new in new })
+        try await Task.sleep(for: .milliseconds(1500))
+        print("[PRIVATE_REPLAY] initial \(surface.inputDiagnostics) mapper=\(String(describing: surface.mapper)) viewport=\(String(describing: surface.renderViewport))")
+        let initialFull = surface.inputDiagnostics["sceneFullRenders"] as? Int ?? -1
+        let initialMapperChanges = surface.inputDiagnostics["mapperInvalidations"] as? Int ?? -1
+        for iteration in 0..<12 {
+            _ = try await host.handle("pdfNative:layout", request: layoutRequest)
+            _ = try await host.handle("pdfNative:snapshot", request: request)
+            surface.setNeedsLayout(); controller.view.setNeedsLayout(); controller.view.layoutIfNeeded(); host.layout()
+            try await Task.sleep(for: .milliseconds(50))
+            print("[PRIVATE_REPLAY] iteration\(iteration) full=\(surface.inputDiagnostics["sceneFullRenders"]!) mapperChanges=\(surface.inputDiagnostics["mapperInvalidations"]!) viewportChanges=\(surface.inputDiagnostics["navigationRefreshCount"]!) scene=\(surface.inputDiagnostics["sceneRenderMode"]!)")
+        }
+        XCTAssertEqual(surface.inputDiagnostics["sceneFullRenders"] as? Int,initialFull)
+        XCTAssertEqual(surface.inputDiagnostics["mapperInvalidations"] as? Int,initialMapperChanges)
+    }
+    func testNativePinchFallbackUsesAbsoluteBeganScaleAndRequiresRepeatedNoOp() throws {
+        var session = try XCTUnwrap(NativePDFPinchZoomSession(pdfScale: 1.926, recognizerScale: 1.926))
+        XCTAssertNil(session.targetScale(recognizerScale: 2.024, actualPDFScale: 1.926, minimum: 0.77, maximum: 7.7, ended: false))
+        XCTAssertFalse(session.usingFallback)
+        XCTAssertEqual(try XCTUnwrap(session.targetScale(recognizerScale: 2.118, actualPDFScale: 1.926,
+            minimum: 0.77, maximum: 7.7, ended: false)), 2.118, accuracy: 0.000001)
+        XCTAssertTrue(session.usingFallback)
+        XCTAssertEqual(try XCTUnwrap(session.targetScale(recognizerScale: 3.274, actualPDFScale: 2.118,
+            minimum: 0.77, maximum: 7.7, ended: true)), 3.274, accuracy: 0.000001)
+    }
+    func testWorkingNativePinchNeverEntersFallbackEvenWhenReturningToStartScale() throws {
+        var session = try XCTUnwrap(NativePDFPinchZoomSession(pdfScale: 2, recognizerScale: 2))
+        XCTAssertNil(session.targetScale(recognizerScale: 2.1, actualPDFScale: 2.1, minimum: 0.8, maximum: 8, ended: false))
+        for raw in [2.2, 2.3, 3] as [CGFloat] {
+            XCTAssertNil(session.targetScale(recognizerScale: raw, actualPDFScale: 2, minimum: 0.8, maximum: 8, ended: false))
+        }
+        XCTAssertFalse(session.usingFallback)
+    }
+    func testDuplicatePinchCallbacksAllowDelayedNativeZoomToCatchUp() throws {
+        var session = try XCTUnwrap(NativePDFPinchZoomSession(pdfScale: 3.076, recognizerScale: 3.076))
+        for _ in 0..<4 {
+            XCTAssertNil(session.targetScale(recognizerScale: 3.034, actualPDFScale: 3.076,
+                minimum: 0.77, maximum: 7.7, ended: false))
+        }
+        XCTAssertFalse(session.usingFallback, "Repeated delivery of one sample must not take ownership from PDFKit")
+        XCTAssertNil(session.targetScale(recognizerScale: 2.98, actualPDFScale: 3.034,
+            minimum: 0.77, maximum: 7.7, ended: false))
+        XCTAssertFalse(session.usingFallback)
+    }
+    func testNativePinchFinalCapturedScaleSurvivesRecognizerResetAndClamps() throws {
+        var short = try XCTUnwrap(NativePDFPinchZoomSession(pdfScale: 1.926, recognizerScale: 1.926))
+        // The ended callback captured3.274 before UIKit reset its property to1.
+        XCTAssertEqual(try XCTUnwrap(short.targetScale(recognizerScale: 3.274, actualPDFScale: 1.926,
+            minimum: 0.77, maximum: 7.7, ended: true)), 3.274, accuracy: 0.000001)
+        XCTAssertEqual(short.targetScale(recognizerScale: 100, actualPDFScale: 3.274, minimum: 0.77, maximum: 7.7, ended: false), 7.7)
+        XCTAssertEqual(short.targetScale(recognizerScale: 0.01, actualPDFScale: 7.7, minimum: 0.77, maximum: 7.7, ended: true), 0.77)
+        XCTAssertNil(short.targetScale(recognizerScale: .nan, actualPDFScale: 1, minimum: 0.77, maximum: 7.7, ended: false))
+    }
     /// Public UITouch/UIEvent fixtures exercise UIKit hit testing and the real
     /// measured gesture callbacks. This fixture does not exercise UIKit dispatch
     /// arbitration; the workspace UI test does. Neither synthesizes hardware Pencil input
@@ -45,7 +141,7 @@ final class NativePDFHostTests: XCTestCase {
         }
         let surface = try XCTUnwrap(find(NativePDFInkSurface.self, in: controller.view).first)
         let body = try XCTUnwrap(find(NativePDFApertureView.self, in: controller.view).first)
-        XCTAssertTrue(body.isInMarkupMode, "Drawing tools must enable PDFKit's overlay interaction")
+        XCTAssertFalse(body.isInMarkupMode, "Pencil routing must preserve PDFKit's native finger navigation")
         let point = surface.convert(CGPoint(x: surface.bounds.width * 0.35, y: surface.bounds.height * 0.45), to: window)
         let touch = NativePDFTestTouch(point: point, kind: .pencil), event = NativePDFTestEvent(touch: touch)
         var activations = 0, diagnostics: [String] = [], completions: [[String: Any]] = []
@@ -75,8 +171,9 @@ final class NativePDFHostTests: XCTestCase {
         touch.currentPhase = .ended; touch.currentTime += 0.012; touch.point.x += 25
         gesture.touchesEnded([touch], with: event)
         body.removeGestureRecognizer(gesture)
+        _ = try await host.handle("pdfNative:flush", request: identity)
         XCTAssertEqual(completions.count, 1)
-        XCTAssertEqual((completions.first?["data"] as? [String: Any])?["inkVersion"] as? Int, 3)
+        XCTAssertEqual((completions.first?["data"] as? [String: Any])?["inkVersion"] as? Int, 5)
         let points = try XCTUnwrap((completions.first?["data"] as? [String: Any])?["points"] as? [[String: Any]])
         XCTAssertGreaterThanOrEqual(points.count, 3)
         XCTAssertEqual(try NativePDFJournal(root: root).pending(courseID: "course", relativePath: "input.pdf").count, 1)
@@ -85,6 +182,7 @@ final class NativePDFHostTests: XCTestCase {
         XCTAssertTrue(diagnostics.contains { $0.contains("ink.commit.1") })
         for (tool, moves) in [("pen", false), ("highlighter", true)] {
             try await snapshot(tool)
+            XCTAssertFalse(body.isInMarkupMode, "\(tool) must retain PDFKit's native finger navigation")
             let contact = NativePDFTestTouch(point: point, kind: .pencil)
             if !moves { contact.currentForce = 0 }
             let contactEvent = NativePDFTestEvent(touch: contact), recipient = window.hitTest(point, with: contactEvent)
@@ -101,6 +199,7 @@ final class NativePDFHostTests: XCTestCase {
             contactGesture.touchesEnded([contact], with: contactEvent)
             body.removeGestureRecognizer(contactGesture)
         }
+        _ = try await host.handle("pdfNative:flush", request: identity)
         XCTAssertEqual(completions.compactMap { $0["kind"] as? String }, ["ink", "ink", "highlighter"])
         let dotPoints = try XCTUnwrap((completions[1]["data"] as? [String: Any])?["points"] as? [[String: Any]])
         XCTAssertEqual(dotPoints.count, 1, "A single Pencil tap is a persisted dot")
@@ -186,6 +285,7 @@ final class NativePDFHostTests: XCTestCase {
             XCTAssertEqual(try? NativePDFJournal(root: root).pending(courseID: "course", relativePath: "fixture.pdf").count, 1, "Journal must precede completion delivery")
         }
         try surface.onStroke?(.init(mutationID: UUID().uuidString.lowercased(), kind: "ink", points: [.init(x: 0.2, y: 0.3, p: 0, t: 0), .init(x: 0.2, y: 0.3, p: 1, t: 12)], style: .init(color: "blue", width: 0.004, opacity: 1)))
+        _ = try await first.handle("pdfNative:flush", request: identity) // Completion delivery follows durable worker storage.
         let completedID = try XCTUnwrap(completed?["clientMutationId"] as? String)
         XCTAssertEqual(completed?["documentRevision"] as? String, opened?["revision"] as? String)
         _ = try await first.handle("pdfNative:navigate", request: identity.merging(["page": 1, "zoom": 1.6, "progress": 0.45]) { _, new in new })

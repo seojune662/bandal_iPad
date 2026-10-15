@@ -5,6 +5,7 @@ struct BandalApp: App {
     var body: some Scene {
         WindowGroup {
             DesktopShell()
+                .statusBarHidden(true)
         }
     }
 }

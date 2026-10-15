@@ -13,12 +13,15 @@
     "build:renderer": "node scripts/build-renderer.mjs",
     "build:backend": "node backend/build-backend.mjs",
     "test:backend": "node backend/test-backend.mjs --legacy --sync --view-state && node backend/ai/test.mjs && node backend/test-streams.mjs && node backend/test-storage-relocation.mjs && node backend/test-backend.mjs --pdf --features --relocation && node backend/test-cloud.mjs && node backend/market/test.mjs && node backend/hover/test-service.mjs && node backend/hover/test-worker.mjs && node backend/catalog/test.mjs",
-    "test:pencil": "node renderer/pencil/test.mjs && node renderer/pencil/test-scribble.mjs && node renderer/nativePDF/test.mjs && node renderer/nativePDF/test-selection.mjs && node renderer/nativePDF/pointer-test.mjs && node renderer/nativePDF/test-layout.mjs && node renderer/nativePDF/test-history.mjs && node scripts/test-native-pdf-recovery.mjs",
-    "test:browser": "node scripts/test-browser.mjs && node renderer/browser/test-default-zoom.mjs && node scripts/test-bookmark-import.mjs",
+    "test:pencil": "node renderer/pencil/test-eraser-hit.mjs && node renderer/pencil/test.mjs && node renderer/pencil/test-scribble.mjs && node renderer/nativePDF/test-object-scene-queue.mjs && node renderer/nativePDF/test.mjs && node renderer/nativePDF/test-selection.mjs && node renderer/nativePDF/pointer-test.mjs && node renderer/nativePDF/test-layout.mjs && node renderer/nativePDF/test-history.mjs && node scripts/test-native-pdf-recovery.mjs",
+    "test:browser": "node scripts/test-browser.mjs && node renderer/browser/test-recovery.mjs && node renderer/browser/test-default-zoom.mjs && node scripts/test-bookmark-import.mjs",
     "test:settings": "node scripts/settings-inventory.mjs && node scripts/test-settings-controls.mjs && node backend/test-backend.mjs --settings-controls",
     "test:ink": "node scripts/test-pdf-binding.mjs && node backend/test-backend.mjs --ink-v2 --pdf-binding",
     "test:pdf-export": "node scripts/test-pdf-export-geometry.mjs",
-    "test:workspace": "node scripts/test-workspace-mixed.mjs"
+    "test:workspace": "node scripts/test-workspace-mixed.mjs",
+    "test:ipad": "node renderer/ipad/test-native-surfaces.mjs && node renderer/ipad/layout/test.mjs && node renderer/ipad/input/test.mjs && node renderer/ipad/stability/test.mjs && node renderer/ipad/touch/test.mjs && node backend/test-material-watch.mjs",
+    "test:ui": "node renderer/ipad/ui/test-base.mjs && node renderer/ipad/ui/test-settings-chat.mjs && node renderer/ipad/ui/test-surfaces.mjs",
+    "test:ink-v5": "node ../Scripts/test-ink-v5-quality.mjs"
   },
   "dependencies": {
     "@milkdown/core": "7.22.0",

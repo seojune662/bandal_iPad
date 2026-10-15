@@ -100,6 +100,50 @@ try {
   const deferred = await page.evaluate(() => window.nativeFixture.state.rows.find(row => row.kind === 'rect'))
   assert.ok(Math.abs(deferred.data.box.x-.3) < .002 && Math.abs(deferred.data.box.width-.2) < .002,
     'One-frame split activation deferral must preserve down → move → up order')
+  // The canonical snapshots and the live object editor use the same native
+  // payload. Moving another object must not re-expand versioned ink into SVG
+  // or lose measured pressure/time/tilt; historical paths stay byte-identical.
+  await page.reload(); await page.waitForFunction(() => window.nativeFixture?.ready)
+  const strokes = await page.evaluate(async () => {
+    const rows = []
+    for (const inkVersion of [undefined, 2, 3, 4, 5]) for (const kind of ['ink', 'highlighter']) {
+      rows.push(await window.nativeFixture.addDrawing({ courseId: 'course', relPath: 'fixture.pdf', page: 1, kind,
+        data: { ...(inkVersion ? { inkVersion } : {}), points: [
+          { x: .1, y: .65, p: 0, t: 100, tiltX: 13, tiltY: -7 },
+          { x: .2, y: .67, p: .15, t: 104, tiltX: 14, tiltY: -8 },
+          { x: .3, y: .65, p: .8, t: 108, tiltX: 15, tiltY: -9 }
+        ] }, style: { color: kind === 'ink' ? 'blue' : 'yellow', width: .004, opacity: .4 } }))
+    }
+    return rows
+  })
+  await page.waitForFunction(count => window.nativeFixture.state.scenes.some(scene => scene.objects.length === count), strokes.length)
+  const assertInkPayload = async () => {
+    const native = await page.evaluate(() => ({ snapshots: window.nativeFixture.payloads(),
+      scene: window.nativeFixture.state.scenes.at(-1),
+      legacy: Object.fromEntries(window.nativeFixture.state.rows.filter(row => !row.data.inkVersion && ['ink', 'highlighter'].includes(row.kind))
+        .map(row => [row.id, window.nativeFixture.legacyPath(row)])) }))
+    for (const rows of [native.snapshots, native.scene.objects]) for (const original of strokes) {
+      const payload = rows.find(row => row.id === original.id)
+      assert.ok(payload, `native payload contains ${original.kind} v${original.data.inkVersion ?? 'legacy'}`)
+      const { nativePath, ...canonical } = payload
+      assert.deepEqual(canonical, original, 'native payload keeps canonical raw samples, style, version and identity unchanged')
+      if (original.data.inkVersion) assert.equal(Object.hasOwn(payload, 'nativePath'), false, 'Versioned ink must not expand or transmit an SVG path')
+      else { assert.equal(nativePath, native.legacy[original.id]); assert.ok(nativePath.startsWith('M'), 'legacy native SVG remains the original path') }
+    }
+    return native.scene
+  }
+  await assertInkPayload()
+  await send('down', .5, .2); await send('move', .7, .3); await send('up', .7, .3)
+  await page.waitForFunction(count => window.nativeFixture.state.creates === count, strokes.length + 1)
+  await page.evaluate(() => window.nativeFixture.tool('select')); await page.waitForTimeout(50)
+  await send('down', .5, .25); await send('move', .6, .35); await send('up', .6, .35)
+  await page.waitForFunction(() => window.nativeFixture.state.updates === 1)
+  let mixedScene = await assertInkPayload()
+  assert.ok(mixedScene.resizable && Math.abs(mixedScene.selection.x - .6) < .002, 'selection and live movement still reach native scene beside versioned ink')
+  await page.evaluate(() => window.nativeFixture.undo())
+  await page.waitForFunction(() => window.nativeFixture.state.updates === 2)
+  mixedScene = await assertInkPayload()
+  assert.ok(Math.abs(mixedScene.objects.find(row => row.kind === 'rect').data.box.x - .5) < .002, 'undo restores the edited object without changing any ink')
   assert.deepEqual(errors, [])
-  console.log('Real WebKit + original InkLayer/useDrawings: object edits, aligned text editor, genuine capture, provisional Undo/Redo and export order PASS')
+  console.log('Real WebKit + original InkLayer/useDrawings: object edits, aligned text editor, genuine capture, provisional Undo/Redo, export order and raw v2/v3/v4/v5 native payloads with unchanged legacy paths PASS')
 } finally { await browser.close(); await server.close(); await rm(cacheDir, { recursive: true, force: true }) }

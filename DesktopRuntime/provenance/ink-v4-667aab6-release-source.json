@@ -1,0 +1,11 @@
+{
+  "beforeSourceCommit": "da3dc42cc2d6dca7b9068f6ed9b85d8bbe8b364d",
+  "afterSourceCommit": "667aab601733e46aa93373c178138f4414ce848b",
+  "appVersion": "0.84.4",
+  "reason": "Canonical Windows first-write PDF fsync correction: private copied temporary opens r+ after chmod0600; durability failures still propagate. v0.84.3 failed release remains unchanged.",
+  "changedSnapshotPaths": [
+    "package.json",
+    "src/main/features/pdf/pdfOriginals.ts"
+  ],
+  "verifiedByteIdenticalFiles": 1021
+}

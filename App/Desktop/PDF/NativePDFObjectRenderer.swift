@@ -6,7 +6,11 @@ import UIKit
 /// conversion; text and images follow its whole-object affine transform.
 @MainActor
 enum NativePDFObjectRenderer {
-    static func draw(_ object: [String: Any], in context: CGContext, mapper: InkCoordinateMapper, image: UIImage?) {
+    private static let inkPaths = NativePDFInkPathCache()
+    static func prepareInk(_ input: NativePDFStrokeInput, aspect: Double, reusing: NativePDFPreparedInk? = nil) -> NativePDFPreparedInk? { inkPaths.prepare(input, aspect: aspect, reusing: reusing) }
+    static func prepareInk(_ object: [String: Any], aspect: Double, reusing: NativePDFPreparedInk? = nil) -> NativePDFPreparedInk? { inkPaths.prepare(object, aspect: aspect, reusing: reusing) }
+    static func releaseInkPaths() { inkPaths.removeAll() }
+    static func draw(_ object: [String: Any], in context: CGContext, mapper: InkCoordinateMapper, image: UIImage?, overrideBlend: Bool = false) {
         guard let data = object["data"] as? [String: Any], let style = object["style"] as? [String: Any],
               let transform = pageTransform(mapper) else { return }
         let width = mapper.geometry.width, height = mapper.geometry.height
@@ -15,12 +19,18 @@ enum NativePDFObjectRenderer {
         let opacity = min(1, max(0, finite(style["opacity"], fallback: 1)))
         context.saveGState(); defer { context.restoreGState() }
         context.concatenate(transform)
-        if object["kind"] as? String == "highlighter" { context.setBlendMode(.multiply) }
+        // A retained transparent object texture carries multiply in its GPU
+        // item. All existing callers retain the destination-aware CG behavior.
+        if !overrideBlend, object["kind"] as? String == "highlighter" { context.setBlendMode(.multiply) }
         context.setAlpha(opacity)
         context.beginTransparencyLayer(auxiliaryInfo: nil)
         defer { context.endTransparencyLayer() }
         context.setFillColor(ink.cgColor); context.setStrokeColor(ink.cgColor)
         context.setLineWidth(strokeWidth); context.setLineCap(.round); context.setLineJoin(.round)
+        if let prepared = prepareInk(object, aspect: height / width) {
+            context.scaleBy(x: width, y: height)
+            context.addPath(prepared.path); context.fillPath(); return
+        }
         if let encoded = object["nativePath"] as? String, let path = path(encoded, width: width, height: height) {
             context.addPath(path); context.fillPath(); return
         }
@@ -79,6 +89,9 @@ enum NativePDFObjectRenderer {
         let width = mapper.geometry.width, height = mapper.geometry.height
         let style = object["style"] as? [String: Any] ?? [:]
         let margin = finite(style["width"], fallback: 0.003) * width / 2
+        if let prepared = prepareInk(object, aspect: height / width) {
+            return prepared.path.boundingBoxOfPath.applying(CGAffineTransform(scaleX: width, y: height)).applying(transform)
+        }
         if let nativePath = object["nativePath"] as? String, let path = path(nativePath, width: width, height: height) {
             return path.boundingBoxOfPath.applying(transform)
         }

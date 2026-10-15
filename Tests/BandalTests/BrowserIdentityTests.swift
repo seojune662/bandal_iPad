@@ -4,6 +4,34 @@ import WebKit
 
 @MainActor
 final class BrowserIdentityTests: XCTestCase {
+    func testRetryingFailedPrivacyPreparationPreservesSelectedSettings() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("privacy-preparation-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host = DesktopBrowserHost(root: root)
+        host.applySettings(["trackingProtection": "invalid-fixture", "doNotTrack": false, "swipeNavigation": false, "agentUse": false])
+        for _ in 0..<2 {
+            do { try await host.prepareBrowserNetwork(); XCTFail("An invalid selected rule set must not be silently replaced with defaults") }
+            catch { }
+            XCTAssertEqual(host.trackingProtection, "invalid-fixture")
+            XCTAssertFalse(host.doNotTrack); XCTAssertFalse(host.swipeNavigation); XCTAssertFalse(host.agentUse)
+        }
+        host.applySettings(["trackingProtection": "off", "doNotTrack": false, "swipeNavigation": false, "agentUse": false])
+        try await host.prepareBrowserNetwork()
+        XCTAssertEqual(host.trackingProtection, "off"); XCTAssertFalse(host.doNotTrack)
+    }
+    func testFailedEnginePreparationCanRetryWithoutRestartingTheApp() async throws {
+        let preparation = BrowserIdentityPreparation()
+        var attempts = 0
+        do {
+            try await preparation.prepare { attempts += 1; throw NSError(domain: "fixture", code: 1) }
+            XCTFail("The first probe must fail")
+        } catch { }
+        XCTAssertNil(preparation.applicationName)
+        try await preparation.prepare { attempts += 1; return "Safari/999.1 Bandal" }
+        try await preparation.prepare { attempts += 1; return "Unexpected repeated probe" }
+        XCTAssertEqual(attempts, 2)
+        XCTAssertEqual(preparation.applicationName, "Safari/999.1 Bandal")
+    }
     func testCompatibilityTokenComesFromEngineInsteadOfAHardcodedVersion() {
         XCTAssertEqual(DesktopBrowserIdentity.applicationName(from: "Mozilla/5.0 (iPad) AppleWebKit/999.42.7 (KHTML, like Gecko) Mobile/test"), "Safari/999.42.7 Bandal")
         XCTAssertEqual(DesktopBrowserIdentity.applicationName(from: "Mozilla/5.0 (Macintosh) AppleWebKit/612.1.2"), "Safari/612.1.2 Bandal")

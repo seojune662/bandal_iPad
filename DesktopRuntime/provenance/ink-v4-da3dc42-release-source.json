@@ -1,0 +1,10 @@
+{
+  "beforeSourceCommit": "b2f7932c284eff7d99d5699657b7a804e7ebc97a",
+  "afterSourceCommit": "da3dc42cc2d6dca7b9068f6ed9b85d8bbe8b364d",
+  "appVersion": "0.84.3",
+  "reason": "Preserve failed v0.84.2 CI tag; v0.84.3 fixes only pre-existing test expectations. Canonical ink runtime bytes unchanged; exact package version recaptured.",
+  "changedSnapshotPaths": [
+    "package.json"
+  ],
+  "verifiedByteIdenticalFiles": 1021
+}

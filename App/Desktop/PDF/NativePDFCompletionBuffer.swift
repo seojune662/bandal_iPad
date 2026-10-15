@@ -5,6 +5,8 @@ struct NativePDFCompletedStroke: Equatable {
     var kind: String
     var points: [NativePDFPoint]
     var style: NativePDFInkStyle
+    /// Captured at contact start; retries and late estimates preserve the renderer contract.
+    var inkVersion = 4
 }
 
 /// Retains completed measured data through disk-full/protection failures.

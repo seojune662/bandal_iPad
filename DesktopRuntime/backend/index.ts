@@ -58,6 +58,7 @@ import { createPDFOriginalPreserver } from './pdf-binding-originals'
 import { installPresentation } from './presentation'
 import { installStudy } from './study'
 import { resolveInsideReal } from '../upstream/src/main/db/validate'
+import { createMaterialWatchers } from './material-watch'
 
 type Handler = (request: any) => unknown | Promise<unknown>
 const handlers = new Map<string, Handler>()
@@ -96,7 +97,8 @@ export function initialize() {
   const recordings = createRecordingRepo(db, id => courses.getFolder(id))
   const linkIndex = createLinkIndex({ db, getCourseFolder: id => courses.getFolder(id) })
   const links = createMaterialLinksRepo(db)
-  const changed = (courseId: string) => emit('materials:changed', { courseId })
+  let materialWatchChanged = (_courseId: string): void => {}
+  const changed = (courseId: string) => { materialWatchChanged(courseId); emit('materials:changed', { courseId }) }
   const courseChanged = <T>(result: T): T => { emit('courses:changed', {}); return result }
   // iOS has no OS Trash API. Retain deleted files, with a recoverable path,
   // under this app's Trash instead of unlinking a user's course material.
@@ -155,21 +157,19 @@ export function initialize() {
   handle('materials:reveal', req => materials.reveal(req.courseId, req.relPath))
   // Watch requests establish a real polling subscription; content mutations
   // also invalidate synchronously so renderer updates do not await the poll.
-  const watchers = new Map<string, ReturnType<typeof setInterval>>()
+  const watchers = createMaterialWatchers({ tree: id => materials.tree(id), invalidate: id => materials.invalidateTree(id), changed,
+    failed: error => emit('backend:error', { message: String(error), operation: 'materials.watch' }) })
+  materialWatchChanged = courseId => watchers.mutated(courseId)
   handle('materials:watch', async req => {
     courses.getById(req.courseId)
-    if (!watchers.has(req.courseId)) {
-      let signature = JSON.stringify(await materials.tree(req.courseId)), scanning = false
-      watchers.set(req.courseId, setInterval(async () => {
-        if (scanning) return; scanning = true
-        try { materials.invalidateTree(req.courseId); const next = JSON.stringify(await materials.tree(req.courseId)); if (next !== signature) { signature = next; changed(req.courseId) } }
-        catch (error) { emit('backend:error', { message: String(error), operation: 'materials.watch' }) }
-        finally { scanning = false }
-      }, 2500))
-    }
+    await watchers.watch(req)
     return OK
   })
-  handle('materials:unwatch', req => { if (req?.courseId) { clearInterval(watchers.get(req.courseId)); watchers.delete(req.courseId) } else { for (const timer of watchers.values()) clearInterval(timer); watchers.clear() }; return OK })
+  handle('materials:unwatch', req => { watchers.unwatch(req); return OK })
+  handlePrivate('nativeRuntime:rendererReady', req => { if (typeof req.rendererSessionId !== 'string' || req.rendererSessionId.length > 128) throw new Error('Invalid renderer session'); watchers.setSession(req.rendererSessionId); return OK })
+  handlePrivate('nativeRuntime:rendererReset', () => { watchers.reset(); return OK })
+  handlePrivate('nativeRuntime:active', req => { watchers.setActive(req.active === true); return OK })
+  handlePrivate('nativeRuntime:capabilities', () => ({ channels: [...handlers.keys()].sort() }))
   handle('notes:read', req => notes.read(req))
   for (const action of ['create', 'write', 'rename'] as const) handle(`notes:${action}`, materialMutation(req => notes[action](req as any)))
   handle('annotations:listForFile', req => annotations.listForFile(req))

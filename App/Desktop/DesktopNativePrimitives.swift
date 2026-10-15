@@ -56,7 +56,7 @@ final class DesktopNativePrimitives: NSObject, DesktopNativeExports {
     }
 
     func emit(_ channel: String, _ payload: String) {
-        guard let data = payload.data(using: .utf8), let value = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) else { return }
+        guard let data = payload.data(using: .utf8), let value = try? DesktopJSON.decode(data, options: .fragmentsAllowed) else { return }
         onEmit?(channel, value)
     }
 

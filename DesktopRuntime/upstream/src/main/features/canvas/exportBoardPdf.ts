@@ -1,3 +1,5 @@
+import { strokePathV5 } from '../../../shared/inkV5'
+import { strokePathV4 } from '../../../shared/inkV4'
 import { strokePathV2 } from '../../../shared/inkV2'
 import { strokePathV3 } from '../../../shared/inkV3'
 import { createBoardMediaRenderer } from './boardMediaPdf'
@@ -186,8 +188,8 @@ function drawInk(
   const blendMode = shape.kind === 'highlighter'
     ? surface === 'dark' ? BlendMode.Screen : BlendMode.Multiply
     : BlendMode.Normal
-  if (shape.data.inkVersion === 2 || shape.data.inkVersion === 3) {
-    const renderPath = shape.data.inkVersion === 3 ? strokePathV3 : strokePathV2
+  if (shape.data.inkVersion === 2 || shape.data.inkVersion === 3 || shape.data.inkVersion === 4 || shape.data.inkVersion === 5) {
+    const renderPath = shape.data.inkVersion === 5 ? strokePathV5 : shape.data.inkVersion === 4 ? strokePathV4 : shape.data.inkVersion === 3 ? strokePathV3 : strokePathV2
     const path = renderPath(points, shape.style.width, height / width, shape.kind === 'highlighter', width, height)
     if (path) page.drawSvgPath(path, { x: 0, y: height, color, opacity, blendMode })
     return

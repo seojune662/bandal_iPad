@@ -8,7 +8,9 @@ final class SettingsRoutesTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--reset-ui-testing", "--desktop-parity-fixture"]
         app.launch()
-        XCTAssertTrue(app.buttons["설정"].waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertTrue(app.buttons["내 공간 열기"].waitForExistence(timeout: 30), app.debugDescription)
+        app.buttons["내 공간 열기"].tap()
+        XCTAssertTrue(app.buttons["설정"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["설정"].tap()
         XCTAssertTrue(app.buttons["일반"].waitForExistence(timeout: 15), app.debugDescription)
         let routes: [(String, String)] = [
@@ -34,13 +36,17 @@ final class SettingsRoutesTests: XCTestCase {
             ("정보", "반달의 버전을 확인하고 업데이트합니다.")
         ]
         for (label, description) in routes {
+            let back = app.buttons["설정 목록으로"]
+            if back.exists && back.isHittable { back.tap() }
             let candidates = app.buttons.matching(identifier: label).allElementsBoundByIndex
             let button = try XCTUnwrap(candidates.last, "Missing original route: \(label)")
             // The settings navigation has its own scroller, separate from the
             // content panel. XCUITest first brings offscreen HTML buttons in view.
             if !button.isHittable || button.frame.maxY > app.frame.maxY - 110 {
-                let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.82))
-                let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.30))
+                // Keep the gesture inside the independent 240pt settings list.
+                let listX = min(CGFloat(180), app.frame.width * 0.35) / app.frame.width
+                let start = app.coordinate(withNormalizedOffset: CGVector(dx: listX, dy: 0.82))
+                let end = app.coordinate(withNormalizedOffset: CGVector(dx: listX, dy: 0.30))
                 for _ in 0..<4 where !button.isHittable || button.frame.maxY > app.frame.maxY - 110 { start.press(forDuration: 0.05, thenDragTo: end) }
             }
             button.tap()
@@ -62,6 +68,9 @@ final class SettingsRoutesTests: XCTestCase {
     }
 
     private func runtimeFailure(_ app: XCUIApplication) -> XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "반달 실행 연결을 확인해 주세요.")).firstMatch
+        app.descendants(matching: .any).matching(NSPredicate(format:
+            "identifier IN %@ OR label IN %@ OR label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@",
+            ["bandal-operation-notice", "bandal-native-diagnostic"], ["작업 오류", "시작 오류"],
+            "반달 실행 연결을 확인해 주세요.", "반달 화면을 열지 못했어요", "작업을 완료하지 못했어요")).firstMatch
     }
 }

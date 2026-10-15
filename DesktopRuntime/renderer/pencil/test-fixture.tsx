@@ -1,5 +1,5 @@
 // Only loaded by test.mjs. Never imported by the application entry point.
-import { useState } from 'react'
+import { Profiler, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { InkLayer } from '../../upstream/src/renderer/src/features/ink/InkLayer'
 import type { DrawingShape } from '../../upstream/src/shared/types/drawing'
@@ -7,10 +7,10 @@ import { installPencilNavigation } from './navigation'
 
 declare global {
   interface Window {
-    __pencilTest: { created: DrawingShape[]; zooms: number[] }
+    __pencilTest: { created: DrawingShape[]; zooms: number[]; commits: number }
   }
 }
-window.__pencilTest = { created: [], zooms: [] }
+window.__pencilTest = { created: [], zooms: [], commits: 0 }
 installPencilNavigation()
 
 function Fixture(): JSX.Element {
@@ -32,4 +32,4 @@ function Fixture(): JSX.Element {
 const style = document.createElement('style')
 style.textContent = '.test-ink { width:600px; height:900px; background:white; display:block }'
 document.head.append(style)
-createRoot(document.getElementById('root')!).render(<Fixture />)
+createRoot(document.getElementById('root')!).render(<Profiler id="ink" onRender={() => window.__pencilTest.commits++}><Fixture /></Profiler>)

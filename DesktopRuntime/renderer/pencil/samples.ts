@@ -26,6 +26,28 @@ export function pencilSamples(event: PointerEvent): InkPointerSample[] {
   return result
 }
 
+/** Browser predictions are a short, replaceable visual tail, never measured
+ * input. Do not extrapolate when WebKit does not expose predictions. */
+export function pencilPredictions(event: PointerEvent): InkPointerSample[] {
+  if (event.pointerType !== 'pen') return []
+  let predicted: PointerEvent[] = []
+  try { predicted = event.getPredictedEvents?.() ?? [] } catch { return [] }
+  const result: InkPointerSample[] = []
+  let timestamp = event.timeStamp
+  for (const sample of predicted) {
+    if (result.length === 8) break
+    if (sample.pointerId !== event.pointerId || !Number.isFinite(sample.timeStamp) ||
+        sample.timeStamp <= timestamp || sample.timeStamp > event.timeStamp + 24 ||
+        !Number.isFinite(sample.clientX) || !Number.isFinite(sample.clientY)) continue
+    result.push({ pointerId: event.pointerId, pointerType: event.pointerType,
+      clientX: sample.clientX, clientY: sample.clientY,
+      pressure: Number.isFinite(sample.pressure) ? Math.min(1, Math.max(0, sample.pressure)) : 0.5,
+      timestamp: sample.timeStamp, tiltX: sample.tiltX, tiltY: sample.tiltY })
+    timestamp = sample.timeStamp
+  }
+  return result
+}
+
 export function pencilPressure<T extends { p: number }>(point: T | null, sample: InkPointerSample): T | null {
   if (!point || sample.pointerType !== 'pen') return point
   return { ...point, p: Number.isFinite(sample.pressure) ? Math.min(1, Math.max(0, sample.pressure)) : 0.5,

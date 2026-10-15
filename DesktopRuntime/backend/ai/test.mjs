@@ -7,9 +7,9 @@ let source = await readFile(originalURL, 'utf8')
 // asynchronous external API boundary is replaced; no user's key is consulted.
 source = source.replace("'../scripts/dependencies.mjs'", "'../../scripts/dependencies.mjs'")
 source = source.replaceAll("new URL('./dist/", "new URL('../dist/").replaceAll("new URL('../assets/", "new URL('../../assets/")
-const nativeStart = source.indexOf('    __bandalPlatform: { invoke: async (channel, input) =>'), nativeEnd = source.indexOf('\n    setInterval:', nativeStart)
-if (nativeStart < 0 || nativeEnd < 0) throw new Error('Backend fixture native seam changed')
-source = source.slice(0, nativeStart) + '    __bandalPlatform: { invoke: platformFixture },' + source.slice(nativeEnd)
+const runtimeFactory = 'function runtime(platform) {'
+if (source.split(runtimeFactory).length !== 2) throw new Error('Backend fixture platform injection seam changed')
+source = source.replace(runtimeFactory, 'function runtime(platform = { invoke: platformFixture }) {')
 const needle = "  assert.equal(initialized.schemaVersion, 37)"
 if (!source.includes(needle)) throw new Error('Backend fixture initialize seam changed')
 source = source.replace(needle, '  setBackend(backend); await runAITests(invoke, pushes)\n' + needle)

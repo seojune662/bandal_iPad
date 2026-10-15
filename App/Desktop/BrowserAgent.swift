@@ -73,7 +73,7 @@ extension DesktopBrowserHost {
             guard ["http", "https"].contains(address.scheme ?? ""), address.user == nil, address.password == nil else { throw DesktopBrowserError.invalid("AI 웹 주소") }
             try await prepareBrowserNetwork()
             let page = try createPage(tabID: UUID().uuidString, profileID: "default", isPrivate: false, courseID: courseID)
-            page.webView.load(navigationRequest(address))
+            page.load(navigationRequest(address))
             emit("browser:open-url", ["tabId": page.tabID, "courseId": courseID, "url": address.absoluteString, "profileId": page.profileID, "isPrivate": false, "webContentsId": page.id])
             try await waitForPage(page)
             return ["status": "ok", "tabId": page.tabID, "url": page.webView.url?.absoluteString ?? address.absoluteString, "generation": agentGeneration(page)]
@@ -89,7 +89,7 @@ extension DesktopBrowserHost {
         }
         guard let page = pages[tabID], page.courseID == courseID, !page.isPrivate else { throw DesktopBrowserError.unavailable("이 과목의 일반 브라우저 탭만 사용할 수 있습니다.") }
         if page.isSuspended { _ = page.webView; try await waitForPage(page) }
-        let generation = agentGeneration(page), url = page.webView.url?.absoluteString ?? "about:blank"
+        let generation = agentGeneration(page), url = page.state["url"] as? String ?? "about:blank"
         guard !page.webView.isLoading || tool == "stop" else { throw DesktopBrowserError.unavailable("페이지를 불러오는 중입니다. 완료된 뒤 다시 살펴봐 주세요.") }
         if let expected = request["expectedUrl"] as? String, expected != url { throw DesktopBrowserError.unavailable("확인한 주소가 변경되었습니다.") }
         if let expected = request["expectedGeneration"] as? Int, expected != generation { throw DesktopBrowserError.unavailable("확인한 페이지가 변경되었습니다. 다시 살펴봐 주세요.") }
@@ -104,13 +104,13 @@ extension DesktopBrowserHost {
         }
         if ["focus", "close", "stop"].contains(tool) {
             if tool == "close" { emit("browser:close-tab", ["tabId": tabID]); destroy(tabID) }
-            else if tool == "stop" { page.webView.stopLoading() }
+            else if tool == "stop" { page.stop() }
             else { emit("browser:activate-tab", ["tabId": tabID]); page.webView.becomeFirstResponder() }
             return ["status": "ok", "url": url]
         }
         if tool == "forward" || tool == "reload" {
             if tool == "forward" { guard page.webView.canGoForward else { throw DesktopBrowserError.unavailable("다음 페이지가 없습니다.") }; page.webView.goForward() }
-            else { page.webView.reload() }
+            else { try page.reload() }
             try await waitForPage(page); return ["status": "ok", "url": page.webView.url?.absoluteString ?? url, "title": page.webView.title ?? "", "navigated": true]
         }
         if tool == "find" {
@@ -120,8 +120,8 @@ extension DesktopBrowserHost {
             return ["status": "ok", "url": url, "result": found ?? NSNull()]
         }
         if tool == "back" {
-            guard page.webView.canGoBack else { throw DesktopBrowserError.unavailable("이전 페이지가 없습니다.") }
-            page.webView.goBack(); try await waitForPage(page)
+            guard page.state["canGoBack"] as? Bool == true else { throw DesktopBrowserError.unavailable("이전 페이지가 없습니다.") }
+            try page.goBack(); try await waitForPage(page)
             return ["status": "ok", "url": page.webView.url?.absoluteString ?? "", "title": page.webView.title ?? "", "navigated": true]
         }
         guard ["inspect", "snapshot", "read", "act", "scroll", "hover", "key", "submit", "attachFile"].contains(tool) else { throw DesktopBrowserError.unsupported("AI 브라우저 \(tool)") }

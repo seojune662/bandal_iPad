@@ -21,7 +21,7 @@ export function nativePDFMutationStatus(db: ReceiptDatabase, value: unknown): Na
   const page = requireInt(input.page, 'page', 1)
   const kind = assertDrawingKind(input.kind, ['ink', 'highlighter'])
   const data = assertDrawingData(input.data, kind), style = assertDrawingStyle(input.style)
-  if (data.inkVersion !== 2 && data.inkVersion !== 3) throw new ValidationError('Native PDF mutation requires ink version 2 or 3')
+  if (data.inkVersion !== 2 && data.inkVersion !== 3 && data.inkVersion !== 4 && data.inkVersion !== 5) throw new ValidationError('Native PDF mutation requires ink version 2, 3, 4 or 5')
   const documentRevision = input.documentRevision
   if (typeof documentRevision !== 'string' || !/^[0-9a-f]{64}$/.test(documentRevision)) throw new ValidationError('documentRevision must be a SHA-256 digest')
   // This exact canonical field order is shared with createDrawingsRepo. Raw

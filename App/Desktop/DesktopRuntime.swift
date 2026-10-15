@@ -109,7 +109,10 @@ final class DesktopRuntime: @unchecked Sendable {
         let complete: @convention(block) (String, String) -> Void = { [weak self] identifier, payload in
             guard let self, let continuation = self.continuations.removeValue(forKey: identifier) else { return }
             do {
-                let result = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any]
+                // A backend reply crosses into WKWebView again. Preserve the
+                // JSON number's binary value instead of NSDecimalNumber's
+                // lossy doubleValue conversion (notably final Pencil force).
+                let result = try DesktopJSON.decode(Data(payload.utf8)) as? [String: Any]
                 if result?["ok"] as? Bool == true { continuation.resume(returning: result?["value"] ?? NSNull()) }
                 else {
                     let error = result?["error"] as? [String: Any]

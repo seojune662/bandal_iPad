@@ -12,12 +12,13 @@ const folder = await mkdtemp(join(tmpdir(), 'bandal-nativepdf-session-'))
 try {
   const types = await readFile(resolve(runtime, 'renderer/nativePDF/types.ts'), 'utf8')
   const sessionSource = await readFile(resolve(runtime, 'renderer/nativePDF/session.ts'), 'utf8')
-  await writeFile(join(folder, 'session.mjs'), ts.transpileModule(types.replace(/^import .*$/gm, '') + '\n' + sessionSource.replace(/^import .*$/gm, ''), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText)
+  const digestSource = await readFile(resolve(runtime, 'renderer/nativePDF/operationDigest.ts'), 'utf8')
+  await writeFile(join(folder, 'session.mjs'), ts.transpileModule([digestSource, types, sessionSource].map(source => source.replace(/^import .*$/gm, '')).join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText)
   const { NativePDFSession } = await import(pathToFileURL(join(folder, 'session.mjs')))
   const identity = { surfaceId: 'pdf-panel', generation: 'one-open', courseId: 'course', relPath: 'file.pdf' }
   const input = { courseId: 'course', relPath: 'file.pdf', page: 1, kind: 'ink',
     clientMutationId: 'fdc2af33-57eb-42ae-8356-44847901099c', documentRevision: 'a'.repeat(64),
-    data: { inkVersion: 3, points: [{ x: .1, y: .2, p: 0, t: 3, tiltX: 15, tiltY: -12 }] },
+    data: { inkVersion: 4, points: [{ x: .1, y: .2, p: 0, t: 3, tiltX: 15, tiltY: -12 }] },
     style: { color: 'ink', width: .004, opacity: .9 } }
   let writes = 0, failedAck = true, pending = [input], flushed = false
   const trace = []

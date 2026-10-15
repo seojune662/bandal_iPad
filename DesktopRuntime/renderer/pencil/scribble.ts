@@ -1,8 +1,8 @@
 type Rect = { x: number; y: number; width: number; height: number }
 export type ScribbleRegions = { revision: number; viewport: { width: number; height: number }; protected: Rect[]; editors: Rect[]; controls: Rect[] }
-const controlsSelector = '.pdf-tool-rail-shell, .pdf-tool-popover, .pdf-toolbar button, .pdf-toolbar input[type="range"]'
-const protectedSelector = `.ink-layer, .pdf-toolbar, ${controlsSelector}, [data-bandal-native-pdf], [data-native-pdf="true"]`
-const controlSelector = '.pdf-tool-rail-shell button, .pdf-toolbar button, .pdf-tool-popover button'
+const controlsSelector = '.pdf-tool-rail-shell, .pdf-tool-popover, .pdf-toolbar button, .pdf-toolbar input[type="range"], .ipad-pdf-palette, .ipad-pdf-popover button, .ipad-pdf-popover input[type="range"]'
+const protectedSelector = `.ink-layer, .pdf-toolbar, ${controlsSelector}, [data-bandal-native-pdf], [data-native-pdf="true"], [data-bandal-native-overlay], [data-ipad-markdown-body], .note-tab .note-editor`
+const controlSelector = '.pdf-tool-rail-shell button, .pdf-toolbar button, .pdf-tool-popover button, .ipad-pdf-palette button:not([data-ipad-palette-drag]), .ipad-pdf-popover button'
 const editorSelector = '.ink-layer[data-bandal-ink-tool="text"] .ink-layer__textbox-editor [contenteditable="true"], .pdf-toolbar__page-input:not(:disabled):not([readonly])'
 // Selecting an existing text object also opens a keyboard editor. That does
 // not grant Scribble permission: handwriting remains a text-tool-only action.

@@ -18,6 +18,7 @@ final class NativePDFPencilGestureRecognizer: UIGestureRecognizer {
     // UIKit can report estimated-property corrections after touchesEnded and
     // the recognizer's reset. Keep only weak ownership until the final update.
     private var estimationOwners: [NSNumber: WeakSurface] = [:]
+    private var estimatedReportCount = 0
 
     init() {
         super.init(target: nil, action: nil)
@@ -45,7 +46,11 @@ final class NativePDFPencilGestureRecognizer: UIGestureRecognizer {
     override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
     override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool {
         // Controls/editors return no target and never compete with PDF ink.
-        receiver != nil && super.canPrevent(preventedGestureRecognizer)
+        // Direct-only PDFKit navigation belongs to a different touch stream.
+        // Keep a finger gesture alive when a Pencil arrives beside it.
+        if inputTouchType == .pencil,
+           !preventedGestureRecognizer.allowedTouchTypes.contains(NSNumber(value: UITouch.TouchType.pencil.rawValue)) { return false }
+        return receiver != nil && super.canPrevent(preventedGestureRecognizer)
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         guard contact == nil else { return }
@@ -93,7 +98,12 @@ final class NativePDFPencilGestureRecognizer: UIGestureRecognizer {
         }
         for (surface, updates) in groups.values { surface.updatePencilGestureProperties(updates) }
         estimationOwners = estimationOwners.filter { $0.value.value != nil }
-        if !groups.isEmpty { report("estimated-update") }
+        if !groups.isEmpty {
+            estimatedReportCount += 1
+            // Hardware Pencil can send hundreds of corrections per second.
+            // Keep input processing independent of diagnostic disk traffic.
+            if estimatedReportCount <= 8 || estimatedReportCount.isMultiple(of: 100) { report("estimated-update") }
+        }
     }
     override func reset() {
         // A recognizer disabled or reset during a contact still finishes its

@@ -55,6 +55,17 @@ extension DesktopBrowserHost {
 @MainActor
 final class DesktopBrowserWebView: WKWebView {
     weak var nativePage: DesktopBrowserPage?
+    var excludedRects: [CGRect] = [] { didSet { updateSurfaceMask() } }
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        !excludedRects.contains(where: { $0.contains(point) }) && super.point(inside: point, with: event)
+    }
+    override func layoutSubviews() { super.layoutSubviews(); updateSurfaceMask() }
+    private func updateSurfaceMask() {
+        guard !excludedRects.isEmpty else { layer.mask = nil; return }
+        let mask = CAShapeLayer()
+        mask.frame = bounds; mask.path = DesktopNativeSurfaceMask.path(bounds: bounds, excluding: excludedRects)
+        layer.mask = mask
+    }
     private var ownedPage: DesktopBrowserPage? {
         guard let page = nativePage, let host = page.host, host.pages[page.tabID] === page,
               page.liveWebView === self, page.bounds != nil, !isHidden else { return nil }

@@ -5,22 +5,16 @@ import { installScribblePolicy } from './pencil/scribble'
 import { installNativeLifecycle } from './lifecycle'
 import { installNativeKeyboardCompatibility } from './keyboard'
 import { rendererDiagnostic, type DiagnosticSource } from './diagnostics'
+import { BandalOperationError, installBackendOperationErrors, reportOperationError, type OperationFailure } from './ipad/stability/operations'
+import { installOperationNotices, showOperationNotice, showStartupFailure } from './ipad/stability/recovery'
+import { flushNativeSurfaceLayout } from './ipad/nativeSurfaces'
 
-// Runtime failures remain visible; product markup and CSS are otherwise
-// the original desktop renderer loaded below.
 function showFailure(reason: unknown, source?: DiagnosticSource): void {
-  const text = reason instanceof Error ? reason.message : String(reason ?? 'Unknown error')
-  let panel = document.getElementById('bandal-native-diagnostic')
-  if (!panel) {
-    panel = document.createElement('section')
-    panel.id = 'bandal-native-diagnostic'
-    panel.setAttribute('role', 'alert')
-    Object.assign(panel.style, { position: 'fixed', inset: '16px 16px auto', zIndex: '2147483647', padding: '20px', background: '#fff5f4', color: '#541815', border: '1px solid #d49690', borderRadius: '12px', font: '15px/1.5 system-ui', whiteSpace: 'pre-wrap', maxHeight: '60vh', overflow: 'auto' })
-    document.body.append(panel)
-  }
-  panel.textContent = `반달 실행 연결을 확인해 주세요.\n\n${text}\n\n앱을 다시 열어도 계속되면 이 내용을 진단 기록과 함께 확인해 주세요.`
+  if (document.getElementById('root')?.childElementCount) showOperationNotice({ reason })
+  else showStartupFailure(reason)
   void window.webkit?.messageHandlers?.bandal?.postMessage({ channel: 'runtime:diagnostic', request: rendererDiagnostic(reason, source) }).catch(() => undefined)
 }
+installOperationNotices()
 window.addEventListener('error', event => showFailure(event.error ?? event.message, { filename: event.filename, lineno: event.lineno, colno: event.colno }))
 window.addEventListener('unhandledrejection', event => showFailure(event.reason))
 if (!window.requestIdleCallback) {
@@ -40,14 +34,20 @@ if (!crypto.randomUUID && crypto.getRandomValues) {
 }
 try {
   installNativeBridge()
+  installBackendOperationErrors()
+  ;(window.bandal.on as (channel: string, listener: (payload: unknown) => void) => () => void)('runtime:operationError', payload => {
+    reportOperationError(new BandalOperationError(payload as OperationFailure))
+  })
+  void flushNativeSurfaceLayout().catch(error => reportOperationError(error, { operation: '화면 표시 갱신' }))
   installNativeKeyboardCompatibility(window, () => {
     void window.webkit?.messageHandlers?.bandal?.postMessage({ channel: 'runtime:inputDiagnostic', request: { event: 'keyboard.missing-key' } }).catch(() => undefined)
   })
-  installFileInputAdapter(showFailure)
+  installFileInputAdapter(reason => reportOperationError(reason, { operation: '파일 가져오기' }))
   installPencilNavigation()
   installScribblePolicy()
   installNativeLifecycle()
   // Stores subscribe during module evaluation. No product module may be
   // statically imported before this bridge exists.
-  void import('../upstream/src/renderer/src/main').catch(showFailure)
+  void (window.bandal.invoke as (channel: string, request: unknown) => Promise<unknown>)('runtime:rendererReady', {})
+    .then(() => import('../upstream/src/renderer/src/main')).catch(showFailure)
 } catch (error) { showFailure(error) }

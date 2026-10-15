@@ -17,6 +17,10 @@ final class NativePDFInkGeometryV3Cache {
     private var output: [[CGPoint]] = []
     /// Changed raw samples, excluding the one preceding EMA anchor.
     private(set) var recomputedPointCount = 0
+    /// Prefix shared with the immediately preceding result. The revision lets
+    /// a GPU consumer detect a skipped update before trusting this hint.
+    private(set) var retainedPrefixPolygonCount = 0
+    private(set) var revision: UInt64 = 0
     var retainedPointCount: Int { raw.count }
     var retainedPolygonCount: Int { output.count }
 
@@ -24,9 +28,11 @@ final class NativePDFInkGeometryV3Cache {
         configuration = nil
         raw = []; pressures = []; polygonEnds = []; output = []
         recomputedPointCount = 0
+        retainedPrefixPolygonCount = 0
     }
 
     func polygons(points: [NativePDFPoint], width: Double, aspect: Double, highlighter: Bool) -> [[CGPoint]] {
+        revision &+= 1
         guard width.isFinite, width > 0, aspect.isFinite, aspect > 0, !points.isEmpty else {
             reset(); return []
         }
@@ -40,6 +46,7 @@ final class NativePDFInkGeometryV3Cache {
             reset(); return []
         }
         recomputedPointCount = points.count - prefix
+        retainedPrefixPolygonCount = prefix == 0 ? 0 : polygonEnds[prefix - 1]
         if prefix < raw.count {
             let keep = prefix == 0 ? 0 : polygonEnds[prefix - 1]
             // Drop both old predictions and their storage on truncate/replace;

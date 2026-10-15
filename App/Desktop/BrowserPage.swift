@@ -2,6 +2,43 @@ import Foundation
 import UIKit
 import WebKit
 
+/// The NSError domain is part of the code's meaning. In particular, Darwin or
+/// WebKit error numbers must never be interpreted as Chromium net errors.
+enum BrowserNavigationFailure {
+    static func kind(_ error: NSError) -> String? {
+        if error.domain == NSURLErrorDomain {
+            switch error.code {
+            case NSURLErrorCancelled: return nil
+            case NSURLErrorNotConnectedToInternet, NSURLErrorDataNotAllowed, NSURLErrorInternationalRoamingOff: return "offline"
+            case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed: return "dns"
+            case NSURLErrorTimedOut: return "timeout"
+            case NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost: return "connection"
+            case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateHasBadDate,
+                 NSURLErrorServerCertificateUntrusted, NSURLErrorServerCertificateHasUnknownRoot,
+                 NSURLErrorServerCertificateNotYetValid, NSURLErrorClientCertificateRejected,
+                 NSURLErrorClientCertificateRequired: return "certificate"
+            case NSURLErrorAppTransportSecurityRequiresSecureConnection: return "policy"
+            case NSURLErrorBadURL, NSURLErrorUnsupportedURL: return "unsupported"
+            default: return "unknown"
+            }
+        }
+        // WebKit's download handoff is a policy interruption, not a page error.
+        if error.domain == "WebKitErrorDomain", error.code == 102 { return nil }
+        return "unknown"
+    }
+}
+
+private final class BrowserNavigationAttempt {
+    let id: Int
+    var request: URLRequest
+    let sourceURL: URL?
+    var started = false
+    var committed = false
+    var ignored = false
+    var method: String { (request.httpMethod ?? "GET").uppercased() }
+    init(id: Int, request: URLRequest, sourceURL: URL?) { self.id = id; self.request = request; self.sourceURL = sourceURL }
+}
+
 @MainActor
 final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UIGestureRecognizerDelegate {
     weak var host: DesktopBrowserHost?
@@ -39,14 +76,26 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
     private var revision = 0
     private var documentID = UUID().uuidString
     private var httpStatus = 0
+    private var navigationSequence = 0
+    private var currentNavigation: BrowserNavigationAttempt?
+    private var committedNavigation: BrowserNavigationAttempt?
+    private var failedNavigation: BrowserNavigationAttempt?
+    private var pendingRequest: URLRequest?
+    private var pendingExplicitNavigation: BrowserNavigationAttempt?
+    private var navigations: [ObjectIdentifier: (WKNavigation, BrowserNavigationAttempt)] = [:]
+    private var committedURL: URL?
+    private var recoveredURL: URL?
     private var observations: [NSKeyValueObservation] = []
     var state: [String: Any] {
         let cached = suspended?.state ?? restoring?.state
+        let requestedURL = failedNavigation?.request.url ?? (currentNavigation?.committed == false && currentNavigation?.ignored == false ? currentNavigation?.request.url : nil)
         return ["id": id, "stateRevision": revision, "authDocumentId": documentID,
-         "url": liveWebView?.url?.absoluteString ?? cached?["url"] ?? "about:blank",
+         "navigationId": failedNavigation?.id ?? currentNavigation?.id ?? navigationSequence,
+         "estimatedProgress": failedNavigation == nil ? min(1, max(0, liveWebView?.estimatedProgress ?? 0)) : 0,
+         "url": requestedURL?.absoluteString ?? recoveredURL?.absoluteString ?? liveWebView?.url?.absoluteString ?? cached?["url"] ?? "about:blank",
          "title": liveWebView?.title ?? cached?["title"] ?? "", "httpStatus": httpStatus,
-         "loading": liveWebView?.isLoading ?? false,
-         "canGoBack": liveWebView?.canGoBack ?? cached?["canGoBack"] ?? false,
+         "loading": failedNavigation == nil && (liveWebView?.isLoading ?? false),
+         "canGoBack": failedNavigation?.sourceURL != nil || (liveWebView?.canGoBack ?? cached?["canGoBack"] as? Bool ?? false),
          "canGoForward": liveWebView?.canGoForward ?? cached?["canGoForward"] ?? false]
     }
     init(host: DesktopBrowserHost, id: Int, tabID: String, profileID: String, isPrivate: Bool, courseID: String?, configuration supplied: WKWebViewConfiguration?) {
@@ -89,15 +138,16 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         webView.addGestureRecognizer(focus)
         observations = [
             webView.observe(\.title, options: [.new]) { [weak self, weak webView] _, _ in Task { @MainActor in guard let self, let webView, self.liveWebView === webView else { return }; self.send("page-title-updated", ["title": webView.title ?? ""]) } },
-            webView.observe(\.url, options: [.new]) { [weak self, weak webView] _, _ in Task { @MainActor in guard let self, let webView, self.liveWebView === webView else { return }; self.send("did-navigate-in-page", ["url": webView.url?.absoluteString ?? "", "isMainFrame": true]) } },
-            webView.observe(\.isLoading, options: [.new]) { [weak self, weak webView] _, _ in Task { @MainActor in guard let self, let webView, self.liveWebView === webView else { return }; self.send(webView.isLoading ? "did-start-loading" : "did-stop-loading") } }
+            webView.observe(\.url, options: [.new]) { [weak self, weak webView] _, _ in Task { @MainActor in guard let self, let webView, self.liveWebView === webView, self.failedNavigation == nil, self.pendingRequest == nil, self.currentNavigation?.committed == true || self.recoveredURL != nil else { return }; self.recoveredURL = nil; self.committedURL = webView.url; self.currentNavigation?.request.url = webView.url; self.send("did-navigate-in-page", ["url": webView.url?.absoluteString ?? "", "isMainFrame": true]) } },
+            webView.observe(\.isLoading, options: [.new]) { [weak self, weak webView] _, _ in Task { @MainActor in guard let self, let webView, self.liveWebView === webView, !webView.isLoading else { return }; self.send("did-stop-loading") } },
+            webView.observe(\.estimatedProgress, options: [.new]) { [weak self, weak webView] _, _ in Task { @MainActor in guard let self, let webView, self.liveWebView === webView, self.failedNavigation == nil, self.currentNavigation?.started == true else { return }; self.send("load-progress-changed") } }
         ]
         return webView
     }
     /// Only a hidden, reloadable reading page is eligible. Interaction state
     /// stays in memory; form/JS application state is never promised portable.
     func suspendIfSafe() async -> Bool {
-        guard let view = liveWebView, bounds == nil, !preventsSuspension,
+        guard let view = liveWebView, bounds == nil, !preventsSuspension, failedNavigation == nil,
               !view.isLoading, restoring == nil, view.url?.scheme == "http" || view.url?.scheme == "https",
               view.cameraCaptureState == .none, view.microphoneCaptureState == .none,
               host?.downloads.values.contains(where: { $0.page === self && $0.state == "progressing" }) != true else { return false }
@@ -106,7 +156,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         guard let position = (try? await view.callAsyncJavaScript(BrowserMemoryScripts.canSuspend, arguments: [:], in: nil, contentWorld: BrowserMemoryScripts.world)) as? [String: Double],
               let x = position["x"], let y = position["y"], x.isFinite, y.isFinite,
               let host, host.pages[tabID] === self, liveWebView === view, documentID == identity,
-              bounds == nil, !preventsSuspension, !view.isLoading,
+              bounds == nil, !preventsSuspension, failedNavigation == nil, !view.isLoading,
               view.cameraCaptureState == .none, view.microphoneCaptureState == .none,
               !host.downloads.values.contains(where: { $0.page === self && $0.state == "progressing" }),
               let interaction = view.interactionState else { return false }
@@ -120,12 +170,82 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         scrollRestoration?.cancel(); scrollRestoration = nil
         observations.removeAll(); liveWebView?.stopLoading(); liveWebView?.removeFromSuperview()
         liveWebView?.navigationDelegate = nil; liveWebView?.uiDelegate = nil
-        suspended = nil; restoring = nil
+        suspended = nil; restoring = nil; navigations.removeAll(); pendingRequest = nil; pendingExplicitNavigation = nil
     }
     func send(_ name: String, _ detail: [String: Any] = [:]) {
         guard host?.pages[tabID] === self else { return }
         revision += 1
         host?.emit("browser:page-event", ["tabId": tabID, "name": name, "state": state, "detail": detail])
+    }
+    private func begin(_ request: URLRequest) -> BrowserNavigationAttempt {
+        navigationSequence += 1
+        let attempt = BrowserNavigationAttempt(id: navigationSequence, request: request, sourceURL: committedURL)
+        currentNavigation = attempt
+        recoveredURL = nil
+        return attempt
+    }
+    private func remember(_ navigation: WKNavigation?, attempt: BrowserNavigationAttempt) {
+        guard let navigation else { return }
+        navigations[ObjectIdentifier(navigation)] = (navigation, attempt)
+        // Keep navigation objects alive so ObjectIdentifier cannot be reused.
+        navigations = navigations.filter { $0.value.1.id >= navigationSequence - 32 }
+    }
+    @discardableResult
+    func load(_ request: URLRequest) -> WKNavigation? {
+        let view = webView
+        let attempt = begin(request)
+        pendingRequest = request; pendingExplicitNavigation = attempt
+        let navigation = view.load(request)
+        remember(navigation, attempt: attempt)
+        return navigation
+    }
+    /// WebKit starts the supplied popup navigation itself. Observe its full
+    /// method without replacing it with a second GET or losing window.opener.
+    func expectPopupRequest(_ request: URLRequest) { pendingRequest = request }
+    func retry(navigationID: Int, ignoringCache: Bool = false) throws {
+        guard let failed = failedNavigation, failed.id == navigationID, failed.id == currentNavigation?.id else {
+            throw DesktopBrowserError.unavailable("이미 다른 페이지로 이동했습니다. 현재 페이지에서 다시 시도해 주세요.")
+        }
+        try requireReloadable()
+        guard let url = failed.request.url else { throw DesktopBrowserError.invalid("다시 시도할 주소") }
+        // Do not preserve POST bodies or expired request credentials. WebKit
+        // obtains current profile cookies while loading the exact failed URL.
+        var request = host?.navigationRequest(url) ?? URLRequest(url: url)
+        if ignoringCache { request.cachePolicy = .reloadIgnoringLocalCacheData }
+        load(request)
+    }
+    func reload(ignoringCache: Bool = false) throws {
+        if let failed = failedNavigation { try retry(navigationID: failed.id, ignoringCache: ignoringCache); return }
+        if ignoringCache { webView.reloadFromOrigin() } else { webView.reload() }
+    }
+    func requireReloadable() throws {
+        guard failedNavigation == nil || failedNavigation?.method == "GET" else {
+            throw DesktopBrowserError.unavailable("입력한 내용은 자동으로 다시 보내지 않습니다. 원래 입력 화면으로 돌아가 다시 제출해 주세요.")
+        }
+    }
+    func returnToForm(navigationID: Int) throws {
+        guard let failed = failedNavigation, failed.id == navigationID, failed.id == currentNavigation?.id, let source = failed.sourceURL else {
+            throw DesktopBrowserError.unavailable("돌아갈 입력 화면이 없습니다. 주소를 수정해 페이지를 다시 열어 주세요.")
+        }
+        if !failed.committed {
+            // A provisional failure leaves the form document (and its typed
+            // values) underneath the error overlay. History back would skip it.
+            failedNavigation = nil; currentNavigation = nil; pendingRequest = nil; pendingExplicitNavigation = nil
+            recoveredURL = source
+            send("navigation-recovered", ["url": source.absoluteString, "navigationId": navigationID])
+        } else {
+            load(host?.navigationRequest(source) ?? URLRequest(url: source))
+        }
+    }
+    func goBack() throws {
+        if let failed = failedNavigation, failed.sourceURL != nil { try returnToForm(navigationID: failed.id) }
+        else if webView.canGoBack { webView.goBack() }
+    }
+    func stop() {
+        currentNavigation?.ignored = true
+        pendingRequest = nil; pendingExplicitNavigation = nil
+        recoveredURL = committedURL
+        webView.stopLoading(); send("did-stop-loading")
     }
     func snapshot() async throws -> String? {
         guard webView.bounds.width > 0, webView.bounds.height > 0 else { return nil }
@@ -148,24 +268,72 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         preferences.preferredContentMode = host?.presentation(for: self, url: url).contentMode ?? .recommended
         let scheme = url.scheme?.lowercased() ?? ""
         guard ["http", "https", "about", "data", "blob"].contains(scheme) else {
-            host?.emit("browser:external-scheme", ["url": url.absoluteString, "origin": webView.url.flatMap(DesktopBrowserHost.origin) ?? "", "outcome": "blocked"])
+            host?.emit("browser:external-scheme", ["tabId": tabID, "url": url.absoluteString, "origin": webView.url.flatMap(DesktopBrowserHost.origin) ?? "", "outcome": "blocked", "reason": "이 링크는 다른 앱이 필요합니다. 웹사이트의 웹 버전 링크를 사용하거나 주소를 복사해 해당 앱에서 열어 주세요."])
             decisionHandler(.cancel, preferences); return
+        }
+        if navigationAction.targetFrame?.isMainFrame == true {
+            if let explicit = pendingExplicitNavigation, !explicit.started,
+               explicit.request.url != url {
+                // An earlier load's policy callback can arrive after a newer
+                // address was submitted. Do not let it replace the new target.
+                decisionHandler(.cancel, preferences); return
+            }
+            if navigationAction.shouldPerformDownload {
+                currentNavigation?.ignored = true
+                recoveredURL = committedURL
+            } else {
+                pendingRequest = navigationAction.request
+            }
         }
         decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow, preferences)
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if navigationResponse.isForMainFrame { httpStatus = (navigationResponse.response as? HTTPURLResponse)?.statusCode ?? 0 }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
-        decisionHandler(!navigationResponse.canShowMIMEType || disposition.lowercased().contains("attachment") ? .download : .allow)
+        let download = !navigationResponse.canShowMIMEType || disposition.lowercased().contains("attachment")
+        if download, navigationResponse.isForMainFrame { currentNavigation?.ignored = true; recoveredURL = committedURL }
+        decisionHandler(download ? .download : .allow)
     }
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard liveWebView === webView else { return }
+        let attempt: BrowserNavigationAttempt
+        if let navigation, let tracked = navigations[ObjectIdentifier(navigation)]?.1 {
+            guard tracked.id == currentNavigation?.id, !tracked.ignored else { return }
+            attempt = tracked
+        } else {
+            guard pendingExplicitNavigation == nil else { return }
+            guard let request = pendingRequest ?? webView.url.map({ URLRequest(url: $0) }) else { return }
+            attempt = begin(request); remember(navigation, attempt: attempt)
+        }
+        attempt.started = true
+        failedNavigation = nil; pendingRequest = nil; pendingExplicitNavigation = nil
         // The first navigation belongs to interactionState restoration; a
         // later navigation while scroll restoration runs invalidates that work.
         if scrollRestoration != nil { scrollRestoration?.cancel(); scrollRestoration = nil; restoring = nil }
         documentID = UUID().uuidString; httpStatus = 0; send("did-start-loading")
     }
-    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { send("did-navigate", ["url": webView.url?.absoluteString ?? "", "httpResponseCode": httpStatus]) }
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        guard let attempt = active(navigation, webView: webView), let url = webView.url else { return }
+        if let pendingRequest, pendingRequest.url == url { attempt.request = pendingRequest }
+        else { attempt.request.url = url }
+        pendingRequest = nil
+        send("did-redirect-navigation", ["url": url.absoluteString, "navigationId": attempt.id])
+    }
+    private func active(_ navigation: WKNavigation?, webView: WKWebView) -> BrowserNavigationAttempt? {
+        guard liveWebView === webView, let navigation, let attempt = navigations[ObjectIdentifier(navigation)]?.1,
+              attempt.id == currentNavigation?.id, !attempt.ignored else { return nil }
+        return attempt
+    }
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard let attempt = active(navigation, webView: webView) else { return }
+        if let pendingRequest, pendingRequest.url == webView.url { attempt.request = pendingRequest }
+        attempt.committed = true; attempt.request.url = webView.url; committedURL = webView.url; recoveredURL = nil
+        committedNavigation = attempt
+        pendingRequest = nil
+        send("did-navigate", ["url": webView.url?.absoluteString ?? "", "httpResponseCode": httpStatus])
+    }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard active(navigation, webView: webView) != nil else { return }
         if let saved = restoring {
             if let url = saved.state["url"] as? String, webView.url?.absoluteString == url {
                 let document = documentID
@@ -184,16 +352,56 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
             if let icons = try? await webView.evaluateJavaScript("Array.from(document.querySelectorAll('link[rel~=icon]'),n=>n.href)") as? [String] { send("page-favicon-updated", ["favicons": icons]) }
         }
     }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }
-    private func failed(_ error: Error) {
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error, navigation: navigation, webView: webView) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error, navigation: navigation, webView: webView) }
+    private func failed(_ error: Error, navigation: WKNavigation?, webView: WKWebView) {
         let error = error as NSError
+        guard let kind = BrowserNavigationFailure.kind(error), liveWebView === webView else { return }
+        let reportedURL = (error.userInfo[NSURLErrorFailingURLErrorKey] as? URL)
+            ?? (error.userInfo[NSURLErrorFailingURLStringErrorKey] as? String).flatMap(URL.init(string:))
+        let attempt: BrowserNavigationAttempt
+        if let known = active(navigation, webView: webView) { attempt = known }
+        else if navigation == nil, let current = currentNavigation, !current.ignored, reportedURL == current.request.url, reportedURL != nil {
+            // Some early provisional errors omit WKNavigation. Require the
+            // exact requested URL rather than borrowing the previous page URL.
+            attempt = current
+        } else { return }
+        let failedURL = reportedURL ?? attempt.request.url
+        // A link or script navigation can be accepted just before didStart.
+        // A failure belonging to the page it supersedes must not cover it.
+        if let pendingRequest, pendingRequest.url != failedURL { return }
+        if let pendingRequest, pendingRequest.url == failedURL { attempt.request = pendingRequest }
+        if let failedURL { attempt.request.url = failedURL }
+        failedNavigation = attempt; pendingRequest = nil; pendingExplicitNavigation = nil
         scrollRestoration?.cancel(); scrollRestoration = nil
         restoring = nil
-        send("did-fail-load", ["errorCode": error.code == NSURLErrorCancelled ? -3 : error.code, "errorDescription": error.localizedDescription,
-                              "validatedURL": (error.userInfo[NSURLErrorFailingURLStringErrorKey] as? String) ?? webView.url?.absoluteString ?? "", "isMainFrame": true])
+        send("did-fail-load", failureDetail(attempt, kind: kind, error: error))
     }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { send("render-process-gone", ["reason": "web-content-process-terminated"]) }
+    private func failureDetail(_ attempt: BrowserNavigationAttempt, kind: String, error: NSError) -> [String: Any] {
+        ["errorKind": kind, "errorDomain": error.domain, "errorCode": error.code, "errorDescription": error.localizedDescription,
+         "validatedURL": attempt.request.url?.absoluteString ?? "", "isMainFrame": true, "navigationId": attempt.id,
+         "retryable": attempt.method == "GET", "requestMethod": attempt.method, "canReturnToForm": attempt.method != "GET" && attempt.sourceURL != nil]
+    }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard liveWebView === webView else { return }
+        let attempt: BrowserNavigationAttempt?
+        if let currentNavigation, !currentNavigation.ignored { attempt = currentNavigation }
+        else if let committedNavigation {
+            // Stop and download handoff leave the committed document visible;
+            // its URL/method, not the cancelled target, is the recovery target.
+            attempt = begin(committedNavigation.request)
+            attempt?.committed = true
+        } else { attempt = (recoveredURL ?? webView.url).map { begin(URLRequest(url: $0)) } }
+        guard let attempt else { return }
+        // Preserve the original method: a crashed submitted form is never
+        // silently converted into a request that might resubmit its contents.
+        failedNavigation = attempt; pendingRequest = nil; pendingExplicitNavigation = nil
+        var detail = failureDetail(attempt, kind: "crashed", error: NSError(domain: WKError.errorDomain, code: WKError.webContentProcessTerminated.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "웹페이지 프로세스가 종료되었습니다. 다시 시도해 주세요."]))
+        detail["reason"] = "web-content-process-terminated"
+        send("render-process-gone", detail)
+        send("did-fail-load", detail)
+    }
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) { host?.track(download, page: self) }
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) { host?.track(download, page: self) }
     func webViewDidClose(_ webView: WKWebView) { host?.emit("browser:close-tab", ["tabId": tabID]); host?.destroy(tabID) }

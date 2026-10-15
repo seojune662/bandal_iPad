@@ -41,3 +41,43 @@ struct NativePDFPageCoordinates {
         return ["x": x, "y": y, "width": (xs.max() ?? x)-x, "height": (ys.max() ?? y)-y]
     }
 }
+
+/// Coordinate conversion crosses several scaled PDFKit views. Sample a whole
+/// page basis instead of subtracting adjacent unit points at a large offset.
+/// Preserve an existing map only when the entire page differs by less than
+/// 1/1024 of a physical pixel; this does not quantize stored Pencil samples.
+enum NativePDFCoordinateMapping {
+    static func sample(bounds: CGRect, convert: (CGPoint) -> CGPoint) -> CGAffineTransform? {
+        guard !bounds.isNull, bounds.width.isFinite, bounds.height.isFinite,
+              bounds.width > 0, bounds.height > 0 else { return nil }
+        let origin = convert(CGPoint(x: bounds.minX, y: bounds.minY))
+        let x = convert(CGPoint(x: bounds.maxX, y: bounds.minY))
+        let y = convert(CGPoint(x: bounds.minX, y: bounds.maxY))
+        let a = (x.x-origin.x)/bounds.width, b = (x.y-origin.y)/bounds.width
+        let c = (y.x-origin.x)/bounds.height, d = (y.y-origin.y)/bounds.height
+        let result = CGAffineTransform(a: a, b: b, c: c, d: d,
+            tx: origin.x-a*bounds.minX-c*bounds.minY,
+            ty: origin.y-b*bounds.minX-d*bounds.minY)
+        return valid(result) ? result : nil
+    }
+    static func isPixelEquivalent(_ lhs: InkCoordinateMapper, _ rhs: InkCoordinateMapper,
+                                  bounds: CGRect, pixelScale: CGFloat) -> Bool {
+        guard lhs.geometry == rhs.geometry, valid(lhs.canvasToPDF), valid(rhs.canvasToPDF),
+              !bounds.isNull, bounds.width > 0, bounds.height > 0,
+              pixelScale.isFinite, pixelScale > 0 else { return false }
+        let inverse = lhs.canvasToPDF.inverted()
+        guard valid(inverse) else { return false }
+        // Affine displacement reaches its maximum on a rectangle at a corner.
+        return [CGPoint(x: bounds.minX,y: bounds.minY), CGPoint(x: bounds.maxX,y: bounds.minY),
+                CGPoint(x: bounds.minX,y: bounds.maxY), CGPoint(x: bounds.maxX,y: bounds.maxY)].allSatisfy { point in
+            let projected = point.applying(rhs.canvasToPDF).applying(inverse)
+            let error = hypot(projected.x-point.x, projected.y-point.y) * pixelScale
+            return error.isFinite && error <= 1.0/1024.0
+        }
+    }
+    private static func valid(_ value: CGAffineTransform) -> Bool {
+        let determinant = value.a*value.d-value.b*value.c
+        return [value.a,value.b,value.c,value.d,value.tx,value.ty,determinant].allSatisfy(\.isFinite)
+            && determinant != 0
+    }
+}

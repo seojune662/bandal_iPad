@@ -12,7 +12,7 @@ final class BrowserWebsiteCompatibilityTests: XCTestCase {
         guard ProcessInfo.processInfo.environment["BANDAL_VERIFY_PUBLIC_BROWSER"] == "1" else {
             throw XCTSkip("Set TEST_RUNNER_BANDAL_VERIFY_PUBLIC_BROWSER=1 for public website compatibility snapshots")
         }
-        let sites = [URL(string: "https://www.google.com/")!, URL(string: "https://my.snu.ac.kr/")!]
+        let sites = ["https://www.google.com/", "https://www.naver.com/", "https://www.wikipedia.org/", "https://my.snu.ac.kr/"].compactMap(URL.init(string:))
         var results: [[String: Any]] = []
         for url in sites {
             for variant in ["automatic", "desktop", "mobile"] {
@@ -70,6 +70,9 @@ final class BrowserWebsiteCompatibilityTests: XCTestCase {
             result["completed"] as? Bool == true && (200..<400).contains(result["httpStatus"] as? Int ?? 0)
         }
         XCTAssertTrue(results.contains { $0["requestedHost"] as? String == "www.google.com" && successfulPage($0) }, "Google landing page did not load; inspect the attached diagnostics")
+        for host in ["www.naver.com", "www.wikipedia.org"] {
+            XCTAssertTrue(results.contains { $0["requestedHost"] as? String == host && successfulPage($0) && ($0["linkCount"] as? Int ?? 0) > 5 }, "\(host) public landing page did not render; inspect the attached diagnostics")
+        }
         XCTAssertTrue(results.contains { $0["requestedHost"] as? String == "my.snu.ac.kr" && successfulPage($0) && ($0["linkCount"] as? Int ?? 0) > 5 && ($0["stylesheetCount"] as? Int ?? 0) > 0 }, "School portal did not render a public page; HTTP error documents are not a compatibility pass")
         for result in results where result["requestedHost"] as? String == "www.google.com" {
             XCTAssertTrue(successfulPage(result)); XCTAssertEqual(result["googleModernSearch"] as? Bool, true)

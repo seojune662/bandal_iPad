@@ -3,9 +3,9 @@ import {randomUUID} from 'node:crypto'
 import '../test-text-decoder.mjs'
 let source=await readFile(new URL('../test-backend.mjs',import.meta.url),'utf8')
 source=source.replace("'../scripts/dependencies.mjs'","'../../scripts/dependencies.mjs'").replaceAll("new URL('./dist/","new URL('../dist/").replaceAll("new URL('../assets/","new URL('../../assets/")
-const start=source.indexOf('    __bandalPlatform: { invoke: async (channel, input) =>'),end=source.indexOf('\n    setInterval:',start)
-if(start<0||end<0)throw new Error('Native fixture seam changed')
-source=source.slice(0,start)+'    __bandalPlatform: { invoke: hoverPlatform },'+source.slice(end)
+const runtimeFactory='function runtime(platform) {'
+if(source.split(runtimeFactory).length!==2)throw new Error('Native fixture platform injection seam changed')
+source=source.replace(runtimeFactory,'function runtime(platform = { invoke: hoverPlatform }) {')
 source=source.replace('  assert.equal(initialized.schemaVersion, 37)','  await runHoverTests({invoke,backend,environment})\n  assert.equal(initialized.schemaVersion, 37)')
 source="import {hoverPlatform,runHoverTests} from './tests.mjs'\n"+source
 const target=new URL(`./.harness-${randomUUID()}.mjs`,import.meta.url)

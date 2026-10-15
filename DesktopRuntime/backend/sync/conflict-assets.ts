@@ -1,5 +1,5 @@
 import { env,native } from '../native'
-import { copyFileSync,existsSync,mkdirSync,openSync,closeSync,fsyncSync,renameSync,rmSync } from '../shims/fs'
+import { copyFileSync,chmodSync,existsSync,mkdirSync,openSync,closeSync,fsyncSync,renameSync,rmSync } from '../shims/fs'
 import { randomUUID } from '../shims/crypto'
 import { join } from '../shims/path'
 import { resolveInsideReal } from '../../upstream/src/main/db/validate'
@@ -28,8 +28,8 @@ export function preserveConflictAssets(db:any,record:SharedRecord|undefined,prov
       if(!path)continue // A missing remote asset is still a reviewable conflict.
       const temporary=join(root,`${ref.sha256}.${randomUUID()}.tmp`)
       try {
-        copyFileSync(path,temporary,1)
-        const fd=openSync(temporary,'r');try{fsyncSync(fd)}finally{closeSync(fd)}
+        copyFileSync(path,temporary,1);chmodSync(temporary,0o600)
+        const fd=openSync(temporary,'r+');try{fsyncSync(fd)}finally{closeSync(fd)}
         if(native('fs.sha256',{path:temporary})!==ref.sha256)throw new Error('Source changed while preserving conflict asset')
         renameSync(temporary,target)
       }finally{rmSync(temporary,{force:true})}

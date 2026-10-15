@@ -1,6 +1,6 @@
 import { env } from '../native'
 import { randomUUID } from '../shims/crypto'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, openSync, closeSync, fsyncSync } from '../shims/fs'
+import { copyFileSync, chmodSync, statSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, openSync, closeSync, fsyncSync } from '../shims/fs'
 import { dirname, join } from '../shims/path'
 import { writeFileAtomic } from '../shims/atomic-write'
 
@@ -23,7 +23,15 @@ export function createFileJournal(db: any) {
     mkdirSync(directory, { recursive: true })
     const entries = changes.map((change, index) => {
       const existed = existsSync(change.target), backup = join(directory, `${index}.original`)
-      if (existed) { copyFileSync(change.target, backup, 1); const fd = openSync(backup, 'r'); try { fsyncSync(fd) } finally { closeSync(fd) } }
+      if (existed) {
+        copyFileSync(change.target, backup, 1)
+        // FlushFileBuffers needs a writable handle on Windows. Only the
+        // private copy changes permissions; the source remains untouched.
+        const mode = statSync(backup).mode
+        chmodSync(backup, 0o600)
+        try { const fd = openSync(backup, 'r+'); try { fsyncSync(fd) } finally { closeSync(fd) } }
+        finally { chmodSync(backup, mode) } // Rollback must retain source permissions.
+      }
       return { ...change, existed, backup }
     })
     writeFileAtomic(intentPath, JSON.stringify({ id, entries }))
@@ -34,9 +42,12 @@ export function createFileJournal(db: any) {
           mkdirSync(dirname(item.target), { recursive: true })
           if (item.remove) { rmSync(item.target, { force: true }); continue }
           if (item.source) {
-            const temporary = `${item.target}.${id}.sync`; copyFileSync(item.source, temporary, 1)
-            const fd = openSync(temporary, 'r'); try { fsyncSync(fd) } finally { closeSync(fd) }
-            renameSync(temporary, item.target)
+            const temporary = `${item.target}.${id}.sync`
+            try {
+              copyFileSync(item.source, temporary, 1); chmodSync(temporary, 0o600)
+              const fd = openSync(temporary, 'r+'); try { fsyncSync(fd) } finally { closeSync(fd) }
+              renameSync(temporary, item.target)
+            } finally { rmSync(temporary, { force: true }) }
           } else writeFileAtomic(item.target, item.text ?? '')
         }
         commit(); db.prepare('INSERT INTO ipad_sync_commits(id) VALUES(?)').run(id)

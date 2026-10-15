@@ -5,6 +5,7 @@ import WebKit
 struct DesktopShell: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> DesktopShellController { DesktopShellController() }
     func updateUIViewController(_ controller: DesktopShellController, context: Context) {}
+    static func dismantleUIViewController(_ controller: DesktopShellController, coordinator: ()) { controller.detachShell() }
 }
 
 @MainActor
@@ -39,10 +40,18 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
     private var workspaceContext: [String: Any] = [:]
     private var startupError: UILabel?
     private var lifecycleObserver: NSObjectProtocol?
+    private var foregroundObserver: NSObjectProtocol?
+    private let dialogs = DesktopShellDialogs()
+    private let bridgeRelay = DesktopScriptMessageRelay()
+    private var pendingSaveFailure = false
+    private var rendererReady = false
+    private var rendererResetTask: Task<Void, Never>?
+    private var detached = false
     private var flushTask: Task<Void, Never>?
     private var saveBackgroundTask: UIBackgroundTaskIdentifier = .invalid
     private var shortcutRevision = 0
     private let scribblePolicy = DesktopScribblePolicy()
+    private let nativeSurfaces = DesktopNativeSurfaceState()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -106,8 +115,17 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: UUID(uuidString: testing ? "ED916975-26E7-4D47-B394-E082360B99CA" : "F2BE39F5-5762-4B21-AD23-26EBEF97D932")!)
         configuration.setURLSchemeHandler(assets, forURLScheme: "bandal-app")
         configuration.setURLSchemeHandler(assets, forURLScheme: "bandal-media")
-        configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "bandal")
+        bridgeRelay.owner = self
+        configuration.userContentController.addScriptMessageHandler(bridgeRelay, contentWorld: .page, name: "bandal")
         #if DEBUG
+        if testing, ProcessInfo.processInfo.arguments.contains("--ipad-renderer-reload-fixture") {
+            configuration.userContentController.addUserScript(WKUserScript(source: DesktopInteractionDiagnostics.reloadScript,
+                injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+        if testing, ProcessInfo.processInfo.arguments.contains("--ipad-interaction-diagnostics") {
+            configuration.userContentController.addUserScript(WKUserScript(source: DesktopInteractionDiagnostics.script,
+                injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         if testing, ProcessInfo.processInfo.arguments.contains("--desktop-gesture-diagnostics") {
             configuration.userContentController.addUserScript(WKUserScript(source: #"""
                 (() => {
@@ -133,6 +151,7 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         #endif
         shell = WKWebView(frame: .zero, configuration: configuration)
         shell.navigationDelegate = self
+        dialogs.presenter = self; dialogs.webView = shell; shell.uiDelegate = dialogs
         var lastScribbleConfiguration = "", lastScribbleDecision = 0
         scribblePolicy.onDiagnostic = { [weak self] values in
             let number: (String) -> Int = { max(0, values[$0] as? Int ?? 0) }
@@ -161,6 +180,15 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         lifecycleObserver = NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.flushForBackground() }
         }
+        foregroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                _ = try? await self.runtime.invokePrivate("nativeRuntime:active", request: ["active": true])
+                if self.pendingSaveFailure {
+                    self.emit("runtime:operationError", ["message": "마지막 저장을 완료하지 못했습니다. 문서를 유지한 채 저장을 다시 시도해 주세요.", "code": "SAVE_PENDING", "category": "operation", "channel": "runtime:prepareReload", "retryable": false])
+                }
+            }
+        }
         browser = DesktopBrowserHost(root: root)
         browser.attach(to: view, shell: shell)
         do {
@@ -174,6 +202,11 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
                 self?.runtime.log.record(event, code: code)
             }
         } catch { showStartupError(error.localizedDescription); return }
+        nativeSurfaces.onChange = { [weak self] in
+            guard let self else { return }
+            self.browser?.setPresentation(blocked: self.nativeSurfaces.blocked, inputBlocked: self.nativeSurfaces.inputBlocked, overlays: self.nativeSurfaces.overlays)
+            self.nativePDF?.setPresentation(blocked: self.nativeSurfaces.blocked, inputBlocked: self.nativeSurfaces.inputBlocked, overlays: self.nativeSurfaces.overlays)
+        }
         bookmarkImports = DesktopBookmarkImportService { [weak self] channel, request in
             guard let self else { throw CancellationError() }
             return try await self.runtime.invokePrivate(channel, request: request)
@@ -245,6 +278,16 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         }
         Task {
             do {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--reset-render-caches") {
+                    // Run before opening the database, restoring tabs or PDF
+                    // surfaces. A process restart clears native RAM caches.
+                    let removed = try DesktopRenderCacheReset.removePDFCopies(root: root)
+                    await browser.clearCache()
+                    await DesktopRenderCacheReset.clearWebResources(in: shell.configuration.websiteDataStore)
+                    runtime.log.record("render-cache.reset", code: removed ? "pdf.web.url" : "web.url")
+                }
+                #endif
                 try await runtime.start()
                 if testing, ProcessInfo.processInfo.arguments.contains("--desktop-parity-fixture") {
                     let courses = try await runtime.invoke("courses:list") as? [[String: Any]] ?? []
@@ -266,6 +309,13 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
                         try bytes.write(to: source, options: .atomic)
                         let imported = try await runtime.invoke("materials:import", request: ["courseId": courseID, "paths": [source.path]]) as? [String: Any]
                         guard (imported?["imported"] as? [String])?.isEmpty == false else { throw DesktopRuntimeError("PDF 제스처 테스트 자료를 가져오지 못했습니다.") }
+                        if let path = (imported?["imported"] as? [String])?.first {
+                            if ProcessInfo.processInfo.arguments.contains("--desktop-pdf-mixed-ink-fixture") {
+                                try await NativePDFHeavyInkFixture.seedMixed(runtime: runtime, courseID: courseID, relativePath: path)
+                            } else if ProcessInfo.processInfo.arguments.contains("--desktop-pdf-heavy-ink-fixture") {
+                                try await NativePDFHeavyInkFixture.seed(runtime: runtime, courseID: courseID, relativePath: path)
+                            }
+                        }
                     }
                     #endif
                 }
@@ -298,7 +348,15 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        if webView === shell { scribblePolicy.reset() }
+        if webView === shell {
+            scribblePolicy.reset(); dialogs.cancelAll(); fileServices?.cancelPresentations()
+            rendererReady = false; nativeSurfaces.reset(); browser?.retireRenderer()
+            // A normal reload does not run React's unmount cleanup. Retire
+            // native ownership before the next renderer can uncover surfaces.
+            nativePDF?.closeAll()
+            fileStaging.cancelUnfinished()
+            resetRendererSubscriptions()
+        }
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
@@ -310,12 +368,17 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         }
         let request = body["request"] as? [String: Any] ?? [:]
         guard !channel.hasPrefix("native") else { replyHandler(nil, "Private native service"); return }
+        let session = nativeSurfaces.sessionID
         Task {
-            do { replyHandler(try await handle(channel, request: request), nil) }
+            do {
+                await rendererResetTask?.value
+                guard session == nativeSurfaces.sessionID else { throw CancellationError() }
+                replyHandler(try await handle(channel, request: request), nil)
+            }
             catch {
                 runtime.log.record("ipc.failed", channel: channel, code: (error as? DesktopRuntimeError)?.code ?? String((error as NSError).code))
                 NSLog("[Desktop IPC] %@ failed: %@", channel, error.localizedDescription)
-                replyHandler(nil, error.localizedDescription)
+                replyHandler(DesktopBridgeContract.failure(error, channel: channel), nil)
             }
         }
     }
@@ -332,6 +395,20 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
         if systemServices.canHandle(channel) { return try await systemServices.handle(channel: channel, request: request) }
         if browser.canHandle(channel) { return try await browser.handle(channel: channel, request: request) }
         switch channel {
+        case "runtime:nativeSurfaceSession": return ["sessionId": nativeSurfaces.sessionID]
+        case "runtime:nativeSurfaces": return try nativeSurfaces.apply(request)
+        case "runtime:rendererReady":
+            let session = nativeSurfaces.sessionID
+            let result = try await runtime.invokePrivate("nativeRuntime:rendererReady", request: request)
+            guard session == nativeSurfaces.sessionID else { throw CancellationError() }
+            rendererReady = true
+            return result
+        case "runtime:capabilities":
+            let value = try await runtime.invokePrivate("nativeRuntime:capabilities") as? [String: Any]
+            return DesktopBridgeContract.capabilities(backendChannels: value?["channels"] as? [String] ?? [])
+        case "runtime:prepareReload":
+            if rendererReady { try await flushDocuments() }
+            return ["ok": true]
         case "runtime:scribbleRegions":
             try scribblePolicy.update(request)
             return NSNull()
@@ -483,22 +560,54 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard webView === shell else { return }
+        dialogs.cancelAll(); fileServices?.cancelPresentations(); rendererReady = false
+        nativeSurfaces.reset(); browser?.retireRenderer()
         nativePDF?.closeAll()
         fileStaging.cancelUnfinished()
         runtime.log.record("renderer.processTerminated")
-        Task { await recordings.interruptForLifecycle(); webView.reload() }
+        resetRendererSubscriptions()
+        let session = nativeSurfaces.sessionID
+        Task {
+            await rendererResetTask?.value
+            await recordings.interruptForLifecycle()
+            guard !detached, session == nativeSurfaces.sessionID else { return }
+            webView.reload()
+        }
+    }
+
+    private func resetRendererSubscriptions() {
+        guard let runtime else { return }
+        let previous = rendererResetTask
+        rendererResetTask = Task {
+            await previous?.value
+            _ = try? await runtime.invokePrivate("nativeRuntime:rendererReset")
+        }
+    }
+
+    /// Each existing writer gets one requested attempt even when another
+    /// document failed. The barrier still rejects with the first failure.
+    static func flushDocumentWriters(native: () throws -> Void, renderer: () async throws -> Void) async throws {
+        var firstFailure: Error?
+        do { try native() } catch { firstFailure = error }
+        do { try await renderer() } catch { if firstFailure == nil { firstFailure = error } }
+        if let firstFailure { throw firstFailure }
     }
 
     private func flushDocuments() async throws {
-        nativePDF?.flush()
-        let result = try await shell.callAsyncJavaScript("""
-        if (typeof window.__bandalFlushNative !== 'function') return {ok:false,pending:[]};
-        return await window.__bandalFlushNative();
-        """, arguments: [:], in: nil, contentWorld: .page)
-        guard let value = result as? [String: Any], value["ok"] as? Bool == true else { throw DesktopRuntimeError("열린 필기의 저장을 완료하지 못해 동기화를 기다립니다.") }
+        try await Self.flushDocumentWriters(native: { try nativePDF?.flushForRecovery() }, renderer: {
+            let result = try await shell.callAsyncJavaScript("""
+            if (typeof window.__bandalFlushNative !== 'function') return {ok:false,pending:[]};
+            return await window.__bandalFlushNative();
+            """, arguments: [:], in: nil, contentWorld: .page)
+            guard let value = result as? [String: Any], value["ok"] as? Bool == true else { throw DesktopRuntimeError("열린 필기의 저장을 완료하지 못해 동기화를 기다립니다.") }
+        })
+        pendingSaveFailure = false
     }
 
     private func flushForBackground() {
+        dialogs.cancelAll()
+        Task { _ = try? await runtime.invokePrivate("nativeRuntime:active", request: ["active": UIApplication.shared.applicationState == .active]) }
         guard flushTask == nil else { return }
         saveBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Save open Bandal documents") { [weak self] in
             self?.flushTask?.cancel()
@@ -510,8 +619,10 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
             do {
                 try await self.flushDocuments()
             }
-            catch { NSLog("[Desktop lifecycle] Could not finish document save: %@", error.localizedDescription) }
-            await self.browser.pauseDownloadsForBackground()
+            catch { self.pendingSaveFailure = true; NSLog("[Desktop lifecycle] Could not finish document save: %@", error.localizedDescription) }
+            if !self.detached, UIApplication.shared.applicationState != .active {
+                await self.browser.pauseDownloadsForBackground()
+            }
         }
     }
 
@@ -523,7 +634,19 @@ final class DesktopShellController: UIViewController, WKScriptMessageHandlerWith
 
     deinit {
         if let lifecycleObserver { NotificationCenter.default.removeObserver(lifecycleObserver) }
+        if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
         flushTask?.cancel()
+    }
+
+    func detachShell() {
+        detached = true
+        dialogs.cancelAll(); fileServices?.cancelPresentations(); rendererReady = false
+        nativeSurfaces.reset(); browser?.retireRenderer(); nativePDF?.closeAll(); scribblePolicy.reset()
+        if runtime != nil { fileStaging.cancelUnfinished() }
+        shell?.configuration.userContentController.removeScriptMessageHandler(forName: "bandal", contentWorld: .page)
+        shell?.navigationDelegate = nil; shell?.uiDelegate = nil
+        bridgeRelay.owner = nil
+        resetRendererSubscriptions()
     }
 
     private func showStartupError(_ message: String) {

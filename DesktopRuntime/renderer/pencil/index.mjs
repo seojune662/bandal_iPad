@@ -2,6 +2,8 @@ import { fileURLToPath } from 'node:url'
 
 const inkSuffix = '/src/renderer/src/features/ink/InkLayer.tsx'
 const samples = fileURLToPath(new URL('./samples.ts', import.meta.url))
+const livePreview = fileURLToPath(new URL('./livePreview.ts', import.meta.url))
+const eraserHitCache = fileURLToPath(new URL('./eraserHitCache.ts', import.meta.url))
 const persistence = fileURLToPath(new URL('./persistence.ts', import.meta.url))
 const drawingsSuffix = '/src/renderer/src/features/pdf/tools/useDrawings.ts'
 const canvasSuffix = '/src/renderer/src/features/canvas/CanvasTab.tsx'
@@ -13,10 +15,15 @@ function replaceExactly(source, original, replacement, count = 1) {
   return source.split(original).join(replacement)
 }
 
-/** Only event ownership and sampling change; original component markup, tools,
- * geometry, history, styling and persistence remain the desktop implementation. */
+/** Adapt input ownership/sampling and the transient live preview. Committed
+ * geometry, tools, history, styling and persistence stay canonical. */
 export function transformInkLayer(source) {
-  let code = `import { pencilSamples, pencilPressure, acceptsInkPointer } from ${JSON.stringify(samples)}\n` + source
+  let code = `import { pencilSamples, pencilPredictions, pencilPressure, acceptsInkPointer } from ${JSON.stringify(samples)}\nimport { LiveInkPreview } from ${JSON.stringify(livePreview)}\n` + source
+  code = `import { EraserGestureHitCache } from ${JSON.stringify(eraserHitCache)}\n` + code
+  code = replaceExactly(code, '  const gestureRef = useRef<Gesture | null>(null)', '  const eraserHits = useRef(new EraserGestureHitCache())\n  const gestureRef = useRef<Gesture | null>(null)')
+  code = replaceExactly(code, 'if (!ids.has(shape.id) && drawingHit(shape, point, aspect)) ids.add(shape.id)', 'if (!ids.has(shape.id) && eraserHits.current.hit(shape, point, aspect)) ids.add(shape.id)')
+  code = replaceExactly(code, "    } else if (activeTool === 'eraser') {\n      setGesture(eraseAt", "    } else if (activeTool === 'eraser') {\n      eraserHits.current.begin()\n      setGesture(eraseAt")
+  code = replaceExactly(code, '    gestureRef.current = next\n    setGestureState(next)', "    if (next?.kind !== 'erase') eraserHits.current.clear()\n    gestureRef.current = next\n    setGestureState(next)")
   code = replaceExactly(code, '      ref={svgRef}', '      data-bandal-ink-tool={activeTool}\n      ref={svgRef}')
   code = replaceExactly(code, '      points: DrawingPoint[]', '      points: DrawingPoint[]\n      style: DrawingStyle\n      startedAt: number')
   code = replaceExactly(code, '      setGesture({ ...current, points: [...current.points, point] })', `      const measured = { ...point, t: Math.max(0, (sample.timestamp ?? current.startedAt) - current.startedAt) }
@@ -36,15 +43,15 @@ export function transformInkLayer(source) {
         style: drawingStyle(activeTool, width, opacity, color),
         startedAt: event.timeStamp`)
   code = replaceExactly(code, '      const nextStyle = drawingStyle(completed.tool, width, opacity, color)', '      const nextStyle = completed.style')
-  code = replaceExactly(code, "          completed.tool === 'highlighter'", "          completed.tool === 'highlighter', 3")
-  code = replaceExactly(code, '        data: { points: completed.points },', '        data: { points: completed.points, inkVersion: 3 },')
+  code = replaceExactly(code, "          completed.tool === 'highlighter'", "          completed.tool === 'highlighter', 5")
+  code = replaceExactly(code, '        data: { points: completed.points },', '        data: { points: completed.points, inkVersion: 5 },')
   code = replaceExactly(code, `          gesture.points,
           style,
           aspect,
           gesture.tool === 'highlighter'`, `          gesture.points,
           gesture.style,
           aspect,
-          gesture.tool === 'highlighter', 3`)
+          gesture.tool === 'highlighter', 5`)
   code = replaceExactly(code, `                fill={drawingColorVariable(style.color)}
                 opacity={style.opacity}`, `                fill={drawingColorVariable(gesture.style.color)}
                 opacity={gesture.style.opacity}`)
@@ -97,6 +104,59 @@ export function transformInkLayer(source) {
     setGesture(null)
     if (interrupted?.kind === 'stroke') commitGesture(interrupted)
   }, [commitGesture, flushPointerFrame, setGesture])`)
+  code = replaceExactly(code, '  const gestureRef = useRef<Gesture | null>(null)', `  const gestureRef = useRef<Gesture | null>(null)
+  const liveInkHost = useRef<SVGGElement>(null)
+  const liveInk = useRef(new LiveInkPreview())`)
+  code = replaceExactly(code, `    gestureRef.current = next
+    setGestureState(next)
+  }, [])`, `    gestureRef.current = next
+    if (next?.kind === 'stroke') {
+      liveInk.current.render(liveInkHost.current, next.points, next.style, aspect,
+        next.tool === 'highlighter', drawingColorVariable(next.style.color))
+    } else if (next !== null) liveInk.current.clear()
+    setGestureState(next)
+  }, [aspect])`)
+  code = replaceExactly(code, '  const finishTextSession = useCallback((token?: number, cancelled = false): void => {', `  // Keep the final measured preview until React mounts the optimistic saved
+  // shape. Layout effects remove it before that commit can paint twice.
+  useLayoutEffect(() => {
+    if (gesture?.kind !== 'stroke') liveInk.current.clear()
+  })
+
+  const finishTextSession = useCallback((token?: number, cancelled = false): void => {`)
+  code = replaceExactly(code, `    if (gestureRef.current === null || !acceptsInkPointer(event, gestureRef.current.pointerId)) return
+    pendingSample.current.push(...pencilSamples(event.nativeEvent))
+    if (pointerFrame.current === null)`, `    if (gestureRef.current === null || !acceptsInkPointer(event, gestureRef.current.pointerId)) return
+    const current = gestureRef.current
+    if (current.kind === 'stroke') {
+      for (const sample of pencilSamples(event.nativeEvent)) processSample(sample)
+      const predicted: DrawingPoint[] = []
+      for (const sample of pencilPredictions(event.nativeEvent)) {
+        const point = pointFromSample(sample, clampToBounds)
+        if (point) predicted.push({ ...point,
+          t: Math.max(0, (sample.timestamp ?? current.startedAt) - current.startedAt) })
+      }
+      liveInk.current.render(liveInkHost.current, current.points, current.style, aspect,
+        current.tool === 'highlighter', drawingColorVariable(current.style.color), predicted)
+      return
+    }
+    pendingSample.current.push(...pencilSamples(event.nativeEvent))
+    if (pointerFrame.current === null)`)
+  code = replaceExactly(code, `      })
+    }
+  }, [processSample])`, `      })
+    }
+  }, [aspect, clampToBounds, pointFromSample, processSample])`)
+  code = replaceExactly(code, `  useEffect(() => () => {
+    if (pointerFrame.current !== null) cancelAnimationFrame(pointerFrame.current)
+  }, [])`, `  useEffect(() => () => {
+    if (pointerFrame.current !== null) cancelAnimationFrame(pointerFrame.current)
+    liveInk.current.clear()
+    eraserHits.current.clear()
+  }, [])`)
+  const previewStart = code.indexOf("      {gesture?.kind === 'stroke' && (() => {")
+  const previewEnd = code.indexOf("      {gesture?.kind === 'shape' && (() => {", previewStart)
+  if (previewStart < 0 || previewEnd < 0) throw new Error('iPad Pencil adapter: live stroke preview source anchor changed')
+  code = replaceExactly(code, code.slice(previewStart, previewEnd), '      <g ref={liveInkHost} data-ink-live-host="" />\n')
   return code
 }
 

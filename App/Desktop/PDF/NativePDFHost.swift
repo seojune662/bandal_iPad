@@ -13,14 +13,39 @@ final class NativePDFHost {
     var onDiagnostic: (String, String) -> Void = { _, _ in }
     private let root: URL
     private let invoke: Invoke
-    private let journal: NativePDFJournal
+    private let journal: NativePDFJournalQueue
+    private struct JournalJob {
+        let ticket: NativePDFJournalQueue.Ticket
+        let item: NativePDFDocument
+        let input: NativePDFStrokeInput
+        let final: Bool, ordered: Bool
+        let prepared: NativePDFJournalQueue.PreparedStroke?
+    }
+    private var journalJobs: [UInt64: JournalJob] = [:]
     private weak var container: UIView?
     private weak var shell: WKWebView?
     private var documents: [String: NativePDFDocument] = [:]
-    private var openGenerations: [String: String] = [:]
+    private var openGenerations: [String: String] = [:] // Active renderer ownership.
+    private var openingGenerations: [String: String] = [:] // Latest asynchronous open request.
+    private var replacingGenerations: [String: String] = [:] // Input suspended while its disk snapshot is captured.
     private var rectangles: [String: CGRect] = [:]
     private var holes: [String: [CGRect]] = [:]
+    private var visibleSurfaces: Set<String> = []
+    private var occludedSurfaces: Set<String> = []
+    private var layoutRevisions: [String: Int] = [:]
+    private var hostOccluded = false
+    private var hostInputBlocked = false
+    private var hostOverlays: [CGRect] = []
     private var memoryObserver: NSObjectProtocol?
+    private var reportedJournalTimingCounts: [String: Int] = [:]
+    private func reportJournalTimings() {
+        for phase in ["checkpoint", "commit", "ack", "fileSync", "directorySync"] {
+            guard let statistics = journal.timingStatistics[phase],
+                  reportedJournalTimingCounts[phase] != statistics.count else { continue }
+            reportedJournalTimingCounts[phase] = statistics.count
+            if statistics.shouldLog { onDiagnostic("nativePDF.journalTiming", "\(phase).\(statistics.logCode)") }
+        }
+    }
     private var isEnabled: Bool {
         #if DEBUG
         UserDefaults.standard.bool(forKey: "bandal.nativePDF.enabled")
@@ -29,13 +54,18 @@ final class NativePDFHost {
         #endif
     }
 
-    init(root: URL, invoke: @escaping Invoke) throws {
-        self.root = root; self.invoke = invoke; journal = try NativePDFJournal(root: root)
+    init(root: URL, journalQueue: NativePDFJournalQueue? = nil, invoke: @escaping Invoke) throws {
+        self.root = root; self.invoke = invoke; journal = journalQueue ?? NativePDFJournalQueue(root: root)
         memoryObserver = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.documents.values.forEach { $0.releaseCaches() } }
         }
     }
     func attach(to container: UIView, shell: WKWebView) { self.container = container; self.shell = shell }
+    func setPresentation(blocked: Bool, inputBlocked: Bool, overlays: [CGRect]) {
+        if (blocked || inputBlocked) && !(hostOccluded || hostInputBlocked) { flush() }
+        hostOccluded = blocked; hostInputBlocked = inputBlocked; hostOverlays = overlays
+        layout()
+    }
     func canHandle(_ channel: String) -> Bool { channel.hasPrefix("pdfNative:") }
     func handle(_ channel: String, request: [String: Any]) async throws -> Any {
         if channel == "pdfNative:capabilities" {
@@ -45,7 +75,7 @@ final class NativePDFHost {
             let development = false
             #endif
             return ["enabled": isEnabled,
-                    "development": development, "version": 1, "inkVersion": 3, "renderer": "PDFKit/UIKit/Metal"]
+                    "development": development, "version": 1, "inkVersion": 5, "drawingPatch": 1, "objectScenePatch": 1, "nativeInkErase": 1, "renderer": "PDFKit/UIKit/Metal"]
         }
         if channel == "pdfNative:setEnabled" {
             #if DEBUG
@@ -60,15 +90,30 @@ final class NativePDFHost {
         if channel == "pdfNative:open" {
             guard isEnabled else { throw NativePDFError.invalid("네이티브 PDF 검증 기능이 꺼져 있습니다.") }
             let course = try Self.string(request, "courseId"), path = try Self.string(request, "relPath")
-            if let current = documents[identifier], current.generation == generation {
+            if let current = documents[identifier], current.generation == generation, openGenerations[identifier] == generation {
                 guard current.courseID == course, current.relativePath == path else { throw NativePDFError.invalid("PDF 표면 식별자가 변경되었습니다.") }
                 return current.state
             }
-            openGenerations[identifier] = generation
+            let previous = documents[identifier]
+            openingGenerations[identifier] = generation
+            var adopted = false
+            defer {
+                if openingGenerations[identifier] == generation { openingGenerations.removeValue(forKey: identifier) }
+                if replacingGenerations[identifier] == generation {
+                    replacingGenerations.removeValue(forKey: identifier)
+                    if !adopted, let previous, documents[identifier] === previous {
+                        // The old generation remains authoritative until successful
+                        // installation, including ACKs while file/binding I/O waits.
+                        do { try previous.setVisible(visibleSurfaces.contains(identifier)) }
+                        catch { previous.onEvent("error", ["message": error.localizedDescription]) }
+                        layout()
+                    }
+                }
+            }
             guard let source = try await invoke("nativeMaterial:path", ["courseId": course, "relPath": path]) as? String else { throw NativePDFError.invalid("PDF 자료를 찾지 못했습니다.") }
             let root = root
             let snapshot = try await Task.detached(priority: .userInitiated) { try Self.snapshot(path: source, root: root) }.value
-            guard openGenerations[identifier] == generation else { throw CancellationError() }
+            guard openingGenerations[identifier] == generation else { throw CancellationError() }
             // Canonical drawings remain bound to the first verified PDF
             // revision across close/reopen, rename and sync. Never relabel old
             // ink with the hash of a replacement file at the same path.
@@ -77,20 +122,37 @@ final class NativePDFHost {
                   let materialID = binding["materialID"] as? String, !materialID.isEmpty else {
                 throw NativePDFError.invalid("PDF 원본과 필기 연결을 확인하지 못했습니다. 자료를 보존한 채 다시 열어 주세요.")
             }
-            guard openGenerations[identifier] == generation else { throw CancellationError() }
+            guard openingGenerations[identifier] == generation else { throw CancellationError() }
             guard let pdf = PDFDocument(url: snapshot.url), !pdf.isLocked, pdf.pageCount > 0 else { throw NativePDFError.invalid("PDF를 열지 못했습니다. 잠금 또는 파일 형식을 확인해 주세요.") }
+            // Freeze only the surface being replaced before taking its disk
+            // snapshot. Otherwise an await could admit a final point after the
+            // pending list was captured and then close its last visible owner.
+            if let previous, documents[identifier] === previous {
+                replacingGenerations[identifier] = generation
+                try previous.setVisible(false)
+                guard previous.operationLedger.pendingEraseCount == 0 else {
+                    throw NativePDFError.invalid("지우기 저장 결과를 확인한 뒤 PDF를 다시 열어 주세요.")
+                }
+            }
             // Another split can have the same document open. Finish its
             // measured checkpoints before sharing/replaying a receipt payload.
             for existing in documents.values where existing.courseID == course && existing.relativePath == path { try existing.flush() }
-            let pending = try journal.pending(courseID: course, relativePath: path)
+            let pending = try await journal.pending(courseID: course, relativePath: path, retryFailed: true)
+            try reconcileJournal()
+            guard openingGenerations[identifier] == generation else { throw CancellationError() }
             guard pending.allSatisfy({ $0.documentRevision == snapshot.revision }) else {
                 throw NativePDFError.invalid("PDF 원본이 바뀌어 이전 문서의 미전송 필기를 보존했습니다. 원본 복구 후 다시 열어 주세요.")
             }
             // A process ending during estimated-property correction recovers
             // the last durable measured checkpoint as its final payload.
-            for record in pending where record.provisional == true { try journal.append(record.input, documentRevision: record.documentRevision) }
+            for record in pending where record.provisional == true { try journal.enqueueStroke(record.input, documentRevision: record.documentRevision) }
+            try await journal.barrier(retryFailed: true)
+            try reconcileJournal()
+            guard openingGenerations[identifier] == generation else { throw CancellationError() }
             try documents[identifier]?.close()
             documents.removeValue(forKey: identifier)
+            rectangles.removeValue(forKey: identifier); holes.removeValue(forKey: identifier)
+            visibleSurfaces.remove(identifier); occludedSurfaces.remove(identifier); layoutRevisions.removeValue(forKey: identifier)
             var testingDirectPencil = false
             #if DEBUG
             // Exercise UIKit's real recognizer dispatch with XCTest fingers in
@@ -102,50 +164,74 @@ final class NativePDFHost {
             let item = NativePDFDocument(id: identifier, generation: generation, courseID: course, relativePath: path,
                                          revision: snapshot.revision, document: pdf, testingDirectPencil: testingDirectPencil)
             item.onDiagnostic = { [weak self] event, code in self?.onDiagnostic(event, code) }
-            item.onEvent = { [weak self] type, body in
-                self?.emit("pdfNative:event", ["surfaceId": identifier, "generation": generation, "type": type, "payload": body])
+            item.onEvent = { [weak self, weak item] type, body in
+                guard let self, let item, self.documents[identifier] === item,
+                      self.openGenerations[identifier] == generation else { return }
+                self.emit("pdfNative:event", ["surfaceId": identifier, "generation": generation, "type": type, "payload": body])
+            }
+            item.onDurabilityBarrier = { [weak self] in
+                guard let self else { throw CancellationError() }
+                try self.drainJournalSynchronously(retryFailed: true)
             }
             item.onStroke = { [weak self, weak item] page, stroke in
                 guard let self, let item else { throw CancellationError() }
+                let started = CACurrentMediaTime()
+                defer { item.recordLatency("commitCallback", startedAt: started); self.reportJournalTimings() }
                 let input = NativePDFStrokeInput(courseId: course, relPath: path, page: page, kind: stroke.kind,
-                                                data: NativePDFStrokeData(points: stroke.points), style: stroke.style,
+                                                data: NativePDFStrokeData(points: stroke.points, inkVersion: stroke.inkVersion), style: stroke.style,
                                                 clientMutationId: stroke.mutationID, documentRevision: item.revision)
-                try self.journal.append(input, documentRevision: item.revision)
-                item.recordJournal(stroke.kind, phase: "commit")
-                item.addPending(input)
-                item.refreshOverlays()
-                item.onEvent("stroke", try Self.json(input))
+                try self.admitJournal(input, item: item, final: true)
             }
             item.onCheckpoint = { [weak self, weak item] page, stroke in
                 guard let self, let item else { throw CancellationError() }
+                let started = CACurrentMediaTime()
+                defer { item.recordLatency("checkpointCallback", startedAt: started); self.reportJournalTimings() }
                 let input = NativePDFStrokeInput(courseId: course, relPath: path, page: page, kind: stroke.kind,
-                    data: NativePDFStrokeData(points: stroke.points), style: stroke.style,
+                    data: NativePDFStrokeData(points: stroke.points, inkVersion: stroke.inkVersion), style: stroke.style,
                     clientMutationId: stroke.mutationID, documentRevision: item.revision)
-                try self.journal.checkpoint(input, documentRevision: item.revision)
-                item.recordJournal(stroke.kind, phase: "checkpoint")
-                item.addPending(input); item.refreshOverlays()
+                try self.admitJournal(input, item: item, final: false)
             }
             item.resolveImage = { [weak self] object in
                 guard let self else { throw CancellationError() }
                 return try await self.resolveImage(object: object, courseID: course)
             }
-            item.pending = Dictionary(uniqueKeysWithValues: pending.map { ($0.input.clientMutationId, $0.input) })
-            item.pendingOrder = pending.map { $0.input.clientMutationId }
-            documents[identifier] = item; container?.addSubview(item.pdfView)
+            for record in pending { item.addPending(record.input, notify: false) }
+            documents[identifier] = item; openGenerations[identifier] = generation
+            adopted = true
+            container?.addSubview(item.pdfView)
             item.pdfView.isHidden = true
             return item.state.merging(["pending": try pending.map { try Self.json($0.input) }]) { _, new in new }
         }
         if channel == "pdfNative:close" {
-            if openGenerations[identifier] == generation { openGenerations.removeValue(forKey: identifier) }
             if let item = documents[identifier], item.generation == generation {
+                _ = try await sealAndDrain(item)
+                guard documents[identifier] === item, openGenerations[identifier] == generation else { throw CancellationError() }
                 try item.close(); documents.removeValue(forKey: identifier); rectangles.removeValue(forKey: identifier); holes.removeValue(forKey: identifier)
+                visibleSurfaces.remove(identifier); occludedSurfaces.remove(identifier); layoutRevisions.removeValue(forKey: identifier)
             }
+            // A failed live close must retain its generation so the existing
+            // renderer writer can retry flush/ACK/close. Pending opens without
+            // a live document are still invalidated by an explicit close.
+            if openGenerations[identifier] == generation { openGenerations.removeValue(forKey: identifier) }
+            if openingGenerations[identifier] == generation { openingGenerations.removeValue(forKey: identifier) }
             return [:]
         }
-        guard let item = documents[identifier], item.generation == generation else { throw NativePDFError.invalid("PDF 표면이 닫혔거나 변경되었습니다.") }
+        guard openGenerations[identifier] == generation,
+              let item = documents[identifier], item.generation == generation else { throw NativePDFError.invalid("PDF 표면이 닫혔거나 변경되었습니다.") }
         switch channel {
         case "pdfNative:layout":
-            try item.setVisible(request["visible"] as? Bool ?? false)
+            // Keep the latest layout authority while a replacement's disk
+            // snapshot is captured, but never resume that frozen input surface.
+            // If replacement fails, its defer restores this latest visibility.
+            let replacing = replacingGenerations[identifier] != nil
+            if let revision = request["revision"] as? Int {
+                guard revision > (layoutRevisions[identifier] ?? 0) else { return ["revision": layoutRevisions[identifier] ?? 0] }
+                layoutRevisions[identifier] = revision
+            }
+            let visible = request["visible"] as? Bool ?? false
+            if !replacing { try item.setVisible(visible) }
+            if visible { visibleSurfaces.insert(identifier) } else { visibleSurfaces.remove(identifier) }
+            if request["occluded"] as? Bool == true { occludedSurfaces.insert(identifier) } else { occludedSurfaces.remove(identifier) }
             if let value = request["rect"] as? [String: Double], let x = value["x"], let y = value["y"], let w = value["width"], let h = value["height"], [x,y,w,h].allSatisfy(\.isFinite), w > 0, h > 0 {
                 rectangles[identifier] = CGRect(x: x, y: y, width: w, height: h)
             } else { rectangles.removeValue(forKey: identifier); item.pdfView.isHidden = true }
@@ -153,19 +239,31 @@ final class NativePDFHost {
                 guard let x = value["x"], let y = value["y"], let width = value["width"], let height = value["height"], [x,y,width,height].allSatisfy(\.isFinite), width > 0, height > 0 else { return nil }
                 return CGRect(x: x, y: y, width: width, height: height)
             }
-            layout(); return [:]
+            layout(); return ["revision": layoutRevisions[identifier] ?? 0]
         case "pdfNative:snapshot":
-            item.snapshot(request); return [:]
+            return try item.snapshot(request)
         case "pdfNative:objectScene":
-            item.objectScene(request); return [:]
+            return try item.objectScene(request)
         case "pdfNative:navigate":
             try item.navigate(request); return item.state
         case "pdfNative:ack":
+            let started = CACurrentMediaTime()
+            defer { item.recordLatency("ackCallback", startedAt: started); reportJournalTimings() }
             let mutation = try Self.string(request, "clientMutationId")
             // Renderer acks only after its canonical create/receipt resolves.
             let drawingID = try Self.string(request, "drawingId")
-            try journal.acknowledge(mutation, courseID: item.courseID, relativePath: item.relativePath)
+            try reconcileJournal()
+            try item.operationLedger.validateStrokeAcknowledgement(mutationID: mutation, drawingID: drawingID)
+            try await journal.acknowledge(mutation, courseID: item.courseID, relativePath: item.relativePath)
+            try reconcileJournal()
+            guard documents[identifier] === item, openGenerations[identifier] == generation else { throw CancellationError() }
+            try item.operationLedger.acknowledgeStroke(mutationID: mutation, drawingID: drawingID)
             item.acknowledgePreview(mutationID: mutation, drawingID: drawingID); return [:]
+        case "pdfNative:eraseResult":
+            guard item.nativeInkEraseEnabled else { throw NativePDFError.invalid("네이티브 지우기가 활성화되지 않았습니다.") }
+            try item.operationLedger.acceptEraseResult(request)
+            item.refreshOverlays()
+            return ["operationId": request["operationId"]!, "operationSequence": request["operationSequence"]!, "outcome": request["outcome"]!]
         case "pdfNative:mutationStatus":
             guard let input = request["input"] as? [String: Any], input["courseId"] as? String == item.courseID,
                   input["relPath"] as? String == item.relativePath, input["documentRevision"] as? String == item.revision else {
@@ -176,19 +274,121 @@ final class NativePDFHost {
                 item.pending.removeValue(forKey: mutation); item.refreshOverlays()
             }
             return result
-        case "pdfNative:diagnostics": return item.diagnostics
+        case "pdfNative:diagnostics":
+            let queue = journal.state
+            return item.diagnostics.merging(["journalTiming": journal.timingStatistics.mapValues(\.diagnostics),
+                "journalQueue": ["pendingJobs": queue.queuedJobs, "pendingBytes": queue.queuedBytes,
+                    "failed": queue.failedTicket != nil, "issued": queue.issued.value, "completed": queue.completed.value]]) { _, new in new }
         case "pdfNative:pageGeometry":
             guard let page = request["page"] as? Int else { throw NativePDFError.invalid("편집할 PDF 페이지를 확인해 주세요.") }
             return try item.pageGeometry(page)
         case "pdfNative:flush":
-            try item.flush(); return ["pending": try journal.pending(courseID: item.courseID, relativePath: item.relativePath).map { try Self.json($0.input) }]
+            let through = try await sealAndDrain(item)
+            guard documents[identifier] === item, openGenerations[identifier] == generation else { throw CancellationError() }
+            let recovered = try await journal.pending(courseID: item.courseID, relativePath: item.relativePath)
+                .filter { !item.nativeInkEraseEnabled || !item.operationLedger.containsLiveStroke($0.input.clientMutationId) }
+            try reconcileJournal()
+            guard documents[identifier] === item, openGenerations[identifier] == generation else { throw CancellationError() }
+            var response: [String: Any] = ["pending": try recovered.map { try Self.json($0.input) }]
+            if item.nativeInkEraseEnabled {
+                response["pendingOperations"] = item.operationLedger.pendingOperations.filter {
+                    ($0["operationSequence"] as? Int ?? Int.max) <= through
+                }
+                response["throughOperationSequence"] = through
+            }
+            return response
         default: throw NativePDFError.invalid("알 수 없는 PDF 작업입니다.")
         }
     }
+    private func admitJournal(_ input: NativePDFStrokeInput, item: NativePDFDocument, final: Bool) throws {
+        try input.validate()
+        guard input.documentRevision == item.revision else { throw NativePDFError.invalid("필기 원본 연결이 바뀌었습니다.") }
+        let ordered = final && item.nativeInkEraseEnabled
+        let prepared = final ? NativePDFJournalQueue.PreparedStroke() : nil
+        var ticket: NativePDFJournalQueue.Ticket?
+        let admit = {
+            let completion: NativePDFJournalQueue.Completion = { [weak self, weak item] result in
+                guard let self else { return }
+                do { try self.reconcileJournal() }
+                catch { item?.onEvent("error", ["message": error.localizedDescription]) }
+                if case let .failure(error) = result {
+                    item?.onEvent("error", ["message": error.localizedDescription])
+                    self.onDiagnostic("nativePDF.journalQueue", "write.failed.retained")
+                }
+                self.reportJournalTimings()
+            }
+            if final {
+                ticket = try self.journal.enqueueStroke(input, documentRevision: item.revision,
+                    preparedTransport: prepared, completion: completion)
+            } else {
+                ticket = try self.journal.enqueueCheckpoint(input, documentRevision: item.revision, completion: completion)
+            }
+        }
+        if ordered {
+            let reservation = try item.operationLedger.reserveStroke(input, admit: admit)
+            if !reservation.admitted { return }
+        } else { try admit() }
+        guard let ticket else { preconditionFailure("Successful journal admission must own a ticket") }
+        journalJobs[ticket.value] = JournalJob(ticket: ticket, item: item, input: input,
+            final: final, ordered: ordered, prepared: prepared)
+        // Surface transfers ownership after this synchronous callback succeeds.
+        // Both the queue and this pending display retain the original value.
+        item.addPending(input); item.refreshOverlays()
+    }
+    private func reconcileJournal() throws {
+        let completed = journal.state.completed.value
+        let ready = journalJobs.keys.filter { $0 <= completed }.sorted()
+        for key in ready {
+            guard let job = journalJobs[key] else { continue }
+            var payload: [String: Any]?
+            if job.final {
+                guard let transport = job.prepared?.value else {
+                    throw NativePDFError.invalid("저장된 필기의 전송 준비 상태를 확인하지 못했습니다.")
+                }
+                payload = job.ordered ? try job.item.operationLedger.makeStrokeDurable(job.input, transport: transport) : transport.payload
+            }
+            journalJobs.removeValue(forKey: key); job.prepared?.release()
+            job.item.recordJournal(job.input.kind, phase: job.final ? "commit" : "checkpoint")
+            if let payload { job.item.onEvent("stroke", payload) }
+        }
+    }
+    private func sealAndDrain(_ item: NativePDFDocument) async throws -> Int {
+        var sealFailure: Error?
+        do { try item.flush() } catch { sealFailure = error }
+        var through = item.operationLedger.throughOperationSequence
+        // Even a full queue must get its explicit retry/drain opportunity;
+        // otherwise a retained Surface completion could never be re-admitted.
+        try await drainJournal(retryFailed: true)
+        if let sealFailure {
+            guard let admission = sealFailure as? NativePDFJournalQueue.AdmissionError,
+                  case .full = admission else { throw sealFailure }
+            try item.flush()
+            through = item.operationLedger.throughOperationSequence
+            try await drainJournal(retryFailed: true)
+        }
+        return through
+    }
+    private func drainJournal(retryFailed: Bool) async throws {
+        do { try await journal.barrier(retryFailed: retryFailed) }
+        catch { try reconcileJournal(); throw error }
+        try reconcileJournal(); reportJournalTimings()
+    }
+    private func drainJournalSynchronously(retryFailed: Bool) throws {
+        do { try journal.barrierSynchronously(retryFailed: retryFailed) }
+        catch { try reconcileJournal(); throw error }
+        try reconcileJournal(); reportJournalTimings()
+    }
     func layout() {
         guard let container, let shell else { return }
-        for (identifier, item) in documents where !item.pdfView.isHidden {
-            guard let rect = rectangles[identifier] else { continue }
+        for (identifier, item) in documents {
+            let hidden = hostOccluded || replacingGenerations[identifier] != nil || occludedSurfaces.contains(identifier) || !visibleSurfaces.contains(identifier)
+            item.pdfView.isHidden = hidden
+            item.pdfView.accessibilityElementsHidden = hidden
+            item.pdfView.isUserInteractionEnabled = !hidden && !hostInputBlocked
+            #if DEBUG
+            item.presentationDiagnostics = "hostBlocked=\(hostOccluded ? 1 : 0) hostInputBlocked=\(hostInputBlocked ? 1 : 0) layoutRevision=\(layoutRevisions[identifier] ?? 0)"
+            #endif
+            guard !hidden, let rect = rectangles[identifier] else { item.pdfView.isHidden = true; continue }
             let factor = shell.scrollView.zoomScale
             let source = CGRect(x: rect.minX * factor, y: rect.minY * factor, width: rect.width * factor, height: rect.height * factor)
             let unclipped = shell.convert(source, to: container)
@@ -197,14 +397,66 @@ final class NativePDFHost {
             let frameChanged = item.pdfView.frame != frame
             if frameChanged { item.pdfView.frame = frame }
             container.bringSubviewToFront(item.pdfView)
-            item.pdfView.excludedRects = (holes[identifier] ?? []).map { CGRect(x: $0.minX * factor + unclipped.minX-frame.minX, y: $0.minY * factor + unclipped.minY-frame.minY, width: $0.width * factor, height: $0.height * factor) }
+            let offsetX = unclipped.minX - frame.minX, offsetY = unclipped.minY - frame.minY
+            let localHoles: [CGRect] = (holes[identifier] ?? []).map { hole in
+                let x = hole.minX * factor + offsetX, y = hole.minY * factor + offsetY
+                return CGRect(x: x, y: y, width: hole.width * factor, height: hole.height * factor)
+            }
+            let globalHoles = hostOverlays.compactMap { overlay -> CGRect? in
+                let converted = shell.convert(CGRect(x: overlay.minX * factor, y: overlay.minY * factor, width: overlay.width * factor, height: overlay.height * factor), to: container)
+                let overlap = converted.intersection(frame)
+                guard !overlap.isNull, !overlap.isEmpty else { return nil }
+                return overlap.offsetBy(dx: -frame.minX, dy: -frame.minY)
+            }
+            item.pdfView.excludedRects = localHoles + globalHoles
+            #if DEBUG
+            item.refreshPresentationDiagnostics()
+            #endif
             if frameChanged { item.prepareNavigation() }
         }
     }
     func flush() { for item in documents.values { do { try item.flush() } catch { item.onEvent("error", ["message": error.localizedDescription]) } } }
+    /// Include retained documents from retired renderers in the save barrier.
+    /// Their old JS listeners can no longer report a failed checkpoint.
+    func flushForRecovery() throws {
+        for attempt in 0..<2 {
+            var firstFailure: Error?
+            var admissionFailure: Error?
+            for item in documents.values {
+                do { try item.flush() }
+                catch {
+                    if let admission = error as? NativePDFJournalQueue.AdmissionError, case .full = admission {
+                        if admissionFailure == nil { admissionFailure = error }
+                    } else if firstFailure == nil { firstFailure = error }
+                }
+            }
+            try drainJournalSynchronously(retryFailed: true)
+            // Arbitrary Surface errors retain the existing one-attempt-per-
+            // explicit-barrier contract. Only queue capacity can be relieved
+            // by this completed drain and merits one immediate re-admission.
+            if let firstFailure { throw firstFailure }
+            if let admissionFailure {
+                if attempt == 1 { throw admissionFailure }
+            } else { return }
+        }
+    }
     func closeAll() {
+        // Invalidate opens that are still awaiting a file/binding response too.
+        // They do not yet appear in documents and must not recreate a surface
+        // after the renderer that owns them has terminated.
+        openGenerations.removeAll(); openingGenerations.removeAll(); replacingGenerations.removeAll()
+        visibleSurfaces.removeAll(); occludedSurfaces.removeAll()
+        rectangles.removeAll(); holes.removeAll(); layoutRevisions.removeAll()
+        do { try flushForRecovery() }
+        catch { onDiagnostic("nativePDF.journalQueue", "retired.flush.failed.retained") }
         for (id, item) in documents {
-            do { try item.close(); documents.removeValue(forKey: id); openGenerations.removeValue(forKey: id); rectangles.removeValue(forKey: id); holes.removeValue(forKey: id) }
+            // If durable flushing fails, retain measured input for recovery,
+            // but a retired renderer can never expose or control this view.
+            item.pdfView.isHidden = true
+            item.pdfView.accessibilityElementsHidden = true
+            item.pdfView.isUserInteractionEnabled = false
+            do { try item.close(); documents.removeValue(forKey: id); openGenerations.removeValue(forKey: id); rectangles.removeValue(forKey: id); holes.removeValue(forKey: id)
+                visibleSurfaces.remove(id); occludedSurfaces.remove(id); layoutRevisions.removeValue(forKey: id) }
             catch { item.onEvent("error", ["message": error.localizedDescription]) }
         }
     }
@@ -232,8 +484,25 @@ final class NativePDFHost {
     private static func string(_ request: [String: Any], _ key: String) throws -> String {
         guard let value = request[key] as? String, !value.isEmpty, value.count < 8_192 else { throw NativePDFError.invalid("PDF 작업 정보가 올바르지 않습니다.") }; return value
     }
-    static func json<T: Encodable>(_ value: T) throws -> [String: Any] {
-        guard let result = try JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? [String: Any] else { throw NativePDFError.invalid("PDF 입력을 변환하지 못했습니다.") }; return result
+    nonisolated static func json(_ value: NativePDFStrokeInput) throws -> [String: Any] {
+        // Keep measured doubles intact. JSONEncoder followed by Foundation's
+        // generic JSON parser can introduce an NSDecimalNumber conversion.
+        let points = value.data.points.map { point -> [String: Any] in
+            var item: [String: Any] = ["x": point.x, "y": point.y, "p": point.p]
+            if let t = point.t { item["t"] = t }
+            if let tiltX = point.tiltX { item["tiltX"] = tiltX }
+            if let tiltY = point.tiltY { item["tiltY"] = tiltY }
+            return item
+        }
+        var result: [String: Any] = [
+            "courseId": value.courseId, "relPath": value.relPath, "page": value.page,
+            "kind": value.kind, "clientMutationId": value.clientMutationId,
+            "data": ["points": points, "inkVersion": value.data.inkVersion],
+            "style": ["color": value.style.color, "width": value.style.width, "opacity": value.style.opacity]
+        ]
+        if let revision = value.documentRevision { result["documentRevision"] = revision }
+        guard JSONSerialization.isValidJSONObject(result) else { throw NativePDFError.invalid("PDF 입력을 변환하지 못했습니다.") }
+        return result
     }
     nonisolated private static func snapshot(path: String, root: URL) throws -> (url: URL, revision: String) {
         let file = try DesktopMaterialFile(path: path, root: root)
@@ -262,12 +531,28 @@ final class NativePDFHost {
 private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate, @preconcurrency PDFPageOverlayViewProvider {
     let id: String, generation: String, courseID: String, relativePath: String, revision: String
     let document: PDFDocument
+    let operationLedger: NativePDFOperationLedger
+    private(set) var nativeInkEraseEnabled = false
+    private struct EraseContext { let operationID: String; let epoch: Int }
+    private var eraseContexts: [Int: EraseContext] = [:]
     let pdfView = NativePDFApertureView()
     var onStroke: ((Int, NativePDFCompletedStroke) throws -> Void)?
+    var onDurabilityBarrier: (() throws -> Void)?
     var onCheckpoint: ((Int, NativePDFCompletedStroke) throws -> Void)?
     var onEvent: (String, [String: Any]) -> Void = { _, _ in }
     var onDiagnostic: (String, String) -> Void = { _, _ in }
+    #if DEBUG
+    var presentationDiagnostics = "" { didSet { updateAccessibilityState() } }
+    func refreshPresentationDiagnostics() { updateAccessibilityState() }
+    #endif
     private var journalCounts: [String: Int] = [:]
+    private var latencyStatistics: [String: NativePDFLatencySamples] = [:]
+    func recordLatency(_ phase: String, startedAt: CFTimeInterval) {
+        latencyStatistics[phase, default: NativePDFLatencySamples()].record(milliseconds: (CACurrentMediaTime() - startedAt) * 1000)
+        if let statistics = latencyStatistics[phase], statistics.shouldLog {
+            onDiagnostic("nativePDF.hostTiming", "\(phase).\(statistics.logCode)")
+        }
+    }
     func recordJournal(_ kind: String, phase: String) {
         let key = "\(kind == "highlighter" ? "highlighter" : "ink").\(phase)", count = (journalCounts[key] ?? 0) + 1
         journalCounts[key] = count
@@ -281,8 +566,14 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private var imageTasks: [String: Task<Void, Never>] = [:]
     private var imageFailures: Set<String> = []
     private var overlays: [Int: NativePDFInkSurface] = [:]
-    private var objects: [[String: Any]] = [], highlights: [[String: Any]] = []
-    private var objectScenes: [Int: [String: Any]] = [:]
+    private let drawingSnapshots = NativePDFDrawingSnapshotStore()
+    private var objects: [[String: Any]] { drawingSnapshots.orderedRows.map(\.object) }
+    private var pendingRows: [String: NativePDFDrawingSnapshotStore.Row] = [:]
+    private var highlights: [[String: Any]] = []
+    private var objectScenes: [Int: NativePDFEditorScene] = [:]
+    private var objectSceneEpoch: Int?
+    private var objectSceneRevisions: [Int: Int] = [:]
+    private var objectScenePatchPages: Set<Int> = []
     private var tool = NativePDFInkSurface.Tool()
     private var loading = true
     private var workspaceActive = false
@@ -293,15 +584,29 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private var layoutSize = CGSize.zero
     private var suspended = false
     private var suspendedViewport: [String: Any]?
-    private var nativePinch: UIPinchGestureRecognizer!
+    private weak var nativePinch: UIPinchGestureRecognizer?
+    private weak var nativePan: UIPanGestureRecognizer?
+    private struct PinchFallback {
+        let generation: UInt64
+        let page: PDFPage
+        let anchor: CGPoint
+        var zoom: NativePDFPinchZoomSession
+    }
+    private var pinchFallback: PinchFallback?
+    private var pinchGeneration: UInt64 = 0
     private let pencilGesture: NativePDFPencilGestureRecognizer
-    private var pinchStartScale = 1.0
-    private var pinchAnchor: (page: PDFPage, point: CGPoint)?
     private var selectedTextRects: [Int: [[String: Double]]] = [:]
     private let pageActions = UIButton(type: .system)
     private var pinchEvents = 0, scaleChanges = 0, navigateCommands = 0
     private var lastPinchState = 0, lastPinchScale = 1.0, lastRequestedZoom = 1.0
+    #if DEBUG
+    private var pinchTrace: [String] = []
+    private var pinchTraceChanges = 0
+    private var pinchFallbackApplications = 0, pinchAnchorChecks = 0
+    private var pinchAnchorErrorMax: CGFloat = 0
+    #endif
     private var submissionP95 = 0.0, submissionSamples = 0
+    private var presentationStatistics = NativePDFInkFrameStatistics()
     var diagnostics: [String: Any] {
         ["page": state["page"] ?? 1, "zoom": pdfView.scaleFactor/max(fit,0.001), "fit": fit,
          "pinchEvents": pinchEvents, "pinchState": lastPinchState, "pinchScale": lastPinchScale,
@@ -310,13 +615,14 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
          "receiveToMetalSubmitP95MS": submissionP95, "timingSamples": submissionSamples,
          "retainedPages": overlays.count, "suspended": suspended,
          "tool": tool.name, "loading": loading, "markup": pdfView.isInMarkupMode,
-         "inputs": overlays.values.map(\.inputDiagnostics), "journalCounts": journalCounts]
+         "inputs": overlays.values.map(\.inputDiagnostics), "journalCounts": journalCounts,
+         "hostTiming": latencyStatistics.mapValues(\.diagnostics)]
     }
     private var lastViewport = ""
     private var emission: Task<Void, Never>?
     var state: [String: Any] {
         let page = pdfView.currentPage.map { document.index(for: $0) + 1 } ?? 1
-        return ["page": page, "numPages": document.pageCount, "zoom": pdfView.scaleFactor / max(fit, 0.001), "revision": revision,
+        return ["page": page, "numPages": document.pageCount, "zoom": pdfView.scaleFactor / max(fit, 0.001), "revision": revision, "documentRevision": revision,
                 "pageSizes": (0..<document.pageCount).compactMap { index -> [String: Any]? in
                     guard let page = document.page(at: index) else { return nil }
                     let crop = page.bounds(for: .cropBox), rotated = abs(page.rotation) % 180 != 0
@@ -325,6 +631,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     }
     init(id: String, generation: String, courseID: String, relativePath: String, revision: String, document: PDFDocument, testingDirectPencil: Bool = false) {
         self.id = id; self.generation = generation; self.courseID = courseID; self.relativePath = relativePath; self.revision = revision; self.document = document
+        operationLedger = NativePDFOperationLedger(documentRevision: revision)
         #if DEBUG
         pencilGesture = NativePDFPencilGestureRecognizer(testTouchType: testingDirectPencil ? .direct : .pencil)
         #else
@@ -361,9 +668,6 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         }
         pencilGesture.onDiagnostic = { [weak self] code in self?.onDiagnostic("nativePDF.gesture", code) }
         pdfView.addGestureRecognizer(pencilGesture)
-        nativePinch = UIPinchGestureRecognizer(target: self, action: #selector(pinchChanged(_:)))
-        nativePinch.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-        pdfView.addGestureRecognizer(nativePinch)
         let annotationTap = UITapGestureRecognizer(target: self, action: #selector(annotationTapped(_:)))
         annotationTap.cancelsTouchesInView = false
         annotationTap.delaysTouchesBegan = false; annotationTap.delaysTouchesEnded = false
@@ -398,6 +702,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         guard !suspended else { return }
         pdfView.layoutIfNeeded()
         if pdfView.bounds.width > 0, pdfView.bounds.height > 0, pdfView.bounds.size != layoutSize {
+            cancelPinchFallback()
             let zoom = layoutSize == .zero ? 1 : pdfView.scaleFactor / max(fit, 0.001)
             fit = max(pdfView.scaleFactorForSizeToFit, 0.001)
             // Leaving autoScales enabled lets incidental host layout reset a
@@ -412,10 +717,18 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                 // Native finger navigation and raw Pencil ownership must not
                 // compete for the same stylus stream.
                 scroll.panGestureRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue), NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
-                // PDFKit's scroll recognizer can snap back at gesture end in
-                // a page-overlay host. One public recognizer owns the PDF and
-                // its overlays together, including the point under the fingers.
-                scroll.pinchGestureRecognizer?.isEnabled = false
+                // Keep PDFKit's pan/pinch pair and its simultaneous-recognition
+                // policy. A second pinch on PDFView competes with that pair.
+                scroll.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+                scroll.pinchGestureRecognizer?.isEnabled = true
+                if nativePinch !== scroll.pinchGestureRecognizer, nativePinch == nil {
+                    nativePinch = scroll.pinchGestureRecognizer
+                    nativePinch?.addTarget(self, action: #selector(pinchChanged(_:)))
+                }
+                if nativePan == nil {
+                    nativePan = scroll.panGestureRecognizer
+                    nativePan?.addTarget(self, action: #selector(panChanged(_:)))
+                }
                 if viewportObservation == nil {
                     viewportObservation = scroll.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
                         Task { @MainActor in self?.viewportChanged() }
@@ -438,30 +751,98 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     }
     @objc private func pinchChanged(_ pinch: UIPinchGestureRecognizer) {
         pinchEvents += 1; lastPinchState = pinch.state.rawValue; lastPinchScale = pinch.scale
-        let centroid = pinch.location(in: pdfView)
         if pinch.state == .began {
-            do { try flush() } catch { onEvent("error", ["message": error.localizedDescription]); pinch.isEnabled = false; pinch.isEnabled = true; return }
-            pinchStartScale = pdfView.scaleFactor
-            if let page = pdfView.page(for: centroid, nearest: true) { pinchAnchor = (page, pdfView.convert(centroid, to: page)) }
-        }
-        if [.began, .changed, .ended].contains(pinch.state) {
-            pdfView.scaleFactor = min(pdfView.maxScaleFactor, max(pdfView.minScaleFactor, pinchStartScale * pinch.scale))
-            pdfView.layoutIfNeeded()
-            if let anchor = pinchAnchor, let scroll = scrollView {
-                let relocated = pdfView.convert(anchor.point, from: anchor.page)
-                let proposed = CGPoint(x: scroll.contentOffset.x + relocated.x - centroid.x, y: scroll.contentOffset.y + relocated.y - centroid.y)
-                let inset = scroll.adjustedContentInset
-                scroll.setContentOffset(CGPoint(
-                    x: max(-inset.left, min(max(-inset.left, scroll.contentSize.width-scroll.bounds.width+inset.right), proposed.x)),
-                    y: max(-inset.top, min(max(-inset.top, scroll.contentSize.height-scroll.bounds.height+inset.bottom), proposed.y))), animated: false)
+            do { try prepareForNavigation() } catch { onEvent("error", ["message": error.localizedDescription]) }
+            pinchGeneration &+= 1
+            pinchFallback = nil
+            let center = pinch.location(in: pdfView)
+            if let page = pdfView.page(for: center, nearest: true),
+               let zoom = NativePDFPinchZoomSession(pdfScale: pdfView.scaleFactor, recognizerScale: pinch.scale) {
+                pinchFallback = PinchFallback(generation: pinchGeneration, page: page,
+                    anchor: pdfView.convert(center, to: page), zoom: zoom)
             }
-            viewportChanged()
         }
-        if [.ended, .cancelled, .failed].contains(pinch.state) { pinchAnchor = nil }
+        if pinch.state == .cancelled || pinch.state == .failed { cancelPinchFallback() }
+        if pinch.state == .changed || pinch.state == .ended {
+            // UIScrollView uses an absolute recognizer scale during its pinch,
+            // then resets it to one after ending. Capture before that reset.
+            let rawScale = pinch.scale, center = pinch.location(in: pdfView)
+            let ended = pinch.state == .ended, generation = pinchGeneration
+            DispatchQueue.main.async { [weak self] in
+                self?.completeNativePinchObservation(rawScale: rawScale, center: center,
+                    ended: ended, generation: generation)
+            }
+        }
+        #if DEBUG
+        if pinch.state == .began { pinchTrace = []; pinchTraceChanges = 0 }
+        if pinch.state == .changed { pinchTraceChanges += 1 }
+        if pinch.state != .changed || pinchTraceChanges <= 2 {
+            let phase = pinch.state.rawValue
+            recordPinchTrace("\(phase)", pinch: pinch)
+            DispatchQueue.main.async { [weak self, weak pinch] in
+                guard let self, let pinch else { return }
+                self.recordPinchTrace("p\(phase)", pinch: pinch)
+                self.updateAccessibilityState()
+            }
+        }
+        #endif
+        viewportChanged()
         updateAccessibilityState()
+    }
+    private func cancelPinchFallback() { pinchGeneration &+= 1; pinchFallback = nil }
+    private func completeNativePinchObservation(rawScale: CGFloat, center: CGPoint, ended: Bool, generation: UInt64) {
+        guard !suspended, pinchGeneration == generation,
+              var fallback = pinchFallback, fallback.generation == generation else { return }
+        defer { if ended, pinchGeneration == generation { pinchFallback = nil } }
+        let target = fallback.zoom.targetScale(recognizerScale: rawScale, actualPDFScale: pdfView.scaleFactor,
+            minimum: pdfView.minScaleFactor, maximum: pdfView.maxScaleFactor, ended: ended)
+        pinchFallback = fallback
+        guard let target, let scroll = scrollView else { return }
+        // Some physical PDFKit builds report a fully recognized native pinch
+        // without applying its scale. Only that session takes this public-API
+        // fallback; an observed native zoom always remains owned by PDFKit.
+        pdfView.scaleFactor = target; pdfView.layoutIfNeeded()
+        let projected = pdfView.convert(fallback.anchor, from: fallback.page)
+        let inset = scroll.adjustedContentInset
+        let maximumX = max(-inset.left, scroll.contentSize.width-scroll.bounds.width+inset.right)
+        let maximumY = max(-inset.top, scroll.contentSize.height-scroll.bounds.height+inset.bottom)
+        let desiredOffset = CGPoint(x: scroll.contentOffset.x+projected.x-center.x,
+                                    y: scroll.contentOffset.y+projected.y-center.y)
+        scroll.contentOffset = CGPoint(
+            x: min(maximumX, max(-inset.left, desiredOffset.x)),
+            y: min(maximumY, max(-inset.top, desiredOffset.y)))
+        #if DEBUG
+        pinchFallbackApplications += 1
+        if abs(scroll.contentOffset.x-desiredOffset.x) < 0.001,
+           abs(scroll.contentOffset.y-desiredOffset.y) < 0.001 {
+            let actualAnchor = pdfView.convert(fallback.anchor, from: fallback.page)
+            pinchAnchorChecks += 1
+            pinchAnchorErrorMax = max(pinchAnchorErrorMax, hypot(actualAnchor.x-center.x, actualAnchor.y-center.y))
+        }
+        onDiagnostic("nativePDF.pinch", String(format: "fallback.raw%.4f.target%.4f.actual%.4f", rawScale, target, pdfView.scaleFactor))
+        #endif
+        viewportChanged()
+    }
+    #if DEBUG
+    private func recordPinchTrace(_ phase: String, pinch: UIPinchGestureRecognizer) {
+        let scroll = scrollView
+        let zoomView = scroll.flatMap { $0.delegate?.viewForZooming?(in: $0) }
+        let entry = String(format: "%@r%.3f/f%.3f/s%.3f/z%d/v%d/e%d/m%d/t%d", phase,
+            pinch.scale, pdfView.scaleFactor, scroll?.zoomScale ?? 0, scroll?.isZooming == true ? 1 : 0,
+            zoomView != nil ? 1 : 0, scroll?.isScrollEnabled == true ? 1 : 0,
+            pdfView.isInMarkupMode ? 1 : 0, pinch.numberOfTouches)
+        if pinchTrace.count < 12 { pinchTrace.append(entry) }
+        onDiagnostic("nativePDF.pinch", entry)
+    }
+    #endif
+    @objc private func panChanged(_ pan: UIPanGestureRecognizer) {
+        if pan.state == .began {
+            do { try prepareForNavigation() } catch { onEvent("error", ["message": error.localizedDescription]) }
+        }
     }
     func setVisible(_ visible: Bool) throws {
         if !visible {
+            cancelPinchFallback()
             pdfView.isHidden = true
             if !suspended {
                 try flush()
@@ -472,7 +853,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                     viewport["horizontalProgress"] = NativePDFPageCoordinates(page: page).displayNormalized(center).x
                 }
                 suspendedViewport = viewport; suspended = true
-                viewportObservation = nil; pinchAnchor = nil
+                viewportObservation = nil; nativePinch = nil; nativePan = nil
                 pdfView.document = nil; overlays.removeAll(); releaseCaches()
             }
             pdfView.isHidden = true
@@ -487,78 +868,226 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     }
     func releaseCaches() {
         do { try flush() } catch { onEvent("error", ["message": error.localizedDescription]); return }
+        NativePDFObjectRenderer.releaseInkPaths()
+        drawingSnapshots.releasePreparedInk(); pendingRows.values.forEach { $0.releasePreparedInk() }
+        objectScenes.values.forEach { $0.releasePreparedInk() }
         imageTasks.values.forEach { $0.cancel() }; imageTasks.removeAll(); images.removeAllObjects()
         if !suspended { refreshOverlays() }
     }
-    func snapshot(_ request: [String: Any]) {
-        objects = request["drawings"] as? [[String: Any]] ?? []
-        highlights = request["annotations"] as? [[String: Any]] ?? []
-        loading = request["loading"] as? Bool ?? true
-        workspaceActive = request["active"] as? Bool ?? false
+    func snapshot(_ request: [String: Any]) throws -> [String: Any] {
+        let started = CACurrentMediaTime(); defer { recordLatency("snapshot", startedAt: started) }
+        let nextNativeErase: Bool
+        if let raw = request["nativeInkErase"] {
+            guard let value = raw as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else { throw NativePDFEditorScene.invalid() }
+            // Once adopted, the ordered bridge is generation-scoped. A later
+            // partial snapshot cannot silently abandon outstanding operations.
+            guard !nativeInkEraseEnabled || value.boolValue else { throw NativePDFEditorScene.invalid() }
+            nextNativeErase = value.boolValue
+        } else { nextNativeErase = nativeInkEraseEnabled }
+        var nextTool: NativePDFInkSurface.Tool?
         if let value = request["tool"] as? [String: Any], let name = value["name"] as? String,
            let data = try? JSONSerialization.data(withJSONObject: value["style"] as? [String: Any] ?? [:]),
            let style = try? JSONDecoder().decode(NativePDFInkStyle.self, from: data), style.isValid {
-            tool = .init(name: name, style: style)
-            if ["pen", "highlighter"].contains(name) { objectScenes.removeAll() }
+            nextTool = .init(name: name, style: style)
         }
-        // PDFKit read mode may skip page overlay interaction. Markup enables
-        // the public drawing path; selection mode retains finger text lookup.
-        // Pencil select still routes explicitly through our provider's views.
-        let markup = tool.name != "select"
+        let epoch: Int?
+        if request["objectSceneEpoch"] != nil {
+            guard let value = NativePDFEditorScene.integer(request["objectSceneEpoch"]), let nextTool,
+                  ["select", "pen", "highlighter", "eraser", "line", "arrow", "rect", "ellipse", "text"].contains(nextTool.name),
+                  value >= (objectSceneEpoch ?? 0),
+                  value != objectSceneEpoch || nextTool.name == tool.name else { throw NativePDFEditorScene.invalid() }
+            epoch = value
+        } else {
+            guard objectSceneEpoch == nil else { throw NativePDFEditorScene.invalid() }
+            epoch = nil
+        }
+        // Reject an invalid delta before changing either drawings or UI state.
+        try drawingSnapshots.apply(request, pageCount: document.pageCount)
+        nativeInkEraseEnabled = nextNativeErase
+        if nativeInkEraseEnabled, request["drawings"] != nil || request["drawingPatch"] != nil {
+            operationLedger.observeCanonical(objects)
+        }
+        if epoch != objectSceneEpoch {
+            // Retire delta authority, while preserving the displayed editor
+            // state until its replacement arrives. Switching non-ink tools
+            // must not flash canonical rows hidden by an active local edit.
+            objectSceneRevisions.removeAll(); objectScenePatchPages.removeAll()
+            objectSceneEpoch = epoch
+        }
+        highlights = request["annotations"] as? [[String: Any]] ?? []
+        loading = request["loading"] as? Bool ?? true
+        workspaceActive = request["active"] as? Bool ?? false
+        if let nextTool {
+            tool = nextTool
+            if ["pen", "highlighter"].contains(tool.name) {
+                objectScenes.removeAll()
+                if nativeInkEraseEnabled { operationLedger.retireEditors() }
+            }
+        }
+        // The Pencil-specific aperture and ancestor recognizer route measured
+        // ink directly to our overlay. Keep PDFKit's reading-mode gesture path
+        // for fingers while writing; markup redirects all page hit testing to
+        // overlays and can prevent PDFKit's own pinch from changing its scale.
+        let markup = !["select", "pen", "highlighter"].contains(tool.name)
         if pdfView.isInMarkupMode != markup {
             pdfView.isInMarkupMode = markup
             onDiagnostic("nativePDF.mode", "\(tool.name).markup.\(markup ? "on" : "off")")
         }
         refreshOverlays()
-        pageActions.isHidden = tool.name != "select" || loading
+        pageActions.isHidden = loading
         updateAccessibilityState()
+        return epoch.map { ["objectSceneEpoch": $0, "tool": tool.name] } ?? [:]
     }
-    func objectScene(_ request: [String: Any]) {
+    func objectScene(_ request: [String: Any]) throws -> [String: Any] {
+        let started = CACurrentMediaTime(); defer { recordLatency("objectScene", startedAt: started) }
+        if request["objectSceneEpoch"] != nil || request["objectSceneRevision"] != nil || request["objectPatch"] != nil {
+            guard let epoch = NativePDFEditorScene.integer(request["objectSceneEpoch"]), epoch == objectSceneEpoch,
+                  !["pen", "highlighter"].contains(tool.name),
+                  let page = NativePDFEditorScene.integer(request["page"]), (1...document.pageCount).contains(page),
+                  let revision = NativePDFEditorScene.integer(request["objectSceneRevision"]),
+                  revision > (objectSceneRevisions[page] ?? 0) else { throw NativePDFEditorScene.invalid() }
+            let next: NativePDFEditorScene
+            let isPatch = request["objectPatch"] != nil
+            if isPatch {
+                guard request["objects"] == nil, let patch = request["objectPatch"] as? [String: Any],
+                      let reset = patch["reset"] as? NSNumber, CFGetTypeID(reset) == CFBooleanGetTypeID(),
+                      let base = NativePDFEditorScene.integer(patch["baseRevision"]),
+                      NativePDFEditorScene.integer(patch["revision"]) == revision,
+                      reset.boolValue ? base == 0 : (objectScenePatchPages.contains(page) && base == objectSceneRevisions[page])
+                else { throw NativePDFEditorScene.invalid() }
+                next = try NativePDFEditorScene(patch: patch, request: request, page: page, pageCount: document.pageCount,
+                    store: drawingSnapshots, previous: objectScenes[page])
+            } else {
+                guard request["objects"] is [[String: Any]] else { throw NativePDFEditorScene.invalid() }
+                next = NativePDFEditorScene(request: request, page: page, pageCount: document.pageCount,
+                    store: drawingSnapshots, previous: objectScenes[page])
+            }
+            // Entries, selection, revision and delta eligibility publish only
+            // after the complete request validates. This scene never mutates
+            // canonical drawings, pending Pencil checkpoints or the journal.
+            objectScenes[page] = next; objectSceneRevisions[page] = revision
+            if nativeInkEraseEnabled { operationLedger.observeEditor(page: page, objects: next.identityObjects) }
+            if isPatch { objectScenePatchPages.insert(page) } else { objectScenePatchPages.remove(page) }
+            refreshOverlays()
+            return ["page": page, "objectSceneEpoch": epoch, "objectSceneRevision": revision]
+        }
+        guard objectSceneEpoch == nil else { throw NativePDFEditorScene.invalid() }
         guard !["pen", "highlighter"].contains(tool.name), let page = request["page"] as? Int,
-              (1...document.pageCount).contains(page), request["objects"] is [[String: Any]] else { return }
-        objectScenes[page] = request
+              (1...document.pageCount).contains(page), request["objects"] is [[String: Any]] else { return [:] }
+        objectScenes[page] = NativePDFEditorScene(request: request, page: page, pageCount: document.pageCount,
+            store: drawingSnapshots, previous: objectScenes[page])
+        if nativeInkEraseEnabled, let scene = objectScenes[page] {
+            operationLedger.observeEditor(page: page, objects: scene.identityObjects)
+        }
         refreshOverlays()
+        return [:]
+    }
+    private func beginErase(page: Int) {
+        guard nativeInkEraseEnabled else { return }
+        eraseContexts[page] = EraseContext(operationID: UUID().uuidString, epoch: objectSceneEpoch ?? 0)
+    }
+    private func commitErase(page: Int, targets: [NativePDFEraseTarget]) throws {
+        guard nativeInkEraseEnabled, (1...document.pageCount).contains(page),
+              let context = eraseContexts[page] else { throw NativePDFError.invalid("PDF 지우기 접촉의 시작 상태를 확인하지 못했습니다.") }
+        let normalized = try targets.map { target -> NativePDFEraseTarget in
+            guard let mutation = target.mutationID else { return target }
+            let saved = operationLedger.drawingID(for: mutation) ?? acknowledgedRows[mutation]
+            let isPending = pending[mutation] != nil
+            let isPendingPlaceholder = isPending && target.drawingID?.utf8.elementsEqual(mutation.utf8) == true
+            if UUID(uuidString: mutation) != nil, isPending || saved != nil {
+                if let supplied = target.drawingID, !isPendingPlaceholder, let saved,
+                   !supplied.utf8.elementsEqual(saved.utf8) {
+                    throw NativePDFError.invalid("PDF 지우기 대상의 저장 식별자가 일치하지 않습니다.")
+                }
+                return NativePDFEraseTarget(drawingID: isPendingPlaceholder ? saved : (target.drawingID ?? saved), mutationID: mutation)
+            }
+            // Persisted rows may carry a prior renderer session's alias. Only
+            // a current native journal/ACK association authorizes sending M;
+            // otherwise the already-canonical D is sufficient and unambiguous.
+            guard let drawing = target.drawingID, !drawing.isEmpty else {
+                throw NativePDFError.invalid("PDF 지우기 대상의 저장 식별자를 확인하지 못했습니다.")
+            }
+            return NativePDFEraseTarget(drawingID: drawing)
+        }
+        let payload = try operationLedger.recordErase(operationID: context.operationID,
+            originToolEpoch: context.epoch, page: page, targets: normalized)
+        // Preserve the same operation UUID/epoch when this callback throws.
+        // Only a successfully recorded operation transfers gesture ownership.
+        eraseContexts.removeValue(forKey: page)
+        refreshOverlays()
+        onEvent("eraseCommit", payload)
     }
     func acknowledgePreview(mutationID: String, drawingID: String) {
+        if let input = pending[mutationID] {
+            overlays[input.page]?.rememberNativeMutationAlias(mutationID: mutationID, drawingID: drawingID)
+        }
         acknowledgedRows[mutationID] = drawingID
         refreshOverlays()
         publishPendingCount()
     }
-    func addPending(_ input: NativePDFStrokeInput) {
+    func addPending(_ input: NativePDFStrokeInput, notify: Bool = true) {
+        let started = CACurrentMediaTime(); defer { recordLatency("pendingRow", startedAt: started) }
         if pending[input.clientMutationId] == nil { pendingOrder.append(input.clientMutationId) }
         pending[input.clientMutationId] = input
-        publishPendingCount()
+        // Estimated-property corrections replace only their own immutable row.
+        // Existing measured strokes do no JSON/path work during later refreshes.
+        if var object = try? NativePDFHost.json(input) {
+            object["id"] = input.clientMutationId
+            pendingRows[input.clientMutationId] = try? drawingSnapshots.makeRow(object, pageCount: document.pageCount,
+                previous: pendingRows[input.clientMutationId])
+        }
+        if notify { publishPendingCount() }
     }
     private func publishPendingCount() {
         onEvent("pending", ["count": pending.keys.filter { acknowledgedRows[$0] == nil }.count])
     }
     func refreshOverlays() {
+        let started = CACurrentMediaTime(); defer { recordLatency("refreshOverlays", startedAt: started) }
+        // Only already-ACKed previews can be retired by the two-stream erase
+        // barrier. Their original journal was removed by the normal stroke ACK.
+        for target in operationLedger.takeRetiredTargets() {
+            if let mutation = target.mutationID, let drawing = target.drawingID,
+               acknowledgedRows[mutation]?.utf8.elementsEqual(drawing.utf8) == true {
+                pending.removeValue(forKey: mutation); acknowledgedRows.removeValue(forKey: mutation)
+            }
+        }
         for (number, overlay) in overlays {
+            overlay.retainedInkEnabled = nativeInkEraseEnabled
+            overlay.nativeErasingEnabled = nativeInkEraseEnabled
+            overlay.erasedIdentifiers = operationLedger.excludedIdentifiers(page: number)
             overlay.tool = tool; overlay.isLoading = loading
             overlay.highlights = highlights.filter { $0["page"] as? Int == number }
             overlay.selectedTextRects = selectedTextRects[number] ?? []
             let scene = objectScenes[number]
-            var drawings = scene?["objects"] as? [[String: Any]] ?? objects.filter { $0["page"] as? Int == number }
-            overlay.selectionBox = scene?["selection"] as? [String: Double]
-            overlay.selectionResizable = scene?["resizable"] as? Bool ?? false
-            overlay.selectionTextHandles = scene?["textHandles"] as? Bool ?? false
+            let rows = drawingSnapshots.orderedRows.filter { $0.page == number }
+            let coordinates = document.page(at: number - 1).map { NativePDFPageCoordinates(page: $0) }
+            let aspect = coordinates.map { $0.height / $0.width } ?? sqrt(2)
+            var drawings = scene?.prepared(aspect: aspect) ?? rows.map { $0.prepared(aspect: aspect) }
+            var tokens = scene?.visualTokens ?? rows.map(\.visualToken)
+            overlay.selectionBox = scene?.selection
+            overlay.selectionResizable = scene?.resizable ?? false
+            overlay.selectionTextHandles = scene?.textHandles ?? false
             for input in pendingOrder.compactMap({ pending[$0] }) where input.page == number {
                 let acknowledged = acknowledgedRows[input.clientMutationId]
                 if drawings.contains(where: { $0["clientMutationId"] as? String == input.clientMutationId || (acknowledged != nil && $0["id"] as? String == acknowledged) }) {
                     if acknowledgedRows[input.clientMutationId] != nil { pending.removeValue(forKey: input.clientMutationId); acknowledgedRows.removeValue(forKey: input.clientMutationId) }
                     continue
                 }
-                guard let page = document.page(at: number - 1), var object = try? NativePDFHost.json(input) else { continue }
-                let coordinates = NativePDFPageCoordinates(page: page)
-                let polygons = input.data.inkVersion == 3
-                    ? NativePDFInkGeometryV3.polygons(points: input.data.points, width: input.style.width, aspect: coordinates.height / coordinates.width, highlighter: input.kind == "highlighter")
-                    : NativePDFInkGeometry.polygons(points: input.data.points, width: input.style.width, aspect: coordinates.height / coordinates.width, highlighter: input.kind == "highlighter")
-                object["nativePath"] = polygons.map { polygon in
-                    polygon.enumerated().map { "\($0.offset == 0 ? "M" : "L") \($0.element.x) \($0.element.y)" }.joined(separator: " ") + " Z"
-                }.joined(separator: " ")
-                drawings.append(object)
+                guard let row = pendingRows[input.clientMutationId] else { continue }
+                drawings.append(row.prepared(aspect: aspect)); tokens.append(row.visualToken)
             }
-            overlay.objects = drawings
+            // Tombstones affect presentation only. Keep canonical snapshots,
+            // editor revision bases and durable native checkpoints untouched.
+            // Filter paired rows/tokens for both retained GPU and CG fallback.
+            let excluded = Set(operationLedger.excludedIdentifiers(page: number).map { Data($0.utf8) })
+            if !excluded.isEmpty {
+                let visible = zip(drawings, tokens).filter { object, _ in
+                    ![object["id"] as? String, object["clientMutationId"] as? String]
+                        .compactMap { $0 }.contains { excluded.contains(Data($0.utf8)) }
+                }
+                drawings = visible.map(\.0); tokens = visible.map(\.1)
+            }
+            overlay.applyObjects(objects: drawings, visualTokens: tokens)
             for object in drawings where ["image", "clip"].contains(object["kind"] as? String ?? "") {
                 let key = Self.imageKey(object)
                 guard images.object(forKey: key as NSString) == nil, imageTasks[key] == nil, !imageFailures.contains(key), let resolveImage else { continue }
@@ -567,13 +1096,14 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                         let image = try await resolveImage(object)
                         guard let self, !Task.isCancelled else { return }
                         self.images.setObject(image, forKey: key as NSString, cost: (image.cgImage?.bytesPerRow ?? 0) * (image.cgImage?.height ?? 0))
-                        self.overlays.values.forEach { $0.invalidateBackdrop() }
+                        self.overlays.values.forEach { $0.invalidateBackdrop(reason: "image") }
                     } catch { if !Task.isCancelled { self?.imageFailures.insert(key); self?.onEvent("error", ["message": error.localizedDescription]) } }
                     self?.imageTasks.removeValue(forKey: key)
                 }
             }
         }
         pendingOrder.removeAll { pending[$0] == nil }
+        pendingRows = pendingRows.filter { pending[$0.key] != nil }
     }
     private static func imageKey(_ object: [String: Any]) -> String {
         let value = object["data"] as? [String: Any] ?? [:]
@@ -582,6 +1112,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
     func navigate(_ request: [String: Any]) throws {
+        cancelPinchFallback()
         try flush(); navigating = true; defer { navigating = false }
         navigateCommands += 1
         if let zoom = request["zoom"] as? Double { lastRequestedZoom = zoom }
@@ -632,6 +1163,37 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             scrollView?.zoomScale ?? 0, scrollView?.minimumZoomScale ?? 0, scrollView?.maximumZoomScale ?? 0, pdfView.autoScales ? 1 : 0, workspaceActive ? 1 : 0)
         #if DEBUG
         pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " drawings=\(objects.count) pending=\(pending.count)"
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + String(format:
+            " presentP95ms=%.2f firstPresentP95ms=%.2f liveFrames=%d liveStrokes=%d lateStrokes=%d",
+            presentationStatistics.receiveToPresentP95MS, presentationStatistics.firstPresentationP95MS,
+            presentationStatistics.framesBeforeLift, presentationStatistics.strokesBeforeLift, presentationStatistics.strokesAfterLift)
+        let scenes = overlays.values.map(\.inputDiagnostics)
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") +
+            " sceneFull=\(scenes.reduce(0) { $0 + ($1["sceneFullRenders"] as? Int ?? 0) })" +
+            " sceneAppend=\(scenes.reduce(0) { $0 + ($1["sceneAppendRenders"] as? Int ?? 0) })"
+        let retainedActive = scenes.contains { $0["retainedInkActive"] as? Bool == true } ? 1 : 0
+        let retainedMeshes = scenes.reduce(0) { $0 + ($1["retainedInkMeshes"] as? Int ?? 0) }
+        let retainedInstalls = scenes.reduce(0) { $0 + ($1["retainedInkInstalls"] as? Int ?? 0) }
+        let retainedBuilds = scenes.reduce(0) { $0 + ($1["retainedInkMeshBuilds"] as? Int ?? 0) }
+        let retainedObjects = scenes.reduce(0) { $0 + ($1["retainedObjectTextures"] as? Int ?? 0) }
+        let nonInkObjects = objects.filter { !["ink", "highlighter"].contains($0["kind"] as? String ?? "") }.count
+        let retainedSummary = " retainedActive=\(retainedActive) countMesh=\(retainedMeshes) retainedInstalls=\(retainedInstalls)"
+        let operationSummary = " retainedMeshBuilds=\(retainedBuilds) nativeEraseOperations=\(operationLedger.eraseOperationCount) retainedObjects=\(retainedObjects) nonInkObjects=\(nonInkObjects)"
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + retainedSummary + operationSummary
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + String(format:
+            " navMaxms=%.2f navRefresh=%d navRenders=%d navActive=%d scrollY=%.2f",
+            scenes.map { $0["navigationRefreshMaxCPUMS"] as? Double ?? 0 }.max() ?? 0,
+            scenes.reduce(0) { $0 + ($1["navigationRefreshCount"] as? Int ?? 0) },
+            scenes.reduce(0) { $0 + ($1["navigationAsyncRasterCount"] as? Int ?? 0) },
+            scenes.contains { $0["navigationDisplayActive"] as? Bool == true } ? 1 : 0,
+            scrollView?.contentOffset.y ?? 0)
+        let apertures = pdfView.excludedRects.map { String(format: "%.1f,%.1f,%.1f,%.1f", $0.minX, $0.minY, $0.width, $0.height) }.joined(separator: ";")
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") +
+            " \(presentationDiagnostics) nativeHidden=\(pdfView.isHidden ? 1 : 0) nativeInput=\(pdfView.isUserInteractionEnabled ? 1 : 0) apertures=[\(apertures)]"
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " pinchTrace=" + pinchTrace.joined(separator: "|")
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + String(format:
+            " pinchFallbacks=%d pinchAnchorChecks=%d pinchAnchorError=%.4f",
+            pinchFallbackApplications, pinchAnchorChecks, pinchAnchorErrorMax)
         #endif
     }
     private func selectionChanged() {
@@ -680,6 +1242,17 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             guard let self, let overlay else { return nil }
             return overlay.convert(self.pdfView.bounds, from: self.pdfView)
         }
+        overlay.navigationInProgress = { [weak self] in
+            guard let scroll = self?.scrollView else { return false }
+            return scroll.isDragging || scroll.isDecelerating || scroll.isZooming || scroll.isZoomBouncing
+        }
+        overlay.onNavigationStateChanged = { [weak self] in self?.updateAccessibilityState() }
+        overlay.onSceneInstalled = { [weak self] in self?.updateAccessibilityState() }
+        overlay.onEraseBegin = { [weak self] in self?.beginErase(page: number) }
+        overlay.onErase = { [weak self] targets in
+            guard let self else { throw NativePDFError.invalid("PDF 지우기 연결이 닫혔습니다.") }
+            try self.commitErase(page: number, targets: targets)
+        }
         overlay.onStroke = { [weak self] stroke in
             guard let onStroke = self?.onStroke else { throw NativePDFError.invalid("PDF 필기 저장 연결이 닫혔습니다.") }
             try onStroke(number, stroke)
@@ -695,20 +1268,22 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         }
         overlay.onDiagnostic = { [weak self] code in self?.onDiagnostic("nativePDF.input", code) }
         overlay.onTiming = { [weak self] p95, samples in self?.submissionP95 = p95; self?.submissionSamples = samples; self?.updateAccessibilityState() }
+        overlay.onPresentation = { [weak self] statistics in
+            self?.presentationStatistics = statistics; self?.updateAccessibilityState()
+        }
         overlay.onInteraction = { [weak self] tool, payload in self?.onEvent("interaction", payload.merging(["page": number, "tool": tool]) { _, new in new }) }
         overlay.onPointer = { [weak self] payload in self?.onEvent("pointer", payload.merging(["page": number]) { _, new in new }) }
         overlay.onInputOwnership = { [weak self] active in
             if active { self?.onEvent("activate", [:]) }
-            self?.scrollView?.panGestureRecognizer.isEnabled = !active
-            self?.nativePinch.isEnabled = !active
-            self?.scrollView?.pinchGestureRecognizer?.isEnabled = false
+            // Touch-type filtering isolates the stylus. Toggling the finger
+            // recognizers here cancels an already active pan or pinch.
         }
         overlay.onLayout = { [weak self, weak overlay, weak page] in
             guard let self, let overlay, let page, overlay.window != nil else { return }
             let coordinates = NativePDFPageCoordinates(page: page)
             let convert: (CGPoint) -> CGPoint = { coordinates.displayPhysical(self.pdfView.convert(overlay.convert($0, to: self.pdfView), to: page)) }
-            let origin = convert(.zero), x = convert(CGPoint(x: 1, y: 0)), y = convert(CGPoint(x: 0, y: 1))
-            overlay.mapper = InkCoordinateMapper(canvasToPDF: CGAffineTransform(a: x.x-origin.x, b: x.y-origin.y, c: y.x-origin.x, d: y.y-origin.y, tx: origin.x, ty: origin.y), geometry: coordinates.geometry)
+            guard let transform = NativePDFCoordinateMapping.sample(bounds: overlay.bounds, convert: convert) else { return }
+            overlay.mapper = InkCoordinateMapper(canvasToPDF: transform, geometry: coordinates.geometry)
         }
         overlays[number] = overlay; refreshOverlays(); return overlay
     }
@@ -718,15 +1293,177 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         do { try overlay.flush(); overlays.removeValue(forKey: document.index(for: page) + 1) }
         catch { onEvent("error", ["message": error.localizedDescription]) }
     }
+    private func prepareForNavigation() throws {
+        for overlay in overlays.values { try overlay.prepareForNavigation() }
+    }
     func flush() throws { for overlay in overlays.values { try overlay.flush() } }
     private var scrollView: UIScrollView? {
         func find(_ view: UIView) -> UIScrollView? { if let scroll = view as? UIScrollView { return scroll }; return view.subviews.lazy.compactMap(find).first }
         return find(pdfView)
     }
     func close() throws {
-        try flush(); emission?.cancel(); viewportObservation = nil
+        cancelPinchFallback()
+        try flush()
+        try onDurabilityBarrier?()
+        guard operationLedger.pendingEraseCount == 0 else { throw NativePDFError.invalid("지우기 저장 결과를 확인하지 못해 PDF를 닫지 않았습니다.") }
+        emission?.cancel(); viewportObservation = nil
         observations.forEach(NotificationCenter.default.removeObserver); observations.removeAll()
         imageTasks.values.forEach { $0.cancel() }; imageTasks.removeAll(); images.removeAllObjects()
         pdfView.removeFromSuperview(); pdfView.pageOverlayViewProvider = nil; pdfView.document = nil; overlays.removeAll()
+        objectScenes.removeAll()
+    }
+}
+
+/// Detects a no-op native zoom without competing with a working UIScrollView.
+/// Input scales are captured inside the recognizer callback; evaluation runs
+/// after UIKit's own target actions have had an opportunity to update PDFKit.
+struct NativePDFPinchZoomSession {
+    private let initialPDFScale: CGFloat
+    private let initialRecognizerScale: CGFloat
+    private var nativeMoved = false
+    private var unchangedObservations = 0
+    private var previousUnchangedTarget: CGFloat?
+    private(set) var usingFallback = false
+
+    init?(pdfScale: CGFloat, recognizerScale: CGFloat) {
+        guard pdfScale.isFinite, recognizerScale.isFinite, pdfScale > 0, recognizerScale > 0 else { return nil }
+        initialPDFScale = pdfScale; initialRecognizerScale = recognizerScale
+    }
+
+    mutating func targetScale(recognizerScale: CGFloat, actualPDFScale: CGFloat,
+                              minimum: CGFloat, maximum: CGFloat, ended: Bool) -> CGFloat? {
+        guard [recognizerScale, actualPDFScale, minimum, maximum].allSatisfy(\.isFinite),
+              recognizerScale > 0, actualPDFScale > 0, minimum > 0, maximum >= minimum else { return nil }
+        let requested = initialPDFScale * (recognizerScale / initialRecognizerScale)
+        guard requested.isFinite else { return nil }
+        let target = min(maximum, max(minimum, requested)), tolerance = initialPDFScale * 0.0001
+        if !usingFallback {
+            if abs(actualPDFScale-initialPDFScale) > tolerance { nativeMoved = true }
+            guard !nativeMoved, abs(target-initialPDFScale) > tolerance else { return nil }
+            // UIScrollView can deliver duplicate target callbacks before its
+            // native zoom catches up. They are one observation, not evidence
+            // that two different requested scales were both ignored.
+            if previousUnchangedTarget.map({ abs(target-$0) > tolerance }) ?? true {
+                unchangedObservations += 1; previousUnchangedTarget = target
+            }
+            guard unchangedObservations >= 2 || ended else { return nil }
+            usingFallback = true
+        }
+        return abs(target-actualPDFScale) > tolerance ? target : nil
+    }
+}
+
+/// Immutable presentation state, independent of canonical drawings and durable
+/// Pencil checkpoints. A patch reuses prior entries by exact UTF8 ID; only
+/// changed payloads visit the full JSON validator. Native markers never grant
+/// reuse. The legacy full-scene path remains available before epoch negotiation.
+@MainActor
+final class NativePDFEditorScene {
+    private struct Entry {
+        let object: [String: Any]
+        let row: NativePDFDrawingSnapshotStore.Row?
+        let token: NativePDFCommittedVisualToken
+    }
+    private let entries: [Entry]
+    let selection: [String: Double]?
+    let resizable: Bool
+    let textHandles: Bool
+    var visualTokens: [NativePDFCommittedVisualToken] { entries.map(\.token) }
+    var identityObjects: [[String: Any]] { entries.map(\.object) }
+
+    private init(entries: [Entry], request: [String: Any]) {
+        self.entries = entries
+        selection = request["selection"] as? [String: Double]
+        resizable = request["resizable"] as? Bool ?? false
+        textHandles = request["textHandles"] as? Bool ?? false
+    }
+
+    convenience init(request: [String: Any], page: Int, pageCount: Int,
+                     store: NativePDFDrawingSnapshotStore, previous: NativePDFEditorScene?) {
+        let prior = previous?.entriesByID() ?? [:]
+        let entries = (request["objects"] as? [[String: Any]] ?? []).map { source in
+            Self.makeEntry(source, page: page, pageCount: pageCount, store: store,
+                previous: (source["id"] as? String).flatMap { prior[Data($0.utf8)] })
+        }
+        self.init(entries: entries, request: request)
+    }
+
+    convenience init(patch: [String: Any], request: [String: Any], page: Int, pageCount: Int,
+                     store: NativePDFDrawingSnapshotStore, previous: NativePDFEditorScene?) throws {
+        guard let rawReset = patch["reset"] as? NSNumber, CFGetTypeID(rawReset) == CFBooleanGetTypeID(),
+              let order = patch["order"] as? [String], order.count <= 100_000,
+              order.allSatisfy({ !$0.isEmpty }), let updates = patch["upserts"] as? [[String: Any]]
+        else { throw Self.invalid() }
+        let keys = order.map { Data($0.utf8) }, retained = Set(keys)
+        guard retained.count == order.count else { throw Self.invalid() }
+        let prior = previous?.entriesByID() ?? [:]
+        var next = rawReset.boolValue ? [:] : prior
+        var seen: Set<Data> = []
+        // Validate shape/order references before touching row preparation.
+        for source in updates {
+            guard let id = source["id"] as? String, !id.isEmpty else { throw Self.invalid() }
+            let key = Data(id.utf8)
+            guard retained.contains(key), seen.insert(key).inserted else { throw Self.invalid() }
+        }
+        guard keys.allSatisfy({ seen.contains($0) || next[$0] != nil }) else { throw Self.invalid() }
+        for source in updates {
+            let key = Data((source["id"] as! String).utf8)
+            next[key] = Self.makeEntry(source, page: page, pageCount: pageCount, store: store, previous: prior[key])
+        }
+        self.init(entries: keys.compactMap { next[$0] }, request: request)
+    }
+
+    private func entriesByID() -> [Data: Entry] {
+        var result: [Data: Entry] = [:], duplicates: Set<Data> = []
+        for entry in entries {
+            guard let id = entry.object["id"] as? String, !id.isEmpty else { continue }
+            let key = Data(id.utf8)
+            if result.updateValue(entry, forKey: key) != nil { duplicates.insert(key) }
+        }
+        for key in duplicates { result.removeValue(forKey: key) }
+        return result
+    }
+
+    private static func makeEntry(_ source: [String: Any], page: Int, pageCount: Int,
+                                  store: NativePDFDrawingSnapshotStore, previous: Entry?) -> Entry {
+        var clean = source
+        clean.removeValue(forKey: "_nativeInk"); clean.removeValue(forKey: "_nativeVisualToken")
+        var seed = clean
+        let suppliedPage = seed["page"] != nil
+        if !suppliedPage { seed["page"] = page }
+        let old = previous?.row ?? (seed["id"] as? String).flatMap { store.row(id: $0) }
+        let row = try? store.makeRow(seed, pageCount: pageCount, previous: old)
+        let frozen: [String: Any]
+        if let row {
+            var display = row.object
+            if !suppliedPage { display.removeValue(forKey: "page") }
+            frozen = display
+        } else {
+            // Preserve individually unsupported preview schemas and detach all
+            // mutable containers, without rejecting their valid scene peers.
+            frozen = (try? DesktopJSON.immutableCopy(clean)) as? [String: Any] ?? [:]
+        }
+        return Entry(object: frozen, row: row,
+            token: row?.visualToken ?? NativePDFCommittedVisualToken(object: frozen))
+    }
+
+    func prepared(aspect: Double) -> [[String: Any]] {
+        entries.map { entry in
+            guard let row = entry.row else { return entry.object }
+            var object = entry.object
+            object["_nativeInk"] = row.prepared(aspect: aspect)["_nativeInk"]
+            return object
+        }
+    }
+    func releasePreparedInk() { entries.forEach { $0.row?.releasePreparedInk() } }
+
+    static func integer(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              number.doubleValue.isFinite, number.doubleValue >= 0, number.doubleValue <= 9_007_199_254_740_991,
+              number.doubleValue.rounded(.towardZero) == number.doubleValue else { return nil }
+        return number.intValue
+    }
+    static func invalid() -> NativePDFError {
+        .invalid("PDF 개체 화면의 변경 순서를 확인할 수 없습니다. 전체 화면 자료를 다시 보내 주세요.")
     }
 }

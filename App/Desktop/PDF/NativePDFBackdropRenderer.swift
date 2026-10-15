@@ -19,7 +19,12 @@ enum NativePDFBackdropRenderer {
         let format = UIGraphicsImageRendererFormat(); format.scale = rasterScale; format.opaque = true
         return UIGraphicsImageRenderer(size: bounds.size, format: format).image { renderer in
             let context = renderer.cgContext
-            context.setFillColor(UIColor.white.cgColor); context.fill(CGRect(origin: .zero, size: bounds.size))
+            // UIGraphicsImageRenderer allocates ceil(size * scale) pixels.
+            // Fill that complete extent, including the final partial pixel.
+            let pixelExtent = CGSize(width: ceil(bounds.width * rasterScale) / rasterScale,
+                                     height: ceil(bounds.height * rasterScale) / rasterScale)
+            context.setFillColor(UIColor.white.cgColor)
+            context.fill(CGRect(origin: .zero, size: pixelExtent))
             context.translateBy(x: -bounds.minX, y: -bounds.minY)
             context.saveGState()
             context.concatenate(transform)

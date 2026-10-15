@@ -129,7 +129,7 @@ export interface DrawingClipSource {
 
 export interface DrawingData {
   /** Absent preserves historical ink; each explicit version keeps its own geometry. */
-  inkVersion?: 2 | 3
+  inkVersion?: 2 | 3 | 4 | 5
   points?: DrawingPoint[]
   box?: DrawingBox
   /** textbox only. */

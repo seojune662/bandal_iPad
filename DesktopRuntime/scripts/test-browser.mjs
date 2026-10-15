@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { createRequire } from 'node:module'
@@ -8,8 +8,10 @@ import { dependencies, runtime } from './dependencies.mjs'
 import { adaptBrowserSource } from '../renderer/browser/index.mjs'
 const { require } = dependencies(), { build } = createRequire(require.resolve('vite'))('esbuild'), { webkit } = require('@playwright/test')
 const temporary = await mkdtemp(resolve(tmpdir(), 'bandal-browser-ui-'))
+const screenshotDir = process.env.BANDAL_BROWSER_SCREENSHOTS
+if (screenshotDir) await mkdir(screenshotDir, { recursive: true })
 // Every transformed source anchor must still match the original snapshot.
-for (const name of ['BrowserGuestView.tsx', 'BrowserPanel.tsx', 'BrowserToolbarOverflow.tsx', 'BrowserProfilePicker.tsx', 'BrowserContextMenu.tsx', 'downloadsStore.ts', 'BrowserDownloadsPanel.tsx', 'BrowserDownloadPage.tsx']) {
+for (const name of ['BrowserGuestView.tsx', 'BrowserPanel.tsx', 'BrowserAddressInput.tsx', 'BrowserToolbarOverflow.tsx', 'BrowserProfilePicker.tsx', 'BrowserContextMenu.tsx', 'downloadsStore.ts', 'BrowserDownloadsPanel.tsx', 'BrowserDownloadPage.tsx']) {
   const path = resolve(runtime, 'upstream/src/renderer/src/features/browser', name)
   assert.ok(adaptBrowserSource(await readFile(path, 'utf8'), path))
 }
@@ -17,47 +19,19 @@ await build({ absWorkingDir: runtime, bundle: true, format: 'esm', platform: 'br
   plugins: [{ name: 'original-browser-adapter', setup(build) { build.onLoad({ filter: /\.(tsx?|css)$/ }, async args => {
     const source = await readFile(args.path, 'utf8'), adapted = adaptBrowserSource(source, args.path)
     return adapted ? { contents: adapted.code, loader: args.path.endsWith('tsx') ? 'tsx' : 'ts' } : undefined
-  }) } }], stdin: { resolveDir: runtime, loader: 'tsx', contents: `
-import { createRoot } from 'react-dom/client'
-import { useState } from 'react'
-import { BrowserAddressInput } from './upstream/src/renderer/src/features/browser/BrowserAddressInput'
-import { BrowserToolbarOverflow } from './upstream/src/renderer/src/features/browser/BrowserToolbarOverflow'
-import { BrowserProfilePicker } from './upstream/src/renderer/src/features/browser/BrowserProfilePicker'
-import { BrowserDownloadsPanel } from './upstream/src/renderer/src/features/browser/BrowserDownloadsPanel'
-import { useDownloads } from './upstream/src/renderer/src/features/browser/downloadsStore'
-import { BrowserSiteControls } from './renderer/browser/BrowserSiteControls'
-import { BrowserPageControls } from './renderer/browser/BrowserPageControls'
-import { BrowserFindBar } from './upstream/src/renderer/src/features/browser/BrowserFindBar'
-import { useBrowserGuests } from './upstream/src/renderer/src/features/browser/browserGuestsStore'
-import './upstream/src/renderer/src/styles/tokens.css'
-import './upstream/src/renderer/src/styles/base.css'
-import './upstream/src/renderer/src/features/browser/browser.css'
-useDownloads.getState().init()
-window.downloadsState = () => useDownloads.getState().downloads
-function Fixture() {
- const [url, setURL] = useState('https://example.test/reading'), [downloads, setDownloads] = useState(false), [profile, setProfile] = useState('default')
- window.selectFixtureProfile = setProfile
- const find = useBrowserGuests(state=>state.find.fixture)
- return <div className="browser-panel"><div className="browser-chrome"><div className="browser-toolbar">
- <button className="browser-nav-button" aria-label="뒤로">←</button>
- <BrowserAddressInput value={url} onNavigate={setURL} focusSeq={0} favicon={undefined} isPrivate={false} profileId="default" courseId={null}/>
- <BrowserProfilePicker profileId="default" onChange={async()=>true}/>
- <BrowserToolbarOverflow isPrivate={false} active={true}><div className="ipad-browser-menu-session" data-keep-browser-menu><BrowserProfilePicker profileId="default" onChange={async()=>true}/></div><BrowserSiteControls tabId="fixture" profileId={profile} url={url}/><BrowserPageControls tabId="fixture" title="Fixture"/><button aria-label="다운로드" onClick={()=>setDownloads(true)}>↓</button></BrowserToolbarOverflow>
- </div>{find&&<BrowserFindBar tabId="fixture" state={find}/>}</div>{downloads&&<BrowserDownloadsPanel anchor={new DOMRect(200,50,44,44)} onClose={()=>setDownloads(false)}/>}<div id="url">{url}</div></div>
-}
-createRoot(document.getElementById('root')).render(<Fixture/>);
-` } })
+  }) } }], stdin: { resolveDir: runtime, loader: 'ts', contents: "import { DEFAULT_SETTINGS } from './upstream/src/shared/types/settings'; Object.assign(window, { fixtureSettings: DEFAULT_SETTINGS }); await import('./renderer/browser/test-fixture')" } })
 const calls = []
 const server = createServer(async (request, response) => {
   try {
     if (request.url === '/fixture.js' || request.url === '/fixture.css') { response.setHeader('Content-Type', request.url.endsWith('.js') ? 'text/javascript' : 'text/css'); response.end(await readFile(resolve(temporary, '.' + request.url))); return }
     response.setHeader('Content-Type', 'text/html')
-    response.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link rel="stylesheet" href="/fixture.css"><div id="root"></div><script>
+    response.end(`<!doctype html><html lang="ko" data-theme="light"><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link rel="stylesheet" href="/fixture.css"><div id="root"></div><script>
 window.calls=[];window.mode='automatic';window.bandal={platform:'ipad',on(){return ()=>{}},invoke:async(channel,request)=>{window.calls.push({channel,request});
+if(channel==='settings:get')return window.fixtureSettings;
 if(channel==='browser:profiles')return[{id:'default',name:'기본',icon:'globe',color:'#456'}];
 if(channel==='browser:sitePresentation')return{mode:window.mode,available:true};
 if(channel==='browser:setSitePresentation'){if(window.deferPresentation)return await new Promise(resolve=>{window.resolvePresentation=()=>resolve({mode:request.mode,available:true})});window.mode=request.mode;return{mode:window.mode,available:true}};
-if(channel==='browser:searchHistory')return{entries:[]};
+if(channel==='browser:searchHistory')return{entries:[{url:'https://history.test/recent',title:'최근 방문 페이지',host:'history.test',visitCount:1,lastVisitedAt:'2026-10-15'}]};
 if(channel==='browser:downloadsSnapshot')return[{id:'fixture-download',webContentsId:null,fileName:'lecture.pdf',receivedBytes:12,totalBytes:50,state:'interrupted',paused:false,relPath:null,courseId:null,recoverable:false,failureReason:'Restarted'}];
 if(channel==='favorites:list')return[];return{ok:true}}};
 </script><script type="module" src="/fixture.js"></script>`)
@@ -67,7 +41,8 @@ await new Promise(done => server.listen(0, '127.0.0.1', done))
 const browser = await webkit.launch()
 try {
   const page = await browser.newPage({ viewport: { width: 1024, height: 768 }, hasTouch: true }), errors = []
-  page.on('pageerror', error => errors.push(error.message))
+  page.setDefaultTimeout(10000)
+  page.on('pageerror', error => { errors.push(error.message); console.error('Browser fixture:', error.message) })
   await page.goto(`http://127.0.0.1:${server.address().port}/`)
   await page.getByRole('button', { name: '브라우저 도구 더 보기' }).waitFor()
   for (const width of [1024, 600, 360]) {
@@ -76,10 +51,27 @@ try {
     assert.ok(bounds.width >= 120 && bounds.height >= 44, `usable address at ${width}: ${JSON.stringify(bounds)}`)
     const more = await page.getByRole('button', { name: '브라우저 도구 더 보기' }).boundingBox()
     assert.ok(more.width >= 44 && more.height >= 44)
+    const toolbar = page.getByRole('banner', { name: '브라우저 도구 모음' })
+    assert.equal(await toolbar.getByRole('button', { name: '앞으로', exact: true }).isVisible(), width > 700)
+    assert.equal(await toolbar.getByRole('button', { name: '페이지 공유', exact: true }).isVisible(), width > 700)
+    assert.equal(await toolbar.getByRole('button', { name: '다운로드', exact: true }).isVisible(), width > 700)
+    assert.ok(await toolbar.getByRole('button', { name: '새로고침', exact: true }).isVisible(), `reload remains available at ${width}`)
+    await page.evaluate(() => window.setFixtureDownloads(2))
+    const compactDownloadBadge = page.getByRole('button', { name: '브라우저 도구 더 보기' }).getByLabel('2개 다운로드 진행 중')
+    assert.equal(await compactDownloadBadge.textContent(), '2')
+    assert.equal(await compactDownloadBadge.isVisible(), width <= 700)
+    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `toolbar-${width}.png`) })
     await page.getByRole('button', { name: '브라우저 도구 더 보기' }).click()
     const menu = page.getByRole('dialog', { name: '브라우저 도구', exact: true })
     await menu.waitFor()
     const rect = await menu.boundingBox(); assert.ok(rect.x >= 0 && rect.x + rect.width <= width)
+    assert.equal(await menu.getByRole('button', { name: '앞으로', exact: true }).isVisible(), width <= 700)
+    assert.equal(await menu.getByRole('button', { name: '페이지 공유', exact: true }).isVisible(), width <= 700)
+    assert.equal(await menu.getByRole('button', { name: '다운로드', exact: true }).isVisible(), width <= 700)
+    for (const name of ['페이지', '즐겨찾기 및 기록', '공유 및 저장', '프로필']) assert.ok(await menu.getByRole('heading', { name, exact: true }).isVisible())
+    const undersized = await menu.locator('button:visible').evaluateAll(elements => elements.filter(element => element.getBoundingClientRect().height < 44).map(element => element.getAttribute('aria-label')))
+    assert.deepEqual(undersized, [], `44pt touch targets at ${width}`)
+    if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `menu-${width}.png`) })
     await menu.getByRole('button', { name: '브라우저 프로필', exact: true }).click()
     await page.getByRole('dialog', { name: '브라우저 프로필 선택' }).waitFor()
     await page.getByRole('button', { name: '닫기', exact: true }).click()
@@ -87,6 +79,20 @@ try {
     assert.equal(await menu.getByRole('button', { name: '모바일 웹사이트 요청' }).getAttribute('aria-pressed'), 'true')
     await page.keyboard.press('Escape')
   }
+  // An iPad software keyboard reduces the visual area available to menus.
+  await page.setViewportSize({ width: 360, height: 420 })
+  await page.getByRole('combobox', { name: '주소 또는 검색어' }).focus()
+  await page.getByRole('combobox', { name: '주소 또는 검색어' }).fill('검색')
+  const suggestions = page.getByRole('listbox', { name: '주소 및 검색 제안' })
+  await suggestions.waitFor()
+  const suggestionBounds = await suggestions.boundingBox()
+  assert.ok(suggestionBounds.y >= 0 && suggestionBounds.y + suggestionBounds.height <= 420)
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '브라우저 도구 더 보기' }).click()
+  const keyboardMenu = await page.getByRole('dialog', { name: '브라우저 도구', exact: true }).boundingBox()
+  assert.ok(keyboardMenu.y >= 0 && keyboardMenu.y + keyboardMenu.height <= 420)
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => window.setFixtureDownloads(0))
   await page.setViewportSize({ width: 1024, height: 768 })
   await page.getByRole('button', { name: '브라우저 도구 더 보기' }).click()
   const profileMenu = page.getByRole('dialog', { name: '브라우저 도구', exact: true })
@@ -100,12 +106,61 @@ try {
   await page.keyboard.press('Escape')
   const input = page.getByRole('combobox', { name: '주소 또는 검색어' })
   assert.equal(await input.evaluate(element => getComputedStyle(element).fontSize), '16px')
+  await input.fill('한글 검색')
+  const beforeIME = await page.locator('#url').textContent()
+  const imeCommitAllowed = await input.evaluate(element => {
+    element.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    return element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  })
+  assert.equal(imeCommitAllowed, true, 'Korean IME commit must not be canceled by the address bar')
+  assert.equal(await page.locator('#url').textContent(), beforeIME)
+  await input.dispatchEvent('compositionend')
+  const legacyIMEAllowed = await input.evaluate(element => {
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'keyCode', { value: 229 })
+    return element.dispatchEvent(event)
+  })
+  assert.equal(legacyIMEAllowed, true)
+  assert.equal(await page.locator('#url').textContent(), beforeIME)
+  await input.press('Enter')
+  assert.ok((await page.locator('#url').textContent()).includes(encodeURIComponent('한글 검색')))
+  await page.evaluate(() => window.setFixtureURL('http://plain.test/reading?part=2'))
+  await page.getByLabel('안전하지 않은 연결 (HTTP)', { exact: true }).waitFor()
+  assert.equal(await page.locator('.browser-address__display').textContent(), 'plain.test')
+  await input.focus()
+  assert.equal(await input.inputValue(), 'http://plain.test/reading?part=2')
+  await input.press('Escape')
+  await page.evaluate(() => window.setFixtureURL('https://secure.test/full/path'))
+  await page.getByLabel('암호화된 연결', { exact: true }).waitFor()
+  await page.evaluate(() => window.setFixtureProgress(0.63, true))
+  const progress = page.getByRole('progressbar', { name: '페이지 로딩' })
+  await progress.waitFor()
+  assert.equal(await progress.getAttribute('aria-valuenow'), '63')
+  assert.equal(await page.locator('.ipad-browser-progress .browser-progress__bar').evaluate(element => element.style.width), '63%')
+  assert.equal(await page.locator('.ipad-browser-progress .browser-progress__bar').evaluate(element => getComputedStyle(element).animationName), 'none')
+  assert.ok(await page.getByRole('button', { name: '중지', exact: true }).isVisible())
+  await page.evaluate(() => window.setFixtureProgress(1, false))
+  await page.getByRole('button', { name: '새로고침', exact: true }).waitFor()
+  await page.getByRole('button', { name: '브라우저 도구 더 보기' }).click()
+  await page.getByRole('button', { name: '방문 기록', exact: true }).click()
+  await page.getByRole('button', { name: '최근 방문 페이지 history.test' }).click()
+  assert.equal(await page.locator('#url').textContent(), 'https://history.test/recent')
+  await page.evaluate(() => window.setFixturePrivate(true))
+  await page.getByLabel('비공개 브라우징', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '브라우저 도구 더 보기' }).click()
+  const historyCallsBeforePrivate = await page.evaluate(() => window.calls.filter(call => call.channel === 'browser:searchHistory').length)
+  await page.getByRole('button', { name: '방문 기록', exact: true }).click()
+  await page.getByText('비공개 탭에서는 방문 기록을 표시하거나 저장하지 않아요.').waitFor()
+  assert.equal(await page.evaluate(() => window.calls.filter(call => call.channel === 'browser:searchHistory').length), historyCallsBeforePrivate)
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => window.setFixturePrivate(false))
   await input.fill('https://fixture.test/path'); await input.press('Enter')
   assert.equal(await page.locator('#url').textContent(), 'https://fixture.test/path')
-  await page.locator('.browser-toolbar > .browser-profile-trigger').click()
+  await page.getByRole('button', { name: '브라우저 도구 더 보기' }).click(); await page.getByRole('button', { name: '브라우저 프로필', exact: true }).click()
   await page.getByRole('dialog', { name: '브라우저 프로필 선택' }).waitFor()
   assert.equal(await page.locator('.browser-profile-manager__avatar').textContent(), '')
   await page.getByRole('button', { name: '닫기', exact: true }).click()
+  await page.keyboard.press('Escape')
   assert.equal((await page.evaluate(() => window.downloadsState()))[0].fileName, 'lecture.pdf')
   await page.getByRole('button', { name: '브라우저 도구 더 보기' }).click()
   const controls = page.getByRole('dialog', { name: '브라우저 도구', exact: true })
@@ -118,13 +173,15 @@ try {
   const findInput = await page.getByRole('textbox', { name: '페이지에서 찾기', exact: true }).boundingBox()
   assert.ok(findInput.height >= 44)
   await page.getByRole('button', { name: '찾기 닫기' }).click()
-  await page.getByRole('button', { name: '브라우저 도구 더 보기' }).click()
-  await controls.getByRole('button', { name: '페이지 공유' }).click()
-  await page.getByRole('button', { name: '브라우저 도구 더 보기' }).click()
-  await page.getByRole('dialog', { name: '브라우저 도구', exact: true }).getByRole('button', { name: '다운로드', exact: true }).click()
+  await page.getByRole('button', { name: '페이지 공유', exact: true }).click()
+  await page.getByRole('button', { name: '다운로드', exact: true }).click()
   await page.getByRole('dialog', { name: '다운로드', exact: true }).getByRole('button', { name: '다시 받기' }).click()
   await page.getByRole('button', { name: 'lecture.pdf 목록에서 지우기' }).click()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '브라우저 도구 더 보기' }).click()
+  await page.getByRole('button', { name: '기본 브라우저에서 열기', exact: true }).click()
   calls.push(...await page.evaluate(() => window.calls))
+  assert.ok(calls.some(call => call.channel === 'shell:openExternal' && call.request.url === 'https://fixture.test/path'))
   assert.ok(calls.some(call => call.channel === 'browser:downloadFile' && call.request.action === 'retry'))
   assert.ok(calls.some(call => call.channel === 'browser:dismissDownload'))
   assert.ok(calls.some(call => call.channel === 'browser:sharePage' && call.request.tabId === 'fixture'))
@@ -141,5 +198,5 @@ try {
   assert.deepEqual(await find('Unicode'), {matches:1,ordinal:1})
   assert.equal(await page.evaluate(()=>getSelection().toString()), 'Unicode')
   assert.deepEqual(errors, [])
-  console.log('Original WebKit browser controls: 360/600/1024 layouts, URL submission, profile, presentation and restored download retry/dismiss passed')
+  console.log('Original WebKit browser controls: 360/600/1024 layouts and 44pt menus, IME commit, HTTP/privacy, native progress, history, share/external, profile and download recovery passed')
 } finally { await browser.close(); await new Promise(done => server.close(done)); await rm(temporary, { recursive: true, force: true }) }

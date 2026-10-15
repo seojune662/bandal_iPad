@@ -1,0 +1,10 @@
+{
+  "sourceCommit": "da3dc42cc2d6dca7b9068f6ed9b85d8bbe8b364d",
+  "appVersion": "0.84.4",
+  "capturedAt": "2026-10-14T20:24:03.783653+00:00",
+  "reason": "Exact canonical working-source copy for Windows PDF original fsync regression fix; release commit pending. No iPad-only upstream edits.",
+  "changedSnapshotPaths": [
+    "package.json",
+    "src/main/features/pdf/pdfOriginals.ts"
+  ]
+}

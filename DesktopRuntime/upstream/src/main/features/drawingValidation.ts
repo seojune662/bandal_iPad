@@ -275,7 +275,7 @@ export function assertDrawingData(
 
   const result: DrawingData = {}
   if (candidate.inkVersion !== undefined) {
-    if ((candidate.inkVersion !== 2 && candidate.inkVersion !== 3) || (kind !== 'ink' && kind !== 'highlighter')) throw new ValidationError('Unsupported ink renderer version')
+    if ((candidate.inkVersion !== 2 && candidate.inkVersion !== 3 && candidate.inkVersion !== 4 && candidate.inkVersion !== 5) || (kind !== 'ink' && kind !== 'highlighter')) throw new ValidationError('Unsupported ink renderer version')
     result.inkVersion = candidate.inkVersion
   }
   if (points !== undefined) result.points = points

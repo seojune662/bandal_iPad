@@ -13,26 +13,66 @@ import { setIpcAdapter, type IpcAdapter } from '../../upstream/src/renderer/src/
 import type { Annotation } from '../../upstream/src/shared/types/annotation'
 
 let subscriber: ((event: NativePDFEvent) => void) | undefined
+let releaseSnapshot: (() => void) | undefined
+let releaseSurface: (() => void) | undefined
+const drawingReplies: Array<() => void> = []
+let deferLayouts = false
+const layoutReplies: Array<{ resolve(): void; reject(error: Error): void }> = []
 const trace = { calls: [] as Array<{ channel: string; payload: Record<string, unknown> }>, active: false, pointerEvents: 0,
+  drawingLoadAttempts: 0,
+  reportedErrors: [] as string[],
+  appliedLayout: null as Record<string, unknown> | null, appliedSurface: null as Record<string, unknown> | null,
+  acknowledgeInitialSurface: () => { releaseSurface?.(); releaseSurface = undefined },
+  acknowledgeInitialSnapshot: () => { releaseSnapshot?.(); releaseSnapshot = undefined },
+  deferLayouts: (value: boolean) => { deferLayouts = value },
+  waitingLayouts: () => layoutReplies.length,
+  acknowledgeLayouts: () => layoutReplies.splice(0).forEach(reply => reply.resolve()),
+  acknowledgeLayout: (index: number) => layoutReplies.splice(index, 1)[0]?.resolve(),
+  rejectLayout: (index: number) => layoutReplies.splice(index, 1)[0]?.reject(new Error('Fixture layout ACK failed')),
+  waitingDrawings: () => drawingReplies.length,
+  acknowledgeDrawings: () => drawingReplies.shift()?.(),
+  changeInitialTool: (tool: 'pen' | 'highlighter' = 'highlighter') => usePdfToolStore.getState().setActiveTool(tool),
+  hideFixture: () => root.render(null),
+  showFixture: () => root.render(<Fixture />),
   contact: () => {
     const identity = trace.calls.find(call => call.channel === 'pdfNative:open')?.payload
     if (identity) subscriber?.({ surfaceId: String(identity.surfaceId), generation: String(identity.generation), type: 'activate', payload: {} })
   } }
 document.addEventListener('pointerdown', () => trace.pointerEvents++, true)
+window.addEventListener('error', event => trace.reportedErrors.push(event.message))
 Object.assign(window, { nativeLayoutTrace: trace })
 const transport: NativePDFTransport = {
   async invoke(channel, payload) {
     trace.calls.push({ channel, payload: structuredClone(payload) })
+    if (channel === 'runtime:nativeSurfaceSession') return { sessionId: 'native-layout-fixture' }
+    if (channel === 'runtime:nativeSurfaces') {
+      if (new URLSearchParams(location.search).has('failSurface')) throw new Error('Fixture native surface ACK failed')
+      if (trace.calls.filter(call => call.channel === channel).length === 1) await new Promise<void>(resolve => { releaseSurface = resolve })
+      trace.appliedSurface = structuredClone(payload)
+      return { revision: payload.revision }
+    }
     if (channel === 'pdfNative:capabilities') return { enabled: true }
     if (channel === 'pdfNative:open') return { pending: [], pageSizes: [{ page: 1, width: 600, height: 900 }] }
+    if (channel === 'pdfNative:snapshot' && trace.calls.filter(call => call.channel === channel).length === 1) await new Promise<void>(resolve => { releaseSnapshot = resolve })
     if (channel === 'pdfNative:flush') return { pending: [] }
     if (channel === 'pdfNative:pageGeometry') return { x: 0, y: 0, width: 600, height: 900 }
-    return {}
+    if (channel === 'pdfNative:layout') {
+      if (deferLayouts) await new Promise<void>((resolve, reject) => layoutReplies.push({ resolve, reject }))
+      if (Number(payload.revision) > Number(trace.appliedLayout?.revision ?? 0)) trace.appliedLayout = structuredClone(payload)
+      return { revision: trace.appliedLayout?.revision }
+    }
+    if (['pdfNative:snapshot', 'pdfNative:navigate', 'pdfNative:close'].includes(channel)) return {}
+    throw new Error(`Unexpected native layout fixture IPC ${channel}`)
   }, on: (_channel, listener) => { subscriber = listener; return () => { subscriber = undefined } }
 }
 Object.assign(window, { bandal: transport })
 setIpcAdapter({ invoke: async channel => {
-  if (channel === 'drawings:listForFile') return []
+  if (channel === 'drawings:listForFile') {
+    trace.drawingLoadAttempts++
+    if (new URLSearchParams(location.search).has('deferDrawings')) await new Promise<void>(resolve => drawingReplies.push(resolve))
+    if (new URLSearchParams(location.search).has('failDrawings')) throw new Error('Fixture drawings load failed')
+    return []
+  }
   throw new Error(`Unexpected fixture IPC ${channel}`)
 }, on: () => () => undefined } as IpcAdapter)
 usePdfToolStore.getState().setActiveTool('pen')
@@ -40,14 +80,15 @@ const annotation: Annotation = { id: 'highlight', courseId: 'fixture', relPath: 
   rects: [], anchor: { quote: 'A highlighted passage', prefix: '', suffix: '' }, comment: null, createdAt: '', updatedAt: '' }
 function Fixture(): JSX.Element {
   const scroller = useRef<HTMLDivElement>(null), drawings = useDrawings('fixture', 'fixture.pdf')
-  const [highlight, setHighlight] = useState(false), [modal, setModal] = useState(false)
-  const native = useNativePDF({ panelId: 'fixture', courseId: 'fixture', relPath: 'fixture.pdf', visible: true, interactive: true,
+  const [highlight, setHighlight] = useState(false), [modal, setModal] = useState(false), [settings, setSettings] = useState(false)
+  const [visible, setVisible] = useState(true)
+  const native = useNativePDF({ panelId: 'fixture', courseId: 'fixture', relPath: 'fixture.pdf', visible, interactive: true,
     scroller, pdf: null, drawings, annotations: [], page: 1, zoom: 1, blocked: highlight,
     activeAnnotation: null, hoveredAnnotation: null, onViewport: () => undefined, onSelection: () => undefined,
     onReady: () => undefined, onAnnotation: () => undefined, onPageAction: () => undefined, onBodyTap: () => setHighlight(false), onActivate: () => undefined })
   trace.active = native.active
   return <>
-    <nav><button onClick={() => setHighlight(true)}>Open highlight</button><button onClick={() => setModal(true)}>Open modal</button></nav>
+    <nav><button onClick={() => setHighlight(true)}>Open highlight</button><button onClick={() => setModal(true)}>Open modal</button><button onClick={() => setSettings(true)}>Open settings overlay</button><button onClick={() => setVisible(value => !value)}>Toggle paper visibility</button></nav>
     <PdfToolRail courseId="fixture" relPath="fixture.pdf" drawingsApi={drawings} />
     <div ref={scroller} className="pdf-scroller" style={{ position: 'absolute', left: 60, top: 60, width: 700, height: 650, overflow: 'auto' }}>
       <div data-pdf-page="1" data-native-pdf="true" style={{ width: 600, height: 900 }} />
@@ -59,9 +100,14 @@ function Fixture(): JSX.Element {
       style={{ position: 'fixed', top: 180, left: 200, width: 400, height: 300, zIndex: 500, background: 'white' }}>
       <button onClick={() => setModal(false)}>Close modal</button>
     </section>, document.body)}
+    {settings && <div className="settings-overlay shell-settings-overlay" data-open="true"
+      style={{ position: 'fixed', inset: 50, background: 'white', zIndex: 1000 }}>
+      <h1>계정</h1><button onClick={() => setSettings(false)}>Close settings overlay</button>
+    </div>}
   </>
 }
 const style = document.createElement('style')
 style.textContent = '.pdf-tool-rail-shell{position:fixed;left:70px;top:65px;width:600px;z-index:10}.pdf-popover{position:absolute;width:300px;background:white;z-index:250}:root{--bg-overlay:white;--border-subtle:#ddd;--drawing-ink:#16171a;--drawing-red:red}'
 document.head.append(style)
-createRoot(document.getElementById('root')!).render(<Fixture />)
+const root = createRoot(document.getElementById('root')!)
+root.render(<Fixture />)

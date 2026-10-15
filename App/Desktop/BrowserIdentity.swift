@@ -7,23 +7,19 @@ import WebKit
 /// never freeze a complete user agent or fabricate a Chrome/Safari version.
 @MainActor
 enum DesktopBrowserIdentity {
-    private(set) static var applicationName: String?
-    private static var preparation: Task<String, Error>?
+    private static let preparation = BrowserIdentityPreparation()
+    static var applicationName: String? { preparation.applicationName }
     static func prepare() async throws {
-        if applicationName != nil { return }
-        if preparation == nil {
-            preparation = Task {
+        try await preparation.prepare {
                 let configuration = WKWebViewConfiguration()
                 configuration.websiteDataStore = .nonPersistent()
                 let probe = WKWebView(frame: .zero, configuration: configuration)
                 guard let identity = try await probe.evaluateJavaScript("navigator.userAgent") as? String,
                       let name = applicationName(from: identity) else {
-                    throw DesktopBrowserError.unavailable("웹 엔진 정보를 확인하지 못했습니다. 반달을 다시 열어 주세요.")
+                    throw DesktopBrowserError.unavailable("웹 엔진 정보를 확인하지 못했습니다. 다시 시도해 주세요.")
                 }
                 return name
-            }
         }
-        applicationName = try await preparation!.value
     }
     static func applicationName(from identity: String) -> String? {
         guard identity.utf8.count <= 4096,
@@ -32,5 +28,28 @@ enum DesktopBrowserIdentity {
     }
     static func configure(_ configuration: WKWebViewConfiguration) {
         if let applicationName { configuration.applicationNameForUserAgent = applicationName }
+    }
+}
+
+/// Coalesce simultaneous tab creation, but never cache a failed preparation.
+/// A generation prevents an old failed waiter from clearing a newer attempt.
+@MainActor
+final class BrowserIdentityPreparation {
+    private(set) var applicationName: String?
+    private var pending: Task<String, Error>?
+    private var generation = 0
+
+    func prepare(probe: @escaping @MainActor () async throws -> String) async throws {
+        if applicationName != nil { return }
+        if pending == nil { generation += 1; pending = Task { try await probe() } }
+        let attempt = generation
+        guard let task = pending else { return }
+        do {
+            let name = try await task.value
+            if attempt == generation { applicationName = name; pending = nil }
+        } catch {
+            if attempt == generation { pending = nil }
+            throw error
+        }
     }
 }

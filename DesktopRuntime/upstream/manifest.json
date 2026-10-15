@@ -1,13 +1,11 @@
 {
   "format": "bandal-desktop-source-snapshot",
   "version": 1,
-  "sourceCommit": "a7500f45cc9f6f52ce2a4cd1c222d6cb4aeed0ec",
-  "appVersion": "0.84.1",
-  "capturedAt": "2026-10-14T07:25:12.990Z",
-  "sourceWorkingChanges": [
-    " M package.json"
-  ],
-  "policy": "Original renderer, styles, fonts imports, shared contracts and native backend sources are copied byte-for-byte. Platform code lives outside upstream.",
+  "sourceCommit": "b05ae406763659c8ce1ecc92b46e1cd6e7136d92",
+  "appVersion": "0.84.5",
+  "capturedAt": "2026-10-14T20:48:23.415877+00:00",
+  "sourceWorkingChanges": [],
+  "policy": "Desktop base snapshot is retained, with explicitly listed iPad-only V5 overrides. Local hashes verify packaged source integrity; this snapshot is not claimed byte-identical to the untouched external desktop checkout. Platform adapters live outside upstream.",
   "files": [
     {
       "path": "LICENSE",
@@ -21,8 +19,8 @@
     },
     {
       "path": "package.json",
-      "bytes": 4452,
-      "sha256": "87cff7ff481a024a74dc59cd45e2cfa689db31384568ec210a0002aa33407510"
+      "bytes": 4335,
+      "sha256": "5ff330615a4cdb181d27712b2011c2de47657a89c16a0049fc8db71112d3988a"
     },
     {
       "path": "pnpm-lock.yaml",
@@ -711,8 +709,8 @@
     },
     {
       "path": "src/main/features/canvas/exportBoardPdf.ts",
-      "bytes": 17977,
-      "sha256": "d951fc06a380d9b537e4eb91d1a5736047fec49f762f6a88e4acdbad02675223"
+      "bytes": 18235,
+      "sha256": "e0c492a2646b1f4de09d429c3563362ff401c6bc140e5af95ef12fc4b5caa68a"
     },
     {
       "path": "src/main/features/canvas/index.ts",
@@ -846,8 +844,8 @@
     },
     {
       "path": "src/main/features/drawingValidation.ts",
-      "bytes": 11342,
-      "sha256": "7b9dc675d72f02899c55f7f22311507fef25661a59e3391d8ceac277734815b0"
+      "bytes": 11402,
+      "sha256": "c159b0511d49c81782d3cc1f4e673d04ac8d595b1ea2e98486d1c1584550aed1"
     },
     {
       "path": "src/main/features/favorites/descriptorJson.ts",
@@ -1151,8 +1149,8 @@
     },
     {
       "path": "src/main/features/pdf/exportPdf.ts",
-      "bytes": 18964,
-      "sha256": "7d08216c016ed0d64f1cb8e6a7a63cf12eb997988b52d12a97dcfcd05e607d07"
+      "bytes": 19230,
+      "sha256": "c85e3a13ccb3a40c7b5814067f099ae053f9016b9ab57263638578350ccbe2f5"
     },
     {
       "path": "src/main/features/pdf/index.ts",
@@ -1166,8 +1164,8 @@
     },
     {
       "path": "src/main/features/pdf/pdfOriginals.ts",
-      "bytes": 3944,
-      "sha256": "e027ea006cd31ef1ffb99cbe20a4ac03afdaff4bdfc8d9311677c6b8954fc8bd"
+      "bytes": 4223,
+      "sha256": "491de7ef26e55c0f3c1d1e3a4b3d65175838e7551818d7a7cabd8ddb449cf276"
     },
     {
       "path": "src/main/features/pdf/pdfViewStateRepo.ts",
@@ -2756,8 +2754,8 @@
     },
     {
       "path": "src/renderer/src/features/ink/inkGeometry.ts",
-      "bytes": 13037,
-      "sha256": "cf03c8407d427b5a8060112d5a26003b916b02d61da3a1f41d2f9840c1fff39f"
+      "bytes": 13625,
+      "sha256": "ac7e9a375f8c66dd0a155e9f1e2d87a798651054a51e650732d0b2f4786e74fc"
     },
     {
       "path": "src/renderer/src/features/ink/inkToolStore.ts",
@@ -4670,6 +4668,16 @@
       "sha256": "ddca919602900219f3d7afd7d347893f2d0bc36326b5aaae044ff7eb0b6a8768"
     },
     {
+      "path": "src/shared/inkV4.ts",
+      "bytes": 10648,
+      "sha256": "b85805c9311a6a9b7537cede92a78f234c3465672394ebbf7c3eb3395919d118"
+    },
+    {
+      "path": "src/shared/inkV5.ts",
+      "bytes": 13336,
+      "sha256": "841cb9f1c9a5a38e180a89194482658cc1722ca00e467620ddfa9c8ead6b9e85"
+    },
+    {
       "path": "src/shared/ipc/contract.ts",
       "bytes": 60789,
       "sha256": "c30a7b78a5d591e765f0b1be1c240ce6d7d9dd220c7b2a6480aeb3050a1700ca"
@@ -4891,8 +4899,8 @@
     },
     {
       "path": "src/shared/types/drawing.ts",
-      "bytes": 7540,
-      "sha256": "f1cecfa80c9a927bf1cb83be770a9f1d0b1ad1dc1671b25ceaaff1ce4933551c"
+      "bytes": 7548,
+      "sha256": "378e0ca675be25c916e28f2da9f01eb7496cdd61cea3b604b1595bddce4e9a0b"
     },
     {
       "path": "src/shared/types/favorite.ts",
@@ -5109,5 +5117,17 @@
       "bytes": 28590,
       "sha256": "df99dabe18f18e0786eaeaa1f552bf195fa14bbe232e50f2d701ae083e1ea037"
     }
-  ]
+  ],
+  "ipadOverrides": {
+    "inkVersion": 5,
+    "provenance": "../provenance/ink-v5-ipad-override.json",
+    "paths": [
+      "src/main/features/canvas/exportBoardPdf.ts",
+      "src/main/features/drawingValidation.ts",
+      "src/main/features/pdf/exportPdf.ts",
+      "src/renderer/src/features/ink/inkGeometry.ts",
+      "src/shared/types/drawing.ts",
+      "src/shared/inkV5.ts"
+    ]
+  }
 }

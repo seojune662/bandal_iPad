@@ -1,5 +1,5 @@
 import type { DrawingShape, DrawingStyle, DrawingBox, DrawingPoint } from '../../upstream/src/shared/types/drawing'
-import { strokePath } from '../../upstream/src/renderer/src/features/ink/inkGeometry'
+import { nativePDFDrawingPayload } from './drawingPayload'
 
 interface SceneInput {
   shapes: readonly DrawingShape[]
@@ -15,12 +15,7 @@ export interface NativeObjectScene { objects: unknown[]; selection: DrawingBox |
 export function publishNativePDFScene(svg: SVGSVGElement | null, input: SceneInput): void {
   if (!svg?.closest('[data-native-pdf="true"]')) return
   const selection = input.shapes.find(shape => shape.id === input.selectedId)
-  const objects = input.shapes.filter(shape => shape.id !== input.editingId).map(shape => {
-    if (shape.kind !== 'ink' && shape.kind !== 'highlighter') return shape
-    const points = shape.data.points ?? []
-    const nativePath = strokePath(points, shape.style, input.aspect, shape.kind === 'highlighter', shape.data.inkVersion)
-    return { ...shape, nativePath }
-  })
+  const objects = input.shapes.filter(shape => shape.id !== input.editingId).map(shape => nativePDFDrawingPayload(shape, input.aspect))
   if (input.preview) objects.push({ ...input.preview, id: 'native-object-preview', createdAt: '', updatedAt: '' } as DrawingShape)
   svg.dispatchEvent(new CustomEvent<NativeObjectScene>('bandal-native-pdf-object-scene', { bubbles: true, detail: {
     objects, selection: selection?.data.box ?? null,

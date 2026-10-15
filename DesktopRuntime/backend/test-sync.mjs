@@ -137,11 +137,11 @@ export async function testSync({ backend, database, environment, runtime, course
   const targetPath=path.join(course.folderPath,note.relPath),backup=path.join(interrupted,'0.original'),originalBytes=fs.readFileSync(targetPath)
   fs.writeFileSync(backup,originalBytes); fs.writeFileSync(path.join(interrupted,'intent.json'),JSON.stringify({id:'uncommitted-test',entries:[{target:targetPath,backup,existed:true}]}));fs.writeFileSync(targetPath,'interrupted replacement')
   runtime().initialize();assert.deepEqual(fs.readFileSync(targetPath),originalBytes)
-  await testV2InkSync({ backend, invoke, runtime, course })
+  for (const inkVersion of [2, 3, 4, 5]) await testVersionedInkSync({ backend, invoke, runtime, course, inkVersion })
   console.log('PASS: sync projection stable IDs/assets, private surface, note conflicts/restore, ink union, SQL/file rollback, malformed preflight, persistent roundtrip')
 }
 
-async function testV2InkSync({ backend, invoke, runtime, course }) {
+async function testVersionedInkSync({ backend, invoke, runtime, course, inkVersion }) {
   const plain = value => JSON.parse(JSON.stringify(value))
   const decode = record => JSON.parse(Buffer.from(record.payload.data,'base64'))
   const encode = (record, page) => ({...record,payload:{...record.payload,data:Buffer.from(JSON.stringify(page)).toString('base64')}})
@@ -151,7 +151,7 @@ async function testV2InkSync({ backend, invoke, runtime, course }) {
   const relPath=material.payload.desktop.relPath, pageCount=process.argv.includes('--pdf')?4:1
   const points=[{x:.125,y:.25,p:0,t:0,tiltX:-45,tiltY:20},{x:.125,y:.25,p:1,t:8,tiltX:35,tiltY:-40},{x:.75,y:.875,p:.6,t:32,tiltX:5,tiltY:70}]
   const shapes=[]
-  for(let page=1;page<=pageCount;page++)shapes.push(plain(await backend.invoke('drawings:create',{courseId:course.id,relPath,page,kind:page%2?'ink':'highlighter',data:{inkVersion:page%2?3:2,points},style:{color:'violet',width:.006,opacity:.3}})))
+  for(let page=1;page<=pageCount;page++)shapes.push(plain(await backend.invoke('drawings:create',{courseId:course.id,relPath,page,kind:page%2?'ink':'highlighter',data:{inkVersion,points},style:{color:'violet',width:.006,opacity:.3}})))
   let snapshot=await invoke('export',{}), assets=snapshot.assets.map(asset=>({sha256:asset.sha256,path:asset.path}))
   const pages=shapes.map(shape=>snapshot.records.find(record=>record.kind==='drawing'&&record.payload.materialID===material.payload.id&&record.payload.page===shape.page))
   if(pageCount===4)assert.deepEqual(pages.map(record=>decode(record).geometry.rotation),[0,90,180,270])
@@ -185,7 +185,7 @@ async function testV2InkSync({ backend, invoke, runtime, course }) {
   const reopened=runtime();reopened.initialize()
   snapshot=await reopened.invokePrivate('nativeSync:export',{})
   const target=shapes[0], base=snapshot.records.find(record=>record.id===pages[0].id), page=decode(base), original=page.objects.find(object=>object.id===target.id)
-  assert.equal(original.data.inkVersion,3);assert.equal(original.data.points[2].tiltX,-55)
+  assert.equal(original.data.inkVersion,inkVersion);assert.equal(original.data.points[2].tiltX,-55)
   // Matching concurrent changes to the SAME ID converge without dropping any
   // measured metadata or manufacturing another object.
   const local=plain(await backend.invoke('drawings:update',{id:target.id,style:{...target.style,color:'blue'}}))
@@ -195,26 +195,26 @@ async function testV2InkSync({ backend, invoke, runtime, course }) {
   assert.equal(sameResult.applied,1);assert.equal(sameResult.conflicts.length,0)
   const afterSame=plain(await backend.invoke('drawings:listForFile',{courseId:course.id,relPath})).filter(object=>object.id===target.id)
   assert.equal(afterSame.length,1);assert.deepEqual(afterSame[0].data,local.data)
-  // Incompatible changes to one ID must preserve BOTH complete v2 variants,
+  // Incompatible changes to one ID must preserve BOTH complete versioned variants,
   // not quietly merge style while losing pressure/time/tilt data.
   snapshot=await invoke('export',{});const conflictBase=snapshot.records.find(record=>record.id===base.id), conflictPage=decode(conflictBase)
   const remoteObject=conflictPage.objects.find(object=>object.id===target.id)
   const localPoints=local.data.points.map(point=>({...point,t:point.t+10,tiltY:-25}))
-  await backend.invoke('drawings:update',{id:target.id,data:{inkVersion:3,points:localPoints}})
+  await backend.invoke('drawings:update',{id:target.id,data:{inkVersion,points:localPoints}})
   const remotePoints=remoteObject.data.points.map(point=>({...point,t:point.t+20,tiltY:50}))
-  const remote=encode(conflictBase,{...conflictPage,objects:conflictPage.objects.map(object=>object.id===target.id?{...object,data:{inkVersion:3,points:remotePoints}}:object)})
+  const remote=encode(conflictBase,{...conflictPage,objects:conflictPage.objects.map(object=>object.id===target.id?{...object,data:{inkVersion,points:remotePoints}}:object)})
   const conflicted=await invoke('import',{records:[remote],assets})
   assert.equal(conflicted.applied,0);assert.equal(conflicted.conflicts.length,1)
   const current=plain(await backend.invoke('drawings:listForFile',{courseId:course.id,relPath})).find(object=>object.id===target.id)
-  assert.deepEqual(current.data,{inkVersion:3,points:localPoints})
+  assert.deepEqual(current.data,{inkVersion,points:localPoints})
   const conflict=(await invoke('conflicts',{})).find(conflict=>conflict.id===conflicted.conflicts[0].id)
   const localVariant=decode(conflict.local).objects.find(object=>object.id===target.id), remoteVariant=decode(conflict.remote).objects.find(object=>object.id===target.id)
-  assert.equal(localVariant.data.inkVersion,3);assert.equal(localVariant.data.points[0].tiltY,-25)
-  assert.deepEqual(remoteVariant.data,{inkVersion:3,points:remotePoints})
+  assert.equal(localVariant.data.inkVersion,inkVersion);assert.equal(localVariant.data.points[0].tiltY,-25)
+  assert.deepEqual(remoteVariant.data,{inkVersion,points:remotePoints})
   const restored=await invoke('restoreConflict',{conflictID:conflict.id,variant:'remote',assets})
   assert.equal(restored.applied,1)
   const resolved=plain(await backend.invoke('drawings:listForFile',{courseId:course.id,relPath})).find(object=>object.id===target.id)
-  assert.equal(resolved.data.inkVersion,3);assert.equal(resolved.data.points[0].tiltY,50);assert.equal(resolved.data.points[0].t,remotePoints[0].t)
+  assert.equal(resolved.data.inkVersion,inkVersion);assert.equal(resolved.data.points[0].tiltY,50);assert.equal(resolved.data.points[0].t,remotePoints[0].t)
   assert.equal(resolved.data.points[0].p,points[0].p)
-  console.log(`PASS: v2 sync metadata/portable coordinate roundtrip (${pageCount} rotated cropped page(s)), same-ID convergence, incompatible-edit copies and explicit v2 recovery`)
+  console.log(`PASS: v${inkVersion} sync metadata/portable coordinate roundtrip (${pageCount} rotated cropped page(s)), same-ID convergence, incompatible-edit copies and explicit versioned recovery`)
 }

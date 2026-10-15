@@ -16,7 +16,7 @@ export async function verifySnapshot(source) {
   const categories = [...sourceCategories.matchAll(/\{ id: '([^']+)', group:/g)].map(match => match[1])
   const expected = ['ai', 'assistant', 'account', 'general', 'university', 'packs', 'calendar', 'browser', 'appearance', 'tabs', 'widgets', 'notifications', 'shortcuts', 'usage', 'permissions', 'privacy', 'advanced', 'experimental', 'courses', 'about']
   if (JSON.stringify(categories) !== JSON.stringify(expected)) throw new Error('Desktop settings route inventory changed; review native coverage before refreshing the fixture.')
-  console.log(`Verified ${manifest.files.length} original source hashes and all ${categories.length} settings routes${source ? ' against desktop checkout' : ''}`)
+  console.log(`Verified ${manifest.files.length} snapshot source hashes and all ${categories.length} settings routes${source ? ' against desktop checkout' : ''}`)
   return manifest
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await verifySnapshot(process.argv[2])

@@ -3,8 +3,8 @@
 :root .browser-panel .browser-toolbar { height: 56px; gap: 4px; padding: 6px 10px; }
 :root .browser-panel .browser-toolbar__nav { gap: 0; }
 :root .browser-panel .browser-nav-button { width: 44px; height: 44px; border-radius: 12px; font-size: 19px; }
-:root .browser-panel .browser-address { height: 44px; border-color: transparent; border-radius: 14px; background: var(--bg-raised); margin: 0 6px; padding-inline: 12px; }
-:root .browser-panel .browser-address:focus-within { border-color: var(--accent); background: var(--bg-app); }
+:root .browser-panel .browser-address { height: 44px; border: 0; border-radius: 14px; background: var(--bg-raised); margin: 0 6px; padding-inline: 12px; }
+:root .browser-panel .browser-address:focus-within { box-shadow: inset 0 0 0 1px var(--accent); background: var(--bg-app); }
 :root .browser-panel .browser-address input { font-size: 16px; }
 :root .browser-panel .browser-address__display { font-size: 15px; }
 :root .browser-panel .browser-address__favicon { width: 18px; height: 18px; }
@@ -66,3 +66,46 @@
 
 :root .browser-panel .browser-toolbar__more { position: relative; }
 :root .ipad-browser-download-count { position: absolute; right: 0; top: 0; min-width: 18px; height: 18px; padding: 1px 4px; border-radius: 9px; color: var(--bg-app); background: var(--text-primary); font-size: 11px; line-height: 16px; }
+
+/* A single row keeps the same navigation controls in wide and split panes. */
+:root .browser-panel .browser-toolbar__actions { flex: none; }
+:root .ipad-browser-download-button { position: relative; }
+:root .browser-toolbar__more .ipad-browser-download-count { display: none; }
+:root .browser-toolbar-menu .ipad-browser-menu-section { min-width: 0; margin: 0; padding: 6px 0; border-top: 1px solid var(--border-subtle); }
+:root .browser-toolbar-menu .ipad-browser-menu-section:first-of-type { border-top: none; }
+:root .ipad-browser-menu-section h3 { padding: 8px 12px 4px; margin: 0; font-size: 12px; line-height: 18px; font-weight: 600; color: var(--text-muted); }
+:root .ipad-browser-menu-section > button { display: flex; align-items: center; justify-content: flex-start; gap: 12px; width: 100%; min-height: 44px; height: auto; padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+:root .ipad-browser-menu-section > button::after { content: attr(aria-label); }
+:root .ipad-browser-menu-section > button > svg { flex: none; width: 20px; height: 20px; }
+:root .ipad-browser-menu-section .ipad-browser-presentation { margin: 4px 0 0; border: 0; padding-bottom: 8px; }
+:root .ipad-browser-menu-section .ipad-browser-zoom { margin: 0; border: 0; }
+:root .ipad-browser-menu-section .ipad-browser-menu-session { border: 0; margin: 0; padding: 6px 8px; }
+:root .ipad-browser-menu-section .browser-profile-trigger { display: inline-flex; min-width: 44px; max-width: none; gap: 8px; align-items: center; }
+:root .browser-toolbar-menu:not([data-compact]) .ipad-browser-menu-compact { display: none; }
+:root .ipad-browser-history { padding: 4px 8px 8px; }
+:root .ipad-browser-history p { padding: 4px; margin: 0; color: var(--text-muted); font-size: 13px; }
+:root .ipad-browser-history button { width: 100%; min-height: 52px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 8px; border-radius: 8px; text-align: left; }
+:root .ipad-browser-history strong, :root .ipad-browser-history span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root .ipad-browser-history strong { font-size: 13px; font-weight: 500; }
+:root .ipad-browser-history span { color: var(--text-muted); font-size: 12px; }
+:root .ipad-browser-private-mark { display: inline-flex; align-items: center; flex: none; gap: 4px; color: var(--accent); font-size: 12px; }
+:root .ipad-browser-private-mark svg { width: 18px; height: 18px; }
+:root .browser-panel .browser-address__security[data-connection='insecure'] { color: var(--warning, #9b6500); }
+:root .browser-panel .browser-address__favicon { display: none; }
+:root .browser-panel .ipad-browser-progress .browser-progress__bar { animation: none; transform: none; transition: width 160ms ease; }
+:root .browser-panel .ipad-browser-progress { pointer-events: none; }
+@container (max-width: 700px) {
+  :root .browser-panel .ipad-browser-inline-action { display: none; }
+  :root .browser-toolbar__more .ipad-browser-download-count { display: inline; }
+  :root .ipad-browser-private-mark > span { display: none; }
+}
+@container (max-width: 480px) {
+  :root .browser-panel .browser-toolbar__nav > :nth-child(3) { display: inline-grid; }
+  :root .browser-panel .browser-toolbar__nav .browser-nav-button--home { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .browser-panel .ipad-browser-progress .browser-progress__bar { transition: none; }
+}
+:root .browser-error__url { max-width: 100%; overflow-wrap: anywhere; }
+:root .ipad-browser-recovery button { min-width: 44px; min-height: 44px; }
+:root .browser-error__diagnostics summary { display: flex; align-items: center; min-height: 44px; cursor: pointer; }

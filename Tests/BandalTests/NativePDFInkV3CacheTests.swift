@@ -32,6 +32,25 @@ final class NativePDFInkV3CacheTests: XCTestCase {
         compare(cache, corrected)
         XCTAssertEqual(cache.recomputedPointCount, 0, "Recoloring does not change geometry or invalidate the measured prefix")
     }
+    func testGPUHintKeepsOnlyUnchangedPolygonsAndRevisionSurvivesReset() {
+        let cache = NativePDFInkGeometryV3Cache(), points = samples(20)
+        compare(cache, Array(points.prefix(10)))
+        let revision = cache.revision, prefix = cache.retainedPolygonCount
+        XCTAssertEqual(cache.retainedPrefixPolygonCount, 0)
+        compare(cache, points)
+        XCTAssertEqual(cache.revision, revision + 1)
+        XCTAssertEqual(cache.retainedPrefixPolygonCount, prefix)
+        var corrected = points; corrected[5].y += 0.001
+        compare(cache, corrected)
+        XCTAssertEqual(cache.retainedPrefixPolygonCount, 9)
+        let beforeReset = cache.revision
+        cache.reset()
+        compare(cache, points)
+        XCTAssertEqual(cache.revision, beforeReset + 1)
+        XCTAssertEqual(cache.retainedPrefixPolygonCount, 0)
+        compare(cache, points, width: 0.006)
+        XCTAssertEqual(cache.retainedPrefixPolygonCount, 0)
+    }
     func testTruncationResetAndNewStrokeWithIdenticalPrefixCannotReuseOldTail() {
         let cache = NativePDFInkGeometryV3Cache(), long = samples(2400)
         compare(cache, long)

@@ -11,6 +11,8 @@ import { NativePDFEditorGeometry, type PDFFrame } from './editorGeometry'
 import { NativePDFSession } from './session'
 import type { JournaledDrawingInput } from './types'
 import type { NativeObjectScene } from './objectScene'
+import { nativePDFDrawingPayload } from './drawingPayload'
+import { strokePath } from '../../upstream/src/renderer/src/features/ink/inkGeometry'
 import '../../upstream/src/renderer/src/features/pdf/tools/pdfTools.css'
 
 const state = { rows: [] as Drawing[], creates: 0, updates: 0, deletes: 0, scenes: [] as NativeObjectScene[], exports: [] as Drawing[][] }
@@ -42,6 +44,9 @@ const relay = new NativePDFPointerRelay(() => document.querySelector('.pdf-scrol
 const editorGeometry = new NativePDFEditorGeometry()
 let pendingStroke: JournaledDrawingInput | null = null
 const exposed = { state, send: relay.accept.bind(relay), tool: (_tool: InkTool): void => {}, undo: async () => {}, ready: false,
+  addDrawing: async (_input: CreateDrawingInput): Promise<Drawing | null> => null,
+  payloads: () => state.rows.map(row => nativePDFDrawingPayload(row, 1.5)),
+  legacyPath: (drawing: Drawing) => strokePath(drawing.data.points ?? [], drawing.style, 1.5, drawing.kind === 'highlighter'),
   deferredGesture: (inputs: Parameters<NativePDFPointerRelay['accept']>[0][]) => { for (const input of inputs) requestAnimationFrame(() => relay.accept(input)) },
   provisional: (): void => {},
   align: (native: PDFFrame) => {
@@ -68,7 +73,7 @@ function Fixture(): JSX.Element {
       documentRevision: 'a'.repeat(64), data: { inkVersion: 2, points: [{ x: 0.1, y: 0.2, p: 0 }] }, style: { color: 'ink', width: 0.004, opacity: 1 } }
     setPending(true)
   }
-  exposed.tool = setTool; exposed.undo = drawings.undo; exposed.ready = !drawings.loading
+  exposed.tool = setTool; exposed.undo = drawings.undo; exposed.addDrawing = drawings.create; exposed.ready = !drawings.loading
   return <div className="pdf-tab" data-tool={tool}>
     <button id="native-pending-undo" disabled={!(drawings.canUndo || hasPending)} onClick={() => { void (async () => { await nativeSession.current?.flush(); await drawings.undo() })() }}>Undo</button>
     <button id="native-pending-redo" disabled={!drawings.canRedo || hasPending} onClick={() => { void drawings.redo() }}>Redo</button>

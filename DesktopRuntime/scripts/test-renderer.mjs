@@ -2,14 +2,15 @@ import assert from 'node:assert/strict'
 import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import vm from 'node:vm'
+import { createRequire } from 'node:module'
 import { dependencies, runtime } from './dependencies.mjs'
 import { verifySnapshot } from './verify-snapshot.mjs'
 
 await verifySnapshot(process.env.BANDAL_DESKTOP_SOURCE)
 const { require } = dependencies()
-const ts = require('typescript')
-const originalBridge = await readFile(resolve(runtime, 'renderer/bridge.ts'), 'utf8')
-const transpiled = ts.transpileModule(originalBridge, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, strict: true } }).outputText
+const { build } = createRequire(require.resolve('vite'))('esbuild')
+const compiled = await build({ entryPoints: [resolve(runtime, 'renderer/bridge.ts')], bundle: true, write: false, platform: 'browser', format: 'iife', globalName: 'NativeBridge', target: 'es2022' })
+const transpiled = compiled.outputFiles[0].text
 const calls = []
 let nextReply = { actual: true }
 class NativeErrorEvent extends Event { constructor(name, values) { super(name); Object.assign(this, values) } }
@@ -20,6 +21,7 @@ const target = Object.assign(new EventTarget(), { webkit: { messageHandlers: { b
 } } } } })
 const context = { exports: {}, window: target, ErrorEvent: NativeErrorEvent, Uint8Array, atob }
 vm.runInNewContext(transpiled, context, { filename: 'native-bridge.js' })
+context.exports = context.NativeBridge
 assert.throws(() => context.exports.installNativeBridge({}), /네이티브 연결/)
 context.exports.installNativeBridge(target)
 assert.equal(target.bandal.platform, 'ipad')

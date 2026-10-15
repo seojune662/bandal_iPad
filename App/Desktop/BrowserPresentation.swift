@@ -45,21 +45,24 @@ extension DesktopBrowserHost {
         presentationStore?.mode(profile: page.profileID, host: url?.host ?? "", isPrivate: page.isPrivate) ?? .automatic
     }
     func presentationRequest(_ request: [String: Any], page: DesktopBrowserPage, update: Bool) async throws -> [String: Any] {
-        guard let url = page.webView.url, let host = url.host, ["https", "http"].contains(url.scheme ?? "") else {
+        guard let address = page.state["url"] as? String, let url = URL(string: address), let host = url.host, ["https", "http"].contains(url.scheme ?? "") else {
             return ["mode": "automatic", "available": false]
         }
         if update {
             guard let raw = request["mode"] as? String, let mode = BrowserPresentationMode(rawValue: raw), let presentationStore else { throw DesktopBrowserError.invalid("웹사이트 표시 모드") }
             if mode != presentation(for: page, url: url) {
+                try page.requireReloadable()
+                let navigationID = page.state["navigationId"] as? Int
                 let cancelled = (try? await page.webView.evaluateJavaScript("(()=>{const e=new Event('beforeunload',{cancelable:true});return !window.dispatchEvent(e)||e.returnValue===false})()")) as? Bool ?? false
                 if cancelled {
                     let allowed = await confirm(title: "웹사이트를 다시 불러올까요?", message: "작성 중인 내용이 사라질 수 있습니다.")
                     if !allowed { return ["mode": presentation(for: page, url: url).rawValue, "available": true] }
                 }
                 // Do not apply a stale menu action to a page that navigated while asking.
-                guard page.webView.url == url, pages[page.tabID] === page else { throw DesktopBrowserError.unavailable("페이지가 변경됐습니다. 다시 선택해 주세요.") }
+                guard page.state["url"] as? String == address, page.state["navigationId"] as? Int == navigationID, pages[page.tabID] === page else { throw DesktopBrowserError.unavailable("페이지가 변경됐습니다. 다시 선택해 주세요.") }
+                try page.requireReloadable()
                 try presentationStore.set(mode, profile: page.profileID, host: host, isPrivate: page.isPrivate)
-                page.webView.reload()
+                try page.reload()
             }
         }
         return ["mode": presentation(for: page, url: url).rawValue, "available": true]

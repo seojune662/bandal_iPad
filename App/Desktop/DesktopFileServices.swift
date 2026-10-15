@@ -9,12 +9,33 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
     weak var presenter: UIViewController?
     private let runtime: DesktopRuntime
     private var selection: CheckedContinuation<[URL]?, Error>?
+    private weak var activePicker: UIDocumentPickerViewController?
+    private weak var activeShare: UIActivityViewController?
+    private var shareIdentifier: UUID?
+    private var cancelShare: (() -> Void)?
+    private var presentationGeneration = 0
     private var previewURLs: [ObjectIdentifier: URL] = [:]
     private var ownedExports: Set<URL> = []
     private lazy var staging = DesktopFileStaging.shared(root: runtime.root)
     private var clipboardSequence = 0
     private var clipboardSnapshot: (token: Int, changeCount: Int)?
     init(runtime: DesktopRuntime) { self.runtime = runtime }
+
+    /// Retiring a renderer must settle its native continuations, including a
+    /// picker/share sheet whose normal UIKit callback will arrive later.
+    func cancelPresentations() {
+        presentationGeneration += 1
+        let pending = selection; selection = nil
+        let picker = activePicker; activePicker = nil
+        let cancel = cancelShare; cancelShare = nil; shareIdentifier = nil
+        let share = activeShare; activeShare = nil
+        pending?.resume(returning: nil); cancel?()
+        picker?.dismiss(animated: false); share?.dismiss(animated: false)
+        if let preview = presenter?.presentedViewController as? QLPreviewController,
+           previewURLs[ObjectIdentifier(preview)] != nil { preview.dismiss(animated: false) }
+        let previews = Array(previewURLs.values); previewURLs.removeAll()
+        previews.forEach(releaseTemporaryFile)
+    }
 
     func readAttachment(courseID: String, relPath: String) async throws -> Data {
         guard let path = try await runtime.invokePrivate("nativeMaterial:path", request: ["courseId": courseID, "relPath": relPath]) as? String else {
@@ -36,7 +57,7 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
     }
 
     func canHandle(_ channel: String) -> Bool {
-        ["courses:pickFolder", "plugins:pickFolder", "settings:pickDataRoot", "native:saveFile", "native:pickFiles", "native:chatPickAttachments", "native:marketPickPreview", "native:marketSanitizePreview", "native:marketPickPluginArchive", "native:revealFile", "native:openLogs", "materials:reveal", "materials:preview", "chat:pickAttachments", "chat:openArtifact", "print:savePdfAs", "print:pdf", "clipboard:beginCopy", "clipboard:writeImage"].contains(channel)
+        ["courses:pickFolder", "plugins:pickFolder", "settings:pickDataRoot", "native:saveFile", "native:pickFiles", "native:chatPickAttachments", "native:marketPickPreview", "native:marketSanitizePreview", "native:marketPickPluginArchive", "native:revealFile", "native:openLogs", "materials:reveal", "materials:preview", "materials:share", "materials:export", "chat:pickAttachments", "chat:openArtifact", "print:savePdfAs", "print:pdf", "clipboard:beginCopy", "clipboard:writeImage"].contains(channel)
     }
 
     func handle(channel: String, request: [String: Any]) async throws -> Any {
@@ -140,17 +161,52 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
             }
             return ["ok": true, "printed": printed]
         case "materials:reveal", "materials:preview", "chat:openArtifact":
-            guard let courseID = request["courseId"] as? String, let path = request["relPath"] as? String else { throw DesktopRuntimeError("자료를 확인해 주세요.") }
-            let bytes = try await runtime.readMaterial(courseID: courseID, relativePath: path)
-            let source = try temporaryFile(name: (path as NSString).lastPathComponent, data: bytes)
+            let source = try await materialSnapshot(request)
             do { try preview(source) } catch { releaseTemporaryFile(source); throw error }
             return ["ok": true]
+        case "materials:export":
+            let source = try await materialSnapshot(request)
+            defer { releaseTemporaryFile(source) }
+            let destination = try await pick(UIDocumentPickerViewController(forExporting: [source], asCopy: true))?.first
+            return ["saved": destination != nil, "canceled": destination == nil]
+        case "materials:share":
+            let source = try await materialSnapshot(request)
+            defer { releaseTemporaryFile(source) }
+            guard let presenter, presenter.viewIfLoaded?.window != nil, presenter.presentedViewController == nil else { throw DesktopRuntimeError("열린 창을 닫은 뒤 다시 시도해 주세요.") }
+            let identifier = UUID()
+            defer { if shareIdentifier == identifier { cancelShare = nil; activeShare = nil; shareIdentifier = nil } }
+            let shared = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
+                let completion = DesktopDialogCompletion<Result<Bool, Error>> { continuation.resume(with: $0) }
+                let activity = UIActivityViewController(activityItems: [source], applicationActivities: nil)
+                activity.view.accessibilityIdentifier = "bandal-material-share"
+                shareIdentifier = identifier; activeShare = activity; cancelShare = { completion.finish(.success(false)) }
+                activity.completionWithItemsHandler = { _, completed, _, error in
+                    if let error { completion.finish(.failure(error)) } else { completion.finish(.success(completed)) }
+                }
+                activity.popoverPresentationController?.sourceView = presenter.view
+                activity.popoverPresentationController?.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 1, height: 1)
+                presenter.present(activity, animated: true)
+            }
+            return ["shared": shared, "canceled": !shared]
         default: throw DesktopRuntimeError("Unknown file service: \(channel)", code: "ENOSYS")
         }
     }
 
+    private func materialSnapshot(_ request: [String: Any]) async throws -> URL {
+        let generation = presentationGeneration
+        guard let courseID = request["courseId"] as? String, let relative = request["relPath"] as? String,
+              let path = try await runtime.invokePrivate("nativeMaterial:path", request: ["courseId": courseID, "relPath": relative]) as? String else { throw DesktopRuntimeError("자료를 확인해 주세요.") }
+        let source = try await DesktopMaterialExport.snapshot(path: path, root: runtime.root)
+        guard generation == presentationGeneration else {
+            try? FileManager.default.removeItem(at: source.deletingLastPathComponent())
+            throw CancellationError()
+        }
+        ownedExports.insert(source)
+        return source
+    }
+
     private func preview(_ url: URL) throws {
-        guard let presenter, presenter.presentedViewController == nil else { throw DesktopRuntimeError("열린 창을 닫은 뒤 다시 시도해 주세요.") }
+        guard let presenter, presenter.viewIfLoaded?.window != nil, presenter.presentedViewController == nil else { throw DesktopRuntimeError("열린 창을 닫은 뒤 다시 시도해 주세요.") }
         let preview = QLPreviewController(); preview.dataSource = self; preview.delegate = self
         previewURLs[ObjectIdentifier(preview)] = url
         presenter.present(preview, animated: true)
@@ -174,17 +230,27 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
     }
 
     private func pick(_ picker: UIDocumentPickerViewController) async throws -> [URL]? {
-        guard selection == nil, let presenter, presenter.presentedViewController == nil else { throw DesktopRuntimeError("열린 파일 선택 창을 먼저 닫아 주세요.") }
+        guard selection == nil, let presenter, presenter.viewIfLoaded?.window != nil, presenter.presentedViewController == nil else { throw DesktopRuntimeError("열린 파일 선택 창을 먼저 닫아 주세요.") }
+        picker.view.accessibilityIdentifier = "bandal-document-picker"
         picker.delegate = self
         return try await withCheckedThrowingContinuation { continuation in
-            selection = continuation
+            selection = continuation; activePicker = picker
             presenter.present(picker, animated: true)
         }
     }
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { let pending = selection; selection = nil; pending?.resume(returning: urls) }
-    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { let pending = selection; selection = nil; pending?.resume(returning: nil) }
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard activePicker === controller else { return }
+        let pending = selection; selection = nil; activePicker = nil; pending?.resume(returning: urls)
+    }
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        guard activePicker === controller else { return }
+        let pending = selection; selection = nil; activePicker = nil; pending?.resume(returning: nil)
+    }
     func numberOfPreviewItems(in controller: QLPreviewController) -> Int { previewURLs[ObjectIdentifier(controller)] == nil ? 0 : 1 }
-    func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { previewURLs[ObjectIdentifier(controller)]! as NSURL }
+    func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+        // UIKit may finish querying a preview that navigation just cancelled.
+        (previewURLs[ObjectIdentifier(controller)] ?? runtime.root.appendingPathComponent("Temporary/UnavailablePreview")) as NSURL
+    }
     func previewControllerDidDismiss(_ controller: QLPreviewController) {
         if let source = previewURLs.removeValue(forKey: ObjectIdentifier(controller)) { releaseTemporaryFile(source) }
     }

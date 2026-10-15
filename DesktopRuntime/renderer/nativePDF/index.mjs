@@ -83,20 +83,26 @@ export function transformNativePDFPointerCapture(source) {
   let code = replace(source, 'event.currentTarget.setPointerCapture(event.pointerId)', 'captureNativePDFPointer(event.currentTarget, event.pointerId, event.nativeEvent)')
   code = replace(code, 'svg.setPointerCapture(event.pointerId)', 'captureNativePDFPointer(svg, event.pointerId, event.nativeEvent)')
   code = replace(code, '  const selectionFrame = (box: DrawingBox): JSX.Element => (', `  useLayoutEffect(() => {
-    if (activeTool === 'pen' || activeTool === 'highlighter') return
-    const edited = shapes.filter(shape => !erasedIds.has(shape.id)).map(shape => {
-      const box = boxForShape(shape, gesture, resolveShapeId)
-      if (!box || !shape.data.box) return shape
-      let points = shape.data.points
-      if ((shape.kind === 'line' || shape.kind === 'arrow') && points && gesture?.kind === 'move') {
-        const dx = box.x-shape.data.box.x, dy = box.y-shape.data.box.y
-        points = points.map(point => ({ ...point, x: point.x+dx, y: point.y+dy }))
-      }
-      return { ...shape, data: { ...shape.data, box, ...(points ? { points } : {}) } }
-    })
-    publishNativePDFScene(svgRef.current, { shapes: edited, aspect, selectedId, editingId,
-      preview: gesture?.kind === 'shape' ? { kind: gesture.tool, data: { box: normalizedBox(gesture.start, gesture.end),
-        ...((gesture.tool === 'line' || gesture.tool === 'arrow') ? { points: [gesture.start, gesture.end] } : {}) }, style } : null })
+    const svg = svgRef.current
+    const publish = (): void => {
+      if (activeTool === 'pen' || activeTool === 'highlighter') return
+      const edited = shapes.filter(shape => !erasedIds.has(shape.id)).map(shape => {
+        const box = boxForShape(shape, gesture, resolveShapeId)
+        if (!box || !shape.data.box) return shape
+        let points = shape.data.points
+        if ((shape.kind === 'line' || shape.kind === 'arrow') && points && gesture?.kind === 'move') {
+          const dx = box.x-shape.data.box.x, dy = box.y-shape.data.box.y
+          points = points.map(point => ({ ...point, x: point.x+dx, y: point.y+dy }))
+        }
+        return { ...shape, data: { ...shape.data, box, ...(points ? { points } : {}) } }
+      })
+      publishNativePDFScene(svgRef.current, { shapes: edited, aspect, selectedId, editingId,
+        preview: gesture?.kind === 'shape' ? { kind: gesture.tool, data: { box: normalizedBox(gesture.start, gesture.end),
+          ...((gesture.tool === 'line' || gesture.tool === 'arrow') ? { points: [gesture.start, gesture.end] } : {}) }, style } : null })
+    }
+    svg?.addEventListener('bandal-native-pdf-request-object-scene', publish)
+    publish()
+    return () => svg?.removeEventListener('bandal-native-pdf-request-object-scene', publish)
   })
 
   const selectionFrame = (box: DrawingBox): JSX.Element => (`)

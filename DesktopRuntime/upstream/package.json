@@ -1,6 +1,6 @@
 {
   "name": "bandal",
-  "version": "0.84.1",
+  "version": "0.84.5",
   "description": "Bandal (반달) — a study IDE for university students",
   "main": "./out/main/index.js",
   "author": "Bandal",
@@ -27,8 +27,6 @@
     "dist": "electron-vite build && electron-builder --mac",
     "test": "vitest run --exclude \"e2e/**\"",
     "e2e": "electron-vite build && playwright test -c e2e",
-    "reel": "electron-vite build && playwright test -c e2e/reel",
-    "reel:capture": "playwright test -c e2e/reel",
     "generate-icon": "node scripts/generate-icon.mjs",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",

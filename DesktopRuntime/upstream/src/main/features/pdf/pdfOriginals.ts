@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, openSync, fsyncSync, closeSync, readSync, fstatSync, statSync, type BigIntStats } from 'node:fs'
+import { copyFileSync, chmodSync, existsSync, mkdirSync, renameSync, rmSync, openSync, fsyncSync, closeSync, readSync, fstatSync, statSync, type BigIntStats } from 'node:fs'
 import { join } from 'node:path'
 
 /** Bounded file hashing for the Electron host; iPad supplies its native SHA. */
@@ -55,7 +55,11 @@ export function createPDFOriginalPreserver(directory: string, pathFor: (courseId
       try {
         copyFileSync(pathFor(courseId, relPath), temporary)
         if (revisionAt(temporary) !== revision) throw new Error('PDF changed while preserving its original; no ink was applied')
-        const descriptor = openSync(temporary, 'r')
+        // This private recovery copy must be writable even when the source is
+        // read-only. Windows FlushFileBuffers requires GENERIC_WRITE; opening
+        // with 'r' makes every first PDF drawing fail with EPERM there.
+        chmodSync(temporary, 0o600)
+        const descriptor = openSync(temporary, 'r+')
         try { fsyncSync(descriptor) } finally { closeSync(descriptor) }
         renameSync(temporary, target)
       } finally { if (existsSync(temporary)) rmSync(temporary, { force: true }) }

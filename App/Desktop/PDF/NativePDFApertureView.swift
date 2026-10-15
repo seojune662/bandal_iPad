@@ -8,6 +8,9 @@ final class NativePDFApertureView: PDFView, UIScribbleInteractionDelegate {
     var onContact: (() -> Void)?
     var pencilTarget: ((CGPoint) -> UIView?)?
     var excludedRects: [CGRect] = [] { didSet { updateMask() } }
+    private var maskBounds = CGRect.null
+    private var maskRects: [CGRect] = []
+    private var installedMask: CAShapeLayer?
     override init(frame: CGRect) {
         super.init(frame: frame)
         addInteraction(UIScribbleInteraction(delegate: self))
@@ -41,10 +44,14 @@ final class NativePDFApertureView: PDFView, UIScribbleInteractionDelegate {
         return true
     }
     private func updateMask() {
-        guard !excludedRects.isEmpty else { layer.mask = nil; return }
-        let shape = CAShapeLayer(), path = UIBezierPath(rect: bounds)
-        for rectangle in excludedRects { path.append(UIBezierPath(rect: rectangle.intersection(bounds))) }
-        shape.frame = bounds; shape.path = path.cgPath; shape.fillRule = .evenOdd
-        layer.mask = shape
+        // Repeated host/layout notifications often carry identical geometry.
+        // Keep the existing compositor mask in that case; replacing it can
+        // trigger unnecessary PDFKit/layer layout during an active contact.
+        guard maskBounds != bounds || maskRects != excludedRects || layer.mask !== installedMask else { return }
+        maskBounds = bounds; maskRects = excludedRects
+        guard !excludedRects.isEmpty else { installedMask = nil; layer.mask = nil; return }
+        let shape = CAShapeLayer()
+        shape.frame = bounds; shape.path = DesktopNativeSurfaceMask.path(bounds: bounds, excluding: excludedRects)
+        installedMask = shape; layer.mask = shape
     }
 }

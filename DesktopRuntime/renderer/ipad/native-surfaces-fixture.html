@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body><div id="palette" style="position:fixed;left:100px;top:120px;width:260px;height:50px;background:white">Palette</div>
+<script type="module">
+  import * as surfaces from './nativeSurfaces.ts'
+  const calls = [], waiting = []
+  let deferReply = false, failReply = false
+  window.bandal = { invoke: async (channel, request) => {
+    calls.push({channel, request: structuredClone(request)})
+    if (channel === 'runtime:nativeSurfaceSession') return {sessionId:'fixture-session'}
+    if (channel !== 'runtime:nativeSurfaces') throw new Error('Unexpected channel '+channel)
+    if (failReply) throw new Error('Fixture native connection interrupted')
+    if (deferReply) await new Promise(resolve => waiting.push(resolve))
+    return {revision:request.revision}
+  } }
+  window.surfacesFixture = { ...surfaces, calls,
+    defer(value) { deferReply=value },
+    fail(value) { failReply=value },
+    acknowledge() { waiting.splice(0).forEach(resolve => resolve()) },
+    waiting: () => waiting.length }
+</script></body></html>

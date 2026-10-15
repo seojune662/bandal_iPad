@@ -17,6 +17,10 @@ await build({ entryPoints: [resolve(runtime, 'upstream/src/main/features/pdf/exp
 const { createPdfExporter } = createRequire(import.meta.url)(resolve(folder, 'export.cjs'))
 const timestamp = '2026-10-14T00:00:00Z'
 const objects = [
+  { kind: 'ink', data: { inkVersion: 5, points: [{ x: .15, y: .87, p: .1, t: 0 }, { x: .3, y: .9, p: .8, t: 8 }, { x: .45, y: .85, p: .2, t: 16 }, { x: .6, y: .9, p: .5, t: 24 }] }, style: { color: 'green', width: .012, opacity: .7 } },
+  { kind: 'highlighter', data: { inkVersion: 5, points: [{ x: .6, y: .5, p: .1, t: 0 }, { x: .7, y: .55, p: .8, t: 8 }, { x: .8, y: .5, p: .2, t: 16 }, { x: .9, y: .55, p: .5, t: 24 }] }, style: { color: 'yellow', width: .04, opacity: .3 } },
+  { kind: 'ink', data: { inkVersion: 4, points: [{ x: .15, y: .87, p: .1, t: 0 }, { x: .3, y: .9, p: .8, t: 8 }, { x: .45, y: .85, p: .2, t: 16 }, { x: .6, y: .9, p: .5, t: 24 }] }, style: { color: 'green', width: .012, opacity: .7 } },
+  { kind: 'highlighter', data: { inkVersion: 4, points: [{ x: .6, y: .5, p: .1, t: 0 }, { x: .7, y: .55, p: .8, t: 8 }, { x: .8, y: .5, p: .2, t: 16 }, { x: .9, y: .55, p: .5, t: 24 }] }, style: { color: 'yellow', width: .04, opacity: .3 } },
   { kind: 'ink', data: { inkVersion: 3, points: [{ x: .1, y: .12, p: 0, t: 0 }, { x: .2, y: .18, p: .3, t: 4 }, { x: .3, y: .13, p: .05, t: 8 }, { x: .45, y: .2, p: .35, t: 12 }] }, style: { color: 'violet', width: .012, opacity: .7 } },
   { kind: 'ink', data: { inkVersion: 2, points: [{ x: .2, y: .3, p: 0 }] }, style: { color: 'blue', width: .04, opacity: 1 } },
   { kind: 'ink', data: { inkVersion: 2, points: [{ x: .2, y: .55, p: 0 }, { x: .4, y: .7, p: .4 }, { x: .8, y: .6, p: 1 }] }, style: { color: 'ink', width: .012, opacity: 1 } },

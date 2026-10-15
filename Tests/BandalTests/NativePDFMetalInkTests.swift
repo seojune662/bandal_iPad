@@ -1,9 +1,368 @@
 import XCTest
 import UIKit
+import MetalKit
 @testable import Bandal
+
+private final class DrawableAcquisitionProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    var count: Int { lock.lock(); defer { lock.unlock() }; return calls }
+    func record() { lock.lock(); calls += 1; lock.unlock() }
+}
+
+private final class DrawableAcquisitionTimeline: @unchecked Sendable {
+    private struct Event { let start: CFTimeInterval; let requestedSize: CGSize; var end: CFTimeInterval?; var receivedSize: CGSize? }
+    private let lock = NSLock()
+    private var events: [Event] = []
+    func begin(size: CGSize) -> Int {
+        lock.lock(); defer { lock.unlock() }
+        events.append(Event(start: CACurrentMediaTime(), requestedSize: size)); return events.count - 1
+    }
+    func end(_ index: Int, size: CGSize?) {
+        lock.lock(); defer { lock.unlock() }
+        events[index].end = CACurrentMediaTime(); events[index].receivedSize = size
+    }
+    func summary(since start: CFTimeInterval) -> String {
+        lock.lock(); defer { lock.unlock() }
+        let now = CACurrentMediaTime()
+        return events.enumerated().map { index, event in
+            String(format: "%d@%.1f:%@%.1f", index, (event.start - start) * 1000,
+                event.end == nil ? "pending/" : event.receivedSize != nil ? "ready/" : "nil/",
+                ((event.end ?? now) - event.start) * 1000) +
+                (event.receivedSize.map { $0 != event.requestedSize ? "sizeMismatch\(event.requestedSize)->\($0)" : "" } ?? "")
+        }.joined(separator: ",")
+    }
+}
 
 @MainActor
 final class NativePDFMetalInkTests: XCTestCase {
+    private func activeWindowScene() async throws -> UIWindowScene {
+        let deadline = CACurrentMediaTime() + 1
+        repeat {
+            if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }) { return scene }
+            try await Task.sleep(for: .milliseconds(20))
+        } while CACurrentMediaTime() < deadline
+        return try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first(where: { $0.activationState == .foregroundActive }), "The test host must become foreground-active within one second")
+    }
+
+    private func waitForDrawable(_ renderer: NativePDFMetalInk) async throws {
+        let deadline = CACurrentMediaTime() + 1
+        while renderer.readyDrawableCount == 0, CACurrentMediaTime() < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        XCTAssertEqual(renderer.readyDrawableCount, 1, "The worker must make a drawable available without blocking UIKit")
+    }
+
+    func testBlockedAcquisitionIsBoundedAndInvalidationDiscardsItsCompletion() async throws {
+        let probe = DrawableAcquisitionProbe(), release = DispatchSemaphore(value: 0)
+        let completed = expectation(description: "The superseded worker finishes")
+        let mailbox = NativePDFInkDrawableMailbox { _ in
+            XCTAssertFalse(Thread.isMainThread)
+            probe.record()
+            _ = release.wait(timeout: .now() + 2)
+            return nil
+        }
+        let layer = CAMetalLayer()
+        mailbox.request(layer: layer, width: 64, height: 64) { result in
+            guard case .stale = result else { XCTFail("Invalidation must reject a late result"); completed.fulfill(); return }
+            completed.fulfill()
+        }
+        for _ in 0..<100 {
+            XCTAssertNil(mailbox.take(width: 64, height: 64))
+            mailbox.request(layer: layer, width: 64, height: 64) { _ in XCTFail("Only one acquisition may be queued") }
+        }
+        XCTAssertEqual(mailbox.requestCount, 1); XCTAssertEqual(mailbox.readyCount, 0)
+        mailbox.invalidate()
+        XCTAssertNil(mailbox.take(width: 96, height: 96))
+        release.signal()
+        await fulfillment(of: [completed], timeout: 2)
+        XCTAssertEqual(probe.count, 1); XCTAssertEqual(mailbox.requestCount, 0); XCTAssertEqual(mailbox.readyCount, 0)
+    }
+
+    func testImmediateNilAcquisitionDoesNotRetryContinuouslyWhileIdle() async throws {
+        let probe = DrawableAcquisitionProbe()
+        let renderer = try XCTUnwrap(NativePDFMetalInk(drawableAcquirer: { _ in
+            XCTAssertFalse(Thread.isMainThread); probe.record(); return nil
+        }))
+        let windowScene = try await activeWindowScene()
+        let previous = windowScene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: windowScene), controller = UIViewController()
+        window.rootViewController = controller; renderer.frame = CGRect(x: 20, y: 20, width: 64, height: 64)
+        controller.view.addSubview(renderer); window.makeKeyAndVisible(); window.layoutIfNeeded()
+        defer { window.isHidden = true; previous?.makeKeyAndVisible() }
+        try await Task.sleep(for: .milliseconds(100))
+        let settledCount = probe.count
+        XCTAssertGreaterThan(settledCount, 0)
+        try await Task.sleep(for: .milliseconds(60))
+        XCTAssertEqual(probe.count, settledCount, "An unavailable layer waits for another requested frame")
+        XCTAssertEqual(renderer.readyDrawableCount, 0)
+    }
+
+    func testColdLatestFrameResizeHideAndDetachPreserveHandoff() async throws {
+        let renderer = try XCTUnwrap(NativePDFMetalInk())
+        renderer.frame = CGRect(x: 20, y: 20, width: 64, height: 64)
+        renderer.noteInputReceived(at: 100, strokeID: 7)
+        var oldChanges = 0, latestChanges = 0
+        for _ in 0..<100 { XCTAssertFalse(renderer.submitFrame(synchronizedUpdate: { oldChanges += 1 })) }
+        XCTAssertEqual(oldChanges, 0); XCTAssertEqual(renderer.pendingInputTiming?.firstInputAt, 100)
+        XCTAssertEqual(renderer.pendingDrawableRequestCount, 0)
+        let windowScene = try await activeWindowScene()
+        let previous = windowScene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: windowScene), controller = UIViewController()
+        window.rootViewController = controller; controller.view.addSubview(renderer)
+        window.makeKeyAndVisible(); window.layoutIfNeeded()
+        defer { window.isHidden = true; previous?.makeKeyAndVisible() }
+        try await waitForDrawable(renderer)
+        renderer.autoResizeDrawable = false
+        renderer.drawableSize = CGSize(width: 96, height: 80)
+        renderer.mtkView(renderer, drawableSizeWillChange: renderer.drawableSize)
+        XCTAssertEqual(renderer.readyDrawableCount, 0)
+        XCTAssertFalse(renderer.submitFrame(synchronizedUpdate: { oldChanges += 1 }))
+        XCTAssertEqual((renderer.layer as? CAMetalLayer)?.drawableSize, renderer.drawableSize,
+            "Direct rendering must propagate MetalKit's manual pixel size before background acquisition")
+        renderer.strokes = [.init(polygons: [[CGPoint(x: 10, y: 10), CGPoint(x: 40, y: 10), CGPoint(x: 25, y: 40)]], color: .blue, opacity: 0.5)]
+        renderer.noteInputReceived(at: 101, strokeID: 7)
+        try await waitForDrawable(renderer)
+        XCTAssertTrue(renderer.submitFrame(synchronizedUpdate: { latestChanges += 1 }))
+        XCTAssertEqual(renderer.rebuiltVertexCount, 3, "The worker must not capture old geometry")
+        XCTAssertEqual(oldChanges, 0); XCTAssertEqual(latestChanges, 1)
+        XCTAssertEqual(renderer.lastSubmittedFrame?.firstInputAt, 100)
+        XCTAssertEqual(renderer.lastSubmittedFrame?.latestInputAt, 101)
+        try await waitForDrawable(renderer)
+        renderer.isHidden = true
+        XCTAssertEqual(renderer.readyDrawableCount, 0)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(renderer.readyDrawableCount, 0)
+        XCTAssertFalse(renderer.submitFrame(synchronizedUpdate: { oldChanges += 1 }))
+        renderer.isHidden = false
+        try await waitForDrawable(renderer)
+        renderer.removeFromSuperview()
+        XCTAssertEqual(renderer.readyDrawableCount, 0)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(renderer.readyDrawableCount, 0); XCTAssertEqual(oldChanges, 0)
+    }
+
+    func testDrawableBudgetRejectsFullPoolAndIgnoresDuplicateRetirement() throws {
+        let budget = NativePDFInkDrawableBudget()
+        let first = try XCTUnwrap(budget.acquire()), second = try XCTUnwrap(budget.acquire())
+        XCTAssertEqual(budget.count, 2); XCTAssertNil(budget.acquire())
+        budget.release(first)
+        let replacement = try XCTUnwrap(budget.acquire())
+        XCTAssertNotEqual(first, replacement)
+        budget.release(first)
+        XCTAssertEqual(budget.count, 2, "A late error or skipped callback cannot retire another drawable")
+        budget.release(second); budget.release(replacement)
+        XCTAssertEqual(budget.count, 0)
+    }
+
+    func testRapidInkAndSynchronizedClearNeverWaitForDrawableTimeout() async throws {
+        let testStartedAt = CACurrentMediaTime(), acquisition = DrawableAcquisitionTimeline()
+        let windowScene = try await activeWindowScene()
+        let previous = windowScene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: windowScene), controller = UIViewController()
+        window.rootViewController = controller
+        let renderer = try XCTUnwrap(NativePDFMetalInk(drawableAcquirer: { layer in
+            let index = acquisition.begin(size: layer.drawableSize)
+            let drawable = layer.nextDrawable()
+            acquisition.end(index, size: drawable.map { CGSize(width: $0.texture.width, height: $0.texture.height) })
+            return drawable
+        }))
+        renderer.frame = CGRect(x: 20, y: 20, width: 64, height: 64)
+        controller.view.addSubview(renderer); window.makeKeyAndVisible(); window.layoutIfNeeded()
+        defer { window.isHidden = true; previous?.makeKeyAndVisible() }
+        try await Task.sleep(for: .milliseconds(100))
+        let initialReady = renderer.readyDrawableCount, initialPending = renderer.pendingDrawableRequestCount
+        let initialWindowState = windowScene.windows.map { window in
+            "\(type(of: window)):key\(window.isKeyWindow):hidden\(window.isHidden):level\(window.windowLevel.rawValue):\(window.frame)"
+        }.joined(separator: ";")
+        let stroke = NativePDFMetalInk.Stroke(polygons: [[CGPoint(x: 10, y: 10), CGPoint(x: 40, y: 10),
+            CGPoint(x: 40, y: 40), CGPoint(x: 10, y: 40)]], color: .blue, opacity: 0.5)
+        var maximumMS = 0.0, submitted = 0, deferred = 0, changes = 0
+        var worstAcquireMS = 0.0, worstEncodeMS = 0.0, worstScheduleMS = 0.0
+        for burst in 0..<50 {
+            // Several short contacts can arrive within one UIKit transaction.
+            // Waiting for nextDrawable here prevents that transaction retiring.
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            for phase in 0..<8 {
+                let clear = phase.isMultiple(of: 2) == false
+                renderer.strokes = clear ? [] : [stroke]
+                if !clear { renderer.noteInputReceived(at: CACurrentMediaTime(), strokeID: UInt64(burst * 8 + phase + 1)) }
+                let start = CACurrentMediaTime()
+                let accepted = renderer.submitFrame(synchronizedUpdate: clear ? { changes += 1 } : nil)
+                let elapsed = (CACurrentMediaTime() - start) * 1000
+                if elapsed > maximumMS {
+                    maximumMS = elapsed
+                    worstAcquireMS = renderer.lastDrawableAcquisitionMS
+                    worstEncodeMS = renderer.lastEncodingMS
+                    worstScheduleMS = renderer.lastSchedulingMS
+                }
+                if accepted { submitted += 1 } else { deferred += 1 }
+                if elapsed > 250 { break }
+            }
+            CATransaction.commit()
+            if maximumMS > 250 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        print("Rapid Metal ink/clear: maximum CPU \(maximumMS)ms (acquire \(worstAcquireMS), encode \(worstEncodeMS), scheduling \(worstScheduleMS)); submitted \(submitted); deferred \(deferred); synchronized images \(changes)")
+        print("Rapid Metal acquisition timeline ms: \(acquisition.summary(since: testStartedAt)); initialReady=\(initialReady) initialPending=\(initialPending); windows=\(initialWindowState); ready=\(renderer.readyDrawableCount) pending=\(renderer.pendingDrawableRequestCount) inflight=\(renderer.inFlightDrawableCount)")
+        XCTAssertGreaterThan(submitted, 25, "The background worker must continue supplying drawables throughout all bursts")
+        XCTAssertGreaterThan(deferred, 0, "A burst coalesces excess frames instead of exhausting drawable slots")
+        XCTAssertLessThanOrEqual(renderer.readyDrawableCount, 1)
+        XCTAssertLessThanOrEqual(renderer.pendingDrawableRequestCount, 1)
+        XCTAssertLessThan(maximumMS, 250, "Backpressure must defer a frame instead of entering CAMetalLayer's one-second drawable timeout")
+    }
+
+    func testPendingInputClockKeepsOldestUnsubmittedSampleAcrossBurst() throws {
+        let renderer = try XCTUnwrap(NativePDFMetalInk())
+        renderer.noteInputReceived(at: 100, strokeID: 7)
+        renderer.noteInputReceived(at: 100.29, strokeID: 7)
+        renderer.noteInputReceived(at: .nan, strokeID: 7)
+        XCTAssertEqual(renderer.pendingInputTiming?.firstInputAt, 100)
+        XCTAssertEqual(renderer.pendingInputTiming?.latestInputAt, 100.29)
+        renderer.noteInputReceived(at: 101, strokeID: 8)
+        XCTAssertEqual(renderer.pendingInputTiming?.strokeID, 8)
+        XCTAssertEqual(renderer.pendingInputTiming?.firstInputAt, 101)
+        XCTAssertEqual(renderer.pendingInputTiming?.latestInputAt, 101)
+    }
+
+    func testDroppedFrameRetryPreservesOldestClockAndCannotResetNewStroke() throws {
+        let renderer = try XCTUnwrap(NativePDFMetalInk())
+        let dropped = NativePDFMetalInk.FrameTiming(sequence: 1, strokeID: 7,
+            firstInputAt: 100, latestInputAt: 100.1, drawStartedAt: 100.1,
+            drawableAcquiredAt: 100.1, submittedAt: 100.11, presentedAt: nil)
+        renderer.noteInputReceived(at: 100.2, strokeID: 7)
+        XCTAssertTrue(renderer.retryUnpresentedFrame(dropped, forStrokeID: 7))
+        XCTAssertEqual(renderer.pendingInputTiming?.firstInputAt, 100)
+        XCTAssertEqual(renderer.pendingInputTiming?.latestInputAt, 100.2)
+        XCTAssertFalse(renderer.retryUnpresentedFrame(dropped, forStrokeID: 7), "One dropped callback schedules at most one retry")
+        var shown = dropped; shown.presentedAt = 100.12
+        XCTAssertFalse(renderer.retryUnpresentedFrame(shown, forStrokeID: 7))
+        renderer.noteInputReceived(at: 101, strokeID: 8)
+        XCTAssertFalse(renderer.retryUnpresentedFrame(dropped, forStrokeID: 8))
+        XCTAssertFalse(renderer.retryUnpresentedFrame(dropped, forStrokeID: 7), "Even an incorrect old caller ID cannot restore an old clock")
+        XCTAssertEqual(renderer.pendingInputTiming?.strokeID, 8)
+        XCTAssertEqual(renderer.pendingInputTiming?.firstInputAt, 101)
+        XCTAssertEqual(renderer.pendingInputTiming?.latestInputAt, 101)
+    }
+
+    func testExplicitOnscreenDrawReportsSubmissionAndActualPresentationSeparately() async throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Simulator Metal cannot report actual drawable presentation timestamps")
+        #else
+        let windowScene = try await activeWindowScene()
+        let previous = windowScene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: windowScene)
+        let controller = UIViewController(); window.rootViewController = controller
+        let renderer = try XCTUnwrap(NativePDFMetalInk())
+        renderer.frame = CGRect(x: 20, y: 20, width: 64, height: 64)
+        controller.view.addSubview(renderer); window.makeKeyAndVisible(); window.layoutIfNeeded()
+        defer { renderer.onFramePresented = nil; window.isHidden = true; previous?.makeKeyAndVisible() }
+        XCTAssertTrue(renderer.isPaused); XCTAssertFalse(renderer.enableSetNeedsDisplay)
+        // UIWindow attachment must reach the compositor before timing starts.
+        // The live first-contact retry is covered independently below.
+        try await Task.sleep(for: .milliseconds(100))
+        let presented = expectation(description: "An actual drawable becomes visible")
+        var actualPresentation: NativePDFMetalInk.FrameTiming?
+        var retries = 0
+        renderer.onFramePresented = { frame in
+            guard frame.strokeID == 7 else { return }
+            if frame.presentedAt == nil {
+                retries += 1
+                guard retries <= 10 else {
+                    XCTFail("No drawable was displayed after ten explicit retries"); presented.fulfill(); return
+                }
+                XCTAssertTrue(renderer.retryUnpresentedFrame(frame, forStrokeID: 7))
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(16))
+                    try? await self.waitForDrawable(renderer)
+                    XCTAssertTrue(renderer.submitFrame())
+                }
+                return
+            }
+            actualPresentation = frame; presented.fulfill()
+        }
+        renderer.strokes = [.init(polygons: [[CGPoint(x: 10, y: 10), CGPoint(x: 40, y: 10),
+                                             CGPoint(x: 40, y: 40), CGPoint(x: 10, y: 40)]], color: .black, opacity: 1)]
+        let received = CACurrentMediaTime() - 0.29
+        renderer.noteInputReceived(at: received, strokeID: 7)
+        renderer.noteInputReceived(at: CACurrentMediaTime(), strokeID: 7)
+        try await waitForDrawable(renderer)
+        XCTAssertTrue(renderer.submitFrame())
+        let submitted = try XCTUnwrap(renderer.lastSubmittedFrame)
+        XCTAssertEqual(submitted.firstInputAt, received)
+        XCTAssertGreaterThanOrEqual(submitted.receiveToSubmitMS, 290,
+            "Later samples cannot hide an earlier 290ms queue stall")
+        XCTAssertNil(submitted.presentedAt, "Submitting commands is not proof of screen presentation")
+        XCTAssertNil(renderer.pendingInputTiming)
+        await fulfillment(of: [presented], timeout: 3)
+        let actual = try XCTUnwrap(actualPresentation)
+        XCTAssertGreaterThanOrEqual(actual.sequence, submitted.sequence)
+        XCTAssertEqual(actual.firstInputAt, received, "A dropped drawable must not reset the input age")
+        XCTAssertFalse(renderer.retryUnpresentedFrame(submitted, forStrokeID: 7), "A frame at or before the visible sequence needs no retry")
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(actual.presentedAt), actual.submittedAt)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(actual.receiveToPresentMS), actual.receiveToSubmitMS)
+        renderer.strokes = []
+        try await waitForDrawable(renderer)
+        XCTAssertTrue(renderer.submitFrame(), "Explicit drawing also clears the last live frame")
+        XCTAssertEqual(renderer.lastSubmittedFrame?.sequence, actual.sequence,
+            "A clear frame must not count as nonempty handwriting")
+        #endif
+    }
+
+    func testSynchronizedClearUpdatesUIImageOnlyAfterSuccessfulEncoding() async throws {
+        let windowScene = try await activeWindowScene()
+        let previous = windowScene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: windowScene), controller = UIViewController()
+        window.rootViewController = controller
+        let renderer = try XCTUnwrap(NativePDFMetalInk())
+        renderer.frame = CGRect(x: 20, y: 20, width: 64, height: 64)
+        let scene = UIImageView(frame: renderer.frame)
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
+        let paper = UIGraphicsImageRenderer(size: renderer.bounds.size, format: format).image { context in
+            UIColor.white.setFill(); context.fill(renderer.bounds)
+        }
+        let completed = UIGraphicsImageRenderer(size: renderer.bounds.size, format: format).image { context in
+            paper.draw(at: .zero)
+            UIColor.blue.withAlphaComponent(0.5).setFill(); context.fill(CGRect(x: 10, y: 10, width: 30, height: 30))
+        }
+        scene.image = paper; controller.view.addSubview(scene); controller.view.addSubview(renderer)
+        window.makeKeyAndVisible(); window.layoutIfNeeded()
+        defer { window.isHidden = true; previous?.makeKeyAndVisible() }
+        try await Task.sleep(for: .milliseconds(100))
+        renderer.strokes = [.init(polygons: [[CGPoint(x: 10, y: 10), CGPoint(x: 40, y: 10),
+                                             CGPoint(x: 40, y: 40), CGPoint(x: 10, y: 40)]], color: .blue, opacity: 0.5)]
+        try await waitForDrawable(renderer)
+        XCTAssertTrue(renderer.submitFrame())
+        XCTAssertFalse(renderer.presentsWithTransaction, "Ordinary live ink stays asynchronous")
+        let before = renderer.submittedFrameCount
+        renderer.strokes = []
+        var changes = 0
+        #if DEBUG
+        renderer.testingFailNextEncoding = true
+        try await waitForDrawable(renderer)
+        XCTAssertFalse(renderer.submitFrame(synchronizedUpdate: { changes += 1; scene.image = completed }))
+        XCTAssertTrue(scene.image === paper)
+        XCTAssertEqual(changes, 0)
+        XCTAssertEqual(renderer.submittedFrameCount, before)
+        XCTAssertFalse(renderer.presentsWithTransaction)
+        #endif
+        try await waitForDrawable(renderer)
+        XCTAssertTrue(renderer.submitFrame(synchronizedUpdate: {
+            XCTAssertTrue(renderer.presentsWithTransaction)
+            XCTAssertTrue(CATransaction.disableActions())
+            XCTAssertFalse(renderer.submitFrame(), "An image-update callback cannot reenter drawable submission")
+            changes += 1; scene.image = completed
+        }))
+        XCTAssertEqual(changes, 1)
+        XCTAssertTrue(scene.image === completed)
+        XCTAssertEqual(renderer.submittedFrameCount, before + 1)
+        XCTAssertFalse(renderer.presentsWithTransaction, "Transaction presentation is scoped to the handoff")
+        let cleared = try XCTUnwrap(renderer.renderedPixels(width: 64, height: 64))
+        XCTAssertTrue(cleared.allSatisfy { $0 == 0 }, "The same successful clear encoder removes live alpha entirely")
+    }
+
     func testGPUAffineProjectionMatchesCPUTransformedGeometry() throws {
         let renderer = try XCTUnwrap(NativePDFMetalInk())
         renderer.frame = CGRect(x: 0, y: 0, width: 64, height: 64)
@@ -39,6 +398,34 @@ final class NativePDFMetalInkTests: XCTestCase {
             XCTAssertLessThanOrEqual(changedPixels, 4)
             XCTAssertLessThanOrEqual(maxDifference, 64)
             XCTAssertLessThanOrEqual(totalDifference, 512)
+        }
+    }
+
+    func testIncrementalMeshPixelsMatchFullReplayAcrossPredictionReplacementAndCorrection() throws {
+        let live = try XCTUnwrap(NativePDFMetalInk()), reference = try XCTUnwrap(NativePDFMetalInk())
+        live.frame = CGRect(x: 0, y: 0, width: 64, height: 64); reference.frame = live.frame
+        let geometry = NativePDFInkGeometryV3Cache()
+        let points: [NativePDFPoint] = (0..<32).map { index in
+            let step = Double(index)
+            return .init(x: 0.1 + step * 0.02, y: 0.4 + sin(step * 0.2) * 0.15,
+                         p: 0.4 + sin(step * 0.3) * 0.2, t: step * 1000 / 240)
+        }
+        var predictions = Array(points.prefix(28))
+        for index in 24..<28 { predictions[index].y += 0.12 }
+        var corrected = Array(points.prefix(28)); corrected[4].y -= 0.09; corrected[4].p = 1
+        let updates = [Array(points.prefix(20)), Array(points.prefix(24)), predictions,
+                       Array(points.prefix(28)), corrected, Array(corrected.prefix(8)), [points[0]]]
+        for (index, update) in updates.enumerated() {
+            let polygons = geometry.polygons(points: update, width: 0.04, aspect: 1, highlighter: false)
+            let transform = CGAffineTransform(scaleX: 64, y: 64)
+            live.strokes = [.init(polygons: polygons, color: .blue, opacity: 0.5, transform: transform,
+                retainedPrefixPolygonCount: geometry.retainedPrefixPolygonCount, geometryRevision: geometry.revision)]
+            reference.strokes = [.init(polygons: polygons, color: .blue, opacity: 0.5, transform: transform,
+                retainedPrefixPolygonCount: 0, geometryRevision: geometry.revision)]
+            let actual = try XCTUnwrap(live.renderedPixels(width: 64, height: 64))
+            let expected = try XCTUnwrap(reference.renderedPixels(width: 64, height: 64))
+            XCTAssertEqual(actual, expected, "Incremental GPU upload differs after update \(index)")
+            if index == 1 || index == 3 { XCTAssertEqual(live.rebuiltVertexCount, 4 * 96) }
         }
     }
 

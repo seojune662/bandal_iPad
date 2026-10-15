@@ -1,3 +1,5 @@
+import { strokeCenterlineV5, strokePathV5 } from '../../../../shared/inkV5'
+import { strokeCenterlineV4, strokePathV4 } from '../../../../shared/inkV4'
 import { strokePathV2 } from '../../../../shared/inkV2'
 import { strokePathV3 } from '../../../../shared/inkV3'
 import { getStroke } from 'perfect-freehand'
@@ -173,8 +175,10 @@ export function strokePath(
   style: DrawingStyle,
   aspect: number,
   isHighlighter: boolean,
-  inkVersion?: 2 | 3
+  inkVersion?: 2 | 3 | 4 | 5
 ): string {
+  if (inkVersion === 5) return strokePathV5(points, style.width, aspect, isHighlighter)
+  if (inkVersion === 4) return strokePathV4(points, style.width, aspect, isHighlighter)
   if (inkVersion === 3) return strokePathV3(points, style.width, aspect, isHighlighter)
   if (inkVersion === 2) return strokePathV2(points, style.width, aspect, isHighlighter)
   if (
@@ -323,7 +327,12 @@ function ellipsePolyline(box: DrawingBox, aspect: number): Point2[] {
 
 function drawingPolyline(shape: DrawingShape, aspect: number): Point2[] {
   if (shape.kind === 'ink' || shape.kind === 'highlighter') {
-    const points = (shape.data.points ?? [])
+    const source = shape.data.points ?? []
+    const points = (shape.data.inkVersion === 5
+      ? strokeCenterlineV5(source, shape.style.width, aspect, shape.kind === 'highlighter')
+      : shape.data.inkVersion === 4
+      ? strokeCenterlineV4(source, shape.style.width, aspect)
+      : source)
       .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
       .map((point): Point2 => [point.x, point.y * aspect])
     if (points.length > 0 || shape.data.box === undefined) return points

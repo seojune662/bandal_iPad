@@ -11,6 +11,12 @@ import nativeRecordingPlugin from '../renderer/recording/index.mjs'
 import ipadPlatformPlugin from '../renderer/platform/index.mjs'
 import nativeMiniPlayerPlugin from '../renderer/pip/index.mjs'
 import browserPlugin from '../renderer/browser/index.mjs'
+import nativeSurfacesPlugin from '../renderer/ipad/nativeSurfacesPlugin.mjs'
+import ipadLayoutPlugin from '../renderer/ipad/layout/index.mjs'
+import ipadInputPlugin from '../renderer/ipad/input/index.mjs'
+import ipadStabilityPlugin from '../renderer/ipad/stability/index.mjs'
+import ipadTouchPlugin from '../renderer/ipad/touch/index.mjs'
+import ipadUIPlugin from '../renderer/ipad/ui/index.mjs'
 
 await verifySnapshot()
 await import('./build-article-extraction.mjs')
@@ -24,7 +30,7 @@ const outDir = resolve(runtime, '../App/Resources/Desktop')
 const built = await build({
   configFile: false, root: resolve(runtime, 'renderer'), base: './',
   define: { __APP_VERSION__: JSON.stringify(snapshot.appVersion) },
-  plugins: [pencilInputPlugin(), ipadPlatformPlugin(), nativeRecordingPlugin(), browserPlugin(), nativePDFPlugin(), syncPlugin(), nativeMiniPlayerPlugin(), react()],
+  plugins: [pencilInputPlugin(), ipadPlatformPlugin(), nativeRecordingPlugin(), browserPlugin(), nativePDFPlugin(), syncPlugin(), nativeMiniPlayerPlugin(), nativeSurfacesPlugin(), ipadLayoutPlugin(), ipadInputPlugin(), ipadStabilityPlugin(), ipadTouchPlugin(), ipadUIPlugin(), react()],
   resolve: { dedupe: ['react', 'react-dom', '@milkdown/core', '@milkdown/ctx', '@milkdown/utils', '@milkdown/prose', '@milkdown/transformer', '@milkdown/exception'] },
   build: { target: 'safari18', outDir, emptyOutDir: true, reportCompressedSize: false, sourcemap: false, manifest: true,
     rollupOptions: { input: { main: resolve(runtime, 'renderer/index.html'), pip: resolve(runtime, 'renderer/pip.html'), capture: resolve(runtime, 'renderer/capture.html') } } }
@@ -37,6 +43,6 @@ await writeFile(resolve(outDir, 'source-provenance.json'), JSON.stringify({
   format: snapshot.format, sourceCommit: snapshot.sourceCommit, appVersion: snapshot.appVersion,
   manifest: 'DesktopRuntime/upstream/manifest.json', files: snapshot.files.length,
   renderer: 'original desktop src/renderer/src/main.tsx', platform: 'ipad',
-  adapters: ['WK native IPC', 'Files input staging', 'Pencil/finger input', 'iPad Command key mapping', 'native API connection controls', 'native lecture recording', 'local PDF CMaps/fonts/decoders']
+  adapters: ['WK native IPC', 'Files input staging', 'Pencil/finger input', 'iPad Command key mapping', 'native API connection controls', 'native lecture recording', 'local PDF CMaps/fonts/decoders', 'iPad document-first layout', 'panel-scoped PDF input and movable palette', 'strict Markdown Pencil policy', 'shared native surface ownership', 'iPad operation recovery and material actions', 'iPad visible context actions and touch targets', 'iPad native-style UI and independent adaptive sidebars']
 }, null, 2) + '\n')
 console.log(`Full desktop renderer built from ${source}: ${outDir}`)
