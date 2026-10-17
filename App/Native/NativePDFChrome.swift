@@ -50,13 +50,9 @@ struct NativePDFToolbar: View {
     private var drawingTools: some View {
         HStack(spacing: 0) {
             ForEach([("pen", "펜", "pencil.tip"), ("highlighter", "형광펜", "highlighter"), ("eraser", "지우개", "eraser"), ("lasso", "올가미", "lasso"), ("select", "선택", "cursorarrow"), ("text", "텍스트", "textformat")], id: \.0) { value in
-                icon(value.1, value.2, id: "native-pdf-tool-" + value.0, active: model.tool == value.0) { model.chooseTool(value.0) }
+                icon(value.1, value.2, id: "native-pdf-tool-" + value.0, active: model.tool == value.0, underline: true) { model.chooseTool(value.0) }
             }
             divider
-            Button { model.showStyle.toggle() } label: {
-                Circle().fill(NativePDFWorkspaceModel.colors.first(where: { $0.name == model.color })?.color ?? .primary)
-                    .frame(width: 16, height: 16).overlay(Circle().stroke(NativeDesktopTheme.border, lineWidth: 1)).frame(width: 44, height: 44).contentShape(Rectangle())
-            }.accessibilityLabel("색과 굵기").accessibilityValue(model.styleAccessibilityValue).accessibilityIdentifier("native-pdf-style")
             icon("되돌리기", "arrow.uturn.backward", id: "native-pdf-undo") { model.undo() }.disabled(!model.canUndo)
             icon("다시 실행", "arrow.uturn.forward", id: "native-pdf-redo") { model.redo() }.disabled(!model.canRedo)
             icon("필기 포함 PDF 내보내기", "square.and.arrow.up", id: "native-pdf-export") { model.exportPDF() }
@@ -87,11 +83,12 @@ struct NativePDFToolbar: View {
             Button("원문 주석", systemImage: "text.bubble") { model.toggleAnnotations() }.accessibilityIdentifier("native-pdf-annotations").accessibilityValue(String(model.annotationCount))
         } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("PDF 보기 옵션")
     }
-    private func icon(_ title: String, _ symbol: String, id: String, active: Bool = false, action: @escaping () -> Void) -> some View {
+    private func icon(_ title: String, _ symbol: String, id: String, active: Bool = false, underline: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 15)).frame(width: 44, height: 44)
-                .foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.muted)
-                .background(active ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 6))
+            Image(systemName: symbol).font(.system(size: 17)).frame(width: 44, height: 44)
+                .foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary)
+                .background(active ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(alignment: .bottom) { if active && underline { Capsule().fill(NativeDesktopTheme.accent).frame(width: 20, height: 2).padding(.bottom, 4) } }
                 .contentShape(Rectangle())
         }.accessibilityLabel(title).accessibilityIdentifier(id).accessibilityAddTraits(active ? .isSelected : []).help(title)
     }

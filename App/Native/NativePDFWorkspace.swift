@@ -119,7 +119,7 @@ struct NativePDFWorkspace: View {
 @MainActor
 final class NativePDFWorkspaceModel: ObservableObject {
     struct InkColor { let name: String, label: String; let color: Color }
-    static let colors: [InkColor] = zip(NativePDFPenPreset.colors, ["검정", "빨강", "주황", "노랑", "초록", "파랑", "보라"]).map {
+    static let colors: [InkColor] = zip(NativePDFPenPreset.colors, ["먹색", "빨강", "주황", "노랑", "초록", "파랑", "보라"]).map {
         InkColor(name: $0.0, label: $0.1, color: Color(uiColor: NativePDFInkSurface.color($0.0)))
     }
     static let annotationColors: [InkColor] = [.init(name: "yellow", label: "노랑", color: .yellow), .init(name: "green", label: "초록", color: .green), .init(name: "blue", label: "파랑", color: .blue), .init(name: "pink", label: "분홍", color: .pink)]
