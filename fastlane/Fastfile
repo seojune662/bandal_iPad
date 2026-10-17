@@ -22,4 +22,10 @@ platform :ios do
     deliver(app_identifier: "app.bandal.ipad", app_version: "1.0.0", skip_binary_upload: true, skip_metadata: true,
             submit_for_review: false, run_precheck_before_submit: false, overwrite_screenshots: true, force: true)
   end
+
+  desc "Create or fetch the App Store provisioning profile with the API key"
+  lane :profile do
+    asc_key
+    get_provisioning_profile(app_identifier: "app.bandal.ipad", team_id: "VUZ7Z98BW3", readonly: false, platform: "ios")
+  end
 end
