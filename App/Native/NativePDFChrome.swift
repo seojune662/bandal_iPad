@@ -49,7 +49,7 @@ struct NativePDFToolbar: View {
     private func navigate() { model.go(to: Int(entry) ?? model.page); entry = String(model.page) }
     private var drawingTools: some View {
         HStack(spacing: 0) {
-            ForEach([("pen", "펜", "pencil.tip"), ("highlighter", "형광펜", "highlighter"), ("eraser", "지우개", "eraser"), ("lasso", "올가미", "lasso"), ("select", "선택", "cursorarrow"), ("text", "텍스트", "textformat")], id: \.0) { value in
+            ForEach([("pen", "펜", "pencil.tip"), ("ballpoint", "볼펜", "pencil.line"), ("highlighter", "형광펜", "highlighter"), ("eraser", "지우개", "eraser"), ("text", "텍스트", "textformat"), ("lasso", "올가미", "lasso"), ("select", "손", "hand.point.up.left")], id: \.0) { value in
                 icon(value.1, value.2, id: "native-pdf-tool-" + value.0, active: model.tool == value.0, underline: true) { model.chooseTool(value.0) }
             }
             divider

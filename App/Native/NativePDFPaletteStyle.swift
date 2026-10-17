@@ -9,6 +9,7 @@ struct NativePDFPenPreset: Codable, Equatable {
     var opacity: Double
 
     static let pen = Self(color: "ink", width: 0.004, opacity: 0.95)
+    static let ballpoint = Self(color: "ink", width: 0.003, opacity: 1)
     static let highlighter = Self(color: "yellow", width: 0.006, opacity: 0.28)
     static let colors = ["ink", "red", "orange", "yellow", "green", "blue", "violet"]
     var isValid: Bool {
@@ -55,11 +56,12 @@ struct NativePDFPalettePreferences: Codable, Equatable {
     var favorites = [NativePDFPenPreset.pen, .init(color: "blue", width: 0.004, opacity: 0.95), .init(color: "red", width: 0.004, opacity: 0.95)]
     var recentPen = NativePDFPenPreset.pen
     var recentHighlighter = NativePDFPenPreset.highlighter
+    var recentBallpoint = NativePDFPenPreset.ballpoint
     var drawAndHold = true
     static let changed = Notification.Name("NativePDFPalettePreferences.changed")
 
     init() {}
-    private enum CodingKeys: String, CodingKey { case version, favorites, presets, recentPen, recentHighlighter, drawAndHold }
+    private enum CodingKeys: String, CodingKey { case version, favorites, presets, recentPen, recentHighlighter, recentBallpoint, drawAndHold }
     private struct Candidate: Decodable {
         let value: NativePDFPenPreset?
         init(from decoder: Decoder) throws { value = try? NativePDFPenPreset(from: decoder) }
@@ -79,12 +81,14 @@ struct NativePDFPalettePreferences: Codable, Equatable {
         if let value = try? values.decode(NativePDFPenPreset.self, forKey: .recentPen), value.isValid { recentPen = value }
         else if old, let first = previous.first { recentPen = first }
         if let value = try? values.decode(NativePDFPenPreset.self, forKey: .recentHighlighter), value.isValid { recentHighlighter = value.validated(highlighter: true) }
+        if let value = try? values.decode(NativePDFPenPreset.self, forKey: .recentBallpoint), value.isValid { recentBallpoint = value }
         drawAndHold = (try? values.decode(Bool.self, forKey: .drawAndHold)) ?? true
     }
     func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(2, forKey: .version); try values.encode(favorites, forKey: .favorites)
         try values.encode(recentPen, forKey: .recentPen); try values.encode(recentHighlighter, forKey: .recentHighlighter)
+        try values.encode(recentBallpoint, forKey: .recentBallpoint)
         try values.encode(drawAndHold, forKey: .drawAndHold)
     }
     static func key(root: URL, documentsRoot: URL? = nil) -> String {

@@ -168,6 +168,28 @@ final class NativePDFInkV5Tests: XCTestCase {
         XCTAssertEqual(Array(points.prefix(original.count)), original)
     }
 
+    func testFixedWidthInkRendersLikeHighlighterWidthWithoutBecomingHighlighter() throws {
+        let points = samples(70), cache = NativePDFInkPathCache()
+        func object(_ kind: String, fixed: Bool?) -> [String: Any] {
+            var style: [String: Any] = ["color": "ink", "width": 0.02, "opacity": 1]
+            if let fixed { style["fixedWidth"] = fixed }
+            return ["id": kind + String(describing: fixed), "page": 1, "kind": kind, "style": style,
+                    "data": ["inkVersion": 5, "points": points.map { ["x": $0.x, "y": $0.y, "p": $0.p, "t": $0.t!, "tiltX": $0.tiltX!, "tiltY": $0.tiltY!] }]]
+        }
+        let fixed = try XCTUnwrap(cache.prepare(object("ink", fixed: true), aspect: 1.5))
+        let highlighter = try XCTUnwrap(cache.prepare(object("highlighter", fixed: nil), aspect: 1.5))
+        let pen = try XCTUnwrap(cache.prepare(object("ink", fixed: nil), aspect: 1.5))
+        XCTAssertEqual(fixed.vertexCount, highlighter.vertexCount); XCTAssertEqual(fixed.bounds, highlighter.bounds)
+        XCTAssertNotEqual(fixed.bounds, pen.bounds)
+        let live = NativePDFLiveInkGeometryCache()
+        let constant = live.polygons(version: 5, points: points, width: 0.02, aspect: 1.5, highlighter: false, fixedWidth: true)
+        XCTAssertEqual(constant, NativePDFInkGeometryV5.polygons(points: points, predictions: [], width: 0.02, aspect: 1.5, highlighter: true))
+        let held = NativePDFHeldShape(kind: "line", points: [.init(x: 0.1, y: 0.1, p: 0.5), .init(x: 0.6, y: 0.4, p: 0.5)], box: [0.1, 0.1, 0.5, 0.3])
+        live.reset()
+        XCTAssertEqual(live.polygons(version: 5, points: points, width: 0.02, aspect: 1.5, highlighter: false, fixedWidth: true, heldShape: held), held.outlinePolygons(width: 0.02),
+                       "A held ballpoint shape keeps its clean outline")
+    }
+
     func testHighlighterKeepsExactV4WidthAndPolygonsIncludingPredictions() {
         let points = samples(70), prediction: [NativePDFPoint] = [.init(x: 0.8, y: 0.7, p: 0), .init(x: 0.9, y: 0.8, p: 1)]
         XCTAssertEqual(NativePDFInkGeometryV5.widthFactors(points: points, width: 0.02, aspect: 1.5, highlighter: true), Array(repeating: 1, count: points.count))

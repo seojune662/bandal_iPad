@@ -162,7 +162,9 @@ final class NativePDFWorkspaceModel: ObservableObject {
     @Published var showStyle = false { didSet { restoreInput() } }
     @Published private(set) var favorites = NativePDFPalettePreferences().favorites
     @Published private(set) var shapeRecognitionEnabled = true
-    var isInkTool: Bool { tool == "pen" || tool == "highlighter" }
+    var isInkTool: Bool { ["pen", "ballpoint", "highlighter"].contains(tool) }
+    /// Ballpoint shares the pen favourites; only its width model differs.
+    var isPenLike: Bool { tool == "pen" || tool == "ballpoint" }
     var quickWidths: [Double] { tool == "highlighter" ? NativePDFPaletteStyle.highlighterWidths : NativePDFPaletteStyle.penWidths }
     var currentPageWidthPoints: Double? { pageWidths.indices.contains(page - 1) ? pageWidths[page - 1] : nil }
     var currentPreset: NativePDFPenPreset { .init(color: color, width: width, opacity: opacity) }
@@ -215,7 +217,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
     private var setupComplete = false, exposed = false, blockedForError = false, materialMutating = false
     private var storeEvents: AnyCancellable?
     private var previousTool = "pen"
-    private var savedPenStyle = NativePDFPenPreset.pen, savedHighlighterStyle = NativePDFPenPreset.highlighter
+    private var savedPenStyle = NativePDFPenPreset.pen, savedHighlighterStyle = NativePDFPenPreset.highlighter, savedBallpointStyle = NativePDFPenPreset.ballpoint
     private var paletteEvents: AnyCancellable?
     private var snapshotTask: Task<Void, Error>?
     private var snapshotRequested = false
@@ -241,7 +243,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         var saved = NativePDFWorkspacePreferences.load(root: store.root, documentID: preferenceID, defaults: defaults)
         let palette = NativePDFPalettePreferences.load(root: store.root, defaults: defaults)
         if !NativePDFWorkspacePreferences.hasStored(root: store.root, documentID: preferenceID, defaults: defaults) {
-            saved.penStyle = palette.recentPen; saved.highlighterStyle = palette.recentHighlighter
+            saved.penStyle = palette.recentPen; saved.highlighterStyle = palette.recentHighlighter; saved.ballpointStyle = palette.recentBallpoint
             saved.color = palette.recentPen.color; saved.width = palette.recentPen.width; saved.opacity = palette.recentPen.opacity
         }
         saved.shapeRecognitionEnabled = palette.drawAndHold
@@ -249,7 +251,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         if preferenceID != document.id { saved.save(root: store.root, documentID: document.id, defaults: defaults) }
         preferences = saved
         tool = saved.tool; color = saved.color; width = saved.width; opacity = saved.opacity
-        previousTool = saved.previousTool; savedPenStyle = saved.penStyle; savedHighlighterStyle = saved.highlighterStyle
+        previousTool = saved.previousTool; savedPenStyle = saved.penStyle; savedHighlighterStyle = saved.highlighterStyle; savedBallpointStyle = saved.ballpointStyle
         toolsExpanded = saved.toolsExpanded; showPages = saved.showPages; showAnnotations = saved.showAnnotations
         storeEvents = store.events.sink { [weak self] event in self?.receiveStoreEvent(event) }
         paletteEvents = NotificationCenter.default.publisher(for: NativePDFPalettePreferences.changed).sink { [weak self] event in
@@ -398,11 +400,11 @@ final class NativePDFWorkspaceModel: ObservableObject {
                 let style = self.currentPreferences.drawingStyle
                 let epoch = self.sceneEpoch
                 payload.merge(["nativeInkErase": true, "loading": false, "active": true,
-                    "annotations": self.annotations, "tool": ["name": self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
+                    "annotations": self.annotations, "tool": ["name": self.tool == "ballpoint" ? "pen" : self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
                 _ = try await self.call("snapshot", payload)
                 self.publishedDrawingRevision = drawingRevision
                 guard self.sceneEpoch == epoch else { self.snapshotRequested = true; continue }
-                if !["pen", "highlighter"].contains(self.tool) {
+                if !self.isInkTool {
                     for page in self.dirtyScenes.sorted() {
                         if self.sceneEpoch != epoch { self.snapshotRequested = true; break }
                         self.dirtyScenes.remove(page)
@@ -480,6 +482,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         if next != "select" { toolsExpanded = true }
         if next == "pen" { applyStyle(savedPenStyle) }
         if next == "highlighter" { applyStyle(savedHighlighterStyle) }
+        if next == "ballpoint" { applyStyle(savedBallpointStyle) }
         showStyle = false
         updateStyle()
     }
@@ -502,12 +505,12 @@ final class NativePDFWorkspaceModel: ObservableObject {
     func chooseFavorite(_ index: Int) {
         guard favorites.indices.contains(index), !isBusy, errorMessage == nil else { return }
         let favorite = favorites[index]
-        if tool != "pen" { chooseTool("pen") }
-        guard tool == "pen" else { return }
+        if !isPenLike { chooseTool("pen") }
+        guard isPenLike else { return }
         applyStyle(favorite); rememberActiveStyle(); updateStyle()
     }
     func saveFavorite(_ index: Int) {
-        guard favorites.indices.contains(index), tool == "pen" else { return }
+        guard favorites.indices.contains(index), isPenLike else { return }
         let value = currentPreset.validated()
         favorites = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.favorites[index] = value }.favorites
     }
@@ -524,6 +527,9 @@ final class NativePDFWorkspaceModel: ObservableObject {
         } else if tool == "highlighter" {
             savedHighlighterStyle = currentPreset.validated(highlighter: true)
             NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.recentHighlighter = savedHighlighterStyle }
+        } else if tool == "ballpoint" {
+            savedBallpointStyle = currentPreset.validated()
+            NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.recentBallpoint = savedBallpointStyle }
         }
     }
     private var currentPreferences: NativePDFWorkspacePreferences {
@@ -532,6 +538,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         value.previousTool = previousTool
         value.penStyle = tool == "pen" ? currentPreset : savedPenStyle
         value.highlighterStyle = tool == "highlighter" ? currentPreset : savedHighlighterStyle
+        value.ballpointStyle = tool == "ballpoint" ? currentPreset : savedBallpointStyle
         value.penColor = value.penStyle.color; value.highlighterColor = value.highlighterStyle.color
         value.shapeRecognitionEnabled = shapeRecognitionEnabled
         value.toolsExpanded = toolsExpanded; value.showPages = showPages; value.showAnnotations = showAnnotations

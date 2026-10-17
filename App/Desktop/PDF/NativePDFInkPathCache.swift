@@ -49,7 +49,7 @@ final class NativePDFInkPathCache {
 
     func prepare(_ input: NativePDFStrokeInput, aspect: Double, reusing: NativePDFPreparedInk? = nil) -> NativePDFPreparedInk? {
         prepare(key: input.clientMutationId, points: input.data.points, version: input.data.inkVersion,
-                width: input.style.width, aspect: aspect, highlighter: input.kind == "highlighter", reusing: reusing)
+                width: input.style.width, aspect: aspect, highlighter: input.kind == "highlighter" || input.style.fixedWidth == true, reusing: reusing)
     }
     func prepare(_ object: [String: Any], aspect: Double, reusing: NativePDFPreparedInk? = nil) -> NativePDFPreparedInk? {
         guard let kind = object["kind"] as? String, ["ink", "highlighter"].contains(kind),
@@ -65,7 +65,7 @@ final class NativePDFInkPathCache {
             points.append(.init(x: x, y: y, p: p, t: number(value["t"]), tiltX: number(value["tiltX"]), tiltY: number(value["tiltY"])))
         }
         return prepare(key: object["id"] as? String ?? object["clientMutationId"] as? String,
-                       points: points, version: Int(version), width: width, aspect: aspect, highlighter: kind == "highlighter",
+                       points: points, version: Int(version), width: width, aspect: aspect, highlighter: kind == "highlighter" || (style["fixedWidth"] as? Bool) == true,
                        reusing: reusing ?? object["_nativeInk"] as? NativePDFPreparedInk)
     }
 

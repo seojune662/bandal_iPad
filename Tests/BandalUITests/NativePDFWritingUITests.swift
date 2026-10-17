@@ -41,6 +41,15 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTAssertEqual(app.buttons["native-pdf-style"].value as? String, penStyle)
         chooseTool("highlighter", in: app)
         XCTAssertEqual(app.buttons["native-pdf-style"].value as? String, markerStyle)
+        chooseTool("ballpoint", in: app)
+        tap("native-pdf-width-0", in: app)
+        let ballpointStyle = app.buttons["native-pdf-style"].value as? String
+        XCTAssertNotEqual(ballpointStyle, penStyle, "볼펜 keeps its own width")
+        capture("Swift ballpoint with its own fixed-width style")
+        chooseTool("pen", in: app)
+        XCTAssertEqual(app.buttons["native-pdf-style"].value as? String, penStyle)
+        chooseTool("ballpoint", in: app)
+        XCTAssertEqual(app.buttons["native-pdf-style"].value as? String, ballpointStyle)
         chooseTool("pen", in: app)
         app.terminate(); app.launchArguments = arguments(reset: false); app.launch()
         let palette = app.buttons["native-pdf-style"]
@@ -48,6 +57,8 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTAssertEqual(palette.value as? String, penStyle)
         chooseTool("highlighter", in: app)
         XCTAssertEqual(palette.value as? String, markerStyle)
+        chooseTool("ballpoint", in: app)
+        XCTAssertEqual(palette.value as? String, ballpointStyle)
         chooseTool("pen", in: app)
 
         let originalTab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-document-tab-", "Palette Notes")).firstMatch
@@ -165,7 +176,7 @@ final class NativePDFWritingUITests: XCTestCase {
         if !item.isSelected { tap("native-pdf-tool-" + tool, in: app) }
     }
     @MainActor private func openPalette(in app: XCUIApplication) {
-        let tool = app.buttons["native-pdf-tool-highlighter"].isSelected ? "highlighter" : "pen"
+        let tool = ["highlighter", "ballpoint"].first { app.buttons["native-pdf-tool-" + $0].isSelected } ?? "pen"
         tap("native-pdf-tool-" + tool, in: app)
         XCTAssertTrue(app.buttons["native-pdf-style-close"].waitForExistence(timeout: 5), app.debugDescription)
     }

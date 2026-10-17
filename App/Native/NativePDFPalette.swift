@@ -7,7 +7,7 @@ import SwiftUI
     static let colorNames = ["ink": "먹색", "red": "빨강", "orange": "주황", "yellow": "노랑", "green": "초록", "blue": "파랑", "violet": "보라"]
     static let sizeNames = ["가는 선", "중간 선", "굵은 선"]
     static func toolName(_ tool: String) -> String {
-        ["pen": "펜", "highlighter": "형광펜", "eraser": "지우개", "lasso": "올가미", "select": "선택", "text": "텍스트"][tool] ?? "필기 도구"
+        ["pen": "펜", "ballpoint": "볼펜", "highlighter": "형광펜", "eraser": "지우개", "lasso": "올가미", "select": "손", "text": "텍스트"][tool] ?? "필기 도구"
     }
     static func colorName(_ color: String) -> String { colorNames[color] ?? color }
     static func uiColor(_ color: String) -> Color { Color(uiColor: NativePDFInkSurface.color(color)) }
@@ -138,10 +138,10 @@ struct NativePDFPaletteControls: View {
                             }.frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
                         }.accessibilityLabel("즐겨찾는 펜 \(index + 1): " + NativePDFPaletteLook.colorName(preset.color)).accessibilityValue(model.favoriteAccessibilityValue(index))
                             .accessibilityIdentifier("native-pdf-palette-favorite-\(index)")
-                            .accessibilityAddTraits(model.tool == "pen" && model.currentPreset == preset ? .isSelected : [])
+                            .accessibilityAddTraits(model.isPenLike && model.currentPreset == preset ? .isSelected : [])
                         Button { model.saveFavorite(index) } label: {
                             Text("현재 펜 저장").font(.system(size: 12)).lineLimit(1).frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
-                        }.disabled(model.tool != "pen").opacity(model.tool == "pen" ? 1 : 0.35)
+                        }.disabled(!model.isPenLike).opacity(model.isPenLike ? 1 : 0.35)
                             .accessibilityLabel("즐겨찾는 펜 \(index + 1)에 현재 펜 저장").accessibilityIdentifier("native-pdf-save-favorite-\(index)")
                     }.frame(maxWidth: .infinity)
                 }
@@ -191,7 +191,7 @@ struct NativePDFPaletteQuickControls: View {
             }.accessibilityIdentifier("native-pdf-quick-style-scroll")
             group(leadingDivider: true) {
                 ForEach(model.favorites.indices, id: \.self) { index in
-                    let preset = model.favorites[index], selected = model.tool == "pen" && model.currentPreset == preset
+                    let preset = model.favorites[index], selected = model.isPenLike && model.currentPreset == preset
                     Button { model.chooseFavorite(index) } label: {
                         VStack(spacing: 0) {
                             NativePDFSwatch(color: preset.color, size: NativePDFPaletteLook.swatchSize(preset.width), ring: selected)
@@ -199,7 +199,7 @@ struct NativePDFPaletteQuickControls: View {
                         }.frame(width: 44, height: 44).contentShape(Rectangle())
                     }.accessibilityLabel("즐겨찾는 펜 \(index + 1) 바로 선택").accessibilityValue(model.favoriteAccessibilityValue(index))
                         .accessibilityIdentifier("native-pdf-favorite-\(index)").accessibilityAddTraits(selected ? .isSelected : [])
-                        .contextMenu { Button("현재 펜 저장") { model.saveFavorite(index) }.disabled(model.tool != "pen") }
+                        .contextMenu { Button("현재 펜 저장") { model.saveFavorite(index) }.disabled(!model.isPenLike) }
                 }
             }.fixedSize(horizontal: true, vertical: false)
         }.frame(height: 44)

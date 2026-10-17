@@ -19,8 +19,10 @@ final class NativePDFLiveInkGeometryCache {
     }
 
     func polygons(version nextVersion: Int, points: [NativePDFPoint], predictions: [NativePDFPoint] = [],
-                  width: Double, aspect: Double, highlighter: Bool, heldShape: NativePDFHeldShape? = nil) -> [[CGPoint]] {
+                  width: Double, aspect: Double, highlighter: Bool, fixedWidth: Bool = false, heldShape: NativePDFHeldShape? = nil) -> [[CGPoint]] {
         revision &+= 1
+        // A held ballpoint shape keeps its outline; only the stroke width is constant.
+        let constantWidth = highlighter || fixedWidth
         if let heldShape, heldShape.kind != "ink", !highlighter {
             if shape == heldShape && shapeWidth == width {
                 retainedPrefixPolygonCount = shapePolygons.count
@@ -37,11 +39,11 @@ final class NativePDFLiveInkGeometryCache {
         switch nextVersion {
         case 4:
             output = legacy.polygons(points: points, predictions: predictions, width: width,
-                                     aspect: aspect, highlighter: highlighter)
+                                     aspect: aspect, highlighter: constantWidth)
             retainedPrefixPolygonCount = changedVersion ? 0 : legacy.retainedPrefixPolygonCount
         case 5:
             output = natural.polygons(points: points, predictions: predictions, width: width,
-                                      aspect: aspect, highlighter: highlighter)
+                                      aspect: aspect, highlighter: constantWidth)
             retainedPrefixPolygonCount = changedVersion ? 0 : natural.retainedPrefixPolygonCount
         default:
             reset(); return []

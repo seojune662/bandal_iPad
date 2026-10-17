@@ -22,6 +22,8 @@ struct NativePDFInkStyle: Codable, Equatable {
     var color: String
     var width: Double
     var opacity: Double
+    /// 볼펜: the stroke ignores pressure, speed and taper. Absent on older rows.
+    var fixedWidth: Bool? = nil
     var isValid: Bool {
         ["ink", "red", "orange", "yellow", "green", "blue", "violet", "canvasLightInk"].contains(color)
             && width.isFinite && width > 0 && width <= 1

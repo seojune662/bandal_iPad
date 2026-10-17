@@ -1156,7 +1156,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         metal.retainedBackdropTransform = paperTransform
         if hasLiveInk {
             let polygons = previewGeometry.polygons(version: pending?.inkVersion ?? strokeInkVersion, points: points, predictions: predictions, width: style.width,
-                aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, heldShape: previewShape(pending))
+                aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending))
             metal.strokes = [.init(polygons: polygons, color: Self.color(style.color), opacity: Float(style.opacity),
                 multiply: highlighter, transform: transform, retainedPrefixPolygonCount: previewGeometry.retainedPrefixPolygonCount,
                 geometryRevision: previewGeometry.revision)]
@@ -1312,7 +1312,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         }
         let geometryStartedAt = CACurrentMediaTime()
         let polygons = previewGeometry.polygons(version: pending?.inkVersion ?? strokeInkVersion, points: points, predictions: predictions, width: style.width,
-            aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, heldShape: previewShape(pending))
+            aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending))
         geometryMS = (CACurrentMediaTime() - geometryStartedAt) * 1000
         // Ordinary ink composites over the existing scene image. Uploading
         // that whole PDF raster for every pen stroke adds work before its
@@ -1733,7 +1733,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         navigationPendingGeometry.retainOnly(used)
         if hasLiveInk {
             let polygons = previewGeometry.polygons(version: pending?.inkVersion ?? strokeInkVersion, points: points, predictions: pending == nil ? previewPredictions : [],
-                width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: false, heldShape: previewShape(pending))
+                width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: false, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending))
             strokes.append(.init(polygons: polygons, color: Self.color(style.color), opacity: Float(style.opacity),
                 multiply: false, transform: transform, retainedPrefixPolygonCount: previewGeometry.retainedPrefixPolygonCount,
                 geometryRevision: previewGeometry.revision))
@@ -1806,7 +1806,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         stageMetalFrame(mapper: mapper, viewport: viewport, presentingIn: mapper)
         if hasOrdinaryInk {
             let polygons = previewGeometry.polygons(version: pending?.inkVersion ?? strokeInkVersion, points: points, predictions: pending == nil ? previewPredictions : [],
-                width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: false, heldShape: previewShape(pending))
+                width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: false, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending))
             let origin = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 0, y: 0, p: 0.5)))
             let x = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 1, y: 0, p: 0.5)))
             let y = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 0, y: 1, p: 0.5)))
@@ -1907,7 +1907,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
             }
         }
         let polygons = hasLiveInk ? previewGeometry.polygons(version: pending?.inkVersion ?? strokeInkVersion, points: points, predictions: pending == nil ? previewPredictions : [],
-            width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, heldShape: previewShape(pending)) : []
+            width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending)) : []
         func liveStroke(mapper: InkCoordinateMapper, viewport: NativePDFRenderViewport) -> NativePDFMetalInk.Stroke {
             let origin = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 0, y: 0, p: 0.5)))
             let x = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 1, y: 0, p: 0.5)))

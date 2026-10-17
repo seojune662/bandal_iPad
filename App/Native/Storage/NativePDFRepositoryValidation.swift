@@ -136,6 +136,10 @@ enum NativePDFRepositoryValidation {
         var result = try inlineStyle(source)
         result["color"] = color; result["width"] = try number(source["width"], "style.width", max: 1, positive: true)
         result["opacity"] = try number(source["opacity"], "style.opacity", min: 0, max: 1)
+        if let fixed = source["fixedWidth"] {
+            guard let value = fixed as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else { throw error("fixedWidth must be boolean") }
+            if value.boolValue { result["fixedWidth"] = true }
+        }
         if let scale = source["fontScale"] { result["fontScale"] = try number(scale, "fontScale", max: 10, positive: true) }
         if let align = source["align"] {
             guard let align = align as? String, ["left", "center", "right"].contains(align) else { throw error("Invalid text alignment") }; result["align"] = align

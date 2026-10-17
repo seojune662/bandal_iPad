@@ -561,11 +561,13 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             if let tiltY = point.tiltY { item["tiltY"] = tiltY }
             return item
         }
+        var style: [String: Any] = ["color": value.style.color, "width": value.style.width, "opacity": value.style.opacity]
+        if value.style.fixedWidth == true { style["fixedWidth"] = true }
         var result: [String: Any] = [
             "courseId": value.courseId, "relPath": value.relPath, "page": value.page,
             "kind": value.kind, "clientMutationId": value.clientMutationId,
             "data": ["points": points, "inkVersion": value.data.inkVersion],
-            "style": ["color": value.style.color, "width": value.style.width, "opacity": value.style.opacity]
+            "style": style
         ]
         if let revision = value.documentRevision { result["documentRevision"] = revision }
         if let shape = value.heldShape { result["heldShape"] = shape.journalPayload }

@@ -83,6 +83,43 @@ final class NativePDFPaletteTests: XCTestCase {
     }
 
     @MainActor
+    func testBallpointKeepsItsOwnStyleSharesPenFavoritesAndStampsFixedWidth() throws {
+        let suite = "NativePDFPaletteBallpoint.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = NativeWorkspaceStore(storageRoot: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let doc = NativeDocumentReference(courseID: "c", relativePath: "a.pdf", title: "A", kind: "pdf")
+        let model = NativePDFWorkspaceModel(document: doc, store: store, defaults: defaults)
+        model.chooseColor("red"); model.setWidth(0.012)
+        model.chooseTool("ballpoint")
+        XCTAssertEqual(model.currentPreset, .ballpoint); XCTAssertTrue(model.isPenLike); XCTAssertTrue(model.isInkTool)
+        model.chooseColor("blue"); model.setWidth(0.002)
+        model.chooseTool("pen"); XCTAssertEqual(model.currentPreset, .init(color: "red", width: 0.012, opacity: 0.95))
+        model.chooseTool("ballpoint"); XCTAssertEqual(model.currentPreset, .init(color: "blue", width: 0.002, opacity: 1))
+        model.chooseFavorite(1); XCTAssertEqual(model.tool, "ballpoint", "A favourite applies to the current pen-like tool")
+        XCTAssertEqual(model.currentPreset, model.favorites[1])
+        let reopened = NativePDFWorkspaceModel(document: doc, store: store, defaults: defaults)
+        XCTAssertEqual(reopened.tool, "ballpoint"); XCTAssertEqual(reopened.currentPreset, model.favorites[1])
+        let other = NativePDFWorkspaceModel(document: .init(courseID: "c", relativePath: "b.pdf", title: "B", kind: "pdf"), store: store, defaults: defaults)
+        other.chooseTool("ballpoint"); XCTAssertEqual(other.currentPreset, model.favorites[1], "recentBallpoint seeds new documents")
+
+        var preferences = NativePDFWorkspacePreferences(); preferences.tool = "ballpoint"
+        XCTAssertEqual(preferences.drawingStyle["fixedWidth"] as? Bool, true)
+        preferences.tool = "pen"; XCTAssertNil(preferences.drawingStyle["fixedWidth"])
+        preferences.lassoMode = "weird"; XCTAssertEqual(preferences.validated().lassoMode, "freeform")
+        let legacy = try JSONDecoder().decode(NativePDFPalettePreferences.self, from: Data(#"{"version":2,"favorites":[],"drawAndHold":true}"#.utf8))
+        XCTAssertEqual(legacy.recentBallpoint, .ballpoint)
+
+        XCTAssertEqual(try NativePDFRepositoryValidation.style(["color": "ink", "width": 0.003, "opacity": 1, "fixedWidth": true])["fixedWidth"] as? Bool, true)
+        XCTAssertNil(try NativePDFRepositoryValidation.style(["color": "ink", "width": 0.003, "opacity": 1, "fixedWidth": false])["fixedWidth"])
+        XCTAssertThrowsError(try NativePDFRepositoryValidation.style(["color": "ink", "width": 0.003, "opacity": 1, "fixedWidth": "yes"]))
+        let style = try JSONDecoder().decode(NativePDFInkStyle.self, from: Data(#"{"color":"ink","width":0.003,"opacity":1}"#.utf8))
+        XCTAssertNil(style.fixedWidth)
+        let input = NativePDFStrokeInput(courseId: "c", relPath: "a.pdf", page: 1, kind: "ink", data: .init(points: [.init(x: 0.1, y: 0.1, p: 0.5)], inkVersion: 5),
+                                         style: .init(color: "ink", width: 0.003, opacity: 1, fixedWidth: true), clientMutationId: UUID().uuidString)
+        XCTAssertEqual((try NativePDFHost.json(input)["style"] as? [String: Any])?["fixedWidth"] as? Bool, true)
+    }
+
+    @MainActor
     func testOnlyInkToolRetapOpensStyleAndDoesNotMutateStyle() {
         let suite = "NativePDFPaletteRetap.\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
