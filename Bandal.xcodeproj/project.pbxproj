@@ -279,6 +279,7 @@
 		A8F7507BCE916EED1AC97F46 /* DesktopFileStagingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3521EDB74B68CA592BA27EB /* DesktopFileStagingTests.swift */; };
 		A92BCC8A42CB284538539495 /* NativePDFPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5D71B9B55649B0D025F7B64 /* NativePDFPaletteTests.swift */; };
 		AAB1E1449BF5A5E84158C92E /* NativePDFRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6673D0AFCAAEF6475AF94DCB /* NativePDFRepository.swift */; };
+		AAD722EC586BDF394D75B4F9 /* NativeReleaseFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = A49D8897E4D69AC581647543 /* NativeReleaseFlags.swift */; };
 		AB4B36507B13F7A8A2C3C861 /* NativePDFPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD14170AD439D8AF987BA5CA /* NativePDFPersistence.swift */; };
 		AB7964E4E64C5053E3094AA9 /* DesktopBrowserAgentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21C544E80F4C164E8AA40549 /* DesktopBrowserAgentTests.swift */; };
 		AC55F9629DC81A3410F91693 /* AIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 706EAC9B7D8A794508580A77 /* AIClient.swift */; };
@@ -706,6 +707,7 @@
 		A318ED55AC20F528A765F7AC /* DesktopPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopPresentationTests.swift; sourceTree = "<group>"; };
 		A3DD6DC86AC2FA810D096E69 /* DesktopPluginCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopPluginCatalogTests.swift; sourceTree = "<group>"; };
 		A3F4701F190C100F0BD760F6 /* NativeRecordingWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRecordingWorkspace.swift; sourceTree = "<group>"; };
+		A49D8897E4D69AC581647543 /* NativeReleaseFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeReleaseFlags.swift; sourceTree = "<group>"; };
 		A5582483C525025857FD56C9 /* NativeLearningRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLearningRepositoryTests.swift; sourceTree = "<group>"; };
 		A71FA02EEB505E9743A538E7 /* NativePDFInkV3CacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkV3CacheTests.swift; sourceTree = "<group>"; };
 		A75F306746DBA7BC4332A9AB /* NativeWhiteboardRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWhiteboardRepository.swift; sourceTree = "<group>"; };
@@ -1074,6 +1076,7 @@
 				8D80E48384EA9BF065D3810B /* NativePlatformServices.swift */,
 				F9A80D421BE93866397E5217 /* NativeProviderMark.swift */,
 				A3F4701F190C100F0BD760F6 /* NativeRecordingWorkspace.swift */,
+				A49D8897E4D69AC581647543 /* NativeReleaseFlags.swift */,
 				E943310DDC04E243CF4EFEF3 /* NativeRichTextCommands.swift */,
 				D889A55E002ACA4CCEA8C797 /* NativeRichTextDocument.swift */,
 				1DB8842255E22D44B345E75A /* NativeRichTextEditor.swift */,
@@ -1943,6 +1946,7 @@
 				340AED27A1CE42F57ECFC980 /* NativeProviderMark.swift in Sources */,
 				3D78AE764B713A00FAF6CEC7 /* NativeRecordingRepository.swift in Sources */,
 				69719F2C68B9D566D196EC89 /* NativeRecordingWorkspace.swift in Sources */,
+				AAD722EC586BDF394D75B4F9 /* NativeReleaseFlags.swift in Sources */,
 				9BDC91D8E95C7106B9A0DD40 /* NativeRepositoryContext.swift in Sources */,
 				1386F56750DA757D305FFACD /* NativeRichTextCommands.swift in Sources */,
 				731D72523A07CA2FD9EA42BE /* NativeRichTextDocument.swift in Sources */,
@@ -2065,7 +2069,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -2129,7 +2133,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -269,7 +269,7 @@ struct NativeSettingsWorkspace: View {
   @ViewBuilder private var settingsPanel: some View {
     switch category {
     case "ai": aiPanel
-    case "account": VStack(alignment: .leading, spacing: 24) { accountPanel; subscriptionPanel; syncPanel; profilePanel }
+    case "account": VStack(alignment: .leading, spacing: 24) { accountPanel; if !NativeReleaseFlags.isLocalOnly { subscriptionPanel; syncPanel }; profilePanel }
     case "browser": expandedPanel("browser")
     case "advanced": VStack(spacing: 24) { expandedPanel("advanced"); storagePanel }
     case "appearance": appearancePanel

@@ -9,9 +9,9 @@ final class NativeSidebarParityUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
         let add = app.buttons["native-course-add-menu"]
         XCTAssertTrue(add.waitForExistence(timeout: 25), app.debugDescription)
-        let rail = ["library", "learning", "planner", "assistant", "tools", "marketplace", "help", "account", "settings"]
+        let rail = ["library", "learning", "planner", "assistant", "tools", "help", "account", "settings"]
         for section in rail { XCTAssertTrue(app.buttons["native-section-" + section].exists, section) }
-        for section in ["browser", "recordings"] { XCTAssertFalse(app.buttons["native-section-" + section].exists) }
+        for section in ["browser", "recordings", "marketplace"] { XCTAssertFalse(app.buttons["native-section-" + section].exists, section) }
         XCTAssertTrue(app.buttons["native-university-choose"].exists)
         for ai in ["chatgpt", "claude", "gemini"] { XCTAssertTrue(app.buttons["native-ai-web-" + ai].exists, app.debugDescription) }
         capture("Desktop source rail and university AI shortcuts")

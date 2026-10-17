@@ -234,7 +234,9 @@ struct NativeWorkspaceView: View {
                     section = .library; auxiliary = nil; learningHome = false
                 }
             }.accessibilityIdentifier("native-section-tools")
-            NativeChromeButton(title: "마켓플레이스", symbol: "storefront", selected: auxiliary == .marketplace) { transition { section = .library; auxiliary = .marketplace; learningHome = false } }.accessibilityIdentifier("native-section-marketplace")
+            if !NativeReleaseFlags.isLocalOnly {
+                NativeChromeButton(title: "마켓플레이스", symbol: "storefront", selected: auxiliary == .marketplace) { transition { section = .library; auxiliary = .marketplace; learningHome = false } }.accessibilityIdentifier("native-section-marketplace")
+            }
             NativeChromeButton(title: "도움말", symbol: "questionmark.circle", selected: auxiliary == .help) { transition { section = .library; auxiliary = .help; learningHome = false } }.accessibilityIdentifier("native-section-help")
             Spacer(minLength: 8)
             NativeAccountRailButton(store: store, selected: auxiliary == .account,
