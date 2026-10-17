@@ -35,6 +35,8 @@ targets:
       - path: App/Resources/Configuration.plist
         optional: true
         buildPhase: resources
+      - path: App/Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
       - path: App/Resources/Brand
         type: folder
       - path: App/Resources/DesktopNative

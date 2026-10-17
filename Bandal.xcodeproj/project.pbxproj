@@ -304,6 +304,7 @@
 		B62500B5B9C21E21F05E2D1D /* NativePDFBackdropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FF7E2AAB89E902EEEC5F532 /* NativePDFBackdropTests.swift */; };
 		B67F5C967856BDCF2A50FD8E /* NativeSyncRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43310B951E80578E34321F2A /* NativeSyncRepositoryTests.swift */; };
 		B6CE7612977C45EC386C774D /* DesktopPresentationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1FBDA57057958AEE840F1B /* DesktopPresentationService.swift */; };
+		B7362CADE850EA9168A0E572 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F9B13CF53CE7557E1635855D /* PrivacyInfo.xcprivacy */; };
 		B7900CCDFA3F8FB02FDFECED /* NativeLearningWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B656FDB0E1014035A46619 /* NativeLearningWorkspace.swift */; };
 		B806998D7D25C5A3BF8C4405 /* DesktopMarketMediaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79542A83291922D80A0890D6 /* DesktopMarketMediaTests.swift */; };
 		B83B80C79D19204816360F4D /* PCMRecordingWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B44B9690801DC7F3EF6B042E /* PCMRecordingWriter.swift */; };
@@ -853,6 +854,7 @@
 		F8A5260B3F627274B964DECC /* NativeSettingsWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsWorkspace.swift; sourceTree = "<group>"; };
 		F941AE2A392043A8862AECBE /* DesktopBrowserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopBrowserTests.swift; sourceTree = "<group>"; };
 		F9A80D421BE93866397E5217 /* NativeProviderMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProviderMark.swift; sourceTree = "<group>"; };
+		F9B13CF53CE7557E1635855D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F9B2B9ED2496D48A9652E5E2 /* NativeWorkspaceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceModels.swift; sourceTree = "<group>"; };
 		F9FDD16DF8EAA25D8C563F7B /* DesktopBillingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopBillingService.swift; sourceTree = "<group>"; };
 		FAE2776FE9F117D023DF30D5 /* DictionaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictionaryService.swift; sourceTree = "<group>"; };
@@ -1387,6 +1389,7 @@
 			children = (
 				623F4CF3500788090B45D9AA /* Assets.xcassets */,
 				FE3907FDC9F00DE41A03C71C /* Configuration.plist */,
+				F9B13CF53CE7557E1635855D /* PrivacyInfo.xcprivacy */,
 			);
 			name = Resources;
 			path = App/Resources;
@@ -1553,6 +1556,7 @@
 				71548CA616DC20C4217C2F94 /* DesktopNative in Resources */,
 				E1367F12E42845E00542D970 /* Dictionary in Resources */,
 				9AABFFB713371E5EAF4254E7 /* NativePDFLegacyInk-LICENSE.txt in Resources */,
+				B7362CADE850EA9168A0E572 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
