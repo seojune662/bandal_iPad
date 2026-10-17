@@ -14,7 +14,7 @@ final class NativePagedMarkdownUITests: XCTestCase {
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Linked pages")
         app.buttons["native-create-course"].tap()
         let create = app.buttons["native-library-create"]
-        XCTAssertTrue(create.waitForExistence(timeout: 15)); create.tap(); app.buttons["새 필기 노트"].tap()
+        XCTAssertTrue(create.waitForExistence(timeout: 15)); create.tap(); app.buttons["새 노트"].tap()
         let name = app.textFields["native-new-note-title"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Lecture")
         app.buttons["native-new-note-create"].tap()

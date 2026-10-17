@@ -23,7 +23,7 @@ struct NativeNewNoteSheet: View {
         NavigationStack {
             Form {
                 Section("제목") {
-                    TextField("새 필기 노트", text: $title)
+                    TextField("새 노트", text: $title)
                         .accessibilityIdentifier("native-new-note-title")
                         .submitLabel(.done)
                         .onSubmit(create)
@@ -62,7 +62,7 @@ struct NativeNewNoteSheet: View {
                 if let error { Section { Text(error).foregroundStyle(.red).accessibilityIdentifier("native-creation-error") } }
             }
             .disabled(busy)
-            .navigationTitle("새 필기 노트")
+            .navigationTitle("새 노트")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() }.disabled(busy) }
@@ -86,7 +86,7 @@ struct NativeNewNoteSheet: View {
         Task { @MainActor in
             do {
                 let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                let document = try await store.createNote(title: name.isEmpty ? "새 필기 노트" : name, paper: paper.rawValue, orientation: landscape ? "landscape" : "portrait",parentPath:parentPath)
+                let document = try await store.createNote(title: name.isEmpty ? "새 노트" : name, paper: paper.rawValue, orientation: landscape ? "landscape" : "portrait",parentPath:parentPath)
                 onCreated(document)
                 dismiss()
             } catch { self.error = error.localizedDescription; busy = false }

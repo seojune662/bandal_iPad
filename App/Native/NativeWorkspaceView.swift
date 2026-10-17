@@ -339,8 +339,8 @@ struct NativeWorkspaceView: View {
                 switch action {
                 case .markdown(let title): document = try await store.createMarkdown(title: title ?? ((workspaceSettings["tabs"] as? [String: Any])?["markdownTitlePrefix"] as? String ?? "새 마크다운"), courseID: courseID)
                 case .note:
-                    guard let row = try await store.invoke("canvas:create", ["courseId": courseID, "title": "새 노트"]) as? [String: Any], let id = row["id"] as? String else { throw DesktopRuntimeError("노트를 만들지 못했습니다.") }
-                    document = .init(courseID: courseID, relativePath: id, title: row["title"] as? String ?? "새 노트", kind: "whiteboard")
+                    // Notes are PDF notes, like the desktop: same paper, same palette, same sync.
+                    document = try await store.createNote(title: "새 노트", paper: NativePaper.lines.rawValue, orientation: "portrait")
                 case .browser(let url):
                     document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "브라우저", kind: "browser")
                     if let url { store.pendingBrowserURLs[document.relativePath] = url }

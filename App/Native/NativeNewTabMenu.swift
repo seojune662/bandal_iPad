@@ -32,7 +32,7 @@ enum NativeNewTabCatalog {
         if matches(["AI", "AI 튜터"]) { result.append(.init(id: "chat", title: "AI", hint: courseName, symbol: "bubble.left.and.bubble.right", shortcutID: "new-ai-tab", action: .assistant)) }
         if matches(["학습 공간", "영어", "단어장", "플래시카드", "퀴즈"]) { result.append(.init(id: "learning", title: "학습 공간", hint: "읽기 · 단어장 · 복습", symbol: "book", shortcutID: nil, action: .learning)) }
         if matches(["녹음", "강의 녹음", "실시간 자막", "STT", "recording"]) { result.append(.init(id: "recording", title: "녹음", hint: "강의 · 실시간 자막", symbol: "waveform", shortcutID: "new-recording-tab", action: .recording)) }
-        if matches(["새 노트", "노트", "화이트보드", "마인드맵"]) { result.append(.init(id: "new-whiteboard", title: "새 노트", hint: "정리 · 마인드맵", symbol: "rectangle.and.pencil.and.ellipsis", shortcutID: "new-whiteboard", action: .note)) }
+        if matches(["새 노트", "노트", "화이트보드", "마인드맵"]) { result.append(.init(id: "new-whiteboard", title: "새 노트", hint: "PDF 필기", symbol: "rectangle.and.pencil.and.ellipsis", shortcutID: "new-whiteboard", action: .note)) }
         if matches(["학업 보드"]) { result.append(.init(id: "board", title: "학업 보드", hint: "", symbol: "checklist", shortcutID: "open-study-board", action: .planner)) }
         if !trimmed.isEmpty {
             func pdfs(_ nodes: [NativeMaterial]) -> [NativeMaterial] { nodes.flatMap { ($0.kind == "pdf" ? [$0] : []) + pdfs($0.children ?? []) } }

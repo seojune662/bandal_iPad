@@ -38,7 +38,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let app = launch(reset: true)
         createCourse(in: app)
         app.buttons["native-library-create"].tap()
-        app.buttons["새 필기 노트"].tap()
+        app.buttons["새 노트"].tap()
         let title = app.textFields["native-new-note-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         title.tap(); title.typeText("Calculus")
@@ -75,7 +75,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
     func testNativeShapeLassoHistoryAndTextPersistAcrossRelaunch() throws {
         let app = launch(reset: true)
         createCourse(in: app)
-        app.buttons["native-library-create"].tap(); app.buttons["새 필기 노트"].tap()
+        app.buttons["native-library-create"].tap(); app.buttons["새 노트"].tap()
         let title = app.textFields["native-new-note-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Object Notes")
         app.buttons["native-new-note-create"].tap()
@@ -145,51 +145,12 @@ final class NativeWorkspaceFlowTests: XCTestCase {
     }
 
     @MainActor
-    func testWhiteboardNativeInkEraseAndHistorySurviveCloseAndRelaunch() throws {
-        let app = launch(reset: true)
-        createCourse(in: app)
-        app.buttons["native-library-create"].tap(); app.buttons["새 노트"].tap()
-        let title = app.textFields["native-name-input"]
-        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Native Board"); app.buttons["만들기"].tap()
-        let pen = app.buttons["native-whiteboard-tool-pen"]
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: pen)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed, app.debugDescription)
-        let canvas = app.otherElements["native-whiteboard-workspace"]
-        try expectBoardPixels(in: app, phase: "Blank paper", highlighter: false, pen: false)
-        canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.42, dy: 0.35))
-            .press(forDuration: 0.05, thenDragTo: canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.58, dy: 0.45)), withVelocity: .slow, thenHoldForDuration: 0.05)
-        expectBoardCount(1, in: app)
-        try expectBoardPixels(in: app, phase: "Black pen on white paper", highlighter: false, pen: true)
-        app.buttons["native-whiteboard-tool-highlighter"].tap()
-        canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.42, dy: 0.65))
-            .press(forDuration: 0.05, thenDragTo: canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.58, dy: 0.70)), withVelocity: .slow, thenHoldForDuration: 0.05)
-        expectBoardCount(2, in: app)
-        try expectBoardPixels(in: app, phase: "Yellow highlighter on white paper", highlighter: true, pen: true)
-        app.buttons["native-whiteboard-tool-eraser"].tap()
-        canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.42, dy: 0.35))
-            .press(forDuration: 0.05, thenDragTo: canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.58, dy: 0.45)), withVelocity: .slow, thenHoldForDuration: 0.05)
-        expectBoardCount(1, in: app)
-        try expectBoardPixels(in: app, phase: "Erased pen preserves paper and highlighter", highlighter: true, pen: false)
-        app.buttons["native-whiteboard-undo"].tap(); expectBoardCount(2, in: app)
-        try expectBoardPixels(in: app, phase: "Undo restores black pen", highlighter: true, pen: true)
-        app.buttons["native-whiteboard-redo"].tap(); expectBoardCount(1, in: app)
-        try expectBoardPixels(in: app, phase: "Redo preserves paper and highlighter", highlighter: true, pen: false)
-        attachScreenshot(app, name: "Native whiteboard after erased pen and retained highlighter")
-        app.buttons["native-close-document"].tap()
-        let board = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-material-", "Native Board")).firstMatch
-        XCTAssertTrue(board.waitForExistence(timeout: 10), app.debugDescription); board.tap(); expectBoardCount(1, in: app)
-        app.terminate(); app.launchArguments = ["--native-ui-testing", "--native-pencil-dispatch-fixture"]; app.launch()
-        expectBoardCount(1, in: app); XCTAssertEqual(app.webViews.count, 0)
-        try expectBoardPixels(in: app, phase: "Restored white paper and yellow highlighter", highlighter: true, pen: false)
-    }
-
-    @MainActor
     func testSourceSelectionCommentSurvivesRelaunch() throws {
         // Real PDF text, rather than a textbox drawing, exercises PDFKit's
         // selection coordinates and the canonical annotation persistence path.
         let app = launch(reset: true, pencil: false, extra: ["--native-text-selection-fixture"])
         createCourse(in: app)
-        app.buttons["native-library-create"].tap(); app.buttons["새 필기 노트"].tap()
+        app.buttons["native-library-create"].tap(); app.buttons["새 노트"].tap()
         let title = app.textFields["native-new-note-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Source Annotations")
         app.buttons["native-new-note-create"].tap()
@@ -226,7 +187,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
     func testPDFPageReorderDeleteUndoAndRecoveryPersistAcrossRelaunch() throws {
         let app = launch(reset: true, extra: ["--native-pages-fixture"])
         createCourse(in: app)
-        app.buttons["native-library-create"].tap(); app.buttons["새 필기 노트"].tap()
+        app.buttons["native-library-create"].tap(); app.buttons["새 노트"].tap()
         let title = app.textFields["native-new-note-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Page History")
         app.buttons["native-new-note-create"].tap()

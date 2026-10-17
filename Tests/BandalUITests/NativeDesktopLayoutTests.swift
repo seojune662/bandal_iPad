@@ -12,7 +12,7 @@ final class NativeDesktopLayoutTests: XCTestCase {
         let courseName = app.textFields["native-course-name"]; XCTAssertTrue(courseName.waitForExistence(timeout: 5))
         courseName.tap(); courseName.typeText("Native desktop layout"); app.buttons["native-create-course"].tap()
         let add = app.buttons["native-library-create"]
-        XCTAssertTrue(add.waitForExistence(timeout: 10)); add.tap(); app.buttons["새 필기 노트"].tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 10)); add.tap(); app.buttons["새 노트"].tap()
         let title = app.textFields["native-new-note-title"]; XCTAssertTrue(title.waitForExistence(timeout: 5))
         title.tap(); title.typeText("Desktop layout"); app.buttons["native-new-note-create"].tap()
         let pageNote = app.buttons["native-pdf-page-note"]

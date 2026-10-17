@@ -148,7 +148,7 @@ final class NativePDFWritingUITests: XCTestCase {
         let create = app.buttons["native-library-create"]
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: create)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed)
-        create.tap(); app.buttons["새 필기 노트"].tap()
+        create.tap(); app.buttons["새 노트"].tap()
         let note = app.textFields["native-new-note-title"]
         XCTAssertTrue(note.waitForExistence(timeout: 5)); note.tap(); note.typeText(title)
         app.buttons["native-new-note-create"].tap()

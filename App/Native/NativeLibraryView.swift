@@ -24,7 +24,7 @@ struct NativeLibraryView: View {
     @State private var contentError: String?
     @State private var markdownTitlePrefix = "새 마크다운"
 
-    private enum Creation: String, Identifiable { case ink, markdown, folder, whiteboard; var id: String { rawValue } }
+    private enum Creation: String, Identifiable { case ink, markdown, folder; var id: String { rawValue } }
     private var courseID: String? { store.selectedCourseID }
     private var currentItems: [NativeMaterial] {
         NativeLibraryIndex.contents(in: folderPath, materials: store.materials) + (folderPath.isEmpty ? boards : [])
@@ -51,9 +51,8 @@ struct NativeLibraryView: View {
                     NativeChromeButton(title: "파일 가져오기", symbol: "tray.and.arrow.down") { importing = true }
                         .disabled(courseID == nil || working).accessibilityIdentifier("native-library-import")
                     Menu {
-                        Button("새 필기 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { creation = .ink }
+                        Button("새 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { creation = .ink }
                         Button("새 마크다운", systemImage: "doc.badge.plus") { creation = .markdown }
-                        Button("새 노트", systemImage: "rectangle.and.pencil.and.ellipsis") { creation = .whiteboard }
                         Divider()
                         Button("새 폴더", systemImage: "folder.badge.plus") { creation = .folder }
                     } label: { Image(systemName: "plus").font(.system(size: 15)).frame(width: 32, height: 36) }
@@ -150,13 +149,6 @@ struct NativeLibraryView: View {
 
     @ViewBuilder private func creationSheet(_ kind: Creation) -> some View {
             switch kind {
-            case .whiteboard:
-                NativeNameSheet(title:"새 노트",prompt:"노트 이름") { title in
-                    guard let courseID else { return }
-                    let value = try await store.invoke("canvas:create",["courseId":courseID,"title":title])
-                    guard let row = value as? [String:Any], let id = row["id"] as? String else { throw DesktopRuntimeError("노트를 만들지 못했습니다.") }
-                    await loadBoards(); onOpen(NativeDocumentReference(courseID:courseID,relativePath:id,title:title,kind:"whiteboard"))
-                }
             case .ink: NativeNewNoteSheet(store: store, parentPath:folderPath,onCreated: onOpen)
             case .markdown:
                 NativeNameSheet(title: "새 마크다운", prompt: markdownTitlePrefix, defaultValue: markdownTitlePrefix) { name in
@@ -202,7 +194,7 @@ struct NativeLibraryView: View {
                             }.frame(height: 36)
                         }
                         Spacer()
-                        Button { creation = .whiteboard } label: { Image(systemName: "plus").font(.system(size: 12)).frame(width: 32, height: 36) }
+                        Button { creation = .ink } label: { Image(systemName: "plus").font(.system(size: 12)).frame(width: 32, height: 36) }
                             .disabled(courseID == nil).accessibilityLabel("새 노트 만들기")
                     }.padding(.horizontal, 12)
                     if boardsExpanded {
