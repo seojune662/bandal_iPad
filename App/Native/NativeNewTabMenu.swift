@@ -1,11 +1,10 @@
 import SwiftUI
 
 enum NativeNewTabAction: Equatable {
-    case markdown(title: String?), browser(url: String?), assistant, learning, recording, note, planner
-    case material(NativeDocumentReference)
+    case markdown(title: String?), browser(url: String?), assistant, recording, note
 }
 
-/// The desktop omnibox order and search rules, independent of presentation.
+/// The five creation actions, in the order the user asked for: 브라우저 · 노트 · 마크다운 · AI · 녹음.
 enum NativeNewTabCatalog {
     struct Item: Identifiable {
         let id: String, title: String, hint: String, symbol: String
@@ -22,25 +21,19 @@ enum NativeNewTabCatalog {
         guard let url = URL(string: result), url.host != nil else { return nil }
         return result
     }
-    static func items(query: String, courseID: String, courseName: String, materials: [NativeMaterial]) -> [Item] {
+    static func items(query: String, courseName: String) -> [Item] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = url(trimmed)
         func matches(_ terms: [String]) -> Bool { trimmed.isEmpty || terms.contains { $0.localizedCaseInsensitiveContains(trimmed) } }
-        var result: [Item] = []
-        if let url = url(trimmed) { result.append(.init(id: "open-url", title: url + " 열기", hint: "브라우저", symbol: "globe", shortcutID: nil, action: .browser(url: url))) }
-        if matches(["새 마크다운", "새 필기"]) { result.append(.init(id: "new-note", title: "새 마크다운", hint: trimmed.isEmpty ? "" : "\"\(trimmed)\"", symbol: "doc.text", shortcutID: "new-markdown", action: .markdown(title: trimmed.isEmpty ? nil : trimmed))) }
-        if matches(["새 브라우저 탭"]) { result.append(.init(id: "new-browser", title: "새 브라우저 탭", hint: "", symbol: "globe", shortcutID: "new-browser-tab", action: .browser(url: nil))) }
-        if matches(["AI", "AI 튜터"]) { result.append(.init(id: "chat", title: "AI", hint: courseName, symbol: "bubble.left.and.bubble.right", shortcutID: "new-ai-tab", action: .assistant)) }
-        if matches(["학습 공간", "영어", "단어장", "플래시카드", "퀴즈"]) { result.append(.init(id: "learning", title: "학습 공간", hint: "읽기 · 단어장 · 복습", symbol: "book", shortcutID: nil, action: .learning)) }
-        if matches(["녹음", "강의 녹음", "실시간 자막", "STT", "recording"]) { result.append(.init(id: "recording", title: "녹음", hint: "강의 · 실시간 자막", symbol: "waveform", shortcutID: "new-recording-tab", action: .recording)) }
-        if matches(["새 노트", "노트", "화이트보드", "마인드맵"]) { result.append(.init(id: "new-whiteboard", title: "새 노트", hint: "PDF 필기", symbol: "rectangle.and.pencil.and.ellipsis", shortcutID: "new-whiteboard", action: .note)) }
-        if matches(["학업 보드"]) { result.append(.init(id: "board", title: "학업 보드", hint: "", symbol: "checklist", shortcutID: "open-study-board", action: .planner)) }
-        if !trimmed.isEmpty {
-            func pdfs(_ nodes: [NativeMaterial]) -> [NativeMaterial] { nodes.flatMap { ($0.kind == "pdf" ? [$0] : []) + pdfs($0.children ?? []) } }
-            for pdf in pdfs(materials).filter({ matches([$0.name]) }).prefix(8) {
-                result.append(.init(id: "pdf:" + pdf.relPath, title: pdf.name, hint: "PDF 열기", symbol: "doc.richtext", shortcutID: nil, action: .material(pdf.document(in: courseID))))
-            }
-        }
-        return result
+        let all: [(Item, [String])] = [
+            (.init(id: "new-browser", title: "브라우저", hint: url ?? "", symbol: "globe", shortcutID: "new-browser-tab", action: .browser(url: url)), ["브라우저", "웹", "browser"]),
+            (.init(id: "new-whiteboard", title: "노트", hint: "빈 종이 · 줄 · 모눈 · 점", symbol: "rectangle.and.pencil.and.ellipsis", shortcutID: "new-whiteboard", action: .note), ["노트", "필기", "종이", "화이트보드", "note"]),
+            (.init(id: "new-note", title: "마크다운", hint: "", symbol: "doc.text", shortcutID: "new-markdown", action: .markdown(title: nil)), ["마크다운", "문서", "markdown"]),
+            (.init(id: "chat", title: "AI", hint: courseName, symbol: "bubble.left.and.bubble.right", shortcutID: "new-ai-tab", action: .assistant), ["AI", "대화", "튜터"]),
+            (.init(id: "recording", title: "녹음", hint: "강의 · 실시간 자막", symbol: "waveform", shortcutID: "new-recording-tab", action: .recording), ["녹음", "강의", "실시간 자막", "STT", "recording"])
+        ]
+        if url != nil { return [all[0].0] }
+        return all.filter { matches($0.1) }.map(\.0)
     }
 }
 
@@ -51,22 +44,13 @@ struct NativeNewTabMenu: View {
     let onClose: () -> Void
     @State private var query = ""
     @State private var highlighted = 0
-    @State private var addingLink = false
-    @State private var linkURL = ""
-    @State private var linkLabel = ""
-    @State private var error: String?
-    @State private var saving = false
     @State private var settings: [String: Any] = [:]
     @FocusState private var searchFocused: Bool
     private var items: [NativeNewTabCatalog.Item] {
-        NativeNewTabCatalog.items(query: query, courseID: courseID,
-            courseName: store.courses.first(where: { $0.id == courseID })?.name ?? "",
-            materials: store.selectedCourseID == courseID ? store.materials : [])
+        NativeNewTabCatalog.items(query: query, courseName: store.courses.first(where: { $0.id == courseID })?.name ?? "")
     }
     var body: some View {
         Group {
-            if addingLink { linkForm }
-            else {
                 VStack(spacing: 8) {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(NativeDesktopTheme.muted)
@@ -74,7 +58,7 @@ struct NativeNewTabMenu: View {
                             .autocorrectionDisabled().textInputAutocapitalization(.never).focused($searchFocused)
                             .accessibilityIdentifier("native-new-tab-search")
                             .onSubmit { activateHighlighted() }
-                            .onKeyPress(.downArrow) { highlighted = min(items.count, highlighted + 1); return .handled }
+                            .onKeyPress(.downArrow) { highlighted = min(max(0, items.count - 1), highlighted + 1); return .handled }
                             .onKeyPress(.upArrow) { highlighted = max(0, highlighted - 1); return .handled }
                             .onKeyPress(.escape) { onClose(); return .handled }
                     }.padding(.horizontal, 8).frame(height: 36)
@@ -88,16 +72,9 @@ struct NativeNewTabMenu: View {
                                     .buttonStyle(.plain).accessibilityIdentifier("native-new-tab-" + item.id)
                                     .onHover { if $0 { highlighted = index } }
                             }
-                            Divider().padding(.vertical, 4)
-                            Button { beginLink() } label: {
-                                HStack(spacing: 8) { Image(systemName: "link").frame(width: 18); Text("링크 추가"); Spacer(); Text("즐겨찾기").foregroundStyle(NativeDesktopTheme.muted) }
-                                    .padding(.horizontal, 8).frame(height: 36)
-                                    .background(highlighted == items.count ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 5))
-                            }.buttonStyle(.plain).accessibilityIdentifier("native-new-tab-add-link")
                         }
                     }.frame(maxHeight: 340)
                 }
-            }
         }.font(.system(size: 13)).padding(8).frame(width: 352)
             .background(NativeDesktopTheme.surface)
             .onChange(of: query) { _, _ in highlighted = 0 }
@@ -121,32 +98,5 @@ struct NativeNewTabMenu: View {
         return value.replacingOccurrences(of: "mod+", with: "⌘").replacingOccurrences(of: "alt+", with: "⌥").replacingOccurrences(of: "shift+", with: "⇧").uppercased()
     }
     private func activate(_ item: NativeNewTabCatalog.Item) { onClose(); onAction(item.action) }
-    private func activateHighlighted() { if items.indices.contains(highlighted) { activate(items[highlighted]) } else { beginLink() } }
-    private func beginLink() {
-        linkURL = NativeNewTabCatalog.url(query) ?? ""; linkLabel = URL(string: linkURL)?.host ?? ""
-        addingLink = true; error = nil
-    }
-    private var linkForm: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("링크 추가").font(.system(size: 14, weight: .medium))
-            TextField("주소 입력", text: $linkURL).textFieldStyle(.roundedBorder).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("native-new-tab-link-url")
-            TextField("이름", text: $linkLabel).textFieldStyle(.roundedBorder).accessibilityIdentifier("native-new-tab-link-name")
-            if let error { Text(error).foregroundStyle(.red).font(.system(size: 12)) }
-            HStack { Spacer(); Button("취소") { addingLink = false; error = nil; searchFocused = true }; Button(saving ? "저장 중…" : "저장") { saveLink() }.disabled(saving) }
-        }.padding(8)
-    }
-    private func saveLink() {
-        guard let url = NativeNewTabCatalog.url(linkURL) else { error = "http(s) URL을 입력해 주세요."; return }
-        let label = linkLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !label.isEmpty else { error = "링크 이름을 입력해 주세요."; return }
-        saving = true
-        Task {
-            defer { saving = false }
-            do {
-                _ = try await store.invoke("favorites:add", ["courseId": courseID, "label": label,
-                    "descriptor": ["kind": "browser", "payload": ["tabId": UUID().uuidString, "initialUrl": url]]])
-                store.events.send(.init(channel: "nativeWorkspace:favoritesChanged", payload: ["courseId": courseID])); onClose()
-            } catch { self.error = error.localizedDescription }
-        }
-    }
+    private func activateHighlighted() { if items.indices.contains(highlighted) { activate(items[highlighted]) } }
 }

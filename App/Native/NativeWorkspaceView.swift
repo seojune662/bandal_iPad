@@ -327,7 +327,6 @@ struct NativeWorkspaceView: View {
         open(document)
     }
     private func openNewTab(_ action: NativeNewTabAction, _ groupID: String) {
-        if case .material(let document) = action { openInGroup(document, groupID: groupID.isEmpty ? nil : groupID); return }
         guard !busy else { return }; busy = true
         let courseID = navigation.activeCourseID ?? store.selectedCourseID
         Task { @MainActor in
@@ -346,9 +345,6 @@ struct NativeWorkspaceView: View {
                     if let url { store.pendingBrowserURLs[document.relativePath] = url }
                 case .assistant: document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "AI", kind: "assistant")
                 case .recording: document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "녹음", kind: "recordings")
-                case .planner: document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "학업 보드", kind: "planner")
-                case .learning: document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "학습 공간", kind: "learning-home")
-                case .material: return
                 }
                 guard navigation.activeCourseID == courseID else { return }
                 navigation.open(document, inGroup: groupID.isEmpty ? navigation.focusedGroupID : groupID)

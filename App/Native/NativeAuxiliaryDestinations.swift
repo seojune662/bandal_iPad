@@ -16,7 +16,7 @@ struct NativeHelpView: View {
                 NativeSettingsCard(title: "시작하기", description: "자료와 생각을 한 작업 공간에서 이어갑니다.") {
                     VStack(alignment: .leading, spacing: 14) {
                         Label("과목을 만들고 오른쪽 자료 목록에서 파일을 가져오세요.", systemImage: "folder.badge.plus")
-                        Label("탭 옆 +에서 마크다운, 브라우저, AI, 녹음, 노트를 여세요.", systemImage: "plus")
+                        Label("탭 옆 +에서 브라우저, 노트, 마크다운, AI, 녹음을 여세요.", systemImage: "plus")
                         Label("탭을 끌어 나누거나 화면 배치 메뉴로 여러 자료를 함께 보세요.", systemImage: "rectangle.split.2x1")
                         Label("PDF와 노트에는 Apple Pencil로 필기할 수 있습니다.", systemImage: "pencil.tip")
                     }.font(.system(size: 13))

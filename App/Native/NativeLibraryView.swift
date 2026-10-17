@@ -9,7 +9,6 @@ struct NativeLibraryView: View {
     @State private var folderPath = ""
     @State private var expandedFolders = Set<String>()
     @State private var filesExpanded = true
-    @State private var boardsExpanded = true
     @State private var importing = false
     @State private var creation: Creation?
     @State private var renaming: NativeMaterial?
@@ -17,7 +16,6 @@ struct NativeLibraryView: View {
     @State private var deleting: NativeMaterial?
     @State private var operationError: String?
     @State private var working = false
-    @State private var boards: [NativeMaterial] = []
     @State private var contentHits: [NativeContentHit] = []
     @State private var searchRevision = 0
     @State private var searching = false
@@ -27,11 +25,11 @@ struct NativeLibraryView: View {
     private enum Creation: String, Identifiable { case ink, markdown, folder; var id: String { rawValue } }
     private var courseID: String? { store.selectedCourseID }
     private var currentItems: [NativeMaterial] {
-        NativeLibraryIndex.contents(in: folderPath, materials: store.materials) + (folderPath.isEmpty ? boards : [])
+        NativeLibraryIndex.contents(in: folderPath, materials: store.materials)
     }
     private var items: [NativeMaterial] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let source = search.isEmpty ? currentItems : (NativeLibraryIndex.flatten(store.materials) + boards).filter {
+        let source = search.isEmpty ? currentItems : NativeLibraryIndex.flatten(store.materials).filter {
             (folderPath.isEmpty || $0.relPath.hasPrefix(folderPath + "/")) &&
                 ($0.name.localizedStandardContains(search) || $0.relPath.localizedStandardContains(search))
         }
@@ -57,7 +55,7 @@ struct NativeLibraryView: View {
                         Button("새 폴더", systemImage: "folder.badge.plus") { creation = .folder }
                     } label: { Image(systemName: "plus").font(.system(size: 15)).frame(width: 32, height: 36) }
                         .disabled(courseID == nil || working).accessibilityLabel("추가").accessibilityIdentifier("native-library-create")
-                    NativeChromeButton(title: "자료 새로고침", symbol: "arrow.clockwise") { Task { await store.refreshMaterials(); await loadBoards() } }
+                    NativeChromeButton(title: "자료 새로고침", symbol: "arrow.clockwise") { Task { await store.refreshMaterials() } }
                 }
                 Label(store.courses.first { $0.id == courseID }?.name ?? "과목을 선택하세요", systemImage: "folder")
                     .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
@@ -87,28 +85,13 @@ struct NativeLibraryView: View {
         .sheet(item: $moving) { NativeMaterialMovePicker(material: $0, store: store) }
         .sheet(item: $renaming) { material in
             NativeNameSheet(title: "이름 변경", prompt: "새 이름", initialValue: material.name, actionTitle: "저장") { name in
-                if material.kind == "whiteboard", let courseID {
-                    _ = try await store.withExternalMutation {
-                        _ = try await store.invoke("canvas:rename",["courseId":courseID,"id":material.relPath,"title":name])
-                        return ["changedCourseIDs":[courseID]]
-                    }
-                    await loadBoards()
-                } else { try await store.rename(material, to: name) }
+                try await store.rename(material, to: name)
             }
         }
         .confirmationDialog("\(deleting?.name ?? "자료") 삭제", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             if let material = deleting {
                 Button("삭제", role: .destructive) {
-                    perform {
-                        if material.kind == "whiteboard", let courseID {
-                            _ = try await store.withExternalMutation {
-                                _ = try await store.invoke("canvas:delete",["courseId":courseID,"id":material.relPath])
-                                return ["changedCourseIDs":[courseID]]
-                            }
-                            store.events.send(NativeWorkspaceEvent(channel:"nativeWorkspace:materialDeleted",payload:["courseId":courseID,"relPath":material.relPath,"isDirectory":false]))
-                            await loadBoards()
-                        } else { try await store.delete(material) }
-                    }
+                    perform { try await store.delete(material) }
                     deleting = nil
                 }
             }
@@ -124,7 +107,6 @@ struct NativeLibraryView: View {
     var body: some View {
         presentedContent
         .onChange(of: courseID) { _, _ in folderPath = ""; query = ""; expandedFolders = [] }
-        .task(id:courseID) { await loadBoards() }
         .task(id:searchTaskID) { await searchContent() }
         .task(id:store.isReady) {
             if store.isReady, let settings = try? await store.invoke("settings:get") as? [String:Any] { updatePreferences(settings) }
@@ -140,7 +122,6 @@ struct NativeLibraryView: View {
         if event.channel == "settings:changed", let payload = event.payload as? [String:Any], let settings = payload["settings"] as? [String:Any] { updatePreferences(settings); return }
         guard let payload = event.payload as? [String:Any], payload["courseId"] as? String == courseID else { return }
         if ["search:changed","materials:changed"].contains(event.channel) { searchRevision += 1 }
-        if ["canvas:changed","materials:changed"].contains(event.channel) { Task { await loadBoards() } }
     }
 
     private func updatePreferences(_ settings: [String:Any]) {
@@ -185,22 +166,6 @@ struct NativeLibraryView: View {
                 }
                 if store.isLoading && store.materials.isEmpty { ProgressView().frame(maxWidth: .infinity).padding(24) }
                 if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    HStack {
-                        Button { boardsExpanded.toggle() } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: boardsExpanded ? "chevron.down" : "chevron.right").font(.system(size: 9))
-                                Text("노트").font(.system(size: 12, weight: .medium))
-                                Text("\(boards.count)").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
-                            }.frame(height: 36)
-                        }
-                        Spacer()
-                        Button { creation = .ink } label: { Image(systemName: "plus").font(.system(size: 12)).frame(width: 32, height: 36) }
-                            .disabled(courseID == nil).accessibilityLabel("새 노트 만들기")
-                    }.padding(.horizontal, 12)
-                    if boardsExpanded {
-                        ForEach(boards) { material in materialRow(material, depth: 0) }
-                        if boards.isEmpty { Text("새 노트를 만들어 생각을 펼쳐보세요.").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 16).padding(.bottom, 24) }
-                    }
                     Button { filesExpanded.toggle() } label: {
                         HStack(spacing: 8) {
                             Image(systemName: filesExpanded ? "chevron.down" : "chevron.right").font(.system(size: 9))
@@ -297,8 +262,8 @@ struct NativeLibraryView: View {
     @ViewBuilder private func actions(_ material: NativeMaterial) -> some View {
         Button(material.kind == "dir" ? "폴더 열기" : "열기", systemImage: material.kind == "dir" ? "folder" : "doc") { open(material) }
         Button("이름 변경", systemImage: "pencil") { renaming = material }
-        if material.kind != "whiteboard" { Button("폴더로 이동", systemImage: "folder") { moving = material } }
-        if material.kind != "dir" && material.kind != "whiteboard" {
+        Button("폴더로 이동", systemImage: "folder") { moving = material }
+        if material.kind != "dir" {
             Button("공유", systemImage: "square.and.arrow.up") {
                 guard let courseID else { return }
                 perform { try await store.flushDocuments(); _ = try await store.invoke("materials:share", ["courseId": courseID, "relPath": material.relPath]) }
@@ -339,17 +304,6 @@ struct NativeLibraryView: View {
         if material.kind == "whiteboard" { return "노트" }
         let ext = (material.name as NSString).pathExtension.uppercased()
         return ext.isEmpty ? "파일" : "\(ext) 파일"
-    }
-    private func loadBoards() async {
-        guard let course = courseID else { boards = []; return }
-        do {
-            let rows = try await store.invoke("canvas:list",["courseId":course]) as? [[String:Any]] ?? []
-            guard courseID == course else { return }
-            boards = rows.compactMap { row in
-                guard let id = row["id"] as? String, let title = row["title"] as? String else { return nil }
-                return NativeMaterial(relPath:id,name:title,kind:"whiteboard",children:nil,size:nil,mtime:nil)
-            }
-        } catch { if courseID == course { operationError = error.localizedDescription } }
     }
     private func searchContent() async {
         let query = query.trimmingCharacters(in:.whitespacesAndNewlines)

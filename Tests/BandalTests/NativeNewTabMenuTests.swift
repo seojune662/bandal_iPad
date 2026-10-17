@@ -2,19 +2,17 @@ import XCTest
 @testable import Bandal
 
 final class NativeNewTabMenuTests: XCTestCase {
-    func testOmniboxStartsWithCommandsAndFindsNestedPDFsOnlyDuringSearch() {
-        let files = (0..<12).map { NativeMaterial(relPath: "nested/lecture-\($0).pdf", name: "Lecture \($0)", kind: "pdf") }
-        let tree = [NativeMaterial(relPath: "nested", name: "nested", kind: "dir", children: files)]
-        let initial = NativeNewTabCatalog.items(query: "", courseID: "course", courseName: "Class", materials: tree)
-        XCTAssertEqual(initial.map(\.id), ["new-note", "new-browser", "chat", "learning", "recording", "new-whiteboard", "board"])
-        let found = NativeNewTabCatalog.items(query: "lecture", courseID: "course", courseName: "Class", materials: tree)
-        XCTAssertEqual(found.count, 8)
-        guard case .material(let document) = found[0].action else { return XCTFail("The search result must open the actual nested document") }
-        XCTAssertEqual(document.courseID, "course"); XCTAssertEqual(document.relativePath, "nested/lecture-0.pdf")
+    func testMenuOffersExactlyFiveTabKindsInOrderAndFiltersBySearch() {
+        let initial = NativeNewTabCatalog.items(query: "", courseName: "Class")
+        XCTAssertEqual(initial.map(\.id), ["new-browser", "new-whiteboard", "new-note", "chat", "recording"])
+        XCTAssertEqual(initial.map(\.title), ["브라우저", "노트", "마크다운", "AI", "녹음"])
+        XCTAssertEqual(NativeNewTabCatalog.items(query: "마크", courseName: "Class").map(\.id), ["new-note"])
+        XCTAssertEqual(NativeNewTabCatalog.items(query: "필기", courseName: "Class").first?.action, .note)
         XCTAssertFalse(initial.contains { $0.title.contains("화이트보드") })
     }
     func testURLInputOpensExactURLRatherThanBecomingFileSearchOrShellScheme() {
-        let rows = NativeNewTabCatalog.items(query: "example.edu/notes", courseID: "course", courseName: "Class", materials: [])
+        let rows = NativeNewTabCatalog.items(query: "example.edu/notes", courseName: "Class")
+        XCTAssertEqual(rows.map(\.id), ["new-browser"])
         XCTAssertEqual(rows.first?.action, .browser(url: "https://example.edu/notes"))
         XCTAssertEqual(NativeNewTabCatalog.url("https://example.edu?q=one"), "https://example.edu?q=one")
         for input in ["a question", "file:///private/test", "javascript:alert(1)", "data:text/html,test"] { XCTAssertNil(NativeNewTabCatalog.url(input)) }
