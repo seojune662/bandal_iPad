@@ -32,6 +32,10 @@ public struct SupabaseSyncTransport: SyncTransport, AssetTransport, Sendable {
         return try await rpc("bandal_pull", Parameters(p_after: cursor, p_limit: max(1, min(limit, 1000))))
     }
 
+    public func syncStatus() async throws -> SyncAccessStatus {
+        try await rpc("bandal_sync_status", [String: String]())
+    }
+
     public func uploadAsset(_ revision: AssetRevision, from file: URL) async throws {
         try AssetHasher.verify(revision, file: file)
         var request = try await request(path: "storage/v1/object/bandal-assets/\(userID)/\(revision.sha256)")
@@ -55,9 +59,7 @@ public struct SupabaseSyncTransport: SyncTransport, AssetTransport, Sendable {
         let request = try await request(path: "storage/v1/object/authenticated/bandal-assets/\(userID)/\(revision.sha256)")
         let (temporary, response) = try await session.download(for: request)
         defer { try? FileManager.default.removeItem(at: temporary) }
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw CoreError.transport((response as? HTTPURLResponse)?.statusCode ?? 0, "Asset download failed")
-        }
+        try check(Data(), response)
         try AssetHasher.verify(revision, file: temporary)
         guard !FileManager.default.fileExists(atPath: destination.path) else {
             try AssetHasher.verify(revision, file: destination); return
@@ -102,7 +104,17 @@ public struct SupabaseSyncTransport: SyncTransport, AssetTransport, Sendable {
         guard let http = response as? HTTPURLResponse else { throw CoreError.invalidResponse("Missing HTTP response") }
         guard (200..<300).contains(http.statusCode) else {
             // Don't persist or expose raw server bodies, which can contain private payloads.
-            throw CoreError.transport(http.statusCode, "Supabase request failed")
+            let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let known = [body?["code"] as? String, body?["message"] as? String].compactMap { $0 }
+            let code: SyncFailureCode
+            if known.contains(where: { ["subscription_required", "sync_subscription_required"].contains($0) }) { code = .subscriptionRequired }
+            else if known.contains(where: { ["storage_limit_exceeded", "sync_storage_limit_exceeded", "sync_quota_exceeded", "sync_storage_quota_exceeded"].contains($0) }) { code = .storageLimitExceeded }
+            else if http.statusCode == 401 { code = .authenticationRequired }
+            else if http.statusCode == 429 { code = .rateLimited }
+            else if http.statusCode >= 500 { code = .unavailable }
+            else { code = .requestRejected }
+            let retry = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init).map { min(3600, max(1, $0)) }
+            throw SyncRequestFailure(code: code, status: http.statusCode, retryAfter: retry)
         }
     }
 }

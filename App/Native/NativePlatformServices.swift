@@ -23,6 +23,8 @@ final class NativePlatformServices: ObservableObject {
     private lazy var marketplace = NativeStudyMarketClient(cloud: cloud)
     private var account: DesktopAccountService
     private var sync: DesktopSyncService?
+    private var billing: DesktopBillingService?
+    private let profile: DesktopProfileService
     private var syncError: Error?
     private weak var store: NativeWorkspaceStore?
     private var subscription: AnyCancellable?
@@ -38,8 +40,15 @@ final class NativePlatformServices: ObservableObject {
         ai = DesktopAIService()
         assistant = NativeAssistantService(runtime:runtime,ai:ai)
         account = DesktopAccountService(root:runtime.root)
+        profile = DesktopProfileService(documents:runtime.root.deletingLastPathComponent(),root:runtime.root)
         recording = DesktopRecordingService(root:runtime.legacyRoot,invoke:{ channel,request in try await runtime.invokePrivate(channel,request:request) })
         connectAccount()
+        profile.prepare = { [weak self, weak store] in
+            await self?.sync?.suspendForProfileOperation()
+            try await store?.flushDocuments()
+        }
+        profile.resume = { [weak self] in self?.sync?.resumeAfterProfileOperation() }
+        profile.activate = { NotificationCenter.default.post(name:DesktopProfileService.didActivate,object:nil) }
         browser.emit = { [weak runtime] channel,payload in runtime?.onEmit?(channel,payload) }
         recording.emit = { [weak runtime] channel,payload in runtime?.onEmit?(channel,payload) }
         browser.onCourseForURL = { [weak store] _ in store?.selectedCourseID }
@@ -101,9 +110,13 @@ final class NativePlatformServices: ObservableObject {
             return try await store.withExternalMutation(action)
         }
         sync?.emit = { [weak store] channel,value in store?.runtime.onEmit?(channel,value) }
+        let billing = DesktopBillingService(account:account)
+        billing.emit = { [weak store] channel,value in store?.runtime.onEmit?(channel,value) }
+        billing.entitlementChanged = { [weak self] in self?.sync?.requestSync(force:true) }
+        self.billing = billing
         account.emit = { [weak self, weak store] channel,value in
             store?.runtime.onEmit?(channel,value)
-            if let state = value as? [String:Any] { self?.sync?.accountChanged(state) }
+            if let state = value as? [String:Any] { self?.sync?.accountChanged(state); self?.billing?.accountChanged() }
         }
     }
     func start() async {
@@ -130,14 +143,19 @@ final class NativePlatformServices: ObservableObject {
         if ai.canHandle(channel) { return try await ai.handle(channel:channel,request:request) }
         if recording.canHandle(channel) { return try await recording.handle(channel:channel,request:request) }
         if account.canHandle(channel) { return try await account.handle(channel:channel,request:request) }
+        if channel == "auth:deleteAccount" { let result = try await account.deleteAccount(); billing?.accountChanged(); return result }
+        if let billing, billing.canHandle(channel) { return try await billing.handle(channel,request:request) }
+        if channel == "profile:backup" || channel == "profile:new" { return try await profile.handle(channel) }
         if ["chat:send","chat:cancel","chat:close","nativeChat:open"].contains(channel) { return try await assistant.handle(channel,request) }
         if channel.hasPrefix("sync:") {
             guard let sync else { throw syncError ?? DesktopRuntimeError("동기화 저장소를 열지 못했습니다.") }
             switch channel {
             case "sync:status":return try await sync.status()
-            case "sync:run":try await sync.synchronizeNow(); return try await sync.status()
-            case "sync:conflicts":return try await sync.conflicts()
-            case "sync:restoreConflict":return try await sync.restoreConflict(NativeValue.string(request["id"] ?? request["conflictID"],"충돌"),variant:NativeValue.string(request["variant"],"사본"))
+            case "sync:run":try await sync.synchronizeNow(force:true); return try await sync.status()
+            case "sync:setEnabled":return try await sync.setEnabled(request["enabled"] as? Bool == true)
+            case "sync:conflicts":return try await sync.conflictSummaries()
+            case "sync:conflictDetails":return try await sync.conflicts()
+            case "sync:restoreConflict","sync:resolveConflict":return try await sync.restoreConflict(NativeValue.string(request["id"] ?? request["conflictID"],"충돌"),variant:NativeValue.string(request["variant"],"사본"))
             case "sync:exportConflict":return try await sync.exportConflict(NativeValue.string(request["id"],"충돌"))
             default:break
             }
@@ -157,7 +175,7 @@ final class NativePlatformServices: ObservableObject {
     }
     func attach(_ controller: UIViewController) {
         let presenter = controller.view.window?.rootViewController ?? controller
-        files.presenter = presenter; browser.presenter = presenter; credentials.presenter = presenter
+        files.presenter = presenter; browser.presenter = presenter; credentials.presenter = presenter; profile.presenter = presenter
     }
 }
 

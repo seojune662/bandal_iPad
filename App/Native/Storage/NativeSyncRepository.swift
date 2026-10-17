@@ -28,37 +28,74 @@ final class NativeSyncRepository {
         CREATE TABLE IF NOT EXISTS ipad_sync_asset_cache(sha256 TEXT PRIMARY KEY,path TEXT NOT NULL);
         """)
         if try !context.columns("ipad_sync_conflicts").contains("assets_json") { try context.db.exec("ALTER TABLE ipad_sync_conflicts ADD COLUMN assets_json TEXT NOT NULL DEFAULT '[]'") }
+        if try !context.columns("ipad_sync_conflicts").contains("related_json") { try context.db.exec("ALTER TABLE ipad_sync_conflicts ADD COLUMN related_json TEXT NOT NULL DEFAULT '{}'") }
         journal = try NativeSyncJournal(context: context)
         try context.withMaterialLock { try journal.recover() }
     }
     static func recoverFiles(context: NativeRepositoryContext) throws { try context.withMaterialLock { try NativeSyncJournal(context: context).recover() } }
     func registerProjection(snapshot: @escaping () throws -> NativeSyncSnapshot, plan: @escaping ([String: Any], [String: URL]) throws -> NativeSyncPlan?) { providers.append((snapshot, plan)) }
+    /// Product scope never changes the wire protocol: out-of-scope records stay
+    /// in the engine store and are neither published nor materialized here.
+    static let personalScope = "personal-content-v1"
+    static func inScope(_ record: [String: Any], _ scope: String?) -> Bool {
+        guard scope == personalScope else { return true }
+        let kind = record["kind"] as? String ?? ""
+        if ["course", "material", "note", "drawing", "annotation"].contains(kind) { return true }
+        return kind == "artifact" && ((record["payload"] as? [String: Any])?["recordType"] as? String) == "desktop-course-group"
+    }
     func handle(_ channel: String, _ request: [String: Any]) throws -> Any? {
         guard ["nativeSync:export", "nativeSync:import", "nativeSync:conflicts", "nativeSync:restoreConflict"].contains(channel) else { return nil }
-        if channel == "nativeSync:conflicts" { return try conflicts() }
+        if channel == "nativeSync:conflicts" { return try conflicts(scope: request["scope"] as? String, summary: request["summary"] as? Bool == true) }
         guard !running else { throw C.conflict("A sync projection operation is already running") }; running = true; defer { running = false }
         return try context.withMaterialLock {
             try journal.requireSettled()
             switch channel {
             case "nativeSync:export":
+                let scope = request["scope"] as? String
                 try refresh(); let snapshot = try snapshot()
                 let blocked = Set(try context.query("SELECT DISTINCT record_id FROM ipad_sync_conflicts WHERE resolved_at IS NULL").compactMap { $0["record_id"] as? String })
-                let records = snapshot.records.filter { !blocked.contains($0["id"] as? String ?? "") }
+                let records = snapshot.records.filter { !blocked.contains($0["id"] as? String ?? "") && Self.inScope($0, scope) }
                 try context.transaction { for record in records { try F.validate(record); try save(record, source: snapshot.sources[record["id"] as! String] ?? [:]) } }
-                return ["records": records, "assets": snapshot.assets]
+                guard scope == Self.personalScope else { return ["records": records, "assets": snapshot.assets] }
+                let materials = Set(records.filter { $0["kind"] as? String == "material" }.compactMap { ($0["payload"] as? [String: Any])?["id"] as? String })
+                let assets = snapshot.assets.filter { asset in
+                    guard let owner = asset["materialID"] as? String else { return false }
+                    return materials.contains(owner) || owner.hasPrefix("clip:")
+                }
+                return ["records": records, "assets": assets]
             case "nativeSync:import": return try importRecords(request)
             case "nativeSync:restoreConflict":
                 guard let id = request["conflictID"] as? String, let variant = request["variant"] as? String, ["local", "remote"].contains(variant), let row = try context.query("SELECT * FROM ipad_sync_conflicts WHERE id=? AND resolved_at IS NULL", [id]).first, let selected = row[variant + "_json"] as? String else { throw C.validation("Conflict or selected variant is unavailable") }
-                let reviewed = try [row["local_json"], row["remote_json"]].compactMap { $0 as? String }.map { try F.object($0) }
+                let related = try JSONSerialization.jsonObject(with: Data((row["related_json"] as? String ?? "{}").utf8)) as? [String: [[String: Any]]] ?? [:]
+                let records = try [F.object(selected)] + (related[variant] ?? [])
+                let reviewed = try [row["local_json"], row["remote_json"]].compactMap { $0 as? String }.map { try F.object($0) } + (related["local"] ?? []) + (related["remote"] ?? [])
                 let storedAssets = try JSONSerialization.jsonObject(with: Data((row["assets_json"] as? String ?? "[]").utf8)) as? [[String: Any]] ?? []
-                let result = try importRecords(["records": [F.object(selected)], "assets": (request["assets"] as? [[String: Any]] ?? []) + storedAssets], force: true, reviewed: reviewed)
+                var result = try importRecords(["scope": request["scope"] ?? Self.personalScope, "records": records, "assets": (request["assets"] as? [[String: Any]] ?? []) + storedAssets], force: true, reviewed: reviewed)
+                let resolved = (result["conflicts"] as? [Any])?.isEmpty == true && result["applied"] as? Int == records.count
                 do {
-                    if result["applied"] as? Int == 1 { try context.run("UPDATE ipad_sync_conflicts SET resolved_at=? WHERE id=?", [C.nowISO, id]); context.emit?("sync:conflictsChanged", [:]) }
+                    if resolved {
+                        let now = C.nowISO
+                        try context.run("UPDATE ipad_sync_conflicts SET resolved_at=? WHERE id=?", [now, id])
+                        // A complete structural restore also settles page conflicts whose
+                        // exact selected envelopes were applied. Archived originals remain.
+                        for page in records {
+                            for pending in try context.query("SELECT id,local_json,remote_json FROM ipad_sync_conflicts WHERE record_id=? AND resolved_at IS NULL", [page["id"]!]) {
+                                guard try F.comparable(F.object(pending["remote_json"])) == F.comparable(page) else { continue }
+                                if let localJSON = pending["local_json"] as? String {
+                                    let local = try F.object(localJSON)
+                                    guard try reviewed.contains(where: { try F.comparable($0) == F.comparable(local) }) else { continue }
+                                }
+                                try context.run("UPDATE ipad_sync_conflicts SET resolved_at=? WHERE id=?", [now, pending["id"]!])
+                            }
+                        }
+                        context.emit?("sync:conflictsChanged", [:])
+                    }
                 } catch {
                     let changed = Set(result["changedCourseIDs"] as? [String] ?? [])
                     guard !changed.isEmpty else { throw error }
                     throw NativeSyncImportFailure(underlyingError: error, changedCourseIDs: changed)
                 }
+                result["appliedRecords"] = result["applied"]; result["applied"] = resolved ? 1 : 0; result["resolved"] = resolved
                 return result
             default: return NSNull()
             }
@@ -115,7 +152,9 @@ final class NativeSyncRepository {
         }
     }
     private func performImport(_ request: [String: Any], force: Bool, reviewed: [[String: Any]], changed: inout Set<String>) throws -> [String: Any] {
-        guard let records = request["records"] as? [[String: Any]], request["assets"] == nil || request["assets"] is [[String: Any]], request["conflicts"] == nil || request["conflicts"] is [[String: Any]] else { throw C.validation("Invalid sync import") }
+        guard let incomingRecords = request["records"] as? [[String: Any]], request["assets"] == nil || request["assets"] is [[String: Any]], request["conflicts"] == nil || request["conflicts"] is [[String: Any]] else { throw C.validation("Invalid sync import") }
+        let scope = request["scope"] as? String
+        let records = incomingRecords.filter { Self.inScope($0, scope) }
         var seen = Set<String>()
         for record in records {
             try F.validate(record); let id = record["id"] as! String
@@ -123,12 +162,21 @@ final class NativeSyncRepository {
             if let kind = try context.query("SELECT kind FROM ipad_sync_projection WHERE id=?", [id]).first?["kind"] as? String, kind != record["kind"] as? String { throw C.validation("Sync record kind changed") }
         }
         let assets = try preserveAssets(request["assets"] as? [[String: Any]] ?? [])
-        for item in request["conflicts"] as? [[String: Any]] ?? [] {
-            guard let local = item["local"] as? [String: Any], let remote = item["remote"] as? [String: Any] else { throw C.validation("Invalid engine sync conflict") }
-            try F.validate(local); try F.validate(remote); _ = try conflict(local, remote, reason: "Concurrent edits from another device", assets: assets)
-        }
         try refresh(); let projected = try snapshot(); var current: [String: [String: Any]] = [:]
         for record in projected.records { current[record["id"] as! String] = record }
+        // A PDF revision and its page records are reviewed as one choice.
+        func relatedPages(_ local: [String: Any]?, _ remote: [String: Any]) -> [String: [[String: Any]]] {
+            guard remote["kind"] as? String == "material", let p = remote["payload"] as? [String: Any], p["kind"] as? String == "pdf", let material = p["id"] as? String else { return [:] }
+            func pages(_ values: [[String: Any]], revision: String?) -> [[String: Any]] {
+                values.filter { $0["kind"] as? String == "drawing" && (($0["payload"] as? [String: Any])?["materialID"] as? String) == material && (($0["payload"] as? [String: Any])?["documentRevision"] as? String) == revision }
+            }
+            return ["local": pages(Array(current.values), revision: (local?["payload"] as? [String: Any])?["revision"] as? String), "remote": pages(records, revision: p["revision"] as? String)]
+        }
+        for item in request["conflicts"] as? [[String: Any]] ?? [] {
+            guard let local = item["local"] as? [String: Any], let remote = item["remote"] as? [String: Any] else { throw C.validation("Invalid engine sync conflict") }
+            guard Self.inScope(remote, scope) else { continue }
+            try F.validate(local); try F.validate(remote); _ = try conflict(local, remote, reason: "Concurrent edits from another device", assets: assets, related: relatedPages(local, remote))
+        }
         var applied = 0, found: [[String: Any]] = []
         var publishedHashes: [String: String] = [:], removedPaths = Set<String>()
         var blockedPDFMaterials = Set<String>(), blockedPageNotes = Set<String>()
@@ -156,13 +204,13 @@ final class NativeSyncRepository {
             let payload = incoming["payload"] as? [String: Any] ?? [:]
             let dependency = payload["materialID"] as? String ?? (incoming["kind"] as? String == "material" ? payload["id"] as? String : nil)
             if let dependency, (incoming["kind"] as? String == "drawing" && blockedPDFMaterials.contains(dependency)) || blockedPageNotes.contains(dependency) {
-                found.append(try conflict(local, incoming, reason: "The PDF page revision was not applied; dependent ink and page notes remain preserved", assets: assets)); continue
+                found.append(try conflict(local, incoming, reason: "The PDF page revision was not applied; dependent ink and page notes remain preserved", assets: assets, related: relatedPages(local, incoming))); continue
             }
             if force, let local, try !reviewed.contains(where: { try F.comparable($0) == F.comparable(local) }) {
                 // Explicit selection replaces the visible version only after
                 // newer edits and their assets have a durable conflict copy.
                 // A failed preservation write throws before any file changes.
-                found.append(try conflict(local, incoming, reason: "Local content changed while reviewing the earlier conflict", assets: assets))
+                found.append(try conflict(local, incoming, reason: "Local content changed while reviewing the earlier conflict", assets: assets, related: relatedPages(local, incoming))); continue
             }
             if let local, try F.comparable(local) == F.comparable(incoming) { try save(incoming, source: mapped.map { try F.object($0["source_json"]) } ?? projected.sources[id] ?? [:]); applied += 1; continue }
             if !force, let local {
@@ -173,7 +221,7 @@ final class NativeSyncRepository {
                         var base = try F.object(mapped["baseline_json"]); base["id"] = id; base["formatVersion"] = 1
                         merged = try mergeInk(base: base, local: local, remote: incoming)
                     }
-                    guard let merged else { try blockPDF(incoming); found.append(try conflict(local, incoming, reason: "Local content changed after sync export", assets: assets)); continue }
+                    guard let merged else { try blockPDF(incoming); found.append(try conflict(local, incoming, reason: "Local content changed after sync export", assets: assets, related: relatedPages(local, incoming))); continue }
                     incoming = merged
                 }
             }
@@ -214,7 +262,7 @@ final class NativeSyncRepository {
                     throw error
                 }
                 try blockPDF(incoming)
-                found.append(try conflict(local, incoming, reason: error.localizedDescription, assets: assets))
+                found.append(try conflict(local, incoming, reason: error.localizedDescription, assets: assets, related: relatedPages(local, incoming)))
             }
         }
         for course in changed { context.emit?("materials:changed", ["courseId": course]) }
@@ -239,8 +287,10 @@ final class NativeSyncRepository {
         }
         return assets
     }
-    private func conflict(_ local: [String: Any]?, _ remote: [String: Any], reason: String, assets: [String: URL]) throws -> [String: Any] {
-        var id = try F.digest(["local": local ?? NSNull() as Any, "remote": remote, "reason": reason])
+    private func conflict(_ local: [String: Any]?, _ remote: [String: Any], reason: String, assets: [String: URL], related: [String: [[String: Any]]] = [:]) throws -> [String: Any] {
+        var digestInput: [String: Any] = ["local": local ?? NSNull() as Any, "remote": remote, "reason": reason]
+        if !related.isEmpty { digestInput["related"] = related }
+        var id = try F.digest(digestInput)
         // Keep resolutions across runtimes whose JSON encoders spell the same
         // numeric value differently. Existing envelopes are compared structurally.
         for old in try context.query("SELECT id,local_json,remote_json FROM ipad_sync_conflicts WHERE record_id=? AND reason=?", [remote["id"]!, reason]) {
@@ -262,20 +312,59 @@ final class NativeSyncRepository {
         }
         // Include verified bundle assets for future/learning payloads as well.
         for (hash, url) in assets where !copies.contains(where: { $0["sha256"] as? String == hash }) { copies.append(["sha256": hash, "path": url.path]) }
-        try context.run("INSERT INTO ipad_sync_conflicts(id,record_id,reason,local_json,remote_json,created_at,assets_json) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET assets_json=excluded.assets_json", [id, remote["id"]!, reason, try local.map { try F.canonical($0) } ?? NSNull(), F.canonical(remote), C.nowISO, F.canonical(copies)])
+        try context.run("INSERT INTO ipad_sync_conflicts(id,record_id,reason,local_json,remote_json,created_at,assets_json,related_json) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET assets_json=excluded.assets_json,related_json=excluded.related_json", [id, remote["id"]!, reason, try local.map { try F.canonical($0) } ?? NSNull(), F.canonical(remote), C.nowISO, F.canonical(copies), F.canonical(related)])
         return ["id": id, "recordID": remote["id"]!, "reason": reason]
     }
-    private func conflicts() throws -> [[String: Any]] {
-        try context.query("SELECT * FROM ipad_sync_conflicts WHERE resolved_at IS NULL ORDER BY created_at DESC").map { row in
+    private func conflicts(scope: String?, summary: Bool) throws -> [[String: Any]] {
+        try context.query("SELECT * FROM ipad_sync_conflicts WHERE resolved_at IS NULL ORDER BY created_at DESC").compactMap { row in
             let local = try (row["local_json"] as? String).map { try F.object($0) }, remote = try F.object(row["remote_json"]), p = (local ?? remote)["payload"] as? [String: Any] ?? [:]
+            guard Self.inScope(remote, scope) else { return nil }
+            let related = try JSONSerialization.jsonObject(with: Data((row["related_json"] as? String ?? "{}").utf8)) as? [String: [[String: Any]]] ?? [:]
             let mapped = try context.query("SELECT source_json FROM ipad_sync_projection WHERE id=?", [row["record_id"]!]).first
             let source = try mapped.map { try F.object($0["source_json"]) } ?? [:]
             let material = try (p["materialID"] as? String).flatMap { try context.query("SELECT course_id,rel_path FROM materials_index WHERE id=?", [$0]).first }
             let course = p["courseID"] as? String ?? source["courseID"] as? String ?? material?["course_id"] as? String
             let name = try course.flatMap { try context.query("SELECT name FROM courses WHERE id=?", [$0]).first?["name"] as? String }
             let title = p["title"] as? String ?? p["name"] as? String ?? material?["rel_path"] as? String ?? source["relPath"] as? String ?? p["rootRelPath"] as? String ?? row["record_id"] as! String
-            return ["id": row["id"]!, "recordID": row["record_id"]!, "label": name.map { "\($0) · \(title)" } ?? title, "reason": row["reason"]!, "local": local ?? NSNull() as Any, "remote": remote, "assets": try JSONSerialization.jsonObject(with: Data((row["assets_json"] as? String ?? "[]").utf8)), "createdAt": row["created_at"]!]
+            let label = name.map { "\($0) · \(title)" } ?? title
+            if summary {
+                // Human-review metadata only; the complete envelopes stay on disk.
+                return ["id": row["id"]!, "recordID": row["record_id"]!, "label": label, "reason": row["reason"]!, "local": local != nil, "remote": true, "createdAt": row["created_at"]!,
+                        "variants": ["local": Self.variantSummary(local, related: related["local"] ?? []), "remote": Self.variantSummary(remote, related: related["remote"] ?? [])]]
+            }
+            return ["id": row["id"]!, "recordID": row["record_id"]!, "label": label, "reason": row["reason"]!, "local": local ?? NSNull() as Any, "remote": remote, "assets": try JSONSerialization.jsonObject(with: Data((row["assets_json"] as? String ?? "[]").utf8)), "related": related, "createdAt": row["created_at"]!]
         }
+    }
+    static func variantSummary(_ record: [String: Any]?, related: [[String: Any]]) -> [String: Any] {
+        guard let record else { return ["exists": false, "deleted": false] }
+        let p = record["payload"] as? [String: Any] ?? [:]
+        var result: [String: Any] = ["exists": true, "deleted": record["deleted"] as? Bool == true]
+        if let title = (p["title"] ?? p["name"] ?? p["fileName"]) as? String { result["title"] = String(title.prefix(160)) }
+        if let revision = (p["revision"] ?? p["documentRevision"]) as? String { result["revision"] = String(revision.prefix(128)) }
+        if let page = p["page"] as? NSNumber, page.intValue > 0 { result["page"] = page.intValue }
+        let parser = ISO8601DateFormatter(), fractional = ISO8601DateFormatter(); fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        func date(_ value: Any?) -> (String, Date)? { guard let text = value as? String, let date = parser.date(from: text) ?? fractional.date(from: text) else { return nil }; return (text, date) }
+        var dates = [p["updatedAt"], p["modifiedAt"], p["createdAt"]].compactMap(date)
+        var snippets: [String] = []
+        if let markdown = p["markdown"] as? String { snippets.append(markdown.replacingOccurrences(of: "<!--[\\s\\S]*?-->", with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)) }
+        var objects = 0, hasPages = false
+        for pageRecord in [record] + related where pageRecord["kind"] as? String == "drawing" {
+            guard let page = try? NativeSyncFormat.decodePage(pageRecord) else { continue }
+            hasPages = true
+            let deletedObjects = Set(page["deletedObjectIDs"] as? [String] ?? []), deletedHighlights = Set(page["deletedHighlightIDs"] as? [String] ?? [])
+            let values = (page["objects"] as? [[String: Any]] ?? []).filter { !deletedObjects.contains($0["id"] as? String ?? "") } + (page["highlights"] as? [[String: Any]] ?? []).filter { !deletedHighlights.contains($0["id"] as? String ?? "") }
+            objects += values.count
+            for object in values {
+                if let updated = date(object["updatedAt"] ?? object["createdAt"]) { dates.append(updated) }
+                let text = ((object["data"] as? [String: Any])?["text"] ?? object["comment"] ?? object["quote"]) as? String
+                if let text, snippets.joined(separator: "\n").count < 500 { snippets.append(text) }
+            }
+        }
+        if hasPages { result["objects"] = objects }
+        if let latest = dates.max(by: { $0.1 < $1.1 }) { result["updatedAt"] = latest.0 }
+        let excerpt = String(snippets.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
+        if !excerpt.isEmpty { result["text"] = excerpt }
+        return result
     }
     private func mergeInk(base: [String: Any], local: [String: Any], remote: [String: Any]) throws -> [String: Any]? {
         if [base, local, remote].contains(where: { $0["deleted"] as? Bool == true }) { return nil }

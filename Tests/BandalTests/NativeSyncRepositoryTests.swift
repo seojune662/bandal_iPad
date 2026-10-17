@@ -1,5 +1,8 @@
 import Foundation
 import XCTest
+import PDFKit
+import CoreGraphics
+import CoreText
 @testable import Bandal
 
 final class NativeSyncRepositoryTests: XCTestCase {
@@ -230,7 +233,7 @@ final class NativeSyncRepositoryTests: XCTestCase {
         XCTAssertNoThrow(try sync.handle("nativeSync:export", [:]))
     }
 
-    func testConflictRestorePreservesNewerDraftDurablyBeforeApplyingExplicitChoice() throws {
+    func testConflictRestoreKeepsNewerDraftAsNewConflictBeforeApplyingExplicitChoice() throws {
         let (_, la, sa) = try engine("A"), (b, lb, sb) = try engine("B"), (course, path) = try create(la)
         _ = try call(sb, "nativeSync:import", call(sa, "nativeSync:export"))
         _ = try lb.handle("notes:write", ["courseId": course, "relPath": path, "markdown": "local reviewed version"])
@@ -244,16 +247,86 @@ final class NativeSyncRepositoryTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: b.materialURL(courseID: course, relativePath: path), encoding: .utf8), "new local draft after review")
         XCTAssertTrue(try b.query("SELECT resolved_at FROM ipad_sync_conflicts WHERE id=?", [selected["id"]!]).first?["resolved_at"] is NSNull)
         try b.db.exec("DROP TRIGGER fail_draft_preservation")
+        // Matching the desktop projector: a draft edited after review is kept as
+        // a new conflict and the earlier choice is not applied over it.
         let result = try call(sb, "nativeSync:restoreConflict", ["conflictID": selected["id"]!, "variant": "remote"])
-        XCTAssertEqual(result["applied"] as? Int, 1)
+        XCTAssertEqual(result["applied"] as? Int, 0)
+        XCTAssertEqual(result["resolved"] as? Bool, false)
         XCTAssertFalse((result["conflicts"] as? [[String: Any]])?.isEmpty ?? true)
-        XCTAssertEqual(try String(contentsOf: b.materialURL(courseID: course, relativePath: path), encoding: .utf8), "remote reviewed version")
-        XCTAssertFalse(try b.query("SELECT resolved_at FROM ipad_sync_conflicts WHERE id=?", [selected["id"]!]).first?["resolved_at"] is NSNull)
+        XCTAssertEqual(try String(contentsOf: b.materialURL(courseID: course, relativePath: path), encoding: .utf8), "new local draft after review")
+        XCTAssertTrue(try b.query("SELECT resolved_at FROM ipad_sync_conflicts WHERE id=?", [selected["id"]!]).first?["resolved_at"] is NSNull)
         let (_, _, reopened) = try engine("B")
         let reopenedValue = try reopened.handle("nativeSync:conflicts", [:])
         let retained = try XCTUnwrap(reopenedValue as? [[String: Any]])
-        XCTAssertTrue(retained.contains { (($0["local"] as? [String: Any])?["payload"] as? [String: Any])?["markdown"] as? String == "new local draft after review" })
-        XCTAssertFalse(retained.contains { $0["id"] as? String == selected["id"] as? String })
+        let newer = try XCTUnwrap(retained.first { (($0["local"] as? [String: Any])?["payload"] as? [String: Any])?["markdown"] as? String == "new local draft after review" })
+        XCTAssertTrue(retained.contains { $0["id"] as? String == selected["id"] as? String })
+        let applied = try call(reopened, "nativeSync:restoreConflict", ["conflictID": newer["id"]!, "variant": "remote"])
+        XCTAssertEqual(applied["applied"] as? Int, 1)
+        XCTAssertEqual(try String(contentsOf: b.materialURL(courseID: course, relativePath: path), encoding: .utf8), "remote reviewed version")
+        XCTAssertFalse(try b.query("SELECT resolved_at FROM ipad_sync_conflicts WHERE id=?", [newer["id"]!]).first?["resolved_at"] is NSNull)
     }
 
+
+    // MARK: PDF page lineage (desktop `pdfLineage` wire format)
+    private struct PageDevice {
+        let context: NativeRepositoryContext, library: NativeLibraryRepository, pdf: NativePDFRepository, sync: NativeSyncRepository
+        init(root: URL) throws {
+            context = try NativeRepositoryContext(root: root.appendingPathComponent("root"), legacyRoot: root.appendingPathComponent("legacy"))
+            library = NativeLibraryRepository(context: context); pdf = try NativePDFRepository(context: context)
+            sync = try NativeSyncRepository(context: context, library: library, checkPDFBinding: pdf.checkBinding)
+            let drawings = NativeSyncDrawings(context: context, pdf: pdf)
+            sync.registerProjection(snapshot: { try drawings.snapshot() }, plan: { try drawings.plan($0, assets: $1) })
+        }
+        func exchange(_ channel: String, _ request: [String: Any] = [:]) throws -> [String: Any] { try XCTUnwrap(try sync.handle(channel, request) as? [String: Any]) }
+    }
+    private static func pagesDocument() throws -> Data {
+        let document = PDFDocument()
+        for index in 1...3 {
+            let data = NSMutableData(); var box = CGRect(x: 0, y: 0, width: 300, height: 420)
+            let canvas = try XCTUnwrap(CGContext(consumer: CGDataConsumer(data: data)!, mediaBox: &box, nil))
+            canvas.beginPDFPage(nil); canvas.setFillColor(CGColor(gray: 0, alpha: 1)); canvas.textPosition = CGPoint(x: 40, y: 240)
+            CTLineDraw(CTLineCreateWithAttributedString(NSAttributedString(string: "Page \(index)", attributes: [NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica" as CFString, 18, nil)])), canvas)
+            canvas.endPDFPage(); canvas.closePDF()
+            document.insert(try XCTUnwrap(PDFDocument(data: data as Data)?.page(at: 0)), at: document.pageCount)
+        }
+        return try XCTUnwrap(document.dataRepresentation())
+    }
+    /// A page restructure travels as the desktop `pdfLineage` recipe and applies on
+    /// another device without changing the material identity or losing its ink.
+    func testRestructureRoundTripsAsDesktopLineageAndKeepsOldEnvelopesAsHistory() throws {
+        let a = try PageDevice(root: root.appendingPathComponent("A")), b = try PageDevice(root: root.appendingPathComponent("B")), path = "원본.pdf"
+        let course = try XCTUnwrap((try a.library.handle("courses:create", ["name": "페이지", "color": "green"]) as? [String: Any])?["id"] as? String)
+        let original = try Self.pagesDocument(); try a.context.atomicWrite(original, to: a.context.materialURL(courseID: course, relativePath: path, allowMissing: true))
+        _ = try a.library.handle("materials:tree", ["courseId": course])
+        let binding = try a.pdf.checkBinding(["courseId": course, "relPath": path]), material = binding["materialID"] as! String, from = binding["documentRevision"] as! String
+        try a.context.run("INSERT INTO pdf_drawings(id,course_id,rel_path,page,kind,data_json,style_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)", ["ink-3", course, path, 3, "rect", "{\"box\":{\"x\":0.1,\"y\":0.2,\"width\":0.3,\"height\":0.1}}", "{\"color\":\"red\",\"width\":0.01,\"opacity\":1}", "2026-01-01", "2026-01-01"])
+        let first = try a.exchange("nativeSync:export"), initial = try b.exchange("nativeSync:import", first)
+        XCTAssertTrue((initial["conflicts"] as? [[String: Any]])?.isEmpty == true, "\(initial)")
+        let oldEnvelope = try XCTUnwrap((first["records"] as? [[String: Any]])?.first { $0["id"] as? String == "drawing:\(material):\(from):3" })
+
+        let changed = try XCTUnwrap(try NativePDFPageRepository(context: a.context, pdf: a.pdf).handle("pdf:restructure", ["courseId": course, "relPath": path, "documentRevision": from, "clientMutationId": UUID().uuidString, "pages": [3, 1]]) as? [String: Any])
+        let to = changed["documentRevision"] as! String
+        let exported = try a.exchange("nativeSync:export")
+        let record = try XCTUnwrap((exported["records"] as? [[String: Any]])?.first { $0["id"] as? String == "material:\(material)" }), payload = record["payload"] as! [String: Any]
+        XCTAssertEqual(try NativeSyncFormat.canonical(payload["pdfLineage"]!), try NativeSyncFormat.canonical([["from": from, "to": to, "pages": [["source": 3], ["source": 1]]]]))
+        XCTAssertNil((payload["desktop"] as? [String: Any])?["pageLineage"])
+        let sizes = Dictionary(uniqueKeysWithValues: (payload["pdfLineageAssets"] as! [[String: Any]]).map { ($0["sha256"] as! String, ($0["byteCount"] as! NSNumber).intValue) })
+        XCTAssertEqual(sizes[from], original.count); XCTAssertEqual(sizes[to], (payload["byteCount"] as! NSNumber).intValue)
+        XCTAssertTrue((exported["assets"] as! [[String: Any]]).contains { $0["sha256"] as? String == from && $0["materialID"] as? String == material })
+
+        let imported = try b.exchange("nativeSync:import", exported)
+        XCTAssertTrue((imported["conflicts"] as? [[String: Any]])?.isEmpty == true, "\(imported)")
+        XCTAssertEqual(try Data(contentsOf: b.context.materialURL(courseID: course, relativePath: path)), try Data(contentsOf: a.context.materialURL(courseID: course, relativePath: path)))
+        XCTAssertEqual(try b.pdf.checkBinding(["courseId": course, "relPath": path])["documentRevision"] as? String, to)
+        XCTAssertEqual(try b.context.query("SELECT page FROM pdf_drawings WHERE id='ink-3' AND deleted_at IS NULL").first?["page"] as? Int, 1)
+        let rows = try b.context.query("SELECT from_sha,to_sha,pages_json FROM native_pdf_revision_lineage WHERE material_id=?", [material])
+        XCTAssertEqual(rows.count, 1); XCTAssertEqual(rows.first?["from_sha"] as? String, from); XCTAssertEqual(rows.first?["to_sha"] as? String, to)
+        XCTAssertEqual(rows.first?["pages_json"] as? String, try NativeSyncFormat.canonical([["source": 3], ["source": 1]]))
+
+        // The desktop keeps emitting live old-revision envelopes after a rewrite.
+        let history = try b.exchange("nativeSync:import", ["records": [oldEnvelope]])
+        XCTAssertTrue((history["conflicts"] as? [[String: Any]])?.isEmpty == true, "\(history)"); XCTAssertEqual(history["applied"] as? Int, 1)
+        XCTAssertEqual(try b.context.query("SELECT page FROM pdf_drawings WHERE id='ink-3' AND deleted_at IS NULL").first?["page"] as? Int, 1)
+        XCTAssertEqual(try b.context.query("SELECT * FROM pdf_drawings").count, 1)
+    }
 }

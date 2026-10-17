@@ -19,6 +19,10 @@ struct DesktopSyncEnvironment {
     /// Failure injection also exercises the actual durable cursor/record store,
     /// rather than replacing the materialization stage with an in-memory mock.
     var checkpoint: (String) async throws -> Void = { _ in }
+    var now: () -> Date = Date.init
+    var access: (DesktopSyncIdentity, @escaping @Sendable () async throws -> String) async throws -> SyncAccessStatus = { identity, token in
+        try await SupabaseSyncTransport(projectURL: identity.projectURL, publishableKey: identity.publishableKey, userID: identity.userID, accessToken: token).syncStatus()
+    }
 }
 
 /// The desktop repositories stay authoritative. Their canonical projection is
@@ -41,7 +45,9 @@ final class DesktopSyncService {
     private var foreground: NSObjectProtocol?
     private var generation = 0
     private var restoring = false
-    private var uploaded = Set<String>()
+    private var failures = 0
+    private var suspended = false
+    private let scope = SyncScope.personalContentV1
     private var state: [String: Any] = ["phase": "idle", "conflicts": 0]
 
     init(runtime: DesktopRuntime, account: DesktopAccountService, environment: DesktopSyncEnvironment? = nil) throws {
@@ -76,16 +82,38 @@ final class DesktopSyncService {
         if event["phase"] as? String == "signed-in" { requestSync(); return }
         // Keep the cancelled task until it has drained. A returning account
         // must not race an old engine's final durable acknowledgement/import.
-        generation += 1; active?.cancel(); uploaded.removeAll()
+        generation += 1; active?.cancel()
         publish(["phase": "idle", "conflicts": state["conflicts"] ?? 0])
     }
 
-    func requestSync() {
-        guard active == nil, !restoring else { return }
-        Task { [weak self] in try? await self?.synchronizeNow() }
+    func requestSync(force: Bool = false) {
+        guard active == nil, !restoring, !suspended else { return }
+        Task { [weak self] in try? await self?.synchronizeNow(force: force) }
     }
 
-    func synchronizeNow() async throws {
+    func suspendForProfileOperation() async {
+        suspended = true; generation += 1
+        let previous = active; previous?.cancel(); _ = try? await previous?.value
+    }
+    func resumeAfterProfileOperation() { suspended = false; requestSync() }
+
+    func setEnabled(_ enabled: Bool) async throws -> [String: Any] {
+        if enabled { _ = try await account.syncIdentity() }
+        try await store.setPreference("syncEnabled", value: enabled ? "true" : "false")
+        if !enabled {
+            generation += 1; active?.cancel()
+            _ = try? await active?.value
+            publish(["phase": "disabled", "conflicts": state["conflicts"] ?? 0, "enabled": false])
+        } else { requestSync(force: true) }
+        return try await status()
+    }
+
+    func synchronizeNow(force: Bool = false) async throws {
+        guard !suspended else { return }
+        guard try await store.preference("syncEnabled") == "true" else {
+            publish(["phase": "disabled", "conflicts": state["conflicts"] ?? 0, "enabled": false]); return
+        }
+        if !force, let raw = try await store.preference("retryAt"), let time = Double(raw), time > environment.now().timeIntervalSince1970 { return }
         guard !restoring else { throw DesktopRuntimeError("충돌 사본을 적용하는 동안 동기화를 기다립니다.") }
         if let active { return try await active.value }
         let expected = generation
@@ -93,11 +121,15 @@ final class DesktopSyncService {
         let task = Task { [weak self] in
             guard let self else { return }
             defer { if self.activeID == identifier { self.active = nil; self.activeID = nil } }
-            do { try await self.synchronize(expected: expected) }
+            do { try await self.synchronize(expected: expected, force: force) }
             catch is CancellationError { throw CancellationError() }
             catch {
                 if expected == self.generation {
-                    self.publish(["phase": "waiting", "error": error.localizedDescription, "conflicts": self.state["conflicts"] ?? 0])
+                    self.failures += 1
+                    let delay = (error as? SyncRequestFailure)?.retryAfter ?? min(900, 15 * pow(2, Double(min(self.failures, 6))))
+                    let retry = self.environment.now().addingTimeInterval(delay)
+                    try? await self.store.setPreference("retryAt", value: String(retry.timeIntervalSince1970))
+                    self.publish(["phase": "waiting", "error": error.localizedDescription, "blockedReason": (error as? SyncRequestFailure)?.code.rawValue ?? "network", "retryAt": ISO8601DateFormatter().string(from: retry), "conflicts": self.state["conflicts"] ?? 0])
                 }
                 throw error
             }
@@ -112,16 +144,29 @@ final class DesktopSyncService {
 
     func status() async throws -> [String: Any] {
         var current = state
-        current["conflicts"] = try await conflicts().count
-        current["pending"] = try await store.pendingOperations(limit: 1000).count
+        current["conflicts"] = try await conflictSummaries().count
+        current["pending"] = try await store.pendingOperations(limit: 1000, scope: scope).count
+        current["enabled"] = try await store.preference("syncEnabled") == "true"
         return current
     }
 
-    func conflicts() async throws -> [[String: Any]] {
-        guard let values = try await runtime.invokePrivate("nativeSync:conflicts") as? [[String: Any]] else {
+    /// UI receives bounded previews instead of the complete retained wire records.
+    func conflictSummaries() async throws -> [[String: Any]] {
+        guard let values = try await runtime.invokePrivate("nativeSync:conflicts", request: ["scope": scope.rawValue, "summary": true]) as? [[String: Any]] else {
             throw DesktopRuntimeError("동기화 충돌 사본을 읽지 못했습니다.")
         }
         return values
+    }
+
+    func conflicts() async throws -> [[String: Any]] {
+        guard let values = try await runtime.invokePrivate("nativeSync:conflicts", request: ["scope": scope.rawValue]) as? [[String: Any]] else {
+            throw DesktopRuntimeError("동기화 충돌 사본을 읽지 못했습니다.")
+        }
+        return values.filter { value in
+            if value["kind"] as? String == "pending-ink" { return true }
+            guard let raw = (value["remote"] ?? value["local"]) as? [String: Any], let record = try? Self.record(raw) else { return false }
+            return scope.includes(record)
+        }
     }
 
     func exportConflict(_ id: String) async throws -> [String: Any] {
@@ -142,15 +187,25 @@ final class DesktopSyncService {
         _ = try? await previous?.value
         defer { restoring = false; requestSync() }
         try await flushOpenDocuments?()
-        guard let conflict = try await conflicts().first(where: { $0["id"] as? String == id }),
-              let selected = conflict[variant] as? [String: Any] else {
+        guard let conflict = try await conflicts().first(where: { $0["id"] as? String == id }) else {
+            throw DesktopRuntimeError("적용할 충돌 사본을 찾지 못했습니다.")
+        }
+        if conflict["kind"] as? String == "pending-ink" {
+            let result = try await runtime.invokePrivate("nativeSync:restoreConflict", request: ["conflictID": id, "variant": variant, "assets": [], "scope": scope.rawValue]) as? [String: Any] ?? [:]
+            guard (result["applied"] as? NSNumber)?.intValue == 1 else { throw DesktopRuntimeError("필기 복구를 완료하지 못했습니다. 원본은 보관되어 있습니다.") }
+            return ["ok": true]
+        }
+        guard let selected = conflict[variant] as? [String: Any] else {
             throw DesktopRuntimeError("적용할 충돌 사본을 찾지 못했습니다.")
         }
         // The exchange downloads conflict assets before publishing them. An
         // offline restore is possible only after validating every local byte.
         let record = try Self.record(selected)
+        let related = conflict["related"] as? [String: [[String: Any]]] ?? [:]
+        let pageChoices = try (related[variant] ?? []).map(Self.record)
+        guard pageChoices.allSatisfy({ scope.includes($0) && ["drawing", "annotation"].contains($0.kind) }) else { throw DesktopRuntimeError("페이지 충돌 사본 형식을 확인하지 못했습니다.") }
         var localAssets: [[String: Any]] = []
-        for revision in try Self.references(record) {
+        for revision in try ([record] + pageChoices).flatMap(Self.references) {
             var url = try await assets.url(for: revision)
             if !FileManager.default.fileExists(atPath: url.path),
                let preserved = (conflict["assets"] as? [[String: Any]])?.first(where: { $0["sha256"] as? String == revision.sha256 }),
@@ -167,12 +222,16 @@ final class DesktopSyncService {
         // Persist the explicit choice before changing the projector baseline.
         // Otherwise a pending-import replay could undo this choice on restart.
         let reviewed = try ["local", "remote"].compactMap { conflict[$0] as? [String: Any] }.map(Self.record)
-        if let preserved = try await store.queueConflictResolution(record, reviewedVariants: reviewed) {
+        let relatedReviewed = try ((related["local"] ?? []) + (related["remote"] ?? [])).map(Self.record)
+        let choices = [(selected: record, reviewed: reviewed)] + pageChoices.map { page in
+            (selected: page, reviewed: relatedReviewed.filter { $0.id == page.id })
+        }
+        for preserved in try await store.queueConflictResolutions(choices) {
             _ = try await runtime.invokePrivate("nativeSync:import", request: ["records": [], "assets": localAssets,
                 "conflicts": [["id": preserved.id, "local": try Self.envelope(preserved.local), "remote": try Self.envelope(preserved.remote)]]])
         }
         let result = try await applyToWorkspace { [self] in
-            try await runtime.invokePrivate("nativeSync:restoreConflict", request: ["conflictID": id, "variant": variant, "assets": localAssets])
+            try await runtime.invokePrivate("nativeSync:restoreConflict", request: ["conflictID": id, "variant": variant, "assets": localAssets, "scope": scope.rawValue])
         } as? [String: Any] ?? [:]
         guard (result["applied"] as? NSNumber)?.intValue == 1 else { throw DesktopRuntimeError("선택한 사본을 적용하지 못했습니다. 충돌 사본은 보관되어 있습니다.") }
         try await environment.checkpoint("afterConflictMaterialization")
@@ -186,7 +245,7 @@ final class DesktopSyncService {
         guard expected == generation else { throw CancellationError() }
     }
 
-    private func synchronize(expected: Int) async throws {
+    private func synchronize(expected: Int, force: Bool) async throws {
         let identity = try await account.syncIdentity()
         try check(expected)
         try await store.bindSyncAccount(userID: identity.userID)
@@ -197,15 +256,30 @@ final class DesktopSyncService {
             guard let self else { throw CancellationError() }
             return try await self.token(identity: identity, expected: expected)
         }
+        struct CachedAccess: Codable { let userID: String; let status: SyncAccessStatus; let blocked: SyncFailureCode; let until: Date }
+        let cached = try await store.preference("blockedAccess").flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode(CachedAccess.self, from: $0) }
+        let access: SyncAccessStatus
+        var blocked: SyncFailureCode?
+        if !force, let cached, cached.userID == identity.userID, cached.until > environment.now() {
+            access = cached.status; blocked = cached.blocked
+        } else {
+            access = try await environment.access(identity) { [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await self.token(identity: identity, expected: expected)
+            }
+            blocked = !access.writeAllowed ? .subscriptionRequired : access.quotaExceeded ? .storageLimitExceeded : nil
+        }
+        try check(expected)
         // An interrupted exchange may already have advanced the durable cursor
         // while the authoritative desktop documents still show the old bytes.
         // Recover BEFORE export updates the projector's comparison baseline.
         if try await store.projectionRecoveryPending() {
             try await materialize(transport: transport, expected: expected)
         }
+        if blocked == nil {
         try await flushOpenDocuments?()
         try check(expected)
-        let snapshot = try await runtime.invokePrivate("nativeSync:export") as? [String: Any] ?? [:]
+        let snapshot = try await runtime.invokePrivate("nativeSync:export", request: ["scope": scope.rawValue]) as? [String: Any] ?? [:]
         guard let rawRecords = snapshot["records"] as? [[String: Any]], let rawAssets = snapshot["assets"] as? [[String: Any]] else {
             throw DesktopRuntimeError("동기화할 자료 목록을 확인하지 못했습니다.")
         }
@@ -226,6 +300,7 @@ final class DesktopSyncService {
         var changed: [StoredRecord] = []
         for raw in rawRecords {
             let record = try Self.record(raw)
+            guard scope.includes(record) else { continue }
             let current = try await store.get(id: record.id)
             if let current, current.kind == record.kind, current.deleted == record.deleted,
                current.formatVersion == record.formatVersion,
@@ -234,33 +309,56 @@ final class DesktopSyncService {
         }
         try check(expected)
         if !changed.isEmpty { _ = try await store.importLocalRecords(changed) }
+        }
         // Refreshes and sign-out are checked before every request by the token
         // supplier. The transport also checks the JWT subject against userID.
         var required: [String: AssetRevision] = [:]
-        for operation in try await store.pendingOperations(limit: 1000) {
+        for operation in try await store.pendingOperations(limit: 1000, scope: scope) {
             for revision in try Self.references(operation.record) { required[revision.sha256] = revision }
         }
-        for revision in required.values where !uploaded.contains(revision.sha256) {
-            try check(expected)
-            try await assets.upload(revision, transport: transport)
-            try check(expected); uploaded.insert(revision.sha256)
-        }
-        try await store.beginProjectionRecovery()
-        try check(expected)
         let engine = SyncEngine(store: store, transport: transport)
-        let report = try await withTaskCancellationHandler(operation: { try await engine.synchronize() }, onCancel: { Task { await engine.cancel() } })
+        var report: SyncReport
+        try await store.beginProjectionRecovery()
+        do {
+            if blocked == nil {
+                for revision in required.values {
+                    if try await store.assetWasUploaded(revision) { continue }
+                    try check(expected)
+                    try await assets.upload(revision, transport: transport)
+                    try check(expected)
+                    try await store.recordUploadedAsset(revision)
+                }
+            }
+            report = try await withTaskCancellationHandler(operation: { try await engine.synchronize(pushAllowed: blocked == nil, scope: scope) }, onCancel: { Task { await engine.cancel() } })
+        } catch let error as SyncRequestFailure where error.blocksWrites {
+            // A subscription/quota can change after the preflight. Retain every
+            // pending operation and still receive the user's existing content.
+            blocked = error.code
+            report = try await engine.synchronize(pushAllowed: false, scope: scope)
+        }
         try check(expected)
         try await environment.checkpoint("afterExchange")
         try await materialize(transport: transport, expected: expected)
         let conflictCount = try await self.conflicts().count
-        publish(["phase": "idle", "conflicts": conflictCount, "pushed": report.pushed, "pulled": report.pulled,
-                 "lastSyncedAt": ISO8601DateFormatter().string(from: Date())])
+        failures = 0
+        let retry = environment.now().addingTimeInterval(blocked == nil ? 0 : 300)
+        try await store.setPreference("retryAt", value: "0")
+        if let blocked {
+            let nextCheck = !force && cached?.blocked == blocked && cached!.until > environment.now() ? cached!.until : retry
+            let saved = CachedAccess(userID: identity.userID, status: access, blocked: blocked, until: nextCheck)
+            try await store.setPreference("blockedAccess", value: String(decoding: JSONEncoder().encode(saved), as: UTF8.self))
+        } else { try await store.setPreference("blockedAccess", value: "") }
+        publish(["phase": blocked == nil ? "idle" : "paused", "conflicts": conflictCount, "pushed": report.pushed, "pulled": report.pulled,
+                 "writeAllowed": blocked == nil, "blockedReason": blocked?.rawValue as Any? ?? NSNull(),
+                 "storageUsedBytes": access.storageUsedBytes, "storageLimitBytes": access.storageLimitBytes,
+                 "retryAt": NSNull(),
+                 "lastSyncedAt": ISO8601DateFormatter().string(from: environment.now())])
     }
 
     private func materialize(transport: any AssetTransport, expected: Int) async throws {
         try check(expected)
-        let records = try await store.list(includeDeleted: true)
-        let conflicts = try await store.conflicts()
+        let records = try await store.list(includeDeleted: true).filter { scope.includes($0) }
+        let conflicts = try await store.conflicts().filter { scope.includes($0.remote) }
         var downloaded: [String: String] = [:]
         for record in records + conflicts.flatMap({ [$0.local, $0.remote] }) {
             for revision in try Self.references(record) where downloaded[revision.sha256] == nil {
@@ -272,6 +370,7 @@ final class DesktopSyncService {
         let result = try await applyToWorkspace { [self] in
             try check(expected)
             return try await runtime.invokePrivate("nativeSync:import", request: [
+                "scope": scope.rawValue,
                 "records": try records.map(Self.envelope),
                 "assets": downloaded.map { ["sha256": $0.key, "path": $0.value] },
                 "conflicts": try conflicts.map { ["id": $0.id, "local": try Self.envelope($0.local), "remote": try Self.envelope($0.remote)] }
@@ -321,7 +420,7 @@ final class DesktopSyncService {
 
     static func asset(_ raw: [String: Any]) throws -> AssetRevision {
         guard let hash = raw["sha256"] as? String, hash.count == 64, hash.allSatisfy({ "0123456789abcdef".contains($0) }),
-              let count = raw["byteCount"] as? NSNumber, count.int64Value >= 0,
+              let count = raw["byteCount"] as? NSNumber, CFGetTypeID(count) != CFBooleanGetTypeID(), count.doubleValue.isFinite, count.int64Value >= 0, Double(count.int64Value) == count.doubleValue,
               let name = raw["originalName"] as? String, let contentType = raw["contentType"] as? String else { throw CoreError.assetIntegrity }
         return AssetRevision(sha256: hash, byteCount: count.int64Value, originalName: name, contentType: contentType)
     }
@@ -342,7 +441,7 @@ final class DesktopSyncService {
     static func references(_ record: StoredRecord) throws -> [AssetRevision] {
         if let single = try reference(record) {
             guard record.kind == "material", let value = try JSONSerialization.jsonObject(with: record.payload) as? [String: Any],
-                  let desktop = value["desktop"] as? [String: Any], let raw = desktop["pageLineageAssets"] else { return [single] }
+                  let raw = value["pdfLineageAssets"] else { return [single] }
             guard value["kind"] as? String == "pdf", let ancestors = raw as? [[String: Any]] else { throw CoreError.assetIntegrity }
             var result = [single], seen = [single.sha256: single.byteCount]
             for input in ancestors {
@@ -352,6 +451,19 @@ final class DesktopSyncService {
                 } else { seen[ancestor.sha256] = ancestor.byteCount; result.append(ancestor) }
             }
             return result
+        }
+        if !record.deleted, ["drawing", "annotation"].contains(record.kind),
+           let payload = try JSONSerialization.jsonObject(with: record.payload) as? [String: Any], let encoded = payload["data"] as? String {
+            guard let bytes = Data(base64Encoded: encoded), let page = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw CoreError.assetIntegrity }
+            var references: [String: AssetRevision] = [:]
+            for object in page["objects"] as? [[String: Any]] ?? [] {
+                guard let data = object["data"] as? [String: Any], let clip = data["clip"] as? [String: Any], let hash = clip["documentRevision"] as? String else { continue }
+                guard let count = clip["documentByteCount"] as? NSNumber else { throw CoreError.assetIntegrity }
+                let value = try asset(["sha256": hash, "byteCount": count, "originalName": hash + ".pdf", "contentType": "application/pdf"])
+                guard references[hash] == nil || references[hash]?.byteCount == value.byteCount else { throw CoreError.assetIntegrity }
+                references[hash] = value
+            }
+            return references.values.sorted { $0.sha256 < $1.sha256 }
         }
         guard !record.deleted, record.kind == "artifact",
               let value = try JSONSerialization.jsonObject(with: record.payload) as? [String: Any],

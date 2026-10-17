@@ -2,9 +2,12 @@ import SwiftUI
 
 @main
 struct BandalApp: App {
+    @State private var profileGeneration = UUID()
     var body: some Scene {
         WindowGroup {
             NativeWorkspaceView()
+                .id(profileGeneration)
+                .onReceive(NotificationCenter.default.publisher(for: DesktopProfileService.didActivate)) { _ in profileGeneration = UUID() }
                 .statusBarHidden(true)
                 .ignoresSafeArea(.container, edges: .top)
         }

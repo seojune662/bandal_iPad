@@ -26,12 +26,13 @@ final class NativeSyncMaterials {
                 if let binding { guard binding["materialID"] as? String == mid, binding["documentRevision"] as? String == hash else { throw C.conflict("PDF identity changed during sync; original ink was preserved") } }
                 result.assets.append(asset)
                 let source: [String: Any] = ["courseID": id, "relPath": relative, "path": url.path, "hash": hash]
-                var desktop: [String: Any] = ["relPath": relative]
+                var payload: [String: Any] = ["id": mid, "courseID": id, "title": url.deletingPathExtension().lastPathComponent, "fileName": url.lastPathComponent, "revision": hash, "kind": kind, "byteCount": asset["byteCount"]!, "createdAt": material["created_at"]!, "desktop": ["relPath": relative]]
                 if kind == "pdf" {
                     let history = try NativePDFPageSync.export(context: context, material: mid)
-                    if !history.proofs.isEmpty { desktop["pageLineage"] = history.proofs; desktop["pageLineageAssets"] = history.assets.map { asset in asset.filter { ["sha256", "byteCount", "originalName", "contentType"].contains($0.key) } }; result.assets += history.assets }
+                    // `pdfLineageAssets` is a Swift extra (byte counts for the originals); the desktop ignores it.
+                    if !history.steps.isEmpty { payload["pdfLineage"] = history.steps; payload["pdfLineageAssets"] = history.assets.map { asset in asset.filter { ["sha256", "byteCount", "originalName", "contentType"].contains($0.key) } }; result.assets += history.assets }
                 }
-                result.records.append(F.record(id: "material:\(mid)", kind: "material", payload: ["id": mid, "courseID": id, "title": url.deletingPathExtension().lastPathComponent, "fileName": url.lastPathComponent, "revision": hash, "kind": kind, "byteCount": asset["byteCount"]!, "createdAt": material["created_at"]!, "desktop": desktop])); result.sources["material:\(mid)"] = source
+                result.records.append(F.record(id: "material:\(mid)", kind: "material", payload: payload)); result.sources["material:\(mid)"] = source
                 if kind == "note" {
                     let data = try Data(contentsOf: url); guard F.hash(data) == hash, let markdown = String(data: data, encoding: .utf8) else { throw C.conflict("Note changed while exporting sync") }
                     result.records.append(F.record(id: "note:\(mid)", kind: "note", payload: ["materialID": mid, "markdown": markdown])); result.sources["note:\(mid)"] = source
@@ -41,7 +42,12 @@ final class NativeSyncMaterials {
         return result
     }
     func plan(_ record: [String: Any], assets: [String: URL]) throws -> NativeSyncPlan? {
-        guard let kind = record["kind"] as? String, ["course", "material", "note"].contains(kind), let p = record["payload"] as? [String: Any] else { return nil }
+        guard let kind = record["kind"] as? String, let p = record["payload"] as? [String: Any] else { return nil }
+        if kind == "drawing", let material = p["materialID"] as? String, let revision = p["documentRevision"] as? String, try NativePDFPageSync.isHistorical(context: context, material: material, revision: revision) {
+            // An envelope for an approved ancestor revision is already-applied history.
+            return NativeSyncPlan(source: try context.query("SELECT source_json FROM ipad_sync_projection WHERE id=?", [record["id"] ?? ""]).first.map { try F.object($0["source_json"]) } ?? [:])
+        }
+        guard ["course", "material", "note"].contains(kind) else { return nil }
         if kind == "material", p["kind"] as? String == "whiteboard" { return nil }
         let now = C.nowISO, deleted: Any = record["deleted"] as? Bool == true ? now : NSNull()
         func courseFolder(_ id: String) throws -> URL {
@@ -84,8 +90,9 @@ final class NativeSyncMaterials {
             let revision = p["revision"] as? String ?? "", isDeleted = record["deleted"] as? Bool == true
             var transition: NativeSyncPlan?
             let currentRevision = pdf && !isDeleted && context.files.fileExists(atPath: target.path) ? try checkBinding(["courseId": course, "relPath": relative])["documentRevision"] as? String : nil
-            if p["kind"] as? String == "pdf", !isDeleted, let proofs = desktop["pageLineage"] as? [[String: Any]], !proofs.isEmpty {
-                transition = try NativePDFPageSync.plan(context: context, material: id, course: course, path: relative, from: currentRevision, to: revision, proofs: proofs, assets: assets)
+            if let lineage = p["pdfLineage"], !isDeleted {
+                guard p["kind"] as? String == "pdf" else { throw C.validation("Only PDF materials can carry page-edit history") }
+                transition = try NativePDFPageSync.plan(context: context, material: id, course: course, path: relative, from: currentRevision, to: revision, lineage: lineage, assets: assets)
             } else if let currentRevision, currentRevision != revision { throw C.conflict("PDF replacement conflicts with its preserved drawing revision; import a separate material") }
             var files: [NativeSyncFileChange] = transition?.files ?? []
             if isDeleted { files.append(.init(target: target, data: nil)) }

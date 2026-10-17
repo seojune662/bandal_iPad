@@ -120,12 +120,38 @@ public actor RecordStore {
         }
     }
 
-    public func pendingOperations(limit: Int = 100) throws -> [SyncOperation] {
-        let query = try db.statement("SELECT operation FROM outbox ORDER BY sequence LIMIT ?")
-        try query.bind([.integer(Int64(max(1, min(limit, 1000))))])
+    public func pendingOperations(limit: Int = 100, scope: SyncScope = .all) throws -> [SyncOperation] {
+        // Apply the bound after policy filtering so a legacy outbox cannot
+        // starve eligible content behind 1,000 suspended operations.
+        let query = try db.statement("SELECT operation FROM outbox ORDER BY sequence")
         var operations: [SyncOperation] = []
-        while try query.step() { operations.append(try decoder.decode(SyncOperation.self, from: query.data(0))) }
+        let count = max(1, min(limit, 1000))
+        while operations.count < count, try query.step() {
+            let operation = try decoder.decode(SyncOperation.self, from: query.data(0))
+            if scope.includes(operation.record) { operations.append(operation) }
+        }
         return operations
+    }
+
+    public func preference(_ key: String) throws -> String? {
+        let query = try db.statement("SELECT value FROM metadata WHERE key=?")
+        try query.bind([.text("client." + key)])
+        return try query.step() ? query.text(0) : nil
+    }
+
+    public func setPreference(_ key: String, value: String) throws {
+        let query = try db.statement("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        try query.bind([.text("client." + key), .text(value)]); try query.step()
+    }
+
+    /// The store is permanently bound to one account. Receipts are only written
+    /// after Storage has accepted and verified the immutable bytes.
+    public func assetWasUploaded(_ revision: AssetRevision) throws -> Bool {
+        try preference("uploaded." + revision.sha256) == String(revision.byteCount)
+    }
+
+    public func recordUploadedAsset(_ revision: AssetRevision) throws {
+        try setPreference("uploaded." + revision.sha256, value: String(revision.byteCount))
     }
 
     func isPending(_ operationID: String) throws -> Bool {
@@ -200,29 +226,37 @@ public actor RecordStore {
     /// version which has not yet reached the document store. The backup, local
     /// operation and recovery marker commit together, including on restart.
     public func queueConflictResolution(_ selected: StoredRecord, reviewedVariants: [StoredRecord]) throws -> SyncConflict? {
+        try db.transaction { try queueConflictResolutionWithinTransaction(selected, reviewedVariants: reviewedVariants) }
+    }
+
+    /// A PDF revision and its page records are one durable reviewed choice.
+    public func queueConflictResolutions(_ choices: [(selected: StoredRecord, reviewed: [StoredRecord])]) throws -> [SyncConflict] {
         try db.transaction {
-            guard SyncPolicy.allowedKinds.contains(selected.kind), !reviewedVariants.isEmpty,
-                  reviewedVariants.allSatisfy({ $0.id == selected.id && $0.kind == selected.kind }) else {
-                throw CoreError.invalidRecord("Invalid conflict resolution")
-            }
-            try validate(selected)
-            let previous = try get(id: selected.id)
-            guard previous == nil || previous?.kind == selected.kind else { throw CoreError.invalidRecord("Record kind cannot change") }
-            let next = StoredRecord(id: selected.id, kind: selected.kind, payload: selected.payload,
-                                    revision: (previous?.revision ?? 0) + 1, deleted: selected.deleted,
-                                    formatVersion: selected.formatVersion)
-            try validate(next)
-            var preserved: SyncConflict?
-            if let previous, try !reviewedVariants.contains(where: { try sameContent(previous, $0) }) {
-                let conflict = SyncConflict(id: UUID().uuidString, local: previous, remote: next, createdAt: Date())
-                let save = try db.statement("INSERT INTO conflicts(id,value) VALUES(?,?)")
-                try save.bind([.text(conflict.id), .data(try encoder.encode(conflict))]); try save.step()
-                preserved = conflict
-            }
-            try beginProjectionRecoveryWithinTransaction()
-            try write(next); try enqueue(next, baseRevision: previous?.revision ?? 0)
-            return preserved
+            try choices.compactMap { try queueConflictResolutionWithinTransaction($0.selected, reviewedVariants: $0.reviewed) }
         }
+    }
+    private func queueConflictResolutionWithinTransaction(_ selected: StoredRecord, reviewedVariants: [StoredRecord]) throws -> SyncConflict? {
+        guard SyncPolicy.allowedKinds.contains(selected.kind), !reviewedVariants.isEmpty,
+              reviewedVariants.allSatisfy({ $0.id == selected.id && $0.kind == selected.kind }) else {
+            throw CoreError.invalidRecord("Invalid conflict resolution")
+        }
+        try validate(selected)
+        let previous = try get(id: selected.id)
+        guard previous == nil || previous?.kind == selected.kind else { throw CoreError.invalidRecord("Record kind cannot change") }
+        let next = StoredRecord(id: selected.id, kind: selected.kind, payload: selected.payload,
+                                revision: (previous?.revision ?? 0) + 1, deleted: selected.deleted,
+                                formatVersion: selected.formatVersion)
+        try validate(next)
+        var preserved: SyncConflict?
+        if let previous, try !reviewedVariants.contains(where: { try sameContent(previous, $0) }) {
+            let conflict = SyncConflict(id: UUID().uuidString, local: previous, remote: next, createdAt: Date())
+            let save = try db.statement("INSERT INTO conflicts(id,value) VALUES(?,?)")
+            try save.bind([.text(conflict.id), .data(try encoder.encode(conflict))]); try save.step()
+            preserved = conflict
+        }
+        try beginProjectionRecoveryWithinTransaction()
+        try write(next); try enqueue(next, baseRevision: previous?.revision ?? 0)
+        return preserved
     }
 
     private func sameContent(_ first: StoredRecord, _ second: StoredRecord) throws -> Bool {

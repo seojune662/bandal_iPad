@@ -133,11 +133,10 @@ final class NativePDFPageRepository {
         files += try noteChanges(links.files, variant: "after")
         let courses = Set([course] + links.files.compactMap { $0["courseId"] as? String })
         let result: [String: Any] = ["documentRevision": to, "fingerprint": fingerprint, "pageCount": pages.count, "pageMap": map, "historyToken": token, "changedCourseIDs": courses.sorted()]
-        let proof: [String: Any] = ["sourceSHA": from, "targetSHA": to, "pages": pages, "inverse": false, "inkDigest": try NativePDFPageSync.inkDigest(context: context, pdf: pdf, material: material)]
         let actual = NativeSyncPlan(files: files, courseID: course, apply: {
             try self.applyState(after, course: course, path: path); try self.invalidate(course: course, path: path, revision: to, material: material, size: output.count)
             try self.context.run("INSERT INTO native_pdf_page_history(id,material_id,course_id,rel_path,before_sha,after_sha,before_json,after_json,files_json,recipe_json,parent_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", [token, material, course, path, from, to, F.canonical(before), F.canonical(after), F.canonical(links.files), F.canonical(pages), head.0 ?? NSNull() as Any, C.nowISO])
-            try self.lineage(material: material, from: from, to: to, proof: proof); try self.setCursor(material, undo: token, redo: [])
+            try self.lineage(material: material, from: from, to: to, pages: pages.map { ["source": $0] }); try self.setCursor(material, undo: token, redo: [])
         })
         try publish(actual, courses: courses) { try self.saveReceipt(operation, canonical, result) }; return result
     }
@@ -197,10 +196,12 @@ final class NativePDFPageRepository {
         let map: [[Int]] = direction == "undo" ? pages.map { [$0] } : D.map(pages, count: beforeCount)
         let url = try context.materialURL(courseID: course, relativePath: path), files = [NativeSyncFileChange(target: url, data: output, expectedHash: current)] + (try noteChanges(fileHistory, variant: toVariant)), courses = Set([course] + fileHistory.compactMap { $0["courseId"] as? String })
         let result: [String: Any] = ["documentRevision": target, "fingerprint": D.fingerprint(output), "pageCount": try D.open(output).pageCount, "pageMap": map, "historyToken": token, "changedCourseIDs": courses.sorted()]
-        let proof: [String: Any] = ["sourceSHA": record["before_sha"]!, "targetSHA": record["after_sha"]!, "pages": pages, "inverse": direction == "undo", "inkDigest": try NativePDFPageSync.inkDigest(context: context, pdf: pdf, material: material)]
+        // Undo is a desktop recipe whose restored pages have no source in the
+        // rewritten revision (null, like the desktop's blank-page insertion).
+        let recipe: [[String: Any]] = direction == "undo" ? (1...beforeCount).map { ["source": pages.firstIndex(of: $0).map { $0 + 1 } ?? NSNull() as Any] } : pages.map { ["source": $0] }
         let plan = NativeSyncPlan(files: files, courseID: course, apply: {
             try self.applyState(state, course: course, path: path); try self.invalidate(course: course, path: path, revision: target, material: material, size: output.count)
-            try self.lineage(material: material, from: current, to: target, proof: proof)
+            try self.lineage(material: material, from: current, to: target, pages: recipe)
             if direction == "undo" { try self.setCursor(material, undo: record["parent_id"] as? String, redo: head.1 + [token]) }
             else { try self.setCursor(material, undo: token, redo: Array(head.1.dropLast())) }
         })
@@ -226,8 +227,9 @@ final class NativePDFPageRepository {
         })
         try publish(plan, courses: [course]) { try self.saveReceipt(operation, canonical, result) }; return result
     }
-    func lineage(material: String, from: String, to: String, proof: [String: Any]) throws {
-        try context.run("INSERT INTO native_pdf_revision_lineage(material_id,from_sha,to_sha,pages_json) VALUES(?,?,?,?) ON CONFLICT(material_id,from_sha,to_sha) DO NOTHING", [material, from, to, F.canonical(proof)])
+    /// `pages` is the desktop recipe `[{source: 1-based page of from | null, rotate?}]`.
+    func lineage(material: String, from: String, to: String, pages: [[String: Any]]) throws {
+        try context.run("INSERT INTO native_pdf_revision_lineage(material_id,from_sha,to_sha,pages_json) VALUES(?,?,?,?) ON CONFLICT(material_id,from_sha,to_sha) DO NOTHING", [material, from, to, F.canonical(pages)])
         if try context.tableExists("ipad_sync_projection") {
             for row in try context.query("SELECT id,payload_json FROM ipad_sync_projection WHERE kind='drawing'") {
                 let payload = try F.object(row["payload_json"])

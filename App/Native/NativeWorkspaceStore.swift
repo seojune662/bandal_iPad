@@ -99,8 +99,13 @@ final class NativeWorkspaceStore: ObservableObject {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let arguments = ProcessInfo.processInfo.arguments
         let testing = arguments.contains("--native-ui-testing") || NSClassFromString("XCTestCase") != nil
-        let folder = storageRoot ?? documents.appendingPathComponent(testing ? "BandalDesktop-Native-UI-Tests" : "BandalDesktop", isDirectory: true)
         var initializationFailure: Error?
+        var selectedRoot: URL?
+        // A new profile selects new storage; the previous root is never erased.
+        if storageRoot == nil, !testing {
+            do { selectedRoot = try DesktopProfileService.selectedRoot(in: documents) } catch { initializationFailure = error }
+        }
+        let folder = storageRoot ?? selectedRoot ?? documents.appendingPathComponent(testing ? "BandalDesktop-Native-UI-Tests" : "BandalDesktop", isDirectory: true)
         // An explicit test directory is never reset implicitly, so restart tests
         // and existing course data use exactly the same startup path.
         if storageRoot == nil, testing, arguments.contains("--reset-native-ui-testing") {
@@ -113,7 +118,8 @@ final class NativeWorkspaceStore: ObservableObject {
             #endif
         }
         let legacy = storageRoot != nil ? folder.appendingPathComponent("Legacy", isDirectory: true)
-            : documents.appendingPathComponent(testing ? "Bandal-Native-UI-Tests" : "Bandal", isDirectory: true)
+            : testing ? documents.appendingPathComponent("Bandal-Native-UI-Tests", isDirectory: true)
+            : DesktopProfileService.legacyRoot(documents: documents, root: folder)
         NativePDFPreferenceScope.registerPreviousRoot(root: folder, documentsRoot: documents)
         runtime = DesktopRuntime(root: folder, legacyRoot: legacy)
         startupError = initializationFailure

@@ -51,6 +51,9 @@ struct NativeSettingsWorkspace: View {
   @State private var account: [String: Any] = [:]
   @State private var sync: [String: Any] = [:]
   @State private var conflicts: [[String: Any]] = []
+  @State private var billing: [String: Any] = [:]
+  @State private var deleteAccountConfirmation = false
+  @State private var newProfileConfirmation = false
   @State private var keyStatus: [String: [String: Any]] = [:]
   @State private var keys: [String: String] = [:]
   @State private var modelCatalog: [String: [String]] = [:]
@@ -142,6 +145,7 @@ struct NativeSettingsWorkspace: View {
         sync = state
         Task { do { try await loadSync() } catch { self.error = error.localizedDescription } }
       }
+      if event.channel == "billing:changed", let state = event.payload as? [String: Any] { billing = state }
       if event.channel == "settings:changed", let state = event.payload as? [String: Any] {
         settings = state["settings"] as? [String: Any] ?? state
         NativeAppearancePreference.apply(settings)
@@ -162,6 +166,19 @@ struct NativeSettingsWorkspace: View {
           modelCatalog[provider.rawValue] = nil
         }
       }
+    }
+    .confirmationDialog("계정을 삭제할까요? 서버의 동기화 자료와 구독 연결이 삭제됩니다. 이 기기의 파일은 남습니다.", isPresented: $deleteAccountConfirmation, titleVisibility: .visible) {
+      Button("계정 삭제", role: .destructive) {
+        run {
+          _ = try await store.invoke("auth:deleteAccount")
+          try await loadAccount()
+          try await loadSync()
+          notice = "계정을 삭제했어요."
+        }
+      }
+    }
+    .confirmationDialog("새 프로필을 만들까요? 현재 자료는 백업한 위치와 기존 폴더에 그대로 남고, 앱은 빈 프로필로 다시 시작합니다.", isPresented: $newProfileConfirmation, titleVisibility: .visible) {
+      Button("새 프로필 시작") { run { _ = try await store.invoke("profile:new") } }
     }
     .confirmationDialog("로그아웃할까요?", isPresented: $signOutConfirmation) {
       Button("로그아웃", role: .destructive) {
@@ -252,7 +269,7 @@ struct NativeSettingsWorkspace: View {
   @ViewBuilder private var settingsPanel: some View {
     switch category {
     case "ai": aiPanel
-    case "account": VStack(alignment: .leading, spacing: 24) { accountPanel; syncPanel }
+    case "account": VStack(alignment: .leading, spacing: 24) { accountPanel; subscriptionPanel; syncPanel; profilePanel }
     case "browser": expandedPanel("browser")
     case "advanced": VStack(spacing: 24) { expandedPanel("advanced"); storagePanel }
     case "appearance": appearancePanel
@@ -401,9 +418,27 @@ struct NativeSettingsWorkspace: View {
             notice = "닉네임을 저장했어요."
           }
         }.disabled(nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        if account["errorCode"] as? String == "reauthentication-required" {
+          Text("안전을 위해 다시 로그인해 주세요. 기기의 자료는 계속 사용할 수 있어요.").font(.caption).foregroundStyle(.red)
+          Button("Apple로 다시 로그인") { signIn("apple") }
+          Button("Google로 다시 로그인") { signIn("google") }
+          Button("카카오로 다시 로그인") { signIn("kakao") }
+        }
+        if let pending = (account["localAccess"] as? [String: Any])?["pendingUserID"] as? String {
+          Text("이 기기의 자료를 지금 계정에 연결해야 열 수 있어요.").font(.caption).foregroundStyle(.secondary)
+          Button("이 계정에 자료 연결") { run { _ = try await store.invoke("auth:confirmProfile", ["userID": pending]); try await loadAccount() } }
+        }
+        DisclosureGroup("다른 로그인 방법 연결") {
+          Text("같은 반달 계정에 다른 로그인 수단을 추가합니다.").font(.caption).foregroundStyle(.secondary)
+          Button("Apple 연결") { linkProvider("apple") }
+          Button("Google 연결") { linkProvider("google") }
+          Button("카카오 연결") { linkProvider("kakao") }
+        }
         Button("로그아웃", role: .destructive) { signOutConfirmation = true }
+        Button("계정 삭제", role: .destructive) { deleteAccountConfirmation = true }
       } else {
         Text(accountPhase).foregroundStyle(.secondary)
+        Button("Apple로 로그인") { signIn("apple") }.disabled(account["phase"] as? String == "signing-in")
         Button("Google로 로그인") { signIn("google") }.disabled(
           account["phase"] as? String == "signing-in")
         Button("카카오로 로그인") { signIn("kakao") }.disabled(account["phase"] as? String == "signing-in")
@@ -419,11 +454,61 @@ struct NativeSettingsWorkspace: View {
       }
     }
   }
+  private var subscriptionPanel: some View {
+    settingsCard("동기화 구독") {
+      if !signedIn {
+        Text("로그인하면 구독 상태를 확인할 수 있어요.").foregroundStyle(.secondary)
+      } else {
+        let subscription = billing["subscription"] as? [String: Any] ?? [:]
+        LabeledContent("상태", value: subscription["active"] as? Bool == true ? "이용 중" : "구독 없음")
+        if let provider = subscription["provider"] as? String, !provider.isEmpty { LabeledContent("결제 수단", value: provider) }
+        if let until = subscription["currentPeriodEnd"] as? String ?? subscription["expiresAt"] as? String { LabeledContent("다음 갱신", value: String(until.prefix(10))) }
+        let products = billing["products"] as? [[String: Any]] ?? []
+        if subscription["active"] as? Bool != true {
+          ForEach(Array(products.enumerated()), id: \.offset) { _, product in
+            Button("\(product["displayName"] as? String ?? "구독") · \(product["displayPrice"] as? String ?? "")") {
+              run {
+                let result = try await store.invoke("billing:purchase", ["plan": product["plan"] as? String ?? "monthly"]) as? [String: Any]
+                notice = result?["status"] as? String == "purchased" ? "구독을 시작했어요." : "구매를 완료하지 않았어요."
+                try await loadSync()
+              }
+            }
+          }
+          if products.isEmpty { Text("App Store 구독 상품을 아직 사용할 수 없어요. 데스크톱 구독도 이 계정에 적용됩니다.").font(.caption).foregroundStyle(.secondary) }
+        }
+        Button("구매 복원") { run { _ = try await store.invoke("billing:restore"); try await loadSync(); notice = "구매를 확인했어요." } }
+        Button("구독 관리") { run { _ = try await store.invoke("billing:manageApple") } }
+        Text("구독은 Apple·데스크톱 결제 중 하나면 충분하며 같은 반달 계정에 적용됩니다. 구독이 없어도 기기의 자료와 기존 동기화 자료 다운로드는 계속 사용할 수 있어요.").font(.caption).foregroundStyle(.secondary)
+      }
+    }
+  }
+  private var profilePanel: some View {
+    settingsCard("기기 프로필") {
+      LabeledContent("프로필", value: (account["localAccess"] as? [String: Any])?["profileID"] as? String ?? store.root.lastPathComponent)
+      Button("현재 자료 백업", systemImage: "externaldrive") {
+        run {
+          let result = try await store.invoke("profile:backup") as? [String: Any]
+          notice = result?["ok"] as? Bool == true ? "백업을 저장했어요." : "백업을 취소했어요."
+        }
+      }
+      Button("새 프로필로 시작", systemImage: "person.badge.plus") { newProfileConfirmation = true }
+      Text("다른 계정으로 쓰려면 먼저 현재 자료를 백업한 뒤 새 프로필을 만드세요. 기존 프로필 폴더는 지우지 않습니다.").font(.caption).foregroundStyle(.secondary)
+    }
+  }
   private var syncPanel: some View {
     settingsCard("자료 동기화") {
+      Toggle("자료 동기화 사용", isOn: Binding(get: { sync["enabled"] as? Bool == true }, set: { value in
+        run { sync = try await store.invoke("sync:setEnabled", ["enabled": value]) as? [String: Any] ?? sync; try await loadSync() }
+      })).disabled(!signedIn)
       LabeledContent("상태", value: syncPhase)
       if let pending = (sync["pending"] as? NSNumber)?.intValue {
         LabeledContent("대기 중인 변경", value: String(pending))
+      }
+      if let used = (sync["storageUsedBytes"] as? NSNumber)?.int64Value, let limit = (sync["storageLimitBytes"] as? NSNumber)?.int64Value, limit > 0 {
+        LabeledContent("저장 공간", value: ByteCountFormatter.string(fromByteCount: used, countStyle: .file) + " / " + ByteCountFormatter.string(fromByteCount: limit, countStyle: .file))
+      }
+      if sync["writeAllowed"] as? Bool == false {
+        Text(sync["blockedReason"] as? String == "storage_limit_exceeded" ? "동기화 저장 공간이 가득 찼어요. 기기의 변경은 보관되고 기존 자료 다운로드는 계속됩니다." : "동기화 구독이 필요해요. 기기의 변경은 보관되고 기존 자료 다운로드는 계속됩니다.").font(.caption).foregroundStyle(.orange)
       }
       if let message = sync["error"] as? String {
         Text(message).font(.caption).foregroundStyle(.red)
@@ -435,15 +520,14 @@ struct NativeSettingsWorkspace: View {
           try await loadSync()
           notice = "동기화를 마쳤어요."
         }
-      }.disabled(!signedIn || sync["phase"] as? String == "syncing")
+      }.disabled(!signedIn || sync["enabled"] as? Bool != true || sync["phase"] as? String == "syncing")
       ForEach(Array(conflicts.enumerated()), id: \.offset) { _, conflict in
         DisclosureGroup("충돌 사본 · \(conflictTitle(conflict))") {
           Text("적용할 사본의 내용을 확인하세요. 선택하지 않은 사본도 복구 기록에 보관됩니다.").font(.caption).foregroundStyle(
             .secondary)
           ForEach(["local", "remote"], id: \.self) { variant in
             DisclosureGroup(variant == "local" ? "이 기기의 내용" : "서버의 내용") {
-              Text(Self.pretty(conflict[variant])).font(.caption.monospaced()).textSelection(
-                .enabled)
+              Text(Self.variantDescription((conflict["variants"] as? [String: Any])?[variant] as? [String: Any])).font(.caption).textSelection(.enabled)
               Button(variant == "local" ? "이 기기의 사본 적용" : "서버 사본 적용") {
                 if let id = conflict["id"] as? String {
                   pendingRestore = ConflictChoice(id: id, variant: variant)
@@ -535,6 +619,27 @@ struct NativeSettingsWorkspace: View {
   private func loadSync() async throws {
     sync = try await store.invoke("sync:status") as? [String: Any] ?? [:]
     conflicts = try await store.invoke("sync:conflicts") as? [[String: Any]] ?? []
+    if signedIn { billing = (try? await store.invoke("billing:getState")) as? [String: Any] ?? billing }
+  }
+  static func variantDescription(_ summary: [String: Any]?) -> String {
+    guard let summary, summary["exists"] as? Bool == true else { return "없음" }
+    var lines: [String] = []
+    if summary["deleted"] as? Bool == true { lines.append("삭제됨") }
+    if let title = summary["title"] as? String { lines.append("제목: " + title) }
+    if let page = summary["page"] as? NSNumber { lines.append("페이지: \(page.intValue)") }
+    if let objects = summary["objects"] as? NSNumber { lines.append("필기·강조 개체: \(objects.intValue)개") }
+    if let updated = summary["updatedAt"] as? String { lines.append("수정: " + String(updated.prefix(19)).replacingOccurrences(of: "T", with: " ")) }
+    if let revision = summary["revision"] as? String { lines.append("버전: " + String(revision.prefix(12))) }
+    if let text = summary["text"] as? String, !text.isEmpty { lines.append(text) }
+    return lines.isEmpty ? "내용 요약이 없습니다." : lines.joined(separator: "\n")
+  }
+  private func linkProvider(_ provider: String) {
+    run {
+      let result = try await store.invoke("auth:linkProvider", ["provider": provider]) as? [String: Any]
+      guard result?["ok"] as? Bool == true else { throw DesktopRuntimeError("로그인 방법을 연결하지 못했습니다. 다시 시도하세요.") }
+      try await loadAccount()
+      notice = "로그인 방법을 연결했어요."
+    }
   }
   private func signIn(_ provider: String) {
     run {

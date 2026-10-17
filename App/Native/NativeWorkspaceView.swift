@@ -31,6 +31,7 @@ struct NativeWorkspaceView: View {
     @State private var busy = false
     @State private var restored = false
     @State private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    @State private var loginRequired = false
 
     init() {
         let store = NativeWorkspaceStore()
@@ -133,12 +134,14 @@ struct NativeWorkspaceView: View {
         }
         .sheet(isPresented: $showingCourseSheet) { courseSheet }
         .sheet(isPresented: $showingCourseManager) { NativeCourseManager(store: store) }
+        .fullScreenCover(isPresented: $loginRequired) { NativeLoginGate(store: store).interactiveDismissDisabled() }
         .alert("작업을 완료하지 못했어요", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("확인", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
         .task {
             await store.start()
             await services.start()
+            if store.isReady, let state = try? await store.invoke("auth:getState") as? [String: Any] { loginRequired = NativeLoginGate.requiresLogin(state) }
             workspaceSettings = (try? await store.invoke("settings:get")) as? [String: Any] ?? [:]
             guard store.isReady, !restored else { return }
             restored = true
@@ -157,7 +160,10 @@ struct NativeWorkspaceView: View {
             if let courseID, restored { navigation.activateCourse(courseID); saveNavigation() }
         }
         .onChange(of: openAdjacentTab) { _, value in navigation.openAdjacentTab = value }
-        .onReceive(store.events) { event in receive(event) }
+        .onReceive(store.events) { event in
+            if event.channel == "auth:changed", let state = event.payload as? [String: Any] { loginRequired = NativeLoginGate.requiresLogin(state) }
+            receive(event)
+        }
         .onChange(of: scenePhase) { _, phase in
             Task {
                 if store.isReady { _ = try? await store.invokePrivate("nativeRuntime:active", ["active": phase == .active]) }

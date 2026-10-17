@@ -5,6 +5,46 @@ import CryptoKit
 
 @MainActor
 final class DesktopSyncTests: XCTestCase {
+    func testUnpaidSyncPullsWithoutUploadsAndPersistsBackoff() async throws {
+        let fixture = try await DesktopSyncRecoveryFixture(); defer { fixture.close() }
+        let granted = try DesktopSyncService(runtime: fixture.runtime, account: fixture.account, environment: fixture.environment)
+        try await granted.synchronizeNow(force: true)
+        await fixture.server.changeNote(to: "download while unpaid")
+        let before = await fixture.server.counts()
+        var checks = 0
+        var denied = fixture.environment
+        denied.access = { _, _ in checks += 1; return SyncAccessStatus(writeAllowed: false) }
+        let service = try DesktopSyncService(runtime: fixture.runtime, account: fixture.account, environment: denied)
+        try await service.synchronizeNow(force: true)
+        let after = await fixture.server.counts()
+        XCTAssertEqual(before.pushes, after.pushes); XCTAssertEqual(before.uploads, after.uploads)
+        XCTAssertGreaterThan(after.pulls, before.pulls)
+        let text = try await fixture.runtime.readMaterial(courseID: fixture.courseID, relativePath: fixture.notePath)
+        XCTAssertEqual(String(decoding: text, as: UTF8.self), "download while unpaid")
+        let status = try await service.status()
+        XCTAssertEqual(status["blockedReason"] as? String, "subscription_required")
+        let reopened = try DesktopSyncService(runtime: fixture.runtime, account: fixture.account, environment: denied)
+        try await reopened.synchronizeNow()
+        XCTAssertEqual(checks, 1)
+        try await reopened.synchronizeNow(force: true)
+        XCTAssertEqual(checks, 2)
+    }
+    func testExplicitOptInAndDurableAssetReceiptSurviveServiceReopen() async throws {
+        let fixture = try await DesktopSyncRecoveryFixture(); defer { fixture.close() }
+        try await fixture.store.setPreference("syncEnabled", value: "false")
+        let service = try DesktopSyncService(runtime: fixture.runtime, account: fixture.account, environment: fixture.environment)
+        try await service.synchronizeNow(force: true)
+        let disabled = await fixture.server.counts()
+        XCTAssertEqual(disabled.pushes, 0); XCTAssertEqual(disabled.uploads, 0); XCTAssertEqual(disabled.pulls, 0)
+        try await fixture.store.setPreference("syncEnabled", value: "true")
+        try await service.synchronizeNow(force: true)
+        let first = await fixture.server.counts()
+        XCTAssertGreaterThan(first.uploads, 0)
+        let reopened = try DesktopSyncService(runtime: fixture.runtime, account: fixture.account, environment: fixture.environment)
+        try await reopened.synchronizeNow(force: true)
+        let second = await fixture.server.counts()
+        XCTAssertEqual(first.uploads, second.uploads)
+    }
     func testInterruptedRemoteMaterializationRecoversBeforeExportForEveryFailureBoundary() async throws {
         for boundary in ["afterExchange", "download", "flush", "afterMaterialization", "logout"] {
             let fixture = try await DesktopSyncRecoveryFixture()
@@ -25,11 +65,11 @@ final class DesktopSyncTests: XCTestCase {
                     if pending { throw DesktopRuntimeError("Injected document flush failure") }
                 }
             }
-            try await service.synchronizeNow()
+            try await service.synchronizeNow(force: true)
             await fixture.server.changeNote(to: "remote B")
             if boundary == "download" { await fixture.server.setDownloadFailure(true) }
             failing = true
-            do { try await service.synchronizeNow(); XCTFail("Expected interruption at \(boundary)") } catch { }
+            do { try await service.synchronizeNow(force: true); XCTFail("Expected interruption at \(boundary)") } catch { }
             let pending = try await fixture.store.projectionRecoveryPending()
             XCTAssertTrue(pending, boundary)
             let cursor = try await fixture.store.syncCursor()
@@ -41,7 +81,7 @@ final class DesktopSyncTests: XCTestCase {
             failing = false; await fixture.server.setDownloadFailure(false)
             let restarted = try DesktopSyncService(runtime: fixture.runtime, account: fixture.account, environment: fixture.environment)
             fixture.service = restarted
-            try await restarted.synchronizeNow()
+            try await restarted.synchronizeNow(force: true)
             let afterRecovery = await fixture.server.currentText()
             XCTAssertEqual(afterRecovery, "remote B", boundary)
             let bytes = try await fixture.runtime.readMaterial(courseID: fixture.courseID, relativePath: fixture.notePath)
@@ -57,14 +97,14 @@ final class DesktopSyncTests: XCTestCase {
         var fail = false, environment = fixture.environment
         environment.checkpoint = { if fail && $0 == "afterExchange" { throw DesktopRuntimeError("Stopped after cursor commit") } }
         let service = try DesktopSyncService(runtime: fixture.runtime, account: fixture.account, environment: environment)
-        try await service.synchronizeNow()
+        try await service.synchronizeNow(force: true)
         await fixture.server.changeNote(to: "remote B")
         fail = true
-        do { try await service.synchronizeNow(); XCTFail("Expected interruption") } catch { }
+        do { try await service.synchronizeNow(force: true); XCTFail("Expected interruption") } catch { }
         _ = try await fixture.runtime.invoke("notes:write", request: ["courseId": fixture.courseID, "relPath": fixture.notePath, "markdown": "local A prime"])
         let restarted = try DesktopSyncService(runtime: fixture.runtime, account: fixture.account, environment: fixture.environment)
-        try await restarted.synchronizeNow()
-        try await restarted.synchronizeNow()
+        try await restarted.synchronizeNow(force: true)
+        try await restarted.synchronizeNow(force: true)
         let remote = await fixture.server.currentText()
         XCTAssertEqual(remote, "remote B")
         let conflicts = try await restarted.conflicts()
@@ -80,10 +120,10 @@ final class DesktopSyncTests: XCTestCase {
         pendingEnvironment.checkpoint = { if stopAfterPull && $0 == "afterExchange" { throw DesktopRuntimeError("Stopped before displaying C") } }
         let pendingService = try DesktopSyncService(runtime: fixture.runtime, account: fixture.account, environment: pendingEnvironment)
         await fixture.server.changeNote(to: "remote C received during review")
-        do { try await pendingService.synchronizeNow(); XCTFail("Expected C interruption") } catch { }
+        do { try await pendingService.synchronizeNow(force: true); XCTFail("Expected C interruption") } catch { }
         stopAfterPull = false
         _ = try await pendingService.restoreConflict(choice, variant: "local")
-        try await pendingService.synchronizeNow()
+        try await pendingService.synchronizeNow(force: true)
         let selected = await fixture.server.currentText()
         XCTAssertEqual(selected, "local A prime", "pending replay must preserve the user's explicit local choice")
         let retained = try await pendingService.conflicts()
@@ -111,6 +151,11 @@ final class DesktopSyncTests: XCTestCase {
         let service = try DesktopSyncService(runtime: runtime, account: account)
         let conflicts = try await service.conflicts()
         XCTAssertEqual(conflicts.count, 1)
+        let summaries = try await service.conflictSummaries()
+        XCTAssertEqual(summaries.count, 1)
+        XCTAssertNotNil(summaries.first?["label"] as? String)
+        XCTAssertNotNil(summaries.first?["variants"] as? [String: Any])
+        XCTAssertNotNil(summaries.first?["local"] as? Bool, "UI does not receive complete wire records")
         let id = try XCTUnwrap(conflicts.first?["id"] as? String)
         let status = try await service.status()
         XCTAssertEqual(status["conflicts"] as? Int, 1)
@@ -125,13 +170,13 @@ final class DesktopSyncTests: XCTestCase {
             _ = try await runtime.invoke("notes:write", request: ["courseId": course, "relPath": path, "markdown": "검토하는 동안 추가한 필기"])
             flushed = true
         }
-        let restored = try await service.restoreConflict(id, variant: "remote")
-        XCTAssertTrue(flushed); XCTAssertEqual(restored["ok"] as? Bool, true)
+        do { _ = try await service.restoreConflict(id, variant: "remote"); XCTFail("An unreviewed newer edit must be retained") } catch { }
+        XCTAssertTrue(flushed)
         let written = try await runtime.readMaterial(courseID: course, relativePath: path)
-        XCTAssertEqual(String(decoding: written, as: UTF8.self), "다른 기기의 필기")
+        XCTAssertEqual(String(decoding: written, as: UTF8.self), "검토하는 동안 추가한 필기")
         let retained = try await service.conflicts()
         XCTAssertTrue(retained.contains { (($0["local"] as? [String: Any])?["payload"] as? [String: Any])?["markdown"] as? String == "검토하는 동안 추가한 필기" })
-        XCTAssertFalse(retained.contains { $0["id"] as? String == id })
+        XCTAssertGreaterThanOrEqual(retained.count, 1)
         // A new service instance reads durable projector history, not an array
         // held only by the settings screen or the last import result.
         let reopened = try DesktopSyncService(runtime: runtime, account: account)
@@ -139,10 +184,22 @@ final class DesktopSyncTests: XCTestCase {
         XCTAssertEqual(reread.count, retained.count)
     }
 
+    func testPinnedClipOriginalAssetReferenceIsValidatedAndDeduplicated() throws {
+        let hash = String(repeating: "d", count: 64)
+        let clip: [String: Any] = ["kind": "clip", "data": ["clip": ["documentRevision": hash, "documentByteCount": 321]]]
+        let encoded = try JSONSerialization.data(withJSONObject: ["objects": [clip, clip]]).base64EncodedString()
+        let record = try DesktopSyncService.record(["id": "drawing:page", "kind": "drawing", "payload": ["data": encoded]])
+        let references = try DesktopSyncService.references(record)
+        XCTAssertEqual(references.count, 1); XCTAssertEqual(references.first?.sha256, hash); XCTAssertEqual(references.first?.byteCount, 321)
+        let invalid = try JSONSerialization.data(withJSONObject: ["objects": [["data": ["clip": ["documentRevision": "../escape", "documentByteCount": 321]]]]]).base64EncodedString()
+        XCTAssertThrowsError(try DesktopSyncService.references(DesktopSyncService.record(["id": "drawing:page", "kind": "drawing", "payload": ["data": invalid]])))
+        XCTAssertThrowsError(try DesktopSyncService.asset(["sha256": hash, "byteCount": true, "originalName": "a.pdf", "contentType": "application/pdf"]))
+    }
+
     func testPDFPageHistoryReferencesIncludeOriginalsAndRejectInconsistentDuplicate() throws {
         let current = String(repeating: "c", count: 64), original = String(repeating: "a", count: 64)
         func record(_ assets: [[String: Any]]) throws -> StoredRecord {
-            try DesktopSyncService.record(["id": "material:pages", "kind": "material", "payload": ["kind": "pdf", "revision": current, "byteCount": 50, "fileName": "current.pdf", "desktop": ["pageLineageAssets": assets]]])
+            try DesktopSyncService.record(["id": "material:pages", "kind": "material", "payload": ["kind": "pdf", "revision": current, "byteCount": 50, "fileName": "current.pdf", "pdfLineageAssets": assets]])
         }
         let ancestor: [String: Any] = ["sha256": original, "byteCount": 80, "originalName": "original.pdf", "contentType": "application/pdf"]
         let references = try DesktopSyncService.references(record([ancestor, ancestor]))
@@ -178,6 +235,8 @@ private actor DesktopSyncRecoveryServer {
     private var failDownload = false
     private var remoteChanged = false
     private var stalePushes = 0
+    private var pushes = 0, uploads = 0, pulls = 0
+    func counts() -> (pushes: Int, uploads: Int, pulls: Int) { (pushes, uploads, pulls) }
     func setDownloadFailure(_ value: Bool) { failDownload = value }
     func staleNotePushes() -> Int { stalePushes }
     func currentText() -> String? {
@@ -199,6 +258,7 @@ private actor DesktopSyncRecoveryServer {
         records[file.id] = file; changes.append(file); remoteChanged = true
     }
     func push(_ operation: SyncOperation) throws -> PushResult {
+        pushes += 1
         if let receipt = receipts[operation.id] { return receipt }
         let result: PushResult
         if let current = records[operation.record.id], current.revision != operation.baseRevision {
@@ -214,10 +274,11 @@ private actor DesktopSyncRecoveryServer {
         receipts[operation.id] = result; return result
     }
     func pull(after cursor: Int64, limit: Int) -> PullPage {
+        pulls += 1
         let end = min(changes.count, Int(cursor) + limit)
         return PullPage(records: Array(changes[Int(cursor)..<end]), cursor: Int64(end), hasMore: end < changes.count)
     }
-    func upload(_ revision: AssetRevision, file: URL) throws { assets[revision.sha256] = try Data(contentsOf: file) }
+    func upload(_ revision: AssetRevision, file: URL) throws { uploads += 1; assets[revision.sha256] = try Data(contentsOf: file) }
     func download(_ revision: AssetRevision, destination: URL) throws {
         if failDownload { throw URLError(.networkConnectionLost) }
         guard let data = assets[revision.sha256] else { throw URLError(.fileDoesNotExist) }
@@ -247,6 +308,7 @@ private final class DesktopSyncRecoveryFixture {
     weak var service: DesktopSyncService?
     var environment: DesktopSyncEnvironment {
         var value = DesktopSyncEnvironment()
+        value.access = { _, _ in SyncAccessStatus(writeAllowed: true) }
         value.transport = { identity, token in DesktopSyncRecoveryTransport(userID: identity.userID, server: self.server, token: token) }
         return value
     }
@@ -268,6 +330,9 @@ private final class DesktopSyncRecoveryFixture {
         environment.request = { request in (Data("[]".utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!) }
         account = DesktopAccountService(root: root, environment: environment)
         store = try RecordStore(url: root.appendingPathComponent("CommonSync/bandal.sqlite"))
+        try await store.setPreference("syncEnabled", value: "true")
+        _ = try await account.handle(channel: "auth:getState", request: [:])
+        _ = try await account.handle(channel: "auth:confirmProfile", request: ["userID": user])
     }
     func close() { try? FileManager.default.removeItem(at: root) }
 }

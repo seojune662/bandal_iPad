@@ -67,6 +67,19 @@ struct TransportTests {
         let transport = try SupabaseSyncTransport(projectURL: URL(string: "https://unit.invalid")!,
             publishableKey: "public", userID: user, session: session(), accessToken: { validToken })
         do { _ = try await transport.pull(after: 0, limit: 20); Issue.record("Expected failure") }
-        catch let error as CoreError { #expect(error == .transport(401, "Supabase request failed")) }
+        catch let error as SyncRequestFailure { #expect(error.code == .authenticationRequired); #expect(!error.localizedDescription.contains("private payload")) }
     }
+    @Test func accessPreflightAndSafeQuotaClassification() async throws {
+        let validToken = token(user)
+        let transport = try SupabaseSyncTransport(projectURL: URL(string: "https://unit.invalid")!, publishableKey: "public", userID: user, session: session(), accessToken: { validToken })
+        StubProtocol.handler = { request in
+            #expect(request.url?.path == "/rest/v1/rpc/bandal_sync_status")
+            return (200, Data("{\"writeAllowed\":false,\"storageLimitBytes\":0,\"storageUsedBytes\":100,\"usageComplete\":true}".utf8))
+        }
+        #expect(try await transport.syncStatus().writeAllowed == false)
+        StubProtocol.handler = { _ in (403, Data("{\"code\":\"42501\",\"message\":\"sync_storage_quota_exceeded\",\"detail\":\"private-note\"}".utf8)) }
+        do { _ = try await transport.pull(after: 0, limit: 20); Issue.record("Expected quota failure") }
+        catch let error as SyncRequestFailure { #expect(error.code == .storageLimitExceeded); #expect(!error.localizedDescription.contains("private-note")) }
+    }
+
 }

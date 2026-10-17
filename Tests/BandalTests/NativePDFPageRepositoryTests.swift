@@ -194,10 +194,10 @@ final class NativePDFPageRepositoryTests: XCTestCase {
         XCTAssertEqual(try context.query("SELECT updated_at FROM pdf_drawings WHERE id='ink-1'").first?["updated_at"] as? String, "local edit")
         XCTAssertEqual(try context.query("SELECT * FROM pdf_drawings WHERE deleted_at IS NULL").count, 3)
         XCTAssertEqual(try context.query("SELECT * FROM annotations WHERE deleted_at IS NULL").count, 3)
-        let material = try XCTUnwrap((exported["records"] as? [[String: Any]])?.first { $0["kind"] as? String == "material" }), payload = material["payload"] as! [String: Any], desktop = payload["desktop"] as! [String: Any]
-        var proofs = desktop["pageLineage"] as! [[String: Any]]; proofs[0]["pages"] = [1, 3]
+        let material = try XCTUnwrap((exported["records"] as? [[String: Any]])?.first { $0["kind"] as? String == "material" }), payload = material["payload"] as! [String: Any]
+        var steps = payload["pdfLineage"] as! [[String: Any]]; steps[0]["pages"] = [["source": 1], ["source": 3]]
         var assets: [String: URL] = [:]; for asset in exported["assets"] as! [[String: Any]] { assets[asset["sha256"] as! String] = URL(fileURLWithPath: asset["path"] as! String) }
-        XCTAssertThrowsError(try NativePDFPageSync.plan(context: context, material: a.material, course: a.course, path: a.path, from: a.revision, to: payload["revision"] as! String, proofs: proofs, assets: assets))
+        XCTAssertThrowsError(try NativePDFPageSync.plan(context: context, material: a.material, course: a.course, path: a.path, from: a.revision, to: payload["revision"] as! String, lineage: steps, assets: assets))
         XCTAssertEqual(try Data(contentsOf: context.materialURL(courseID: a.course, relativePath: a.path)), a.original)
     }
     func testNewReferenceBlocksUndoAndRenamedMaterialRecoversBesideCurrentFile() throws {

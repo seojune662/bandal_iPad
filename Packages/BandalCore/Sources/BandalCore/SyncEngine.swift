@@ -26,10 +26,10 @@ public actor SyncEngine {
 
     /// Concurrent triggers join the same run. Failed pushes leave their durable
     /// operation ID intact for retry; errors never discard pending local work.
-    public func synchronize() async throws -> SyncReport {
+    public func synchronize(pushAllowed: Bool = true, scope: SyncScope = .all) async throws -> SyncReport {
         if let active { return try await active.value }
         let store = self.store, transport = self.transport
-        let task = Task { try await Self.run(store: store, transport: transport) }
+        let task = Task { try await Self.run(store: store, transport: transport, pushAllowed: pushAllowed, scope: scope) }
         active = task
         defer { active = nil }
         return try await task.value
@@ -37,11 +37,11 @@ public actor SyncEngine {
 
     public func cancel() { active?.cancel() }
 
-    private static func run(store: RecordStore, transport: any SyncTransport) async throws -> SyncReport {
+    private static func run(store: RecordStore, transport: any SyncTransport, pushAllowed: Bool, scope: SyncScope) async throws -> SyncReport {
         try await store.bindSyncAccount(userID: transport.userID)
         var report = SyncReport()
         // Bound each run so continuous editing cannot starve pulling or cancellation.
-        var pending = try await store.pendingOperations(limit: 1000)
+        var pending = pushAllowed ? try await store.pendingOperations(limit: 1000, scope: scope) : []
         var visited = Set(pending.map(\.id))
         var index = 0
         while index < pending.count && index < 1000 {
@@ -54,7 +54,7 @@ public actor SyncEngine {
                 report.conflicts += 1
             case .merged:
                 report.merged += 1
-                for next in try await store.pendingOperations(limit: 1000)
+                for next in try await store.pendingOperations(limit: 1000, scope: scope)
                     where next.record.id == operation.record.id && !visited.contains(next.id) {
                     pending.append(next); visited.insert(next.id)
                 }

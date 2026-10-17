@@ -1,75 +1,110 @@
 import Foundation
 
 /// CommonSync keeps stable material IDs across approved page revisions. A
-/// sender supplies both immutable PDF assets and the exact page recipe; the
-/// receiver verifies actual content and its pre-edit ink before publishing.
+/// material carries the desktop-shaped `pdfLineage` steps; the receiver
+/// verifies the actual content of the chain it applies and its pre-edit ink.
 enum NativePDFPageSync {
     private typealias C = NativeRepositoryContext
     private typealias F = NativeSyncFormat
     private typealias D = NativePDFPageDocument
-    static func inkDigest(context: NativeRepositoryContext, pdf: NativePDFRepository, material: String) throws -> String {
-        let records = try NativeSyncDrawings(context: context, pdf: pdf).snapshot(onlyMaterialID: material).records
-        return try F.digest(records.sorted { ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "") }.map { try F.comparable($0) })
-    }
-    static func export(context: NativeRepositoryContext, material: String) throws -> (proofs: [[String: Any]], assets: [[String: Any]]) {
+    private static let digest = #"^[a-f0-9]{64}$"#
+    /// `[{from, to, pages: [{source, rotate?}]}]`. Rows written before the
+    /// desktop format still hold the former proof object and are converted.
+    static func export(context: NativeRepositoryContext, material: String) throws -> (steps: [[String: Any]], assets: [[String: Any]]) {
         guard try context.tableExists("native_pdf_revision_lineage") else { return ([], []) }
-        var proofs: [[String: Any]] = [], assets: [[String: Any]] = [], hashes = Set<String>()
-        for row in try context.query("SELECT * FROM native_pdf_revision_lineage WHERE material_id=? ORDER BY from_sha,to_sha", [material]) {
-            var proof = try F.object(row["pages_json"]); proof["fromSHA"] = row["from_sha"]; proof["toSHA"] = row["to_sha"]; proofs.append(proof)
-            for hash in [row["from_sha"], row["to_sha"]].compactMap({ $0 as? String }) where hashes.insert(hash).inserted {
-                let url = context.root.appendingPathComponent("PDFOriginals/\(hash).pdf")
-                guard try F.hash(url) == hash else { throw C.conflict("PDF 페이지 변경의 원본 백업이 손상되었습니다.") }
-                assets.append(try F.asset(materialID: material, url: url))
+        var steps: [[String: Any]] = [], assets: [[String: Any]] = [], hashes = Set<String>()
+        func original(_ hash: String) throws -> URL {
+            let url = context.root.appendingPathComponent("PDFOriginals/\(hash).pdf")
+            guard try F.hash(url) == hash else { throw C.conflict("PDF 페이지 변경의 원본 백업이 손상되었습니다.") }
+            if hashes.insert(hash).inserted { assets.append(try F.asset(materialID: material, url: url)) }
+            return url
+        }
+        for row in try context.query("SELECT * FROM native_pdf_revision_lineage WHERE material_id=? ORDER BY rowid", [material]) {
+            let from = row["from_sha"] as! String, to = row["to_sha"] as! String, target = try original(to); _ = try original(from)
+            var pages = try DesktopJSON.decode(Data((row["pages_json"] as! String).utf8))
+            if let proof = pages as? [String: Any] {
+                let recipe = (proof["pages"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
+                pages = proof["inverse"] as? Bool == true ? try (1...D.open(Data(contentsOf: target)).pageCount).map { ["source": recipe.firstIndex(of: $0).map { $0 + 1 } ?? NSNull() as Any] } : recipe.map { ["source": $0] }
+            }
+            steps.append(["from": from, "to": to, "pages": pages])
+        }
+        return (steps, assets)
+    }
+    static func validated(_ value: Any?, target: String) throws -> [[String: Any]] {
+        guard let steps = value as? [[String: Any]], steps.count <= 10_000 else { throw C.validation("Invalid PDF rewrite history") }
+        for step in steps {
+            guard let from = step["from"] as? String, from.range(of: digest, options: .regularExpression) != nil, let to = step["to"] as? String, to.range(of: digest, options: .regularExpression) != nil,
+                  let pages = step["pages"] as? [[String: Any]], (1...2000).contains(pages.count) else { throw C.validation("Invalid PDF rewrite recipe") }
+            for page in pages {
+                guard page["source"] is NSNull || (page["source"] as? NSNumber).map({ CFGetTypeID($0) != CFBooleanGetTypeID() && $0.doubleValue == Double($0.intValue) && $0.intValue >= 1 }) == true,
+                      page["rotate"] == nil || (page["rotate"] as? NSNumber).map({ $0.doubleValue == Double($0.intValue) && [0, 90, 180, 270].contains($0.intValue) }) == true else { throw C.validation("Invalid PDF rewrite recipe") }
             }
         }
-        return (proofs, assets)
+        guard steps.isEmpty || steps.contains(where: { $0["to"] as? String == target }) else { throw C.validation("PDF rewrite history does not include target revision") }
+        return steps
     }
-    static func plan(context: NativeRepositoryContext, material: String, course: String, path: String, from: String?, to: String, proofs: [[String: Any]], assets: [String: URL]) throws -> NativeSyncPlan {
-        guard proofs.count <= 1000 else { throw C.validation("PDF page history is too large") }
+    static func chain(_ steps: [[String: Any]], from: String, to: String) -> [[String: Any]]? {
+        var parent: [String: [String: Any]] = [:], pending = [from], seen: Set<String> = [from]
+        while !pending.isEmpty {
+            let at = pending.removeFirst()
+            if at == to {
+                var path: [[String: Any]] = [], node = at
+                while let step = parent[node] { path.insert(step, at: 0); node = step["from"] as! String }
+                return path
+            }
+            for step in steps where step["from"] as? String == at {
+                let next = step["to"] as! String
+                if seen.insert(next).inserted { parent[next] = step; pending.append(next) }
+            }
+        }
+        return nil
+    }
+    /// Old page envelopes stay in sync history after a structural edit.
+    static func isHistorical(context: NativeRepositoryContext, material: String, revision: String) throws -> Bool {
+        guard try context.tableExists("pdf_document_bindings"), try context.tableExists("native_pdf_revision_lineage"),
+              let bound = try context.query("SELECT bound_sha FROM pdf_document_bindings WHERE material_id=?", [material]).first?["bound_sha"] as? String, bound != revision else { return false }
+        let steps = try context.query("SELECT from_sha,to_sha FROM native_pdf_revision_lineage WHERE material_id=?", [material]).map { ["from": $0["from_sha"]!, "to": $0["to_sha"]!] }
+        return chain(steps, from: revision, to: bound) != nil
+    }
+    static func plan(context: NativeRepositoryContext, material: String, course: String, path: String, from: String?, to: String, lineage: Any?, assets: [String: URL]) throws -> NativeSyncPlan {
+        let steps = try validated(lineage, target: to)
         let pdf = try NativePDFRepository(context: context), repository = try NativePDFPageRepository(context: context, pdf: pdf)
-        var bytes: [String: Data] = [:], byEdge: [String: [String: Any]] = [:]
+        let record = { for step in steps { try repository.lineage(material: material, from: step["from"] as! String, to: step["to"] as! String, pages: step["pages"] as! [[String: Any]]) } }
+        guard let from, from != to else { return NativeSyncPlan(courseID: course, apply: record) }
+        guard let chain = chain(steps, from: from, to: to) else { throw C.conflict("PDF replacement has no verified page history; the existing original and ink were preserved") }
+        for page in try NativeSyncDrawings(context: context, pdf: pdf).snapshot(onlyMaterialID: material).records where (page["payload"] as? [String: Any])?["documentRevision"] as? String == from {
+            guard try context.tableExists("ipad_sync_projection"), let baseline = try context.query("SELECT baseline_json FROM ipad_sync_projection WHERE id=?", [page["id"]!]).first?["baseline_json"] as? String,
+                  try F.comparable(page) == F.canonical(F.object(baseline)) else { throw C.conflict("다른 기기의 페이지 변경 이후 이 기기에서 필기가 변경되었습니다. 두 원본과 필기를 충돌 사본으로 보존했습니다.") }
+        }
+        var bytes: [String: Data] = [:]
         func load(_ hash: String) throws -> Data {
-            guard hash.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw C.validation("Invalid PDF history asset") }
             if let data = bytes[hash] { return data }
             let url = assets[hash] ?? context.root.appendingPathComponent("PDFOriginals/\(hash).pdf"), data = try Data(contentsOf: url)
             guard F.hash(data) == hash else { throw C.conflict("PDF page history asset checksum mismatch") }
             bytes[hash] = data; return data
         }
-        for proof in proofs {
-            guard let source = proof["sourceSHA"] as? String, let target = proof["targetSHA"] as? String, let inverse = proof["inverse"] as? Bool, let edgeFrom = proof["fromSHA"] as? String, let edgeTo = proof["toSHA"] as? String, edgeFrom == (inverse ? target : source), edgeTo == (inverse ? source : target), let digest = proof["inkDigest"] as? String, digest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw C.validation("Invalid approved PDF page transition") }
-            let original = try load(source), rewritten = try load(target), count = try D.open(original).pageCount, pages = try D.recipe(proof["pages"], count: count)
-            try D.validate(source: original, target: rewritten, pages: pages)
-            let key = edgeFrom + ":" + edgeTo
-            if let previous = byEdge[key], try F.canonical(previous) != F.canonical(proof) { throw C.conflict("Conflicting PDF page lineage") }
-            byEdge[key] = proof
+        let output = try load(to), before = try repository.state(course: course, path: path)
+        var after = before, currentCount = try D.open(load(from)).pageCount, combinedMap = (1...currentCount).map { [$0] }
+        for step in chain {
+            let source = try load(step["from"] as! String), target = try load(step["to"] as! String), pages = step["pages"] as! [[String: Any]]
+            let sources = pages.map { ($0["source"] as? NSNumber)?.intValue }, nextCount = try D.open(target).pageCount
+            guard nextCount == pages.count else { throw C.conflict("PDF 페이지 변경 이력이 원본과 다릅니다.") }
+            if sources.allSatisfy({ $0 != nil }) { try D.validate(source: source, target: target, pages: D.recipe(pages, count: currentCount)) }
+            else {
+                // An undo restores pages the rewritten revision no longer has.
+                // Verify the reverse edit so every kept page is proven content.
+                let kept = try (1...currentCount).map { page -> Int in
+                    guard let index = sources.firstIndex(of: page), sources.filter({ $0 == page }).count == 1 else { throw C.conflict("PDF 페이지 변경 이력이 원본과 다릅니다.") }; return index + 1
+                }
+                try D.validate(source: target, target: source, pages: kept)
+            }
+            let map = (1...currentCount).map { page in sources.indices.filter { sources[$0] == page }.map { $0 + 1 } }
+            after = try repository.remap(after, map: map, count: nextCount)
+            combinedMap = combinedMap.map { $0.flatMap { map[$0 - 1] } }; currentCount = nextCount
         }
         // Retaining verified immutable assets is append-only; it is safe even
         // when a later conflict prevents this material from being published.
         for data in bytes.values { _ = try repository.retain(data) }
-        var chain: [[String: Any]] = []
-        if let from, from != to {
-            var pending: [(String, [[String: Any]])] = [(from, [])], visited = Set<String>(), found = false
-            while !pending.isEmpty {
-                let item = pending.removeFirst(); guard visited.insert(item.0).inserted else { continue }
-                if item.0 == to { chain = item.1; found = true; break }
-                for proof in byEdge.values.sorted(by: { ($0["toSHA"] as! String) < ($1["toSHA"] as! String) }) where proof["fromSHA"] as? String == item.0 { pending.append((proof["toSHA"] as! String, item.1 + [proof])) }
-            }
-            guard found, let first = chain.first else { throw C.conflict("PDF replacement has no verified page history; the existing original and ink were preserved") }
-            guard try inkDigest(context: context, pdf: pdf, material: material) == first["inkDigest"] as? String else { throw C.conflict("다른 기기의 페이지 변경 이후 이 기기에서 필기가 변경되었습니다. 두 원본과 필기를 충돌 사본으로 보존했습니다.") }
-        }
-        if chain.isEmpty {
-            return NativeSyncPlan(courseID: course, apply: {
-                for proof in byEdge.values { try repository.lineage(material: material, from: proof["fromSHA"] as! String, to: proof["toSHA"] as! String, proof: proof) }
-            })
-        }
-        let from = from!, output = try load(to), before = try repository.state(course: course, path: path)
-        var after = before, combinedMap = (1...(try D.open(load(from)).pageCount)).map { [$0] }, currentCount = combinedMap.count
-        for proof in chain {
-            let source = try load(proof["sourceSHA"] as! String), pages = try D.recipe(proof["pages"], count: D.open(source).pageCount), inverse = proof["inverse"] as! Bool
-            let map = inverse ? pages.map { [$0] } : D.map(pages, count: currentCount), nextCount = try D.open(load(proof["toSHA"] as! String)).pageCount
-            after = try repository.remap(after, map: map, count: nextCount)
-            combinedMap = combinedMap.map { values in values.flatMap { map.indices.contains($0 - 1) ? map[$0 - 1] : [] } }; currentCount = nextCount
-        }
         let links = try NativePDFPageLinks.plan(context: context, course: course, path: path, revision: from, pageMap: combinedMap, fingerprint: D.fingerprint(output), sizes: D.sizes(D.open(output)))
         var beforeWithLinks = before; beforeWithLinks.merge(links.before) { _, new in new }; after.merge(links.after) { _, new in new }
         var files: [NativeSyncFileChange] = [.init(target: try context.materialURL(courseID: course, relativePath: path), data: output, expectedHash: from)]
@@ -79,7 +114,7 @@ enum NativePDFPageSync {
         // is only enabled for locally authored, single-operation snapshots.
         return NativeSyncPlan(files: files, courseID: course, affectedCourseIDs: Set(links.files.compactMap { $0["courseId"] as? String }), apply: {
             try repository.applyState(after, course: course, path: path); try repository.invalidate(course: course, path: path, revision: to, material: material, size: output.count)
-            for proof in byEdge.values { try repository.lineage(material: material, from: proof["fromSHA"] as! String, to: proof["toSHA"] as! String, proof: proof) }
+            try record()
             try context.run("INSERT INTO native_pdf_page_history(id,material_id,course_id,rel_path,before_sha,after_sha,before_json,after_json,files_json,recipe_json,parent_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,NULL,?)", [token, material, course, path, from, to, F.canonical(beforeWithLinks), F.canonical(after), F.canonical(links.files), "[]", C.nowISO])
             try repository.setCursor(material, undo: nil, redo: [])
         })
