@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 
 struct NativePDFTextEditor: View {
     @ObservedObject var draft: NativePDFTextDraft
@@ -11,48 +12,27 @@ struct NativePDFTextEditor: View {
     let onDelete: () -> Void
     @State private var extras = false
 
+    /// Docked under the page (above the software keyboard); the text itself is edited on the page.
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
+            Divider()
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout).foregroundStyle(.red).padding(.horizontal, 12).padding(.top, 8)
+                    .accessibilityIdentifier("native-pdf-text-error")
+            }
+            HStack(alignment: .center, spacing: 4) {
                 formatRow.disabled(errorMessage != nil)
-                Divider()
-                if let errorMessage {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout).foregroundStyle(.red).padding(12)
-                        .accessibilityIdentifier("native-pdf-text-error")
-                }
-                GeometryReader { geometry in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("페이지에서의 줄 너비").font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                            Text("\(Int(draft.physicalWidth.rounded())) pt").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        }
-                        NativePDFTextInput(draft: draft, isBusy: isBusy || errorMessage != nil, onSave: finish, onCancel: onCancel)
-                            .id(ObjectIdentifier(draft))
-                            .background(.white).clipShape(RoundedRectangle(cornerRadius: 6))
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(.secondary.opacity(0.2)))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        Text(draft.selection.length > 0 ? "선택한 글자에 서식 적용" : "입력 위치에 서식 적용 · 페이지에서 상자를 끌어 이동")
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    }.padding(16).frame(width: geometry.size.width, height: geometry.size.height)
-                }
-            }
-            .background(NativeDesktopTheme.surface)
-            .navigationTitle(draft.existing ? "텍스트 편집" : "텍스트 상자")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("취소", action: onCancel).disabled(isBusy || !canCancel).accessibilityIdentifier("native-pdf-cancel-text")
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(errorMessage == nil ? "저장" : "다시 저장", action: finish).disabled(isBusy || !draft.hasText)
-                        .accessibilityIdentifier("native-pdf-save-text")
-                }
-            }
-            .interactiveDismissDisabled()
-            .disabled(isBusy)
+                Spacer(minLength: 0)
+                Button("취소", action: onCancel).disabled(isBusy || !canCancel).frame(minHeight: 44).padding(.horizontal, 6)
+                    .accessibilityIdentifier("native-pdf-cancel-text")
+                Button(errorMessage == nil ? "완료" : "다시 저장", action: finish).disabled(isBusy || !draft.hasText)
+                    .font(.system(size: 15, weight: .semibold)).frame(minHeight: 44).padding(.horizontal, 6)
+                    .accessibilityIdentifier("native-pdf-save-text")
+            }.padding(.trailing, 8)
         }
+        .background(NativeDesktopTheme.bgApp)
+        .disabled(isBusy)
         .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-text-sheet")
     }
 
@@ -215,80 +195,75 @@ struct NativePDFTextSizeField: UIViewRepresentable {
     }
 }
 
-struct NativePDFTextInput: UIViewRepresentable {
-    @ObservedObject var draft: NativePDFTextDraft
-    let isBusy: Bool
-    let onSave: () -> Void
-    let onCancel: () -> Void
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-    func makeUIView(context: Context) -> NativePDFTextInputView {
-        let view = NativePDFTextInputView(usingTextLayoutManager: false)
-        view.delegate = context.coordinator
+/// Owns the on-page text view. The page overlay positions it from `view.pageBox`
+/// and this controller rescales the typography to the overlay width.
+@MainActor final class NativePDFTextInput: NSObject, UITextViewDelegate {
+    let draft: NativePDFTextDraft
+    let view = NativePDFTextInputView(usingTextLayoutManager: false)
+    private var appliedRevision = -1
+    private var appliedScale: CGFloat = 0
+    private var updating = false
+    private var revisions: AnyCancellable?
+    init(draft: NativePDFTextDraft, onSave: @escaping () -> Void, onCancel: @escaping () -> Void) {
+        self.draft = draft
+        super.init()
+        view.delegate = self
         view.textContainer.lineFragmentPadding = 0
         view.layoutManager.usesFontLeading = true
-        view.alwaysBounceVertical = true
+        view.isScrollEnabled = false
         view.allowsEditingTextAttributes = false
+        view.backgroundColor = .clear
         view.accessibilityIdentifier = "native-pdf-text-editor"
         view.accessibilityLabel = "텍스트 상자 내용"
-        view.onLayout = { [weak coordinator = context.coordinator, weak view] in
-            if let view { coordinator?.update(view) }
-        }
-        context.coordinator.view = view
-        draft.finishPendingInput = { [weak coordinator = context.coordinator, weak view] in
-            guard let coordinator, let view else { return }
-            view.unmarkText(); coordinator.accept(view)
-        }
+        view.pageBox = draft.box
+        view.onLayout = { [weak self] in self?.update() }
         view.onSave = onSave; view.onCancel = onCancel
-        DispatchQueue.main.async { [weak view] in view?.becomeFirstResponder() }
-        return view
+        draft.finishPendingInput = { [weak self] in
+            guard let self else { return }
+            view.unmarkText(); accept()
+        }
+        // @Published emits before the value lands; apply after the mutation settled.
+        revisions = draft.$revision.dropFirst().receive(on: DispatchQueue.main).sink { [weak self] _ in
+            guard let self else { return }
+            view.pageBox = draft.box; view.superview?.setNeedsLayout(); update()
+        }
     }
-    func updateUIView(_ view: NativePDFTextInputView, context: Context) {
-        context.coordinator.owner = self
-        view.onSave = onSave; view.onCancel = onCancel
-        context.coordinator.update(view)
+    func update() {
+        guard !updating, view.bounds.width > 0, view.markedTextRange == nil else { return }
+        let scale = max(0.01, view.bounds.width / draft.physicalWidth)
+        guard appliedRevision != draft.revision || abs(appliedScale - scale) > 0.0001 else { return }
+        updating = true; defer { updating = false }
+        let selected = draft.selection
+        view.attributedText = draft.attributedText(scale: scale)
+        let padding = NativePDFObjectRenderer.baseFontSize(draft.boxStyle.dictionary, surfaceWidth: draft.pageSize.width) * 0.36 * scale
+        view.textContainerInset = UIEdgeInsets(top: padding, left: padding, bottom: padding, right: padding)
+        view.textContainer.size = CGSize(width: max(1, view.bounds.width - padding * 2), height: .greatestFiniteMagnitude)
+        view.selectedRange = selected
+        view.typingAttributes = draft.typingAttributes(scale: scale)
+        view.backgroundColor = draft.boxStyle.fill.map { NativePDFObjectRenderer.color($0).withAlphaComponent(0.18) } ?? .clear
+        view.alpha = draft.boxStyle.opacity
+        appliedRevision = draft.revision; appliedScale = scale
     }
-    static func dismantleUIView(_ view: NativePDFTextInputView, coordinator: Coordinator) {
-        coordinator.owner.draft.finishPendingInput = nil
+    func accept() {
+        // Before the first layout the view is empty; reading it back would wipe the draft.
+        guard !updating, appliedRevision >= 0 else { return }
+        draft.acceptEditorText(view.attributedText, selection: view.selectedRange, composing: view.markedTextRange != nil)
+        appliedRevision = draft.revision
+    }
+    func detach() {
+        draft.finishPendingInput = nil; revisions = nil
         view.delegate = nil; view.onLayout = nil; view.onSave = nil; view.onCancel = nil
     }
-    final class Coordinator: NSObject, UITextViewDelegate {
-        var owner: NativePDFTextInput
-        weak var view: NativePDFTextInputView?
-        private var appliedRevision = -1
-        private var appliedScale: CGFloat = 0
-        private var updating = false
-        init(_ owner: NativePDFTextInput) { self.owner = owner }
-        func update(_ view: NativePDFTextInputView) {
-            view.isEditable = !owner.isBusy
-            guard !updating, view.bounds.width > 0, view.markedTextRange == nil else { return }
-            let draft = owner.draft, scale = max(0.01, view.bounds.width / draft.physicalWidth)
-            guard appliedRevision != draft.revision || abs(appliedScale - scale) > 0.0001 else { return }
-            updating = true; defer { updating = false }
-            let selected = draft.selection
-            view.attributedText = draft.attributedText(scale: scale)
-            let padding = NativePDFObjectRenderer.baseFontSize(draft.boxStyle.dictionary, surfaceWidth: draft.pageSize.width) * 0.36 * scale
-            view.textContainerInset = UIEdgeInsets(top: padding, left: padding, bottom: padding, right: padding)
-            view.textContainer.size = CGSize(width: max(1, view.bounds.width - padding * 2), height: .greatestFiniteMagnitude)
-            view.selectedRange = selected
-            view.typingAttributes = draft.typingAttributes(scale: scale)
-            view.backgroundColor = draft.boxStyle.fill.map { NativePDFObjectRenderer.color($0).withAlphaComponent(0.18) } ?? .clear
-            view.alpha = draft.boxStyle.opacity
-            appliedRevision = draft.revision; appliedScale = scale
-        }
-        func accept(_ view: UITextView) {
-            guard !updating else { return }
-            owner.draft.acceptEditorText(view.attributedText, selection: view.selectedRange, composing: view.markedTextRange != nil)
-            appliedRevision = owner.draft.revision
-        }
-        func textViewDidChange(_ textView: UITextView) { accept(textView) }
-        func textViewDidChangeSelection(_ textView: UITextView) {
-            guard !updating else { return }
-            owner.draft.setSelection(textView.selectedRange, composing: textView.markedTextRange != nil)
-        }
+    func textViewDidChange(_ textView: UITextView) { accept() }
+    func textViewDidChangeSelection(_ textView: UITextView) {
+        guard !updating else { return }
+        draft.setSelection(textView.selectedRange, composing: textView.markedTextRange != nil)
     }
 }
 
 final class NativePDFTextInputView: UITextView {
+    /// Normalized page box the overlay maps to this view's frame.
+    var pageBox: CGRect?
     var onLayout: (() -> Void)?
     var onSave: (() -> Void)?
     var onCancel: (() -> Void)?

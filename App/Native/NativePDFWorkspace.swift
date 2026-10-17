@@ -15,16 +15,6 @@ struct NativePDFWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             NativePDFToolbar(model: model)
-            if model.selectionCount > 0 {
-                HStack(spacing: 4) {
-                    Text("\(model.selectionCount)개 선택").font(.callout).lineLimit(1)
-                    Spacer()
-                    if model.selectedText { Button { model.editSelectedText() } label: { Image(systemName: "square.and.pencil").frame(width: 44, height: 44) }.accessibilityLabel("텍스트 편집").accessibilityIdentifier("native-pdf-edit-text") }
-                    Button { model.duplicateSelection() } label: { Image(systemName: "plus.square.on.square").frame(width: 44, height: 44) }.accessibilityLabel("선택 복제")
-                    Button(role: .destructive) { model.deleteSelection() } label: { Image(systemName: "trash").frame(width: 44, height: 44) }.accessibilityLabel("선택 삭제").accessibilityIdentifier("native-pdf-delete-selection")
-                    Button { model.clearSelection() } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }.accessibilityLabel("선택 해제")
-                }.padding(.horizontal, 8).background(.bar).disabled(model.isBusy || model.errorMessage != nil)
-            }
             if !model.sourceQuote.isEmpty {
                 HStack(spacing: 12) {
                     Text(model.sourceQuote).font(.callout).lineLimit(1)
@@ -53,12 +43,17 @@ struct NativePDFWorkspace: View {
                         }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                         .overlay { if model.showStyle { NativePDFPaletteOverlay(model: model) } }
+                        .overlay { if model.selectionCount > 0, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame) } }
                     if model.showAnnotations {
                         Divider()
                         NativePDFAnnotationRail(model: model).frame(width: geometry.size.width < 700 ? 220 : 280)
                     }
                 }
                 .onChange(of: geometry.size.width, initial: true) { _, width in model.setAvailableWidth(width) }
+            }
+            if let draft = model.textEditorDraft {
+                NativePDFTextEditor(draft: draft, isBusy: model.isBusy, errorMessage: model.errorMessage, canCancel: !model.textSaveNeedsRecovery,
+                    onSave: model.finishText, onCancel: model.cancelText, onDelete: model.deleteText)
             }
             if let error = model.errorMessage {
                 HStack(alignment: .top, spacing: 12) {
@@ -72,13 +67,6 @@ struct NativePDFWorkspace: View {
         }
         .background(NativeDesktopTheme.bgApp)
         .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-pane-" + tabID)
-        .sheet(isPresented: $model.showTextEditor, onDismiss: { model.dismissText() }) {
-            if let draft = model.textEditorDraft {
-                NativePDFTextEditor(draft: draft, isBusy: model.isBusy, errorMessage: model.errorMessage, canCancel: !model.textSaveNeedsRecovery,
-                    onSave: model.commitText, onCancel: model.cancelText, onDelete: model.deleteText)
-                    .presentationDetents([.large])
-            }
-        }
         .sheet(isPresented: $model.showAnnotationEditor, onDismiss: { model.dismissAnnotation() }) {
             NavigationStack {
                 Form {
@@ -188,8 +176,15 @@ final class NativePDFWorkspaceModel: ObservableObject {
     @Published var drawingCount = 0
     @Published private(set) var selectionCount = 0
     @Published private(set) var selectedText = false
-    @Published var showTextEditor = false
+    /// Selection box in the PDF body's coordinates, for the floating action bar.
+    @Published private(set) var selectionFrame: CGRect?
+    @Published private(set) var lassoMode = "freeform"
+    @Published private(set) var canPaste = false
+    static let pasteboardType = "com.bandal.pdf-objects"
     @Published private(set) var textEditorDraft: NativePDFTextDraft?
+    private var textInput: NativePDFTextInput?
+    private var textEditorPage: Int?
+    private var textEditorPresentedAt = CFAbsoluteTime(0)
     var textSaveNeedsRecovery: Bool { pendingTextSave != nil }
     var isAdditionalTool: Bool { ["lasso", "line", "arrow", "rect", "ellipse", "text"].contains(tool) }
     var additionalToolSymbol: String { ["lasso": "lasso", "line": "line.diagonal", "arrow": "arrow.up.right", "rect": "rectangle", "ellipse": "oval", "text": "textformat"][tool] ?? "square.on.circle" }
@@ -253,6 +248,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         tool = saved.tool; color = saved.color; width = saved.width; opacity = saved.opacity
         previousTool = saved.previousTool; savedPenStyle = saved.penStyle; savedHighlighterStyle = saved.highlighterStyle; savedBallpointStyle = saved.ballpointStyle
         toolsExpanded = saved.toolsExpanded; showPages = saved.showPages; showAnnotations = saved.showAnnotations
+        lassoMode = saved.lassoMode; canPaste = UIPasteboard.general.contains(pasteboardTypes: [Self.pasteboardType])
         storeEvents = store.events.sink { [weak self] event in self?.receiveStoreEvent(event) }
         paletteEvents = NotificationCenter.default.publisher(for: NativePDFPalettePreferences.changed).sink { [weak self] event in
             guard let self, event.userInfo?["key"] as? String == NativePDFPalettePreferences.key(root: self.store.root),
@@ -400,7 +396,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
                 let style = self.currentPreferences.drawingStyle
                 let epoch = self.sceneEpoch
                 payload.merge(["nativeInkErase": true, "loading": false, "active": true,
-                    "annotations": self.annotations, "tool": ["name": self.tool == "ballpoint" ? "pen" : self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
+                    "annotations": self.annotations, "tool": ["name": self.tool == "ballpoint" ? "pen" : self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled, "lassoMode": self.lassoMode], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
                 _ = try await self.call("snapshot", payload)
                 self.publishedDrawingRevision = drawingRevision
                 guard self.sceneEpoch == epoch else { self.snapshotRequested = true; continue }
@@ -434,6 +430,19 @@ final class NativePDFWorkspaceModel: ObservableObject {
             guard tool == "select", !isBusy, let id = payload["id"] as? String else { return }
             openAnnotation(id: id)
         case "pointer": receivePointer(payload)
+        case "bodyTap":
+            guard errorMessage == nil, !isBusy else { return }
+            if textEditorDraft != nil {
+                // The tap that opened a box can also arrive here; only a later tap commits.
+                if CFAbsoluteTimeGetCurrent() - textEditorPresentedAt > 0.4 { finishText() }
+            } else if tool == "text", gesture == nil, let number = payload["page"] as? Int, number > 0, number <= pageCount,
+                      let x = payload["x"] as? Double, let y = payload["y"] as? Double {
+                openText(at: CGPoint(x: x, y: y), page: number)
+            }
+        case "selectionFrame":
+            guard selectionCount > 0, let x = payload["x"] as? Double, let y = payload["y"] as? Double,
+                  let width = payload["width"] as? Double, let height = payload["height"] as? Double else { selectionFrame = nil; return }
+            selectionFrame = CGRect(x: x, y: y, width: width, height: height)
         case "stroke", "eraseCommit":
             guard let persistence else { return }
             store.markDocumentChanged()
@@ -476,10 +485,12 @@ final class NativePDFWorkspaceModel: ObservableObject {
         if next == tool { if isInkTool { showStyle.toggle() }; return }
         host?.flush()
         guard !isBusy, errorMessage == nil else { return }
+        if textEditorDraft != nil { finishText() }
         rememberActiveStyle()
         gesture = nil; clearSelection(); clearSourceSelection(); sceneEpoch += 1; sceneRevisions.removeAll(); dirtyScenes.formUnion(scenePages)
         previousTool = tool; tool = next
         if next != "select" { toolsExpanded = true }
+        canPaste = UIPasteboard.general.contains(pasteboardTypes: [Self.pasteboardType])
         if next == "pen" { applyStyle(savedPenStyle) }
         if next == "highlighter" { applyStyle(savedHighlighterStyle) }
         if next == "ballpoint" { applyStyle(savedBallpointStyle) }
@@ -514,6 +525,10 @@ final class NativePDFWorkspaceModel: ObservableObject {
         let value = currentPreset.validated()
         favorites = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.favorites[index] = value }.favorites
     }
+    func setLassoMode(_ mode: String) {
+        guard NativePDFWorkspacePreferences.lassoModes.contains(mode), mode != lassoMode else { return }
+        lassoMode = mode; clearSelection()
+    }
     func setShapeRecognition(_ enabled: Bool) {
         shapeRecognitionEnabled = enabled
         NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.drawAndHold = enabled }
@@ -540,7 +555,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         value.highlighterStyle = tool == "highlighter" ? currentPreset : savedHighlighterStyle
         value.ballpointStyle = tool == "ballpoint" ? currentPreset : savedBallpointStyle
         value.penColor = value.penStyle.color; value.highlighterColor = value.highlighterStyle.color
-        value.shapeRecognitionEnabled = shapeRecognitionEnabled
+        value.shapeRecognitionEnabled = shapeRecognitionEnabled; value.lassoMode = lassoMode
         value.toolsExpanded = toolsExpanded; value.showPages = showPages; value.showAnnotations = showAnnotations
         return value
     }
@@ -574,22 +589,19 @@ final class NativePDFWorkspaceModel: ObservableObject {
     }
     func clearSelection() {
         if let selectionPage { dirtyScenes.insert(selectionPage) }
-        selectedIDs.removeAll(); selectionPage = nil; selectionCount = 0; selectedText = false
+        selectedIDs.removeAll(); selectionPage = nil; selectionCount = 0; selectedText = false; selectionFrame = nil
         updateStyle()
     }
     private func requestScene(_ page: Int) { dirtyScenes.insert(page); updateStyle() }
     private func publishScene(_ page: Int) async throws {
         var values = displayRows.filter { ($0["page"] as? NSNumber)?.intValue == page }
+        if textEditorPage == page, let editing = textObject?["id"] as? String { values.removeAll { $0["id"] as? String == editing } }
         var selection = selectionPage == page ? NativePDFEditingGeometry.union(selectedRows, aspect: aspect(page)) : nil
         if let gesture, gesture.page == page {
             if !gesture.preview.isEmpty {
                 let ids = Set(gesture.preview.compactMap { $0["id"] as? String })
                 values.removeAll { ids.contains($0["id"] as? String ?? "") }; values += gesture.preview
                 if ["select", "lasso"].contains(gesture.tool), !gesture.rows.isEmpty { selection = NativePDFEditingGeometry.union(gesture.preview, aspect: aspect(page)) }
-            }
-            if gesture.tool == "lasso", gesture.rows.isEmpty, gesture.points.count > 1 {
-                let points = (gesture.points + [gesture.points[0]]).map { ["x": Double($0.x), "y": Double($0.y), "p": 0.5] }
-                values.append(["id": gesture.id, "page": page, "kind": "ink", "data": ["inkVersion": 2, "points": points], "style": ["color": "blue", "width": 0.0015, "opacity": 0.8]])
             }
         }
         values = try values.map { row in
@@ -606,7 +618,12 @@ final class NativePDFWorkspaceModel: ObservableObject {
               let phase = payload["phase"] as? String, let raw = payload["points"] as? [[String: Any]],
               let first = raw.first.flatMap(NativePDFEditingGeometry.point), let last = raw.last.flatMap(NativePDFEditingGeometry.point) else { return }
         if phase == "down" {
-            guard !isBusy, !showTextEditor else { return }
+            guard !isBusy else { return }
+            if textEditorDraft != nil {
+                // The contact that opened the box also reaches here; only a later one commits.
+                if CFAbsoluteTimeGetCurrent() - textEditorPresentedAt > 0.4 { finishText() }
+                return
+            }
             var rows: [[String: Any]] = [], box: CGRect?, corner: String?
             if ["select", "lasso"].contains(tool) {
                 if selectionPage == number, let selected = NativePDFEditingGeometry.union(selectedRows, aspect: aspect(number)),
@@ -633,18 +650,19 @@ final class NativePDFWorkspaceModel: ObservableObject {
             contact.preview = [shape(tool: contact.tool, start: contact.start, end: last, page: number, id: contact.id)]
         }
         gesture = contact
+        // The surface draws the dashed lasso itself; nothing changes in the scene until release.
+        if phase == "move", contact.tool == "lasso", contact.rows.isEmpty { return }
         if phase == "up" {
             gesture = nil
             if !contact.preview.isEmpty {
                 performObjectEdit(contact.rows.isEmpty ? "create" : "update", values: contact.preview, expected: contact.rows)
             } else if contact.tool == "lasso", contact.rows.isEmpty {
-                setSelection(NativePDFEditingGeometry.lasso(contact.points, rows: rows(on: number), aspect: aspect(number)), page: number)
+                let polygon = lassoMode == "box"
+                    ? [contact.start, CGPoint(x: last.x, y: contact.start.y), last, CGPoint(x: contact.start.x, y: last.y)]
+                    : contact.points
+                setSelection(NativePDFEditingGeometry.lasso(polygon, rows: rows(on: number), aspect: aspect(number)), page: number)
             } else if contact.tool == "text" {
-                let target = NativePDFEditingGeometry.hit(last, rows: rows(on: number).filter { $0["kind"] as? String == "textbox" }, aspect: aspect(number))
-                if let target, let row = rows(on: number).first(where: { $0["id"] as? String == target }) { presentText(row, existing: true) }
-                else {
-                    presentText(NativePDFTextDraft.newObject(at: last, page: number, pageSize: pageSize(number), defaults: defaults), existing: false)
-                }
+                openText(at: last, page: number)
             }
         }
         requestScene(number)
@@ -655,7 +673,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         else { data = ["box": NativePDFEditingGeometry.dictionary(CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))) ] }
         return ["id": id, "page": page, "kind": tool, "data": data, "style": ["color": color, "width": width, "opacity": opacity]]
     }
-    private func performObjectEdit(_ action: String, values: [[String: Any]], expected original: [[String: Any]]? = nil) {
+    private func performObjectEdit(_ action: String, values: [[String: Any]], expected original: [[String: Any]]? = nil, keepSelection: Bool = false) {
         guard editorTask == nil, let persistence, !values.isEmpty else { return }
         let ids = Set(values.compactMap { $0["id"] as? String })
         let expected = original ?? persistence.rows.filter { ids.contains($0["id"] as? String ?? "") }
@@ -671,7 +689,8 @@ final class NativePDFWorkspaceModel: ObservableObject {
             case "delete": try await persistence.deleteObjects(ids: Set(values.compactMap { $0["id"] as? String }))
             default: throw NativePDFError.invalid("지원하지 않는 개체 편집입니다.")
             }
-            self.clearSelection(); try await self.publishSnapshot(); self.refreshHistory()
+            if !keepSelection { self.clearSelection() }
+            try await self.publishSnapshot(); self.refreshHistory()
         }
         editorTask = task
         Task { @MainActor in
@@ -679,20 +698,67 @@ final class NativePDFWorkspaceModel: ObservableObject {
             catch { self.isBusy = self.materialMutating; self.fail(error) }
         }
     }
-    private func restoreInput() { host?.setPresentation(blocked: false, inputBlocked: isBusy || materialMutating || blockedForError || closing != nil || showTextEditor || showAnnotationEditor || showStyle, overlays: []) }
+    private func restoreInput() {
+        host?.setPresentation(blocked: false, inputBlocked: isBusy || materialMutating || blockedForError || closing != nil || showAnnotationEditor || showStyle, overlays: [])
+        textInput?.view.isEditable = !(isBusy || errorMessage != nil)
+    }
     func deleteSelection() { guard !isBusy else { return }; performObjectEdit("delete", values: selectedRows) }
     func duplicateSelection() {
         guard !isBusy, let selectionPage else { return }
         performObjectEdit("create", values: NativePDFEditingGeometry.translated(selectedRows, dx: 0.025, dy: 0.025, aspect: aspect(selectionPage)).map { value in var value = value; value.removeValue(forKey: "id"); return value })
     }
     func editSelectedText() { guard selectedText, let row = selectedRows.first, !isBusy else { return }; presentText(row, existing: true) }
+    func copySelection() {
+        let rows = NativePDFEditingGeometry.portable(selectedRows)
+        guard !rows.isEmpty, let data = try? JSONSerialization.data(withJSONObject: rows) else { return }
+        UIPasteboard.general.setData(data, forPasteboardType: Self.pasteboardType); canPaste = true
+    }
+    func cutSelection() { guard !isBusy else { return }; copySelection(); deleteSelection() }
+    func pasteObjects() {
+        guard !isBusy, let data = UIPasteboard.general.data(forPasteboardType: Self.pasteboardType),
+              let rows = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]], !rows.isEmpty else { canPaste = false; return }
+        // ponytail: same-page paste nudges by 0.025 like duplicate; a cross-page paste keeps its place.
+        let samePage = (rows.first?["page"] as? NSNumber)?.intValue == page
+        let values = NativePDFEditingGeometry.translated(rows, dx: samePage ? 0.025 : 0, dy: samePage ? 0.025 : 0, aspect: aspect(page))
+            .map { row in var row = row; row["page"] = page; return row }
+        performObjectEdit("create", values: values)
+    }
+    func restyleSelection(color: String? = nil, width: Double? = nil, opacity: Double? = nil) {
+        guard !isBusy, !selectedRows.isEmpty else { return }
+        performObjectEdit("update", values: NativePDFEditingGeometry.restyled(selectedRows, color: color, width: width, opacity: opacity), expected: selectedRows, keepSelection: true)
+    }
+    private func openText(at point: CGPoint, page number: Int) {
+        let boxes = rows(on: number).filter { $0["kind"] as? String == "textbox" }
+        if let target = NativePDFEditingGeometry.hit(point, rows: boxes, aspect: aspect(number)), let row = boxes.first(where: { $0["id"] as? String == target }) {
+            presentText(row, existing: true)
+        } else {
+            presentText(NativePDFTextDraft.newObject(at: point, page: number, pageSize: pageSize(number), defaults: defaults), existing: false)
+        }
+    }
+    /// Edits in place: the page overlay hosts the text view, the pane shows the format bar.
     private func presentText(_ object: [String: Any], existing: Bool) {
+        if textEditorDraft != nil { clearTextEditor() }
         textObject = object; editingExistingText = existing; pendingTextSave = nil; textCreateMutationID = UUID().uuidString
         let number = (object["page"] as? NSNumber)?.intValue ?? page
-        textEditorDraft = NativePDFTextDraft(object: object, pageSize: pageSize(number), existing: existing, defaults: defaults,
+        let draft = NativePDFTextDraft(object: object, pageSize: pageSize(number), existing: existing, defaults: defaults,
             onChange: { [weak self] in self?.markDraftChanged() })
-        showStyle = false; showTextEditor = true
-        Task { @MainActor in self.restoreInput() }
+        textEditorDraft = draft; textEditorPage = number; textEditorPresentedAt = CFAbsoluteTimeGetCurrent()
+        let input = NativePDFTextInput(draft: draft, onSave: { [weak self] in self?.finishText() }, onCancel: { [weak self] in self?.cancelText() })
+        textInput = input
+        clearSelection(); showStyle = false
+        host?.setTextEditor(surfaceID: surfaceID, generation: generation, page: number, view: input.view)
+        requestScene(number); restoreInput()
+    }
+    private func clearTextEditor() {
+        if let page = textEditorPage { host?.setTextEditor(surfaceID: surfaceID, generation: generation, page: page, view: nil); dirtyScenes.insert(page) }
+        textInput?.detach(); textInput = nil; textObject = nil; textEditorDraft = nil; textEditorPage = nil
+    }
+    /// 완료 / tap outside / tool switch: keep text, drop an emptied box.
+    func finishText() {
+        guard let draft = textEditorDraft, !isBusy else { return }
+        host?.restoreTextScroll(surfaceID: surfaceID, generation: generation)
+        draft.finishComposition()
+        if draft.hasText { commitText() } else if editingExistingText { deleteText() } else { cancelText() }
     }
     func commitText() {
         guard let object = textObject, let draft = textEditorDraft, let persistence, editorTask == nil else { return }
@@ -735,11 +801,12 @@ final class NativePDFWorkspaceModel: ObservableObject {
                 throw NativePDFError.invalid("텍스트 저장 결과를 확인하지 못했습니다. 다시 저장해 주세요.")
             }
             self.pendingTextSave = nil
-            self.textObject = nil; self.textEditorDraft = nil; self.showTextEditor = false
+            self.clearTextEditor()
             self.errorMessage = nil; self.blockedForError = false; self.isBusy = self.materialMutating
-            self.chooseTool("select")
+            if self.tool == "text" { self.chooseTool("select") }
             let number = (saved["page"] as? NSNumber)?.intValue ?? self.page
-            self.setSelection([id], page: number); self.requestScene(number); self.restoreInput()
+            if self.tool == "select" { self.setSelection([id], page: number) }
+            self.requestScene(number); self.restoreInput()
         }
         editorTask = task
         Task { @MainActor in
@@ -754,13 +821,12 @@ final class NativePDFWorkspaceModel: ObservableObject {
     }
     func cancelText() {
         guard !isBusy, pendingTextSave == nil else { return }
-        textObject = nil; textEditorDraft = nil; showTextEditor = false
+        clearTextEditor()
         errorMessage = nil; blockedForError = false; updateStyle(); restoreInput()
     }
-    func dismissText() { if !showTextEditor { textObject = nil; textEditorDraft = nil }; restoreInput() }
     func deleteText() {
         guard let object = textObject, editingExistingText, !isBusy, pendingTextSave == nil else { return }
-        textObject = nil; textEditorDraft = nil; showTextEditor = false
+        clearTextEditor()
         performObjectEdit("delete", values: [object])
     }
     private func refreshAnnotations() async throws {
@@ -885,7 +951,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
     }
     func flush() async throws {
         if showAnnotationEditor, annotationDraft != nil { commitAnnotation() }
-        if showTextEditor { textEditorDraft?.finishComposition(); if textEditorDraft?.hasText == true { commitText() } }
+        if textEditorDraft != nil { finishText() }
         repeat {
             if let historyTask { try await historyTask.value }
             if let editorTask { try await editorTask.value }
@@ -980,6 +1046,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
     }
     private func fail(_ error: Error) {
         errorMessage = error.localizedDescription
+        textInput?.view.isEditable = false
         if !blockedForError {
             blockedForError = true
             host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])

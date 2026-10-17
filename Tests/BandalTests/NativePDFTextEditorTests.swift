@@ -116,6 +116,34 @@ final class NativePDFTextEditorTests: XCTestCase {
         XCTAssertEqual(draft.style.fontSizePt, 14, "Display zoom never rewrites saved typographic points")
     }
 
+    @MainActor
+    func testLiveBoxMapsToOverlayFrameAndGrowsWithText() throws {
+        let mapper = InkCoordinateMapper.whiteboard(size: page)
+        let frame = NativePDFInkSurface.textEditorFrame(box: CGRect(x: 0.1, y: 0.1, width: 0.5, height: 0.2), mapper: mapper)
+        XCTAssertEqual(frame.minX, page.width * 0.1, accuracy: 0.01); XCTAssertEqual(frame.minY, page.height * 0.1, accuracy: 0.01)
+        XCTAssertEqual(frame.width, page.width * 0.5, accuracy: 0.01); XCTAssertEqual(frame.height, page.height * 0.2, accuracy: 0.01)
+        let draft = NativePDFTextDraft(object: NativePDFTextDraft.newObject(at: CGPoint(x: 0.3, y: 0.4), page: 1, pageSize: page), pageSize: page, existing: false)
+        let empty = try XCTUnwrap(draft.box)
+        draft.acceptEditorText(NSAttributedString(string: "줄 하나\n줄 둘\n줄 셋"), selection: NSRange(location: 0, length: 0), composing: false)
+        let tall = try XCTUnwrap(draft.box)
+        XCTAssertGreaterThan(tall.height, empty.height, "The on-page box grows with its text")
+        XCTAssertEqual(tall.width, empty.width); XCTAssertEqual(tall.minX, empty.minX)
+    }
+
+    @MainActor
+    func testTextInputScalesTypographyToOverlayWidth() throws {
+        let draft = NativePDFTextDraft(object: NativePDFTextDraft.fittedObject(row(text: "scale"), pageSize: page), pageSize: page, existing: true)
+        let input = NativePDFTextInput(draft: draft, onSave: {}, onCancel: {})
+        XCTAssertEqual(input.view.pageBox, draft.box)
+        input.view.frame = CGRect(x: 0, y: 0, width: draft.physicalWidth * 2, height: 100)
+        input.update()
+        let font = try XCTUnwrap(input.view.attributedText.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)
+        XCTAssertEqual(font.pointSize, 28, "14 pt text doubles with a 2x overlay")
+        XCTAssertEqual(input.view.textContainerInset.left, 14 * 0.36 * 2, accuracy: 0.001)
+        XCTAssertFalse(input.view.isScrollEnabled)
+        input.detach()
+    }
+
     func testKoreanCompositionProtectsKeyboardFinishAndEscape() throws {
         let view = NativePDFTextInputView(usingTextLayoutManager: false)
         var saved = 0, cancelled = 0

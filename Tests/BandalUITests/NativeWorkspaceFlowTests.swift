@@ -105,8 +105,21 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         // selection also proves the move changed geometry, not merely its count.
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.60))
             .press(forDuration: 0.05, thenDragTo: pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.76, dy: 0.60)), withVelocity: .slow, thenHoldForDuration: 0.05)
-        XCTAssertTrue(remove.waitForExistence(timeout: 10), app.debugDescription); remove.tap()
-        expectInkCount(0, in: app)
+        XCTAssertTrue(remove.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["native-pdf-selection-style"].exists, "Floating bar offers restyle")
+        tapPDFControl("native-pdf-copy-selection", in: app)
+        remove.tap(); expectInkCount(0, in: app)
+        // Paste lives in the lasso row so a copy can land on any page without a selection.
+        tapPDFControl("native-pdf-paste", in: app); expectInkCount(1, in: app)
+        attachScreenshot(app, name: "Pasted stroke from the clipboard")
+        let boxMode = app.buttons["박스형"].firstMatch
+        XCTAssertTrue(boxMode.waitForExistence(timeout: 5), app.debugDescription); boxMode.tap()
+        pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.30, dy: 0.25))
+            .press(forDuration: 0.05, thenDragTo: pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.72)), withVelocity: .slow, thenHoldForDuration: 0.05)
+        XCTAssertTrue(remove.waitForExistence(timeout: 10), "Box lasso selects the pasted stroke" + app.debugDescription)
+        attachScreenshot(app, name: "Box lasso selection with floating action bar")
+        remove.tap(); expectInkCount(0, in: app)
+        app.buttons["자유형"].firstMatch.tap()
         tapPDFControl("native-pdf-undo", in: app); expectInkCount(1, in: app)
         selectObjectTool("text", in: app)
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.42, dy: 0.72)).tap()

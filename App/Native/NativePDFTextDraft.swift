@@ -92,6 +92,11 @@ final class NativePDFTextDraft: ObservableObject {
         NativePDFTextStyle(base.merging(effectiveInline) { _, next in next }, pageWidth: pageSize.width)
     }
     var boxStyle: NativePDFTextStyle { NativePDFTextStyle(base, pageWidth: pageSize.width) }
+    /// Live normalized box. The height is refit from the same TextKit layout the
+    /// saved row uses, so the on-page editor and the rendered box agree.
+    var box: CGRect? {
+        NativePDFEditingGeometry.bounds(Self.fittedObject(["kind": "textbox", "data": data, "style": base], pageSize: pageSize))
+    }
     private var effectiveInline: [String: Any] {
         if let caretOverrides, selection.length == 0 { return caretOverrides }
         guard richText.length > 0 else { return [:] }

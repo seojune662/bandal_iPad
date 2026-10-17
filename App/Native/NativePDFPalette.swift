@@ -184,6 +184,13 @@ struct NativePDFPaletteQuickControls: View {
                                 NativePDFPaletteWidthButton(model: model, width: width, index: index, id: "native-pdf-width-\(index)")
                             }
                         }
+                    } else if model.tool == "lasso" {
+                        Picker("올가미 방식", selection: Binding(get: { model.lassoMode }, set: { model.setLassoMode($0) })) {
+                            Text("자유형").tag("freeform"); Text("박스형").tag("box")
+                        }.pickerStyle(.segmented).frame(width: 170).padding(.horizontal, 4).accessibilityIdentifier("native-pdf-lasso-mode")
+                        Button { model.pasteObjects() } label: {
+                            Label("붙여넣기", systemImage: "doc.on.clipboard").font(.system(size: 12)).frame(height: 44).padding(.horizontal, 8).contentShape(Rectangle())
+                        }.disabled(!model.canPaste).opacity(model.canPaste ? 1 : 0.4).accessibilityIdentifier("native-pdf-paste")
                     } else {
                         Text(contextHint).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary).padding(8).lineLimit(1)
                     }

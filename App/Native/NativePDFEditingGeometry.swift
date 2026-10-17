@@ -76,6 +76,28 @@ enum NativePDFEditingGeometry {
         let values: [(String, CGPoint)] = [("nw", CGPoint(x: box.minX, y: box.minY)), ("ne", CGPoint(x: box.maxX, y: box.minY)), ("sw", CGPoint(x: box.minX, y: box.maxY)), ("se", CGPoint(x: box.maxX, y: box.maxY))]
         return values.first { hypot(point.x - $0.1.x, (point.y - $0.1.y) * aspect) < 0.018 }?.0
     }
+    /// Clipboard form: page/kind/data/style only. Images reference course
+    /// assets that may not exist in the destination, so they do not travel.
+    static func portable(_ rows: [[String: Any]]) -> [[String: Any]] {
+        rows.compactMap { row in
+            guard let kind = row["kind"] as? String, kind != "image", let data = row["data"], let style = row["style"] else { return nil }
+            return ["page": row["page"] ?? 1, "kind": kind, "data": data, "style": style]
+        }
+    }
+    /// Restyle keeps every unknown style field. Text boxes only take a colour;
+    /// highlighters keep their effective width and opacity rules.
+    static func restyled(_ rows: [[String: Any]], color: String?, width: Double?, opacity: Double?) -> [[String: Any]] {
+        rows.map { row in
+            var row = row; var style = row["style"] as? [String: Any] ?? [:]
+            let kind = row["kind"] as? String ?? ""
+            if let color { style["color"] = color }
+            if kind != "textbox" {
+                if let width { style["width"] = kind == "highlighter" ? max(0.014, width * 4) : width }
+                if let opacity { style["opacity"] = kind == "highlighter" ? min(opacity, 0.34) : opacity }
+            }
+            row["style"] = style; row.removeValue(forKey: "nativePath"); row.removeValue(forKey: "_nativeInk"); return row
+        }
+    }
     static func dictionary(_ rect: CGRect) -> [String: Double] { ["x": Double(rect.minX), "y": Double(rect.minY), "width": Double(rect.width), "height": Double(rect.height)] }
     static func point(_ value: [String: Any]) -> CGPoint? {
         guard let x = number(value["x"]), let y = number(value["y"]) else { return nil }; return CGPoint(x: x, y: y)

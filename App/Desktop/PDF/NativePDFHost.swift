@@ -98,6 +98,17 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
         guard let item = documents[surfaceID], item.generation == generation else { return }
         item.pdfView.clearSelection()
     }
+    /// Returns the page to where it was before the keyboard reveal; called before the edit is committed.
+    func restoreTextScroll(surfaceID: String, generation: String) {
+        guard let item = documents[surfaceID], item.generation == generation else { return }
+        item.restoreScrollAfterTextEditing()
+    }
+    /// Installs (or removes) the live text box on one page of a document.
+    func setTextEditor(surfaceID: String, generation: String, page: Int, view: NativePDFTextInputView?) {
+        guard let item = documents[surfaceID], item.generation == generation else { return }
+        item.textEditor = view.map { (page: page, view: $0) }
+        if view == nil { item.cancelKeyboardReveal(); item.restoreScrollAfterTextEditing() } else { item.revealTextEditorWhenKeyboardShows() }
+    }
     func canHandle(_ channel: String) -> Bool { channel.hasPrefix("pdfNative:") }
     func handle(_ channel: String, request: [String: Any]) async throws -> Any {
         if channel == "pdfNative:capabilities" {
@@ -636,6 +647,50 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private var imageTasks: [String: Task<Void, Never>] = [:]
     private var imageFailures: Set<String> = []
     private var overlays: [Int: NativePDFInkSurface] = [:]
+    var textEditor: (page: Int, view: NativePDFTextInputView)? { didSet {
+        if oldValue?.view !== textEditor?.view { oldValue?.view.resignFirstResponder(); oldValue?.view.removeFromSuperview() }
+        applyTextEditor()
+    } }
+    private var keyboardReveal: NSObjectProtocol?
+    /// Scroll offset before a keyboard reveal, so finishing the box returns the page.
+    private var revealOffset: CGPoint?
+    /// The text view sits beside the PDF view in the host container, above it,
+    /// so UIKit hit-testing and accessibility reach it directly.
+    private func applyTextEditor() {
+        if let view = textEditor?.view, let container = pdfView.superview {
+            if view.superview !== container {
+                view.isHidden = true; container.addSubview(view)
+                DispatchQueue.main.async { [weak view] in view?.becomeFirstResponder() }
+            }
+            container.bringSubviewToFront(view)
+        }
+        for (number, overlay) in overlays { overlay.textEditor = textEditor?.page == number ? textEditor?.view : nil }
+    }
+    /// One-shot: once the keyboard is up, scroll the box above it.
+    func revealTextEditorWhenKeyboardShows() {
+        cancelKeyboardReveal()
+        keyboardReveal = NotificationCenter.default.addObserver(forName: UIResponder.keyboardDidShowNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.cancelKeyboardReveal()
+                guard let view = self.textEditor?.view, view.window != nil, let scroll = self.scrollView else { return }
+                let before = scroll.contentOffset
+                scroll.scrollRectToVisible(view.convert(view.bounds, to: scroll).insetBy(dx: 0, dy: -24), animated: false)
+                if scroll.contentOffset != before, self.revealOffset == nil { self.revealOffset = before }
+            }
+        }
+    }
+    func cancelKeyboardReveal() {
+        if let keyboardReveal { NotificationCenter.default.removeObserver(keyboardReveal) }
+        keyboardReveal = nil
+    }
+    /// Undo the reveal: finishing a box returns the page to where editing started.
+    func restoreScrollAfterTextEditing() {
+        defer { revealOffset = nil }
+        guard let offset = revealOffset, let scroll = scrollView else { return }
+        // Synchronous, so the persistence barrier that follows records the restored position.
+        scroll.setContentOffset(offset, animated: false)
+    }
     private let drawingSnapshots = NativePDFDrawingSnapshotStore()
     private var objects: [[String: Any]] { drawingSnapshots.orderedRows.map(\.object) }
     private var pendingRows: [String: NativePDFDrawingSnapshotStore.Row] = [:]
@@ -970,7 +1025,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         if let value = request["tool"] as? [String: Any], let name = value["name"] as? String,
            let data = try? JSONSerialization.data(withJSONObject: value["style"] as? [String: Any] ?? [:]),
            let style = try? JSONDecoder().decode(NativePDFInkStyle.self, from: data), style.isValid {
-            nextTool = .init(name: name, drawAndHold: value["drawAndHold"] as? Bool ?? true, style: style)
+            nextTool = .init(name: name, drawAndHold: value["drawAndHold"] as? Bool ?? true, style: style, lassoBox: value["lassoMode"] as? String == "box")
         }
         let epoch: Int?
         if request["objectSceneEpoch"] != nil {
@@ -1143,6 +1198,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             overlay.nativeErasingEnabled = nativeInkEraseEnabled
             overlay.erasedIdentifiers = operationLedger.excludedIdentifiers(page: number)
             overlay.tool = tool; overlay.isLoading = loading
+            overlay.textEditor = textEditor?.page == number ? textEditor?.view : nil
             overlay.highlights = highlights.filter { $0["page"] as? Int == number }
             overlay.selectedTextRects = selectedTextRects[number] ?? []
             let scene = objectScenes[number]
@@ -1191,6 +1247,24 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         }
         pendingOrder.removeAll { pending[$0] == nil }
         pendingRows = pendingRows.filter { pending[$0.key] != nil }
+        publishSelectionFrame()
+    }
+    private var lastSelectionFrame: [String: Any] = [:]
+    /// The selection box in the host container's coordinates, so SwiftUI can
+    /// float an action bar above it. Emits only when the rectangle changes.
+    private func publishSelectionFrame() {
+        var payload: [String: Any] = [:]
+        for (number, overlay) in overlays {
+            guard overlay.window != nil, let box = overlay.selectionBox, let mapper = overlay.mapper,
+                  let x = box["x"], let y = box["y"], let w = box["width"], let h = box["height"], [x, y, w, h].allSatisfy(\.isFinite) else { continue }
+            let a = mapper.canvasPoint(InkPoint(x: x, y: y, p: 0.5)), b = mapper.canvasPoint(InkPoint(x: x + w, y: y + h, p: 0.5))
+            let local = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
+            let rect = overlay.convert(local, to: pdfView.superview ?? pdfView)
+            payload = ["page": number, "x": Double(rect.minX), "y": Double(rect.minY), "width": Double(rect.width), "height": Double(rect.height)]
+            break
+        }
+        guard !NSDictionary(dictionary: payload).isEqual(to: lastSelectionFrame) else { return }
+        lastSelectionFrame = payload; onEvent("selectionFrame", payload)
     }
     private static func imageKey(_ object: [String: Any]) -> String {
         let value = object["data"] as? [String: Any] ?? [:]
@@ -1225,6 +1299,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     }
     private func viewportChanged() {
         overlays.values.forEach { $0.refreshViewport() }
+        publishSelectionFrame()
         updateAccessibilityState()
         guard !navigating, !suspended else { return }
         emission?.cancel()
@@ -1304,13 +1379,15 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     }
     @objc private func annotationTapped(_ gesture: UITapGestureRecognizer) {
         guard gesture.state == .ended else { return }
-        onEvent("activate", [:])
-        onEvent("bodyTap", [:])
-        guard tool.name == "select" else { return }
         let location = gesture.location(in: pdfView)
-        guard let page = pdfView.page(for: location, nearest: false) else { return }
+        // A tap inside the live text box moves the caret; it is not "outside".
+        if let view = textEditor?.view, view.window != nil, view.bounds.contains(gesture.location(in: view)) { return }
+        onEvent("activate", [:])
+        guard let page = pdfView.page(for: location, nearest: false) else { onEvent("bodyTap", [:]); return }
         let number = document.index(for: page) + 1
         let point = NativePDFPageCoordinates(page: page).displayNormalized(pdfView.convert(location, to: page))
+        onEvent("bodyTap", ["page": number, "x": Double(point.x), "y": Double(point.y)])
+        guard tool.name == "select" else { return }
         func contains(_ value: [String: Double]) -> Bool {
             guard let x = value["x"], let y = value["y"], let w = value["width"], let h = value["height"] else { return false }
             return CGRect(x: x, y: y, width: w, height: h).contains(point)
@@ -1377,6 +1454,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             let convert: (CGPoint) -> CGPoint = { coordinates.displayPhysical(self.pdfView.convert(overlay.convert($0, to: self.pdfView), to: page)) }
             guard let transform = NativePDFCoordinateMapping.sample(bounds: overlay.bounds, convert: convert) else { return }
             overlay.mapper = InkCoordinateMapper(canvasToPDF: transform, geometry: coordinates.geometry)
+            self.publishSelectionFrame()
         }
         overlays[number] = overlay; refreshOverlays(); return overlay
     }
@@ -1403,6 +1481,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         emission?.cancel(); viewportObservation = nil
         observations.forEach(NotificationCenter.default.removeObserver); observations.removeAll()
         imageTasks.values.forEach { $0.cancel() }; imageTasks.removeAll(); images.removeAllObjects()
+        cancelKeyboardReveal(); textEditor = nil
         pdfView.removeFromSuperview(); pdfView.pageOverlayViewProvider = nil; pdfView.document = nil; overlays.removeAll()
         objectScenes.removeAll()
     }

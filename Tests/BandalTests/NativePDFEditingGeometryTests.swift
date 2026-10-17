@@ -14,6 +14,32 @@ final class NativePDFEditingGeometryTests: XCTestCase {
         let empty = [CGPoint(x: 0.08, y: 0.85), CGPoint(x: 0.15, y: 0.85), CGPoint(x: 0.15, y: 0.95), CGPoint(x: 0.08, y: 0.95)]
         XCTAssertTrue(NativePDFEditingGeometry.lasso(empty, rows: [row], aspect: 1.4).isEmpty)
     }
+    func testBoxLassoCornersSelectCrossingStrokeAndPortableRowsDropIdentityAndImages() {
+        let row = stroke([["x": 0.1, "y": 0.1, "p": 0.4], ["x": 0.9, "y": 0.9, "p": 0.8]])
+        let start = CGPoint(x: 0.4, y: 0.6), end = CGPoint(x: 0.6, y: 0.4)
+        let box = [start, CGPoint(x: end.x, y: start.y), end, CGPoint(x: start.x, y: end.y)]
+        XCTAssertEqual(NativePDFEditingGeometry.lasso(box, rows: [row], aspect: 1.4), ["ink"])
+        var stale = row; stale["nativePath"] = "stale"; stale["_nativeInk"] = "cache"
+        let image: [String: Any] = ["id": "img", "page": 1, "kind": "image", "data": ["box": ["x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2]], "style": ["color": "ink", "width": 0.01, "opacity": 1]]
+        let portable = NativePDFEditingGeometry.portable([stale, image])
+        XCTAssertEqual(portable.count, 1)
+        XCTAssertEqual(Set(portable[0].keys), ["page", "kind", "data", "style"])
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(portable))
+    }
+    func testRestyleAppliesHighlighterRulesAndLeavesTextBoxGeometryAlone() throws {
+        var highlighter = stroke([["x": 0.1, "y": 0.1, "p": 0.4]]); highlighter["kind"] = "highlighter"; highlighter["nativePath"] = "stale"
+        let text: [String: Any] = ["id": "t", "page": 1, "kind": "textbox", "data": ["box": ["x": 0.1, "y": 0.1, "width": 0.3, "height": 0.1], "text": "hi"],
+                                   "style": ["color": "ink", "width": 0.01, "opacity": 1, "fontSizePt": 14, "bold": true, "align": "center"]]
+        let rows = NativePDFEditingGeometry.restyled([highlighter, text], color: "red", width: 0.004, opacity: 0.9)
+        let marker = try XCTUnwrap(rows[0]["style"] as? [String: Any]), label = try XCTUnwrap(rows[1]["style"] as? [String: Any])
+        XCTAssertEqual(marker["color"] as? String, "red"); XCTAssertEqual(marker["width"] as? Double, 0.016); XCTAssertEqual(marker["opacity"] as? Double, 0.34)
+        XCTAssertNil(rows[0]["nativePath"])
+        XCTAssertEqual(label["color"] as? String, "red"); XCTAssertEqual(label["width"] as? Double, 0.01); XCTAssertEqual((label["opacity"] as? NSNumber)?.doubleValue, 1)
+        XCTAssertEqual(label["bold"] as? Bool, true); XCTAssertEqual(label["align"] as? String, "center")
+        let ink = NativePDFEditingGeometry.restyled([stroke([["x": 0.1, "y": 0.1, "p": 0.4]])], color: nil, width: 0.004, opacity: nil)
+        XCTAssertEqual((ink[0]["style"] as? [String: Any])?["width"] as? Double, 0.004)
+        XCTAssertEqual((ink[0]["style"] as? [String: Any])?["color"] as? String, "blue", "nil leaves the colour alone")
+    }
     func testMoveAndResizePreserveMeasuredSamplesAndDropStaleLegacyPath() throws {
         let point: [String: Any] = ["x": 0.2, "y": 0.3, "p": 0.00016200891049007697, "t": 12.3354324324321, "tiltX": -30.33, "tiltY": 22.53]
         var row = stroke([point]); row["nativePath"] = "stale"

@@ -61,6 +61,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         var name = "select"
         var drawAndHold = false
         var style = NativePDFInkStyle(color: "ink", width: 0.003, opacity: 1)
+        var lassoBox = false
     }
     var tool = Tool() { didSet { if tool != oldValue { finishMeasuredStroke(); reviewBackdropDependency() } } }
     var retainedInkEnabled = false { didSet { if oldValue != retainedInkEnabled { retainedModelDirty = true; schedulePreview() } } }
@@ -266,6 +267,28 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     }
     var highlights: [[String: Any]] = [] { didSet { invalidateObjectScene() } }
     var selectionBox: [String: Double]? { didSet { decorations.setNeedsDisplay() } }
+    /// The live text box being edited on this page. The host owns the view
+    /// (a sibling above the PDF view, so it stays reachable by accessibility);
+    /// this overlay only maps `pageBox` into its frame on every layout pass.
+    var textEditor: NativePDFTextInputView? { didSet {
+        guard textEditor !== oldValue else { return }
+        setNeedsLayout(); decorations.setNeedsDisplay()
+    } }
+    private var textEditorLocalFrame: CGRect? {
+        guard let editor = textEditor, !editor.isHidden, let host = editor.superview else { return nil }
+        return convert(editor.frame, from: host)
+    }
+    static func textEditorFrame(box: CGRect, mapper: InkCoordinateMapper) -> CGRect {
+        let a = mapper.canvasPoint(InkPoint(x: box.minX, y: box.minY, p: 0.5)), b = mapper.canvasPoint(InkPoint(x: box.maxX, y: box.maxY, p: 0.5))
+        return CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
+    }
+    private func layoutTextEditor() {
+        guard let editor = textEditor, let host = editor.superview else { return }
+        guard let mapper, let box = editor.pageBox, renderViewport != nil, window != nil else { editor.isHidden = true; return }
+        let frame = convert(Self.textEditorFrame(box: box, mapper: mapper).insetBy(dx: 0, dy: -1), to: host)
+        editor.isHidden = false
+        if editor.frame != frame { editor.frame = frame; decorations.setNeedsDisplay() }
+    }
     var selectedTextRects: [[String: Double]] = [] { didSet { decorations.setNeedsDisplay() } }
     var selectionResizable = false
     var selectionTextHandles = false
@@ -513,11 +536,12 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         recordInput("scribble.denied"); return false
     }
     override func layoutSubviews() {
-        super.layoutSubviews(); onLayout?(); refreshViewport()
+        super.layoutSubviews(); onLayout?(); refreshViewport(); layoutTextEditor()
     }
     /// Called by PDFKit's host after scrolling, zooming, and window resizing.
     /// Rendering is coalesced to a display frame; input still uses page coords.
     func refreshViewport() {
+        defer { layoutTextEditor() }
         let started = CACurrentMediaTime()
         defer { navigationRefreshMaxCPUMS = max(navigationRefreshMaxCPUMS, (CACurrentMediaTime()-started)*1000) }
         let windowBounds = window.map { convert($0.bounds, from: $0) }
@@ -543,6 +567,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         // Metal keeps reprojected pixels through navigation instead.
         scene.isHidden = viewport == nil || scene.image == nil || (retainedInkActive && retainedInstallCount > 0)
         guard let viewport else {
+            textEditor?.isHidden = true
             retainedPaperCrop.reset(); failedRetainedPaperCropImage = nil; retainedPaperCropActive = false
             asynchronousEditDisplayActive = false
             navigationView.isHidden = true; navigationDisplayActive = false
@@ -602,6 +627,8 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     }
     func pencilInputTarget(at point: CGPoint) -> UIView? {
         guard !isHidden, alpha > 0.01, isUserInteractionEnabled, bounds.contains(point) else { return nil }
+        // Pencil inside the live text box places the caret (and Scribble) instead of drawing.
+        if let frame = textEditorLocalFrame, frame.contains(point) { return nil }
         guard !isLoading else { recordInput("blocked.loading"); return nil }
         guard !journalBlocked else { recordInput("blocked.journal"); return nil }
         guard mapper != nil else { recordInput("blocked.mapper"); return nil }
@@ -675,7 +702,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         }
         contactTimings = contactTimings.filter { $0.key >= inputSequence &- min(inputSequence, 32) }
         onInputOwnership?(true)
-        measured = []; predicted = []; estimated = [:]; ending = false
+        measured = []; redrawLassoPreview(); predicted = []; estimated = [:]; ending = false
         resetHoldSnap()
         nativeEraseContact = tool.name == "eraser" && nativeErasingEnabled && prepareRetainedScene()
         if nativeEraseContact {
@@ -703,6 +730,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         }
         publishPointer("move", points: Array(measured.dropFirst(start)))
         updateHoldSnap(from: start)
+        redrawLassoPreview()
         schedulePreview()
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -1008,7 +1036,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         let entry = EstimatedCompletion(stroke: stroke, indices: estimated)
         do { try estimatedCompletions.append(entry, id: id) }
         catch { journalBlocked = true; onFailure?(error); return }
-        active = nil; measured = []; predicted = []; estimated = [:]; onInputOwnership?(false)
+        active = nil; measured = []; redrawLassoPreview(); predicted = []; estimated = [:]; onInputOwnership?(false)
         backdropDependencyNeedsReview = true
         do {
             guard let onCheckpoint else { throw NativePDFError.invalid("필기 보정 저장 연결을 확인해 주세요.") }
@@ -1357,7 +1385,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         let last = measured.last
         markContactEnded()
         completion?.cancel(); completion = nil; ending = false
-        active = nil; measured = []; predicted = []; estimated = [:]
+        active = nil; measured = []; redrawLassoPreview(); predicted = []; estimated = [:]
         onInputOwnership?(false)
         if let last { publishPointer("up", points: [last]) }
         previewGeometry.reset(); schedulePreview()
@@ -1391,7 +1419,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
                 }
                 nativeEraseContact = false; erasingTargets = []; erasingKeys = []; eraserPreviousPoint = nil
             } else if let last = measured.last { publishPointer(cancelObjectEdit ? "cancel" : "up", points: [last]) }
-            active = nil; predicted = []; measured = []
+            active = nil; predicted = []; measured = []; redrawLassoPreview()
             onInputOwnership?(false)
         }
         do {
@@ -2031,9 +2059,27 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
             context.restoreGState()
         }
     }
+    private func redrawLassoPreview() { if strokeTool.name == "lasso" || tool.name == "lasso" { decorations.setNeedsDisplay() } }
     private func drawDecorations(in context: CGContext) {
         guard let mapper else { return }
         func point(_ x: Double, _ y: Double) -> CGPoint { mapper.canvasPoint(InkPoint(x: x, y: y, p: 0.5)) }
+        func roundHandle(_ center: CGPoint) {
+            let handle = CGRect(x: center.x - 6, y: center.y - 6, width: 12, height: 12)
+            context.setFillColor(UIColor.systemBlue.cgColor); context.fillEllipse(in: handle)
+            context.setStrokeColor(UIColor.white.cgColor); context.setLineWidth(2); context.strokeEllipse(in: handle.insetBy(dx: 1, dy: 1))
+            context.setStrokeColor(UIColor.systemBlue.cgColor); context.setLineWidth(1)
+        }
+        if active != nil, strokeTool.name == "lasso", measured.count > 1, let first = measured.first, let last = measured.last {
+            let path = CGMutablePath()
+            if strokeTool.lassoBox {
+                let a = point(first.x, first.y), b = point(last.x, last.y)
+                path.addRect(CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y)))
+            } else {
+                path.move(to: point(first.x, first.y)); for sample in measured.dropFirst() { path.addLine(to: point(sample.x, sample.y)) }; path.closeSubpath()
+            }
+            context.setStrokeColor(UIColor.systemBlue.cgColor); context.setLineWidth(1.5); context.setLineDash(phase: 0, lengths: [6, 4])
+            context.addPath(path); context.strokePath(); context.setLineDash(phase: 0, lengths: [])
+        }
         // The opaque, multiply-correct backdrop covers PDFKit's selection
         // painting. Repaint its exact line bounds above the same PDF pixels.
         context.setFillColor(UIColor.systemBlue.withAlphaComponent(0.24).cgColor)
@@ -2050,11 +2096,13 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
             if selectionResizable {
                 var centers = [CGPoint(x: frame.minX, y: frame.minY), CGPoint(x: frame.maxX, y: frame.minY), CGPoint(x: frame.minX, y: frame.maxY), CGPoint(x: frame.maxX, y: frame.maxY)]
                 if selectionTextHandles { centers += [CGPoint(x: frame.minX, y: frame.midY), CGPoint(x: frame.maxX, y: frame.midY)] }
-                for center in centers {
-                    let handle = CGRect(x: center.x-5, y: center.y-5, width: 10, height: 10)
-                    context.setFillColor(UIColor.white.cgColor); context.fill(handle); context.stroke(handle)
-                }
+                centers.forEach(roundHandle)
             }
+        }
+        if let frame = textEditorLocalFrame {
+            context.setStrokeColor(UIColor.systemBlue.cgColor); context.setLineWidth(1); context.stroke(frame)
+            [CGPoint(x: frame.minX, y: frame.minY), CGPoint(x: frame.maxX, y: frame.minY), CGPoint(x: frame.minX, y: frame.maxY), CGPoint(x: frame.maxX, y: frame.maxY),
+             CGPoint(x: frame.minX, y: frame.midY), CGPoint(x: frame.maxX, y: frame.midY)].forEach(roundHandle)
         }
     }
     /// The renderer supplies the original shared strokePath for historical ink,
