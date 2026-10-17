@@ -1,0 +1,14 @@
+{
+  "bundleIdentifier": "app.bandal.ipad",
+  "version": "0.1.0",
+  "build": "41",
+  "fileCount": 60,
+  "bytes": 93884462,
+  "javascriptOrWebAssets": [
+    "DesktopNative/article-extraction.js",
+    "DesktopNative/web-pip.js",
+    "DesktopNative/browser-agent.js"
+  ],
+  "reactDockviewTestOrWebAppArtifacts": [],
+  "executableSHA256": "54eaafc139deb2be69cf44b3b3400642f6070b7d01abbd15f34e73c1594dc24b"
+}

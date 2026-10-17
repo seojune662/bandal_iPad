@@ -78,8 +78,10 @@ enum NativePDFObjectRenderer {
             let padding = fontSize * 0.36
             let content = box.insetBy(dx: padding, dy: padding)
             guard content.width > 0, content.height > 0 else { return }
+            let layout = textLayout(data: data, style: style, surfaceWidth: width, contentWidth: content.width)
             UIGraphicsPushContext(context); defer { UIGraphicsPopContext() }
-            attributedText(data: data, style: style, surfaceWidth: width).draw(with: content, options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+            layout.manager.drawBackground(forGlyphRange: layout.glyphRange, at: content.origin)
+            layout.manager.drawGlyphs(forGlyphRange: layout.glyphRange, at: content.origin)
         default: break
         }
     }
@@ -182,9 +184,31 @@ enum NativePDFObjectRenderer {
          .underlineStyle: style["underline"] as? Bool == true ? NSUnderlineStyle.single.rawValue : 0,
          .strikethroughStyle: style["strike"] as? Bool == true ? NSUnderlineStyle.single.rawValue : 0]
     }
-    private static func baseFontSize(_ style: [String: Any], surfaceWidth: Double) -> Double {
+    static func baseFontSize(_ style: [String: Any], surfaceWidth: Double) -> Double {
         let point = finite(style["fontSizePt"], fallback: 0)
         return point > 0 ? point : max(0.01, surfaceWidth * 0.026 * max(0.01, finite(style["fontScale"], fallback: 1)))
+    }
+
+    /// TextKit 1 is also used by the native text editor. Keep wrapping, leading,
+    /// padding and attributed runs identical in the canvas and PDF exporter.
+    struct TextLayout {
+        let storage: NSTextStorage
+        let manager: NSLayoutManager
+        let container: NSTextContainer
+        let glyphRange: NSRange
+        let height: CGFloat
+    }
+    static func textLayout(data: [String: Any], style: [String: Any], surfaceWidth: Double, contentWidth: CGFloat) -> TextLayout {
+        let text = attributedText(data: data, style: style, surfaceWidth: surfaceWidth)
+        let storage = NSTextStorage(attributedString: text), manager = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: max(1, contentWidth), height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        manager.usesFontLeading = true
+        storage.addLayoutManager(manager); manager.addTextContainer(container)
+        let glyphRange = manager.glyphRange(for: container)
+        let minimum = baseFontSize(style, surfaceWidth: surfaceWidth) * 1.35
+        let height = max(minimum, max(manager.usedRect(for: container).maxY, manager.extraLineFragmentRect.maxY))
+        return TextLayout(storage: storage, manager: manager, container: container, glyphRange: glyphRange, height: height)
     }
     private static func finite(_ value: Any?, fallback: Double) -> Double {
         // Native tool dictionaries may contain Int while JSON supplies NSNumber.
@@ -194,7 +218,12 @@ enum NativePDFObjectRenderer {
         return number.doubleValue
     }
     private static func physicalBox(_ data: [String: Any], width: Double, height: Double) -> CGRect? {
-        guard let box = data["box"] as? [String: Double], let x = box["x"], let y = box["y"], let w = box["width"], let h = box["height"], [x,y,w,h].allSatisfy(\.isFinite), w >= 0, h >= 0 else { return nil }
+        guard let box = data["box"] as? [String: Any] else { return nil }
+        // Swift geometry previews can contain CGFloat/Int values before JSON
+        // persistence turns them into Double. All numeric forms use one check.
+        let x = finite(box["x"], fallback: .nan), y = finite(box["y"], fallback: .nan)
+        let w = finite(box["width"], fallback: .nan), h = finite(box["height"], fallback: .nan)
+        guard [x,y,w,h].allSatisfy(\.isFinite), w >= 0, h >= 0 else { return nil }
         return CGRect(x: x * width, y: y * height, width: w * width, height: h * height)
     }
     private static func endpoints(_ data: [String: Any], width: Double, height: Double) -> (CGPoint, CGPoint)? {
@@ -207,6 +236,7 @@ enum NativePDFObjectRenderer {
     static func color(_ name: String) -> UIColor {
         let rgb: (CGFloat, CGFloat, CGFloat)
         switch name {
+        case "canvasLightInk": rgb = (240,240,240)
         case "red": rgb = (214,36,46)
         case "orange": rgb = (240,99,20)
         case "yellow": rgb = (245,184,10)

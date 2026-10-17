@@ -1,0 +1,27 @@
+{
+  "build": "41",
+  "version": "0.1.0",
+  "bundleIdentifier": "app.bandal.ipad",
+  "configuration": "Release",
+  "signedBundleVerified": true,
+  "installationSucceeded": true,
+  "installedVersionVerified": true,
+  "normalLaunchSucceeded": true,
+  "normalLaunchArguments": [],
+  "processVerifiedAfterRelaunch": true,
+  "deviceClass": "iPad Pro 11-inch (3rd generation)",
+  "deviceOS": "iPadOS 26.5",
+  "executableSHA256": "54eaafc139deb2be69cf44b3b3400642f6070b7d01abbd15f34e73c1594dc24b",
+  "tests": {
+    "uniqueRelatedUnitIntegrationTests": 94,
+    "relatedUnitIntegrationFailuresAfterFixes": 0,
+    "uniqueActualDeviceUIFlows": 5,
+    "actualDeviceUIFlowFailuresAfterFixes": 0,
+    "fullAppSuiteRerun": false,
+    "physicalApplePencilManualEvaluation": false
+  },
+  "dataPreservationAudit": "data-preservation-audit.json",
+  "baselineMaterialBytesPreserved": true,
+  "baselineDrawingRowsUnchanged": true,
+  "baselinePreferenceValuesUnchanged": true
+}

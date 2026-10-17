@@ -1,0 +1,1126 @@
+import SwiftUI
+import UIKit
+import Combine
+
+/// Native document chrome. The UIKit body below is the existing PDFKit/Metal
+/// compositor; neither this view nor its persistence owner instantiates WKWebView.
+struct NativePDFWorkspace: View {
+    @StateObject private var model: NativePDFWorkspaceModel
+    private let tabID: String
+
+    init(document: NativeDocumentReference, store: NativeWorkspaceStore, onOpenDocument: ((NativeDocumentReference) -> Void)? = nil) {
+        tabID = document.id
+        _model = StateObject(wrappedValue: NativePDFWorkspaceModel(document: document, store: store, onOpenDocument: onOpenDocument))
+    }
+    var body: some View {
+        VStack(spacing: 0) {
+            NativePDFToolbar(model: model)
+            if model.selectionCount > 0 {
+                HStack(spacing: 4) {
+                    Text("\(model.selectionCount)개 선택").font(.callout).lineLimit(1)
+                    Spacer()
+                    if model.selectedText { Button { model.editSelectedText() } label: { Image(systemName: "square.and.pencil").frame(width: 44, height: 44) }.accessibilityLabel("텍스트 편집").accessibilityIdentifier("native-pdf-edit-text") }
+                    Button { model.duplicateSelection() } label: { Image(systemName: "plus.square.on.square").frame(width: 44, height: 44) }.accessibilityLabel("선택 복제")
+                    Button(role: .destructive) { model.deleteSelection() } label: { Image(systemName: "trash").frame(width: 44, height: 44) }.accessibilityLabel("선택 삭제").accessibilityIdentifier("native-pdf-delete-selection")
+                    Button { model.clearSelection() } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }.accessibilityLabel("선택 해제")
+                }.padding(.horizontal, 8).background(.bar).disabled(model.isBusy || model.errorMessage != nil)
+            }
+            if !model.sourceQuote.isEmpty {
+                HStack(spacing: 12) {
+                    Text(model.sourceQuote).font(.callout).lineLimit(1)
+                    Spacer(minLength: 0)
+                    Menu {
+                        ForEach(NativePDFWorkspaceModel.annotationColors, id: \.name) { item in
+                            Button(item.label) { model.highlightSource(color: item.name) }.accessibilityIdentifier("native-pdf-highlight-" + item.name)
+                        }
+                    } label: { Label("형광 표시", systemImage: "highlighter").frame(minHeight: 44) }
+                        .accessibilityIdentifier("native-pdf-highlight-source")
+                    Button("메모") { model.commentSource() }.frame(minHeight: 44).accessibilityIdentifier("native-pdf-comment-source")
+                    Button { model.clearSourceSelection() } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }.accessibilityLabel("원문 선택 해제")
+                }.padding(.horizontal, 16).background(.bar).disabled(model.isBusy || model.errorMessage != nil)
+            }
+            Divider()
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    if model.showPages {
+                        NativePDFPagesPanel(model: model).frame(width: geometry.size.width < 700 ? 128 : 160)
+                        Divider()
+                    }
+                    ZStack {
+                        NativePDFBody(model: model).accessibilityIdentifier("native-pdf-workspace").allowsHitTesting(!model.showStyle)
+                        if model.isLoading {
+                            ProgressView("문서 여는 중…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                        }
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .overlay { if model.showStyle { NativePDFPaletteOverlay(model: model) } }
+                    if model.showAnnotations {
+                        Divider()
+                        NativePDFAnnotationRail(model: model).frame(width: geometry.size.width < 700 ? 220 : 280)
+                    }
+                }
+                .onChange(of: geometry.size.width, initial: true) { _, width in model.setAvailableWidth(width) }
+            }
+            if let error = model.errorMessage {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text(error).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+                    Button("다시 저장") { model.retry() }.buttonStyle(.bordered)
+                        .disabled(model.isBusy).accessibilityIdentifier("native-pdf-retry")
+                }
+                .padding(12).background(.bar)
+            }
+        }
+        .background(NativeDesktopTheme.bgApp)
+        .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-pane-" + tabID)
+        .sheet(isPresented: $model.showTextEditor, onDismiss: { model.dismissText() }) {
+            if let draft = model.textEditorDraft {
+                NativePDFTextEditor(draft: draft, isBusy: model.isBusy, errorMessage: model.errorMessage, canCancel: !model.textSaveNeedsRecovery,
+                    onSave: model.commitText, onCancel: model.cancelText, onDelete: model.deleteText)
+                    .presentationDetents([.large])
+            }
+        }
+        .sheet(isPresented: $model.showAnnotationEditor, onDismiss: { model.dismissAnnotation() }) {
+            NavigationStack {
+                Form {
+                    Section("선택한 원문") { Text(model.annotationQuote).textSelection(.enabled) }
+                    Section("형광 색") {
+                        Picker("색", selection: $model.annotationColor) {
+                            ForEach(NativePDFWorkspaceModel.annotationColors, id: \.name) { item in Text(item.label).tag(item.name) }
+                        }.pickerStyle(.segmented)
+                    }
+                    Section("메모") {
+                        TextEditor(text: $model.annotationComment).frame(minHeight: 140).accessibilityIdentifier("native-pdf-annotation-editor")
+                    }
+                    if model.editingAnnotation {
+                        Section { Button("주석 삭제", role: .destructive) { model.deleteAnnotation() }.accessibilityIdentifier("native-pdf-delete-annotation") }
+                    }
+                }
+                .disabled(model.isBusy)
+                .onChange(of: model.annotationComment) { _, _ in model.markDraftChanged() }
+                .onChange(of: model.annotationColor) { _, _ in model.markDraftChanged() }
+                .navigationTitle("원문 메모").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("취소") { model.cancelAnnotation() } }
+                    ToolbarItem(placement: .confirmationAction) { Button("저장") { model.commitAnnotation() }.accessibilityIdentifier("native-pdf-save-annotation") }
+                }
+            }.presentationDetents([.medium, .large])
+        }
+        .alert("\(model.pageDeleteConfirmation ?? 1)페이지를 삭제할까요?", isPresented: Binding(get: { model.pageDeleteConfirmation != nil }, set: { if !$0 { model.pageDeleteConfirmation = nil } }), presenting: model.pageDeleteConfirmation) { number in
+            Button("취소", role: .cancel) { model.pageDeleteConfirmation = nil }
+            Button("삭제", role: .destructive) { model.confirmDeletePage(number) }.accessibilityIdentifier("native-pdf-confirm-page-delete")
+        } message: { _ in
+            Text("이 페이지의 필기와 주석도 함께 제거됩니다. 페이지 변경을 되돌리거나 변경 전 복구 사본을 만들 수 있습니다.")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in model.saveInBackground() }
+    }
+
+}
+
+@MainActor
+final class NativePDFWorkspaceModel: ObservableObject {
+    struct InkColor { let name: String, label: String; let color: Color }
+    static let colors: [InkColor] = zip(NativePDFPenPreset.colors, ["검정", "빨강", "주황", "노랑", "초록", "파랑", "보라"]).map {
+        InkColor(name: $0.0, label: $0.1, color: Color(uiColor: NativePDFInkSurface.color($0.0)))
+    }
+    static let annotationColors: [InkColor] = [.init(name: "yellow", label: "노랑", color: .yellow), .init(name: "green", label: "초록", color: .green), .init(name: "blue", label: "파랑", color: .blue), .init(name: "pink", label: "분홍", color: .pink)]
+    struct AnnotationItem: Identifiable { let id: String, page: Int, quote: String, comment: String, color: String }
+    @Published var annotationItems: [AnnotationItem] = []
+    @Published var annotationCount = 0
+    @Published var sourceQuote = ""
+    @Published var showAnnotationEditor = false
+    @Published var showAnnotations = false
+    @Published var showPages = false
+    @Published var toolsExpanded = true
+    @Published var zoom = 1.0
+    @Published var opacity = NativePDFPenPreset.pen.opacity
+    @Published var pageDeleteConfirmation: Int?
+    @Published private(set) var thumbnailSource: NativePDFPageThumbnailSource?
+    @Published private(set) var pageCanRestructure = true
+    @Published private(set) var pageHistoryCanUndo = false
+    @Published private(set) var pageHistoryCanRedo = false
+    @Published private(set) var pageHistoryCanRecover = false
+    @Published private(set) var pageHistoryReason: String?
+    @Published var draggedPage: Int?
+    @Published var pageDropSlot: Int?
+    private var pageRevision = ""
+    private var pageUndoToken: String?, pageRedoToken: String?, pageRecoverToken: String?
+    private var pageOperation: Task<Void, Never>?
+    private var pendingPageOperation: (channel: String, request: [String: Any])?
+    private var availableWidth: CGFloat = 1000
+    var dragIdentity: String { surfaceID + ":" + generation }
+    var hasPageNoteAction: Bool { onOpenDocument != nil }
+    private let onOpenDocument: ((NativeDocumentReference) -> Void)?
+    @Published var annotationComment = ""
+    @Published var annotationColor = "yellow"
+    @Published var annotationQuote = ""
+    @Published var editingAnnotation = false
+    private var sourceSelection: [String: Any]?
+    private var annotationDraft: [String: Any]?
+    @Published var tool = "pen"
+    @Published var color = "ink"
+    @Published var width = NativePDFPenPreset.pen.width
+    @Published var showStyle = false { didSet { restoreInput() } }
+    @Published private(set) var favorites = NativePDFPalettePreferences().favorites
+    @Published private(set) var shapeRecognitionEnabled = true
+    var isInkTool: Bool { tool == "pen" || tool == "highlighter" }
+    var quickWidths: [Double] { tool == "highlighter" ? NativePDFPaletteStyle.highlighterWidths : NativePDFPaletteStyle.penWidths }
+    var currentPageWidthPoints: Double? { pageWidths.indices.contains(page - 1) ? pageWidths[page - 1] : nil }
+    var currentPreset: NativePDFPenPreset { .init(color: color, width: width, opacity: opacity) }
+    func widthLabel(for width: Double, highlighter: Bool? = nil) -> String {
+        NativePDFPaletteStyle.widthLabel(width, highlighter: highlighter ?? (tool == "highlighter"), pageWidthPoints: currentPageWidthPoints)
+    }
+    var styleAccessibilityValue: String { "\(tool) \(color) \(widthLabel(for: width)) \(Int((opacity * 100).rounded()))%" }
+    func favoriteAccessibilityValue(_ index: Int) -> String {
+        guard favorites.indices.contains(index) else { return "" }
+        let value = favorites[index]
+        return "pen \(value.color) \(widthLabel(for: value.width, highlighter: false)) \(Int((value.opacity * 100).rounded()))%"
+    }
+    @Published var page = 1
+    @Published var pageCount = 1
+    @Published var isLoading = true
+    @Published var isBusy = false
+    @Published var errorMessage: String?
+    @Published var pendingCount = 0
+    @Published var canUndo = false
+    @Published var canRedo = false
+    @Published var drawingCount = 0
+    @Published private(set) var selectionCount = 0
+    @Published private(set) var selectedText = false
+    @Published var showTextEditor = false
+    @Published private(set) var textEditorDraft: NativePDFTextDraft?
+    var textSaveNeedsRecovery: Bool { pendingTextSave != nil }
+    var isAdditionalTool: Bool { ["lasso", "line", "arrow", "rect", "ellipse", "text"].contains(tool) }
+    var additionalToolSymbol: String { ["lasso": "lasso", "line": "line.diagonal", "arrow": "arrow.up.right", "rect": "rectangle", "ellipse": "oval", "text": "textformat"][tool] ?? "square.on.circle" }
+    private let document: NativeDocumentReference
+    private let store: NativeWorkspaceStore
+    private let defaults: UserDefaults
+    private var preferences: NativePDFWorkspacePreferences
+    private var host: NativePDFHost?
+    private var persistence: NativePDFPersistence?
+    private let surfaceID = UUID().uuidString, generation = UUID().uuidString
+    private var opening: Task<Void, Error>?
+    private var flushing: Task<Void, Error>?
+    private var historyTask: Task<Void, Error>?
+    private var editorTask: Task<Void, Error>?
+    private var closing: Task<Void, Never>?
+    private var registration: UUID?
+    private var annotations: [[String: Any]] = []
+    private var pageAspects: [Double] = []
+    private var pageWidths: [Double] = []
+    private var viewport: [String: Any] = ["page": 1, "zoom": 1.0]
+    private var pendingViewportRestore: [String: Any]?
+    private var layoutRevision = 0
+    private var bounds = CGRect.zero
+    private var opened = false, retired = false, writesSuspended = false
+    private var setupComplete = false, exposed = false, blockedForError = false, materialMutating = false
+    private var storeEvents: AnyCancellable?
+    private var previousTool = "pen"
+    private var savedPenStyle = NativePDFPenPreset.pen, savedHighlighterStyle = NativePDFPenPreset.highlighter
+    private var paletteEvents: AnyCancellable?
+    private var snapshotTask: Task<Void, Error>?
+    private var snapshotRequested = false
+    private var drawingRevision = 0, publishedDrawingRevision = -1
+    private var displayRows: [[String: Any]] = []
+    private var selectedIDs = Set<String>(), selectionPage: Int?
+    private var sceneEpoch = 1, sceneRevisions: [Int: Int] = [:], scenePages = Set<Int>(), dirtyScenes = Set<Int>()
+    private struct Gesture {
+        let page: Int, tool: String, start: CGPoint, id: String
+        var points: [CGPoint], rows: [[String: Any]], preview: [[String: Any]]
+        var box: CGRect?, corner: String?
+    }
+    private var gesture: Gesture?
+    private var textObject: [String: Any]?
+    private var editingExistingText = false
+    private var pendingTextSave: [String: Any]?
+    private var textCreateMutationID = UUID().uuidString
+
+    init(document: NativeDocumentReference, store: NativeWorkspaceStore, onOpenDocument: ((NativeDocumentReference) -> Void)? = nil, defaults: UserDefaults = .standard) {
+        self.document = document; self.store = store; self.onOpenDocument = onOpenDocument; self.defaults = defaults
+        let hasPreferences = NativePDFWorkspacePreferences.hasStored(root: store.root, documentID: document.id, defaults: defaults)
+        let preferenceID = (hasPreferences ? nil : store.documentDuplicateSourceIDs[document.id]) ?? document.id
+        var saved = NativePDFWorkspacePreferences.load(root: store.root, documentID: preferenceID, defaults: defaults)
+        let palette = NativePDFPalettePreferences.load(root: store.root, defaults: defaults)
+        if !NativePDFWorkspacePreferences.hasStored(root: store.root, documentID: preferenceID, defaults: defaults) {
+            saved.penStyle = palette.recentPen; saved.highlighterStyle = palette.recentHighlighter
+            saved.color = palette.recentPen.color; saved.width = palette.recentPen.width; saved.opacity = palette.recentPen.opacity
+        }
+        saved.shapeRecognitionEnabled = palette.drawAndHold
+        favorites = palette.favorites; shapeRecognitionEnabled = palette.drawAndHold
+        if preferenceID != document.id { saved.save(root: store.root, documentID: document.id, defaults: defaults) }
+        preferences = saved
+        tool = saved.tool; color = saved.color; width = saved.width; opacity = saved.opacity
+        previousTool = saved.previousTool; savedPenStyle = saved.penStyle; savedHighlighterStyle = saved.highlighterStyle
+        toolsExpanded = saved.toolsExpanded; showPages = saved.showPages; showAnnotations = saved.showAnnotations
+        storeEvents = store.events.sink { [weak self] event in self?.receiveStoreEvent(event) }
+        paletteEvents = NotificationCenter.default.publisher(for: NativePDFPalettePreferences.changed).sink { [weak self] event in
+            guard let self, event.userInfo?["key"] as? String == NativePDFPalettePreferences.key(root: self.store.root),
+                  let changedDefaults = event.object as? UserDefaults, changedDefaults === self.defaults else { return }
+            let shared = NativePDFPalettePreferences.load(root: self.store.root, defaults: self.defaults)
+            self.favorites = shared.favorites
+            if self.shapeRecognitionEnabled != shared.drawAndHold {
+                self.shapeRecognitionEnabled = shared.drawAndHold; self.updateStyle()
+            }
+        }
+    }
+    func attach(to container: UIView) {
+        guard host == nil, !retired else { return }
+        // Store retains the closure until close succeeds. A disappearing view
+        // cannot release a failed journal/ACK or an unfinished history action.
+        registration = store.registerDocumentFlush(id: document.id, document: document,
+            freeze: { [weak self] in self?.setMaterialMutating(true) },
+            suspendWrites: { [weak self] in self?.writesSuspended = true },
+            resume: { [weak self] in self?.writesSuspended = false; self?.setMaterialMutating(false) },
+            retire: { [weak self] in self?.retire() }) { [self] in try await flush() }
+        do {
+            let native = try NativePDFHost(root: store.root, directEnabled: true) { [store] channel, request in
+                try await store.invokePrivate(channel, request)
+            }
+            host = native; native.attach(to: container)
+            native.setPresentation(blocked: false, inputBlocked: true, overlays: [])
+            native.emit = { [weak self] channel, value in
+                guard channel == "pdfNative:event", let event = value as? [String: Any] else { return }
+                self?.receive(event)
+            }
+            let task = Task { @MainActor in try await self.open() }
+            opening = task
+            Task { do { try await task.value } catch { self.fail(error); self.isLoading = false } }
+        } catch { fail(error); isLoading = false }
+    }
+    private var identity: [String: Any] {
+        ["surfaceId": surfaceID, "generation": generation, "courseId": document.courseID, "relPath": document.relativePath]
+    }
+    private func call(_ command: String, _ request: [String: Any] = [:]) async throws -> Any {
+        guard let host else { throw NativePDFError.invalid("PDF 화면 연결이 닫혔습니다.") }
+        return try await host.handle("pdfNative:" + command, request: identity.merging(request) { _, new in new })
+    }
+    private func open() async throws {
+        await store.waitForExternalMutation()
+        guard !retired, !Task.isCancelled else { return }
+        guard let state = try await call("open") as? [String: Any],
+              let revision = state["documentRevision"] as? String else { throw NativePDFError.invalid("PDF를 열지 못했습니다.") }
+        opened = true; pageRevision = revision
+        thumbnailSource = NativePDFPageThumbnailSource(root: store.root, revision: revision)
+        pageCount = state["numPages"] as? Int ?? 1
+        pageWidths = (state["pageSizes"] as? [[String: Any]] ?? []).map { ($0["width"] as? NSNumber)?.doubleValue ?? 0 }
+        pageAspects = (state["pageSizes"] as? [[String: Any]] ?? []).map {
+            let width = ($0["width"] as? NSNumber)?.doubleValue ?? 1
+            return (($0["height"] as? NSNumber)?.doubleValue ?? sqrt(2)) / max(width, 0.001)
+        }
+        let recovery = try NativePDFEditRecovery(root: store.root, courseID: document.courseID, relativePath: document.relativePath)
+        let writer = persistence ?? NativePDFPersistence(courseID: document.courseID, relativePath: document.relativePath, documentRevision: revision,
+            recovery: recovery,
+            coordinator: NativePDFFileCoordinator.shared(root: store.root, courseID: document.courseID, relativePath: document.relativePath),
+            instanceID: document.id, backend: { [store] channel, input in try await store.invoke(channel, input) },
+            host: { [weak self] command, input in
+                guard let self else { throw CancellationError() }; return try await self.call(command, input)
+            })
+        persistence = writer
+        writer.onPeerChanged = { [weak self, weak writer] changed in
+            guard let self, let writer, !self.retired else { return }
+            self.drawingRevision += 1; self.annotations = writer.annotations; self.annotationCount = writer.annotations.count
+            if let gesture = self.gesture, gesture.rows.contains(where: { changed.contains($0["id"] as? String ?? "") }) {
+                self.gesture = nil
+            }
+            self.refreshHistory()
+            Task { @MainActor [weak self] in
+                guard let self, !self.retired, self.setupComplete else { return }
+                do { try await self.refreshAnnotations(); try await self.publishSnapshot(); if self.showPages { try await self.refreshPageHistory() } }
+                catch { self.fail(error) }
+            }
+        }
+        writer.onAnnotationsChanged = { [weak self] in
+            guard let self else { return }; try await self.refreshAnnotations(); try await self.publishSnapshot(); if self.showPages { try await self.refreshPageHistory() }
+        }
+        try await writer.recoverEdits()
+        try await refreshAnnotations()
+        writer.restoreHistory(root: store.root)
+        try await refreshPageHistory()
+        // Recover old journal payloads before enabling this generation's
+        // ordered native eraser. No new contact is exposed during recovery.
+        let recovered: [[String: Any]]
+        if let pending = state["pending"] as? [[String: Any]] { recovered = pending }
+        else { recovered = (try await call("flush") as? [String: Any])?["pending"] as? [[String: Any]] ?? [] }
+        try await writer.recoverStrokes(recovered)
+        writer.onRowsChanged = { [weak self] in
+            guard let self else { return }
+            self.drawingRevision += 1
+            try await self.publishSnapshot()
+            if self.showPages { try await self.refreshPageHistory() }
+        }
+        try await publishSnapshot()
+        if let saved = try await store.invoke("pdf:getViewState", ["courseId": document.courseID, "relPath": document.relativePath]) as? [String: Any] {
+            viewport = preferences.viewport?.restoring(saved, revision: revision, independent: true) ?? saved
+            zoom = (viewport["zoom"] as? NSNumber)?.doubleValue ?? 1
+            viewport["page"] = min(pageCount, max(1, viewport["page"] as? Int ?? 1))
+            pendingViewportRestore = viewport
+            page = viewport["page"] as? Int ?? 1
+        }
+        isLoading = false; refreshHistory(); exposed = true; try await publishLayout(); setupComplete = true
+        if bounds.width > 0, bounds.height > 0 { restoreInput() }
+    }
+    func layout(_ rect: CGRect) {
+        guard rect.width > 0, rect.height > 0, rect != bounds else { return }
+        bounds = rect
+        guard opened, !isLoading, !retired else { return }
+        Task { do { try await publishLayout() } catch { fail(error) } }
+    }
+    private func publishLayout() async throws {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        layoutRevision += 1
+        _ = try await call("layout", ["revision": layoutRevision, "visible": true, "occluded": false, "holes": [],
+            "rect": ["x": Double(bounds.minX), "y": Double(bounds.minY), "width": Double(bounds.width), "height": Double(bounds.height)]])
+        // PDFKit computes its fit scale only after the real container frame is
+        // installed. Restoring earlier loses zoom/scroll on that first layout.
+        if let saved = pendingViewportRestore {
+            pendingViewportRestore = nil
+            do { _ = try await call("navigate", saved) }
+            catch { pendingViewportRestore = saved; throw error }
+        }
+        if setupComplete { restoreInput() }
+    }
+    private func publishSnapshot() async throws {
+        snapshotRequested = true
+        if let snapshotTask { try await snapshotTask.value; return }
+        let task = Task { @MainActor in
+            defer { self.snapshotTask = nil }
+            while self.snapshotRequested {
+                self.snapshotRequested = false
+                let drawingRevision = self.drawingRevision
+                var payload: [String: Any] = [:]
+                if self.publishedDrawingRevision != drawingRevision {
+                    let enriched = try await self.store.invokePrivate("nativePDF:renderDrawings", [
+                        "courseId": self.document.courseID, "relPath": self.document.relativePath, "pageAspects": self.pageAspects])
+                    guard let drawings = enriched as? [[String: Any]] else { throw NativePDFError.invalid("PDF 필기 화면을 준비하지 못했습니다.") }
+                    payload["drawings"] = drawings; self.displayRows = drawings
+                    self.dirtyScenes.formUnion(self.scenePages)
+                    self.pruneSelection()
+                }
+                let style = self.currentPreferences.drawingStyle
+                let epoch = self.sceneEpoch
+                payload.merge(["nativeInkErase": true, "loading": false, "active": true,
+                    "annotations": self.annotations, "tool": ["name": self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
+                _ = try await self.call("snapshot", payload)
+                self.publishedDrawingRevision = drawingRevision
+                guard self.sceneEpoch == epoch else { self.snapshotRequested = true; continue }
+                if !["pen", "highlighter"].contains(self.tool) {
+                    for page in self.dirtyScenes.sorted() {
+                        if self.sceneEpoch != epoch { self.snapshotRequested = true; break }
+                        self.dirtyScenes.remove(page)
+                        try await self.publishScene(page)
+                    }
+                } else { self.scenePages.removeAll(); self.dirtyScenes.removeAll() }
+            }
+            self.refreshHistory()
+        }
+        snapshotTask = task
+        try await task.value
+    }
+    private func receive(_ event: [String: Any]) {
+        guard event["surfaceId"] as? String == surfaceID, event["generation"] as? String == generation,
+              let type = event["type"] as? String, let payload = event["payload"] as? [String: Any] else { return }
+        switch type {
+        case "selection":
+            guard tool == "select", !isBusy else { return }
+            guard let quote = payload["quote"] as? String, !quote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let number = payload["page"] as? Int, number > 0, number <= pageCount,
+                  let rects = payload["rects"] as? [[String: Any]], !rects.isEmpty else {
+                sourceQuote = ""; sourceSelection = nil; return
+            }
+            clearSelection(); sourceQuote = quote
+            sourceSelection = ["page": number, "rects": rects, "anchor": ["quote": quote, "prefix": "", "suffix": ""]]
+        case "annotation":
+            guard tool == "select", !isBusy, let id = payload["id"] as? String else { return }
+            openAnnotation(id: id)
+        case "pointer": receivePointer(payload)
+        case "stroke", "eraseCommit":
+            guard let persistence else { return }
+            store.markDocumentChanged()
+            do { try persistence.accept(payload, type: type) }
+            catch { fail(error); return }
+            refreshHistory()
+            // An explicit retry owns failures. Additional incoming completions
+            // remain queued rather than repeatedly retrying a full/protected disk.
+            guard errorMessage == nil else { return }
+            Task { do { try await persistence.drain(); refreshHistory() } catch { fail(error) } }
+        case "viewport":
+            viewport = payload
+            zoom = (payload["zoom"] as? NSNumber)?.doubleValue ?? zoom
+            let next = payload["page"] as? Int ?? page
+            if next != page {
+                if gesture == nil { clearSelection() }
+                page = next
+                store.events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:pdfPageChanged", payload: ["courseId": document.courseID, "relPath": document.relativePath, "tabID": document.id, "page": next]))
+            }
+        case "pending": pendingCount = max(persistence?.pendingCount ?? 0, payload["count"] as? Int ?? 0)
+        case "error": fail(NativePDFError.invalid(payload["message"] as? String ?? "PDF 저장 중 문제가 발생했습니다."))
+        case "pencilTap":
+            guard errorMessage == nil, !isBusy else { return }
+            switch payload["action"] as? String {
+            case "switchEraser": chooseTool(tool == "eraser" ? previousTool : "eraser")
+            case "switchPrevious": chooseTool(previousTool)
+            case "showColorPalette": showStyle = true
+            default: break
+            }
+        case "activate":
+            showStyle = false
+            // A contact that begins after this editor was flushed must extend
+            // a store-wide transition barrier even before its completion event.
+            if tool != "select" || selectionCount > 0 { store.markDocumentChanged() }
+        default: break
+        }
+    }
+    func chooseTool(_ next: String) {
+        guard NativePDFWorkspacePreferences.tools.contains(next), !isBusy else { return }
+        if next == tool { if isInkTool { showStyle.toggle() }; return }
+        host?.flush()
+        guard !isBusy, errorMessage == nil else { return }
+        rememberActiveStyle()
+        gesture = nil; clearSelection(); clearSourceSelection(); sceneEpoch += 1; sceneRevisions.removeAll(); dirtyScenes.formUnion(scenePages)
+        previousTool = tool; tool = next
+        if next != "select" { toolsExpanded = true }
+        if next == "pen" { applyStyle(savedPenStyle) }
+        if next == "highlighter" { applyStyle(savedHighlighterStyle) }
+        showStyle = false
+        updateStyle()
+    }
+    func chooseColor(_ next: String) {
+        guard NativePDFWorkspacePreferences.colors.contains(next), isInkTool else { return }
+        if color == next { showStyle = true; return }
+        color = next; rememberActiveStyle(); updateStyle()
+    }
+    func chooseQuickWidth(_ next: Double) {
+        if abs(width - next) < 0.0000001 { showStyle = true } else { setWidth(next) }
+    }
+    func setWidth(_ value: Double) {
+        guard value.isFinite, isInkTool else { return }
+        width = min(0.04, max(0.001, value)); rememberActiveStyle(); updateStyle()
+    }
+    func setOpacity(_ value: Double) {
+        guard value.isFinite, isInkTool else { return }
+        opacity = min(tool == "highlighter" ? 0.34 : 1, max(0.05, value)); rememberActiveStyle(); updateStyle()
+    }
+    func chooseFavorite(_ index: Int) {
+        guard favorites.indices.contains(index), !isBusy, errorMessage == nil else { return }
+        let favorite = favorites[index]
+        if tool != "pen" { chooseTool("pen") }
+        guard tool == "pen" else { return }
+        applyStyle(favorite); rememberActiveStyle(); updateStyle()
+    }
+    func saveFavorite(_ index: Int) {
+        guard favorites.indices.contains(index), tool == "pen" else { return }
+        let value = currentPreset.validated()
+        favorites = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.favorites[index] = value }.favorites
+    }
+    func setShapeRecognition(_ enabled: Bool) {
+        shapeRecognitionEnabled = enabled
+        NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.drawAndHold = enabled }
+        updateStyle()
+    }
+    private func applyStyle(_ style: NativePDFPenPreset) { color = style.color; width = style.width; opacity = style.opacity }
+    private func rememberActiveStyle() {
+        if tool == "pen" {
+            savedPenStyle = currentPreset.validated()
+            NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.recentPen = savedPenStyle }
+        } else if tool == "highlighter" {
+            savedHighlighterStyle = currentPreset.validated(highlighter: true)
+            NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.recentHighlighter = savedHighlighterStyle }
+        }
+    }
+    private var currentPreferences: NativePDFWorkspacePreferences {
+        var value = preferences
+        value.tool = tool; value.color = color; value.width = width; value.opacity = opacity
+        value.previousTool = previousTool
+        value.penStyle = tool == "pen" ? currentPreset : savedPenStyle
+        value.highlighterStyle = tool == "highlighter" ? currentPreset : savedHighlighterStyle
+        value.penColor = value.penStyle.color; value.highlighterColor = value.highlighterStyle.color
+        value.shapeRecognitionEnabled = shapeRecognitionEnabled
+        value.toolsExpanded = toolsExpanded; value.showPages = showPages; value.showAnnotations = showAnnotations
+        return value
+    }
+    private func savePreferences() {
+        preferences = currentPreferences
+        preferences.save(root: store.root, documentID: document.id, defaults: defaults)
+    }
+    private func updateStyle() {
+        savePreferences()
+        guard opened, !isLoading, !retired else { return }
+        Task { do { try await publishSnapshot() } catch { fail(error) } }
+    }
+    private func aspect(_ page: Int) -> Double { pageAspects.indices.contains(page - 1) ? pageAspects[page - 1] : sqrt(2) }
+    private func pageSize(_ page: Int) -> CGSize {
+        let width = pageWidths.indices.contains(page - 1) ? pageWidths[page - 1] : 595.28
+        let validWidth = width.isFinite && width > 0 ? width : 595.28
+        return CGSize(width: validWidth, height: validWidth * aspect(page))
+    }
+    private func rows(on page: Int) -> [[String: Any]] { (persistence?.rows ?? []).filter { ($0["page"] as? NSNumber)?.intValue == page } }
+    private var selectedRows: [[String: Any]] {
+        guard let selectionPage else { return [] }; return rows(on: selectionPage).filter { selectedIDs.contains($0["id"] as? String ?? "") }
+    }
+    private func pruneSelection() {
+        selectedIDs.formIntersection(Set(selectedRows.compactMap { $0["id"] as? String }))
+        selectionCount = selectedIDs.count
+        selectedText = selectedRows.count == 1 && selectedRows.first?["kind"] as? String == "textbox"
+    }
+    private func setSelection(_ ids: Set<String>, page: Int) {
+        if let previous = selectionPage { dirtyScenes.insert(previous) }
+        selectionPage = page; selectedIDs = ids; pruneSelection(); dirtyScenes.insert(page)
+    }
+    func clearSelection() {
+        if let selectionPage { dirtyScenes.insert(selectionPage) }
+        selectedIDs.removeAll(); selectionPage = nil; selectionCount = 0; selectedText = false
+        updateStyle()
+    }
+    private func requestScene(_ page: Int) { dirtyScenes.insert(page); updateStyle() }
+    private func publishScene(_ page: Int) async throws {
+        var values = displayRows.filter { ($0["page"] as? NSNumber)?.intValue == page }
+        var selection = selectionPage == page ? NativePDFEditingGeometry.union(selectedRows, aspect: aspect(page)) : nil
+        if let gesture, gesture.page == page {
+            if !gesture.preview.isEmpty {
+                let ids = Set(gesture.preview.compactMap { $0["id"] as? String })
+                values.removeAll { ids.contains($0["id"] as? String ?? "") }; values += gesture.preview
+                if ["select", "lasso"].contains(gesture.tool), !gesture.rows.isEmpty { selection = NativePDFEditingGeometry.union(gesture.preview, aspect: aspect(page)) }
+            }
+            if gesture.tool == "lasso", gesture.rows.isEmpty, gesture.points.count > 1 {
+                let points = (gesture.points + [gesture.points[0]]).map { ["x": Double($0.x), "y": Double($0.y), "p": 0.5] }
+                values.append(["id": gesture.id, "page": page, "kind": "ink", "data": ["inkVersion": 2, "points": points], "style": ["color": "blue", "width": 0.0015, "opacity": 0.8]])
+            }
+        }
+        values = try values.map { row in
+            guard ["ink", "highlighter"].contains(row["kind"] as? String ?? ""), let data = row["data"] as? [String: Any], data["inkVersion"] == nil, row["nativePath"] == nil else { return row }
+            var row = row; row["nativePath"] = try NativePDFLegacyInk.path(row, aspect: aspect(page)); return row
+        }
+        let revision = (sceneRevisions[page] ?? 0) + 1
+        var payload: [String: Any] = ["page": page, "objectSceneEpoch": sceneEpoch, "objectSceneRevision": revision, "objects": values, "resizable": selection != nil, "textHandles": selectedText]
+        if let selection { payload["selection"] = NativePDFEditingGeometry.dictionary(selection) }
+        _ = try await call("objectScene", payload); sceneRevisions[page] = revision; scenePages.insert(page)
+    }
+    private func receivePointer(_ payload: [String: Any]) {
+        guard !isLoading, !retired, errorMessage == nil, let number = payload["page"] as? Int,
+              let phase = payload["phase"] as? String, let raw = payload["points"] as? [[String: Any]],
+              let first = raw.first.flatMap(NativePDFEditingGeometry.point), let last = raw.last.flatMap(NativePDFEditingGeometry.point) else { return }
+        if phase == "down" {
+            guard !isBusy, !showTextEditor else { return }
+            var rows: [[String: Any]] = [], box: CGRect?, corner: String?
+            if ["select", "lasso"].contains(tool) {
+                if selectionPage == number, let selected = NativePDFEditingGeometry.union(selectedRows, aspect: aspect(number)),
+                   selected.insetBy(dx: -0.018, dy: -0.018 / aspect(number)).contains(first) {
+                    rows = selectedRows; box = selected; corner = NativePDFEditingGeometry.corner(at: first, box: selected, aspect: aspect(number))
+                } else if tool == "select", let id = NativePDFEditingGeometry.hit(first, rows: self.rows(on: number), aspect: aspect(number)) {
+                    setSelection([id], page: number); rows = selectedRows; box = NativePDFEditingGeometry.union(rows, aspect: aspect(number))
+                } else { setSelection([], page: number) }
+            } else { clearSelection() }
+            gesture = Gesture(page: number, tool: tool, start: first, id: "native-preview-" + UUID().uuidString, points: [first], rows: rows, preview: [], box: box, corner: corner)
+            store.markDocumentChanged()
+        }
+        guard var contact = gesture, contact.page == number else { return }
+        if phase == "cancel" { gesture = nil; requestScene(number); return }
+        if phase != "down" { contact.points += raw.compactMap(NativePDFEditingGeometry.point) }
+        let distance = hypot(last.x - contact.start.x, (last.y - contact.start.y) * aspect(number))
+        if !contact.rows.isEmpty, distance > 0.002 {
+            if let corner = contact.corner, let box = contact.box {
+                contact.preview = NativePDFEditingGeometry.resized(contact.rows, original: box, corner: corner, to: last)
+                    .map { NativePDFTextDraft.fittedObject($0, pageSize: pageSize(number)) }
+            }
+            else { contact.preview = NativePDFEditingGeometry.translated(contact.rows, dx: last.x - contact.start.x, dy: last.y - contact.start.y, aspect: aspect(number)) }
+        } else if ["line", "arrow", "rect", "ellipse"].contains(contact.tool), distance > 0.003 {
+            contact.preview = [shape(tool: contact.tool, start: contact.start, end: last, page: number, id: contact.id)]
+        }
+        gesture = contact
+        if phase == "up" {
+            gesture = nil
+            if !contact.preview.isEmpty {
+                performObjectEdit(contact.rows.isEmpty ? "create" : "update", values: contact.preview, expected: contact.rows)
+            } else if contact.tool == "lasso", contact.rows.isEmpty {
+                setSelection(NativePDFEditingGeometry.lasso(contact.points, rows: rows(on: number), aspect: aspect(number)), page: number)
+            } else if contact.tool == "text" {
+                let target = NativePDFEditingGeometry.hit(last, rows: rows(on: number).filter { $0["kind"] as? String == "textbox" }, aspect: aspect(number))
+                if let target, let row = rows(on: number).first(where: { $0["id"] as? String == target }) { presentText(row, existing: true) }
+                else {
+                    presentText(NativePDFTextDraft.newObject(at: last, page: number, pageSize: pageSize(number), defaults: defaults), existing: false)
+                }
+            }
+        }
+        requestScene(number)
+    }
+    private func shape(tool: String, start: CGPoint, end: CGPoint, page: Int, id: String) -> [String: Any] {
+        let data: [String: Any]
+        if ["line", "arrow"].contains(tool) { data = ["points": [start, end].map { ["x": Double($0.x), "y": Double($0.y), "p": 0.5] }] }
+        else { data = ["box": NativePDFEditingGeometry.dictionary(CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))) ] }
+        return ["id": id, "page": page, "kind": tool, "data": data, "style": ["color": color, "width": width, "opacity": opacity]]
+    }
+    private func performObjectEdit(_ action: String, values: [[String: Any]], expected original: [[String: Any]]? = nil) {
+        guard editorTask == nil, let persistence, !values.isEmpty else { return }
+        let ids = Set(values.compactMap { $0["id"] as? String })
+        let expected = original ?? persistence.rows.filter { ids.contains($0["id"] as? String ?? "") }
+        store.markDocumentChanged(); isBusy = true
+        let task = Task { @MainActor in
+            defer { self.editorTask = nil }
+            // Defer freezing until the contact completion callback has returned.
+            self.host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
+            try await self.flushInput()
+            switch action {
+            case "create": try await persistence.createObjects(values)
+            case "update": try await persistence.updateObjects(values, expected: expected)
+            case "delete": try await persistence.deleteObjects(ids: Set(values.compactMap { $0["id"] as? String }))
+            default: throw NativePDFError.invalid("지원하지 않는 개체 편집입니다.")
+            }
+            self.clearSelection(); try await self.publishSnapshot(); self.refreshHistory()
+        }
+        editorTask = task
+        Task { @MainActor in
+            do { try await task.value; self.isBusy = self.materialMutating; self.restoreInput() }
+            catch { self.isBusy = self.materialMutating; self.fail(error) }
+        }
+    }
+    private func restoreInput() { host?.setPresentation(blocked: false, inputBlocked: isBusy || materialMutating || blockedForError || closing != nil || showTextEditor || showAnnotationEditor || showStyle, overlays: []) }
+    func deleteSelection() { guard !isBusy else { return }; performObjectEdit("delete", values: selectedRows) }
+    func duplicateSelection() {
+        guard !isBusy, let selectionPage else { return }
+        performObjectEdit("create", values: NativePDFEditingGeometry.translated(selectedRows, dx: 0.025, dy: 0.025, aspect: aspect(selectionPage)).map { value in var value = value; value.removeValue(forKey: "id"); return value })
+    }
+    func editSelectedText() { guard selectedText, let row = selectedRows.first, !isBusy else { return }; presentText(row, existing: true) }
+    private func presentText(_ object: [String: Any], existing: Bool) {
+        textObject = object; editingExistingText = existing; pendingTextSave = nil; textCreateMutationID = UUID().uuidString
+        let number = (object["page"] as? NSNumber)?.intValue ?? page
+        textEditorDraft = NativePDFTextDraft(object: object, pageSize: pageSize(number), existing: existing, defaults: defaults,
+            onChange: { [weak self] in self?.markDraftChanged() })
+        showStyle = false; showTextEditor = true
+        Task { @MainActor in self.restoreInput() }
+    }
+    func commitText() {
+        guard let object = textObject, let draft = textEditorDraft, let persistence, editorTask == nil else { return }
+        if pendingTextSave == nil {
+            guard let value = draft.objectForSave() else { return }
+            pendingTextSave = value
+        }
+        guard let row = pendingTextSave else { return }
+        let existing = editingExistingText
+        store.markDocumentChanged(); isBusy = true; restoreInput()
+        let task = Task { @MainActor in
+            defer { self.editorTask = nil }
+            // Drain the original durable operation before retrying. A lost
+            // reply must not create a second copy of the same text box.
+            try await self.flushInput()
+            @MainActor func savedRows() -> [[String: Any]] {
+                persistence.rows.filter { saved in
+                    guard saved["kind"] as? String == "textbox", let id = saved["id"] as? String,
+                          let data = saved["data"] as? [String: Any], let style = saved["style"] as? [String: Any],
+                          let wantedData = row["data"] as? [String: Any], let wantedStyle = row["style"] as? [String: Any] else { return false }
+                    return id == object["id"] as? String && (saved["page"] as? NSNumber) == (row["page"] as? NSNumber) &&
+                        NSDictionary(dictionary: data).isEqual(to: wantedData) && NSDictionary(dictionary: style).isEqual(to: wantedStyle)
+                }
+            }
+            let saved: [String: Any]
+            if existing {
+                if savedRows().isEmpty { try await persistence.updateObjects([row], expected: [object]) }
+                guard let value = savedRows().first else { throw NativePDFError.invalid("텍스트 저장 결과를 확인하지 못했습니다. 다시 저장해 주세요.") }
+                saved = value
+            } else {
+                saved = try await persistence.createObject(row, mutationID: self.textCreateMutationID)
+                guard let data = saved["data"] as? [String: Any], let style = saved["style"] as? [String: Any],
+                      let wantedData = row["data"] as? [String: Any], let wantedStyle = row["style"] as? [String: Any],
+                      NSDictionary(dictionary: data).isEqual(to: wantedData), NSDictionary(dictionary: style).isEqual(to: wantedStyle) else {
+                    throw NativePDFError.invalid("다른 PDF 창에서 저장된 텍스트를 변경했습니다. 최신 내용을 확인해 주세요.")
+                }
+            }
+            try await self.publishSnapshot(); self.refreshHistory()
+            guard let id = saved["id"] as? String else {
+                throw NativePDFError.invalid("텍스트 저장 결과를 확인하지 못했습니다. 다시 저장해 주세요.")
+            }
+            self.pendingTextSave = nil
+            self.textObject = nil; self.textEditorDraft = nil; self.showTextEditor = false
+            self.errorMessage = nil; self.blockedForError = false; self.isBusy = self.materialMutating
+            self.chooseTool("select")
+            let number = (saved["page"] as? NSNumber)?.intValue ?? self.page
+            self.setSelection([id], page: number); self.requestScene(number); self.restoreInput()
+        }
+        editorTask = task
+        Task { @MainActor in
+            do { try await task.value }
+            catch {
+                if !persistence.hasUnsettledEdits, persistence.pendingCount == 0 {
+                    self.pendingTextSave = nil
+                }
+                self.isBusy = self.materialMutating; self.fail(error)
+            }
+        }
+    }
+    func cancelText() {
+        guard !isBusy, pendingTextSave == nil else { return }
+        textObject = nil; textEditorDraft = nil; showTextEditor = false
+        errorMessage = nil; blockedForError = false; updateStyle(); restoreInput()
+    }
+    func dismissText() { if !showTextEditor { textObject = nil; textEditorDraft = nil }; restoreInput() }
+    func deleteText() {
+        guard let object = textObject, editingExistingText, !isBusy, pendingTextSave == nil else { return }
+        textObject = nil; textEditorDraft = nil; showTextEditor = false
+        performObjectEdit("delete", values: [object])
+    }
+    private func refreshAnnotations() async throws {
+        try await persistence?.reloadAnnotations(); annotations = persistence?.annotations ?? []
+        annotationCount = annotations.count
+        annotationItems = annotations.compactMap { row in
+            guard let id = row["id"] as? String, let page = row["page"] as? Int else { return nil }
+            return AnnotationItem(id: id, page: page, quote: (row["anchor"] as? [String: Any])?["quote"] as? String ?? "", comment: row["comment"] as? String ?? "", color: row["color"] as? String ?? "yellow")
+        }
+    }
+    func markDraftChanged() { store.markDocumentChanged() }
+    func clearSourceSelection() {
+        sourceQuote = ""; sourceSelection = nil
+        host?.clearTextSelection(surfaceID: surfaceID, generation: generation)
+    }
+    func highlightSource(color: String) {
+        guard var value = sourceSelection, !isBusy else { return }
+        value["color"] = color; value["comment"] = NSNull()
+        performAnnotationEdit("create", value: value)
+    }
+    func commentSource() {
+        guard let value = sourceSelection, !isBusy else { return }
+        presentAnnotation(value, existing: false)
+    }
+    func openAnnotation(id: String) {
+        guard !isBusy, let value = annotations.first(where: { $0["id"] as? String == id }) else { return }
+        presentAnnotation(value, existing: true)
+    }
+
+    private func presentAnnotation(_ value: [String: Any], existing: Bool) {
+        clearSelection(); annotationDraft = value; editingAnnotation = existing
+        annotationComment = value["comment"] as? String ?? ""; annotationColor = value["color"] as? String ?? "yellow"
+        annotationQuote = (value["anchor"] as? [String: Any])?["quote"] as? String ?? ""
+        showAnnotationEditor = true; restoreInput()
+    }
+    func commitAnnotation() {
+        guard var value = annotationDraft, editorTask == nil else { return }
+        value["color"] = annotationColor; value["comment"] = annotationComment.isEmpty ? NSNull() : annotationComment as Any
+        let existing = editingAnnotation, original = annotationDraft; annotationDraft = nil; showAnnotationEditor = false
+        performAnnotationEdit(existing ? "update" : "create", value: value, expected: original)
+    }
+    func deleteAnnotation() {
+        guard let value = annotationDraft, editingAnnotation else { return }
+        annotationDraft = nil; showAnnotationEditor = false; performAnnotationEdit("delete", value: value)
+    }
+    func cancelAnnotation() { annotationDraft = nil; showAnnotationEditor = false; restoreInput() }
+    func dismissAnnotation() { annotationDraft = nil; restoreInput() }
+    private func performAnnotationEdit(_ action: String, value: [String: Any], expected: [String: Any]? = nil) {
+        guard editorTask == nil, let persistence, !retired else { return }
+        store.markDocumentChanged(); isBusy = true; clearSourceSelection()
+        let task = Task { @MainActor in
+            defer { self.editorTask = nil }
+            self.restoreInput(); try await self.flushInput()
+            switch action {
+            case "create": try await persistence.createAnnotation(value)
+            case "update": try await persistence.updateAnnotation(value, expected: expected)
+            case "delete": guard let id = value["id"] as? String else { throw NativePDFError.invalid("주석을 확인하지 못했습니다.") }; try await persistence.deleteAnnotation(id: id)
+            default: throw NativePDFError.invalid("주석 작업을 확인하지 못했습니다.")
+            }
+            try await self.refreshAnnotations(); try await self.publishSnapshot(); self.refreshHistory()
+        }
+        editorTask = task
+        Task { @MainActor in
+            do { try await task.value; self.isBusy = self.materialMutating; self.restoreInput() }
+            catch { self.isBusy = self.materialMutating; self.fail(error) }
+        }
+    }
+    func go(to requested: Int) {
+        guard !isLoading, !isBusy else { return }
+        let target = min(pageCount, max(1, requested))
+        Task {
+            do {
+                _ = try await call("navigate", ["page": target, "progress": 0])
+                if page != target {
+                    page = target
+                    store.events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:pdfPageChanged", payload: ["courseId": document.courseID, "relPath": document.relativePath, "tabID": document.id, "page": target]))
+                }
+            }
+            catch { fail(error) }
+        }
+    }
+    func setZoom(_ value: Double) {
+        guard !isLoading, !isBusy else { return }
+        Task { do { _ = try await call("navigate", ["zoom": min(4, max(0.4, value))]) } catch { fail(error) } }
+    }
+    func fitPage() { Task { do { _ = try await call("navigate", ["zoom": 1.0]) } catch { fail(error) } } }
+    func find() { Task { do { _ = try await call("find") } catch { fail(error) } } }
+    func exportPDF() {
+        guard !isLoading, !isBusy, errorMessage == nil else { return }
+        isBusy = true; host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
+        Task {
+            do {
+                try await flush()
+                _ = try await store.invoke("pdf:exportAnnotated", ["courseId": document.courseID, "relPath": document.relativePath])
+                isBusy = materialMutating
+                host?.setPresentation(blocked: false, inputBlocked: materialMutating || blockedForError || closing != nil, overlays: [])
+            } catch { isBusy = materialMutating; fail(error) }
+        }
+    }
+    func undo() { runHistory(undo: true) }
+    func redo() { runHistory(undo: false) }
+    private func runHistory(undo: Bool) {
+        guard !isBusy, !isLoading, errorMessage == nil else { return }
+        store.markDocumentChanged()
+        isBusy = true; host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
+        let task = Task { @MainActor in
+            defer { self.historyTask = nil }
+            if let editorTask = self.editorTask { try await editorTask.value }
+            try await self.flushInput()
+            self.clearSelection()
+            if undo { try await self.persistence?.undo() } else { try await self.persistence?.redo() }
+            self.refreshHistory()
+        }
+        historyTask = task
+        Task { @MainActor in
+            do {
+                try await task.value
+                isBusy = materialMutating
+                host?.setPresentation(blocked: false, inputBlocked: materialMutating || blockedForError || closing != nil, overlays: [])
+            } catch { isBusy = materialMutating; fail(error) }
+        }
+    }
+    func flush() async throws {
+        if showAnnotationEditor, annotationDraft != nil { commitAnnotation() }
+        if showTextEditor { textEditorDraft?.finishComposition(); if textEditorDraft?.hasText == true { commitText() } }
+        repeat {
+            if let historyTask { try await historyTask.value }
+            if let editorTask { try await editorTask.value }
+            try await flushInput()
+            // Host.flush can complete an active shape/selection gesture.
+            // Include that newly registered edit in the same close barrier.
+        } while historyTask != nil || editorTask != nil
+    }
+    private func flushInput() async throws {
+        if writesSuspended { await store.waitForExternalMutation() }
+        guard !retired else { return }
+        if let opening {
+            do { try await opening.value }
+            catch {
+                // A malformed/locked PDF never accepted a contact. Its existing
+                // on-disk recovery files remain intact and must not trap navigation.
+                if !exposed { return }
+                throw error
+            }
+        }
+        guard opened, !retired else { return }
+        if let flushing { try await flushing.value; return }
+        let task = Task { @MainActor in
+            defer { self.flushing = nil }
+            guard let persistence = self.persistence,
+                  let result = try await self.call("flush") as? [String: Any] else { return }
+            try await persistence.recoverStrokes(result["pending"] as? [[String: Any]] ?? [])
+            for operation in result["pendingOperations"] as? [[String: Any]] ?? [] {
+                try persistence.accept(operation, type: operation["type"] as? String ?? "stroke")
+            }
+            try await persistence.drain(through: result["throughOperationSequence"] as? Int)
+            if let snapshot = self.snapshotTask { try await snapshot.value }
+            // Read the host's exact position at the persistence barrier. The
+            // coalesced UI event can still describe the previous page/zoom.
+            if let current = result["viewport"] as? [String: Any] { self.viewport = current }
+            var saved = self.viewport
+            saved["courseId"] = self.document.courseID; saved["relPath"] = self.document.relativePath
+            _ = try await self.store.invoke("pdf:setViewState", saved)
+            self.preferences.viewport = .init(revision: self.pageRevision, values: saved)
+            self.savePreferences()
+            persistence.checkpointHistory(root: self.store.root)
+            self.refreshHistory()
+        }
+        flushing = task
+        try await task.value
+    }
+    func retry() {
+        guard !isBusy else { return }
+        if let pending = pendingPageOperation { performPageOperation(pending.channel, request: pending.request); return }
+        isBusy = true
+        Task {
+            do {
+                if !setupComplete {
+                    opening = nil
+                    let task = Task { @MainActor in try await self.open() }; opening = task
+                    try await task.value
+                }
+                try await flush(); try await publishSnapshot(); try await publishLayout()
+                errorMessage = nil; blockedForError = false; isBusy = false; isLoading = false
+                host?.setPresentation(blocked: false, inputBlocked: materialMutating, overlays: [])
+            } catch { isBusy = false; fail(error) }
+        }
+    }
+    func close() {
+        guard closing == nil, !retired else { return }
+        host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
+        closing = Task { @MainActor in
+            defer { self.closing = nil }
+            do {
+                try await self.flush()
+                if self.opened {
+                    do { _ = try await self.call("close") }
+                    catch { if self.exposed { throw error } }
+                }
+                self.retired = true; self.host = nil
+                if let registration = self.registration { self.store.unregisterDocumentFlush(registration); self.registration = nil }
+            } catch { self.fail(error) }
+        }
+    }
+    func saveInBackground() {
+        let identifier = UIApplication.shared.beginBackgroundTask(withName: "Save native PDF")
+        Task { @MainActor in
+            defer { if identifier != .invalid { UIApplication.shared.endBackgroundTask(identifier) } }
+            do { try await flush() } catch { fail(error) }
+        }
+    }
+    private func refreshHistory() {
+        canUndo = persistence?.canUndo == true || (persistence?.pendingCount ?? 0) > 0
+        canRedo = persistence?.canRedo == true
+        drawingCount = persistence?.rows.count ?? 0
+        pendingCount = persistence?.pendingCount ?? 0
+    }
+    private func fail(_ error: Error) {
+        errorMessage = error.localizedDescription
+        if !blockedForError {
+            blockedForError = true
+            host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
+        }
+        refreshHistory()
+    }
+    func setAvailableWidth(_ value: CGFloat) {
+        availableWidth = value
+        if value < 900, showPages, showAnnotations { showAnnotations = false }
+    }
+    func openPageNote() {
+        guard !isBusy, !isLoading, let onOpenDocument else { return }
+        isBusy = true; restoreInput()
+        Task { @MainActor in
+            do {
+                let note = try await store.openPDFPageNote(courseID: document.courseID, relativePath: document.relativePath)
+                isBusy = materialMutating; restoreInput(); onOpenDocument(note)
+            } catch { isBusy = materialMutating; fail(error) }
+        }
+    }
+    func togglePages() {
+        showPages.toggle()
+        if showPages {
+            if availableWidth < 900 { showAnnotations = false }
+            Task { do { try await refreshPageHistory() } catch { fail(error) } }
+        }
+        savePreferences()
+    }
+    func toggleAnnotations() {
+        showAnnotations.toggle()
+        if showAnnotations, availableWidth < 900 { showPages = false }
+        savePreferences()
+    }
+    func toggleTools() {
+        if toolsExpanded { if tool != "select" { chooseTool("select") }; toolsExpanded = false; showStyle = false } else { toolsExpanded = true }
+        savePreferences()
+    }
+    func requestDeletePage(_ number: Int) {
+        guard !isBusy, pageCanRestructure, pageCount > 1, (1...pageCount).contains(number) else { return }
+        pageDeleteConfirmation = number
+    }
+    func confirmDeletePage(_ number: Int) {
+        pageDeleteConfirmation = nil
+        guard let recipe = NativePDFPageEditing.deleted(count: pageCount, page: number) else { return }
+        restructure(recipe)
+    }
+    func movePage(_ number: Int, to target: Int) {
+        guard let recipe = NativePDFPageEditing.moved(count: pageCount, from: number, to: target) else { return }
+        restructure(recipe)
+    }
+    func dropPage(_ number: Int, at slot: Int) {
+        draggedPage = nil; pageDropSlot = nil
+        guard let recipe = NativePDFPageEditing.moved(count: pageCount, from: number, insertionSlot: slot) else { return }
+        restructure(recipe)
+    }
+    private func restructure(_ pages: [Int]) {
+        guard !isBusy, !isLoading, pageCanRestructure, !pageRevision.isEmpty else { return }
+        performPageOperation("pdf:restructure", request: ["courseId": document.courseID, "relPath": document.relativePath,
+            "documentRevision": pageRevision, "clientMutationId": UUID().uuidString, "pages": pages])
+    }
+    func restorePageChange(undo: Bool) {
+        guard !isBusy, !isLoading, let token = undo ? pageUndoToken : pageRedoToken else { return }
+        performPageOperation("pdf:restorePages", request: ["courseId": document.courseID, "relPath": document.relativePath,
+            "documentRevision": pageRevision, "clientMutationId": UUID().uuidString, "historyToken": token, "direction": undo ? "undo" : "redo"])
+    }
+    func recoverPageCopy() {
+        guard !isBusy, let token = pageRecoverToken else { return }
+        performPageOperation("pdf:recoverPagesCopy", request: ["courseId": document.courseID, "relPath": document.relativePath,
+            "clientMutationId": UUID().uuidString, "historyToken": token, "variant": "before"])
+    }
+    private func refreshPageHistory() async throws {
+        guard !retired else { return }
+        guard let result = try await store.invoke("pdf:pageHistory", ["courseId": document.courseID, "relPath": document.relativePath]) as? [String: Any] else { throw NativePDFError.invalid("페이지 복구 기록을 확인하지 못했습니다.") }
+        guard !retired else { return }
+        pageCanRestructure = result["canRestructure"] as? Bool ?? true
+        pageUndoToken = result["undoToken"] as? String; pageRedoToken = result["redoToken"] as? String
+        pageHistoryCanUndo = result["canUndo"] as? Bool == true; pageHistoryCanRedo = result["canRedo"] as? Bool == true
+        pageHistoryReason = result["restructureReason"] as? String ?? result["reason"] as? String
+        pageRecoverToken = result["recoverToken"] as? String ?? pageUndoToken ?? pageRedoToken
+        pageHistoryCanRecover = pageRecoverToken != nil
+    }
+    private func performPageOperation(_ channel: String, request: [String: Any]) {
+        guard pageOperation == nil, !retired else { return }
+        pendingPageOperation = (channel, request); isBusy = true; errorMessage = nil; blockedForError = false
+        host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
+        // This task intentionally does not join editorTask: the store barrier
+        // must be able to flush this editor before replacing its file bytes.
+        pageOperation = Task { @MainActor in
+            defer { self.pageOperation = nil }
+            do {
+                let result = try await self.store.withExternalMutation { [store = self.store] in try await store.invoke(channel, request) }
+                self.pendingPageOperation = nil
+                if channel == "pdf:recoverPagesCopy", let value = result as? [String: Any], let courseID = value["courseId"] as? String,
+                   let relativePath = value["relPath"] as? String, let title = value["title"] as? String {
+                    self.onOpenDocument?(.init(courseID: courseID, relativePath: relativePath, title: title, kind: "pdf"))
+                }
+            } catch {
+                self.isBusy = self.materialMutating; self.fail(error)
+            }
+        }
+    }
+    private func setMaterialMutating(_ value: Bool) {
+        materialMutating = value; isBusy = value || editorTask != nil || historyTask != nil
+        restoreInput()
+    }
+    private func retire() {
+        guard !retired else { return }
+        retired = true; opened = false; writesSuspended = false
+        persistence?.invalidateHistory(root: store.root)
+        if let registration { store.unregisterDocumentFlush(registration); self.registration = nil }
+        host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
+        host?.emit = { _, _ in }; host = nil
+    }
+    private func receiveStoreEvent(_ event: NativeWorkspaceEvent) {
+        guard let payload = event.payload as? [String: Any], payload["courseId"] as? String == document.courseID,
+              let path = (payload["fromRelPath"] ?? payload["relPath"]) as? String,
+              path == document.relativePath || payload["isDirectory"] as? Bool == true && document.relativePath.hasPrefix(path + "/") else { return }
+        switch event.channel {
+        case "nativeWorkspace:goToPage":
+            if let tabID = payload["tabID"] as? String, tabID != document.id { return }
+            guard let requested = payload["page"] as? Int, requested > 0 else { return }
+            Task { @MainActor in
+                do { if let opening { try await opening.value }; try await flush(); go(to: requested) }
+                catch { fail(error) }
+            }
+        case "nativeWorkspace:materialWillMutate":
+            setMaterialMutating(true)
+        case "nativeWorkspace:materialMutationCancelled":
+            writesSuspended = false; setMaterialMutating(false)
+        case "nativeWorkspace:materialRenamed", "nativeWorkspace:materialDeleted", "nativeWorkspace:materialReplaced":
+            // The store's mutation barrier already finished all input. Do not
+            // recreate pdf_view_state under the obsolete file path on teardown.
+            retire()
+        default: break
+        }
+    }
+}
+
+private struct NativePDFBody: UIViewControllerRepresentable {
+    let model: NativePDFWorkspaceModel
+    func makeUIViewController(context: Context) -> NativePDFBodyController { NativePDFBodyController(model: model) }
+    func updateUIViewController(_ controller: NativePDFBodyController, context: Context) {}
+    static func dismantleUIViewController(_ controller: NativePDFBodyController, coordinator: ()) { controller.model.close() }
+}
+private final class NativePDFBodyController: UIViewController {
+    let model: NativePDFWorkspaceModel
+    init(model: NativePDFWorkspaceModel) { self.model = model; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func viewDidLoad() { super.viewDidLoad(); view.backgroundColor = .secondarySystemBackground; model.attach(to: view) }
+    override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); model.layout(view.bounds) }
+}

@@ -70,8 +70,11 @@ final class NativePDFRetainedInkRenderer {
     private(set) var encodedPassCount = 0
     private(set) var lastItemCount = 0
 
-    init?(device: MTLDevice) {
-        self.device = device
+    private static var pipelineCache: [ObjectIdentifier: [Int: Pipelines]] = [:]
+    /// Pipeline states are immutable and shareable; compiling them once per
+    /// device avoids a hitch every time a page overlay is created.
+    private static func sharedPipelines(for device: MTLDevice) -> [Int: Pipelines]? {
+        if let cached = pipelineCache[ObjectIdentifier(device)] { return cached }
         let source = #"""
         #include <metal_stdlib>
         using namespace metal;
@@ -127,22 +130,29 @@ final class NativePDFRetainedInkRenderer {
                 }
             }
             guard values[1] != nil else { return nil }
-            pipelines = values
-            func state(compare: MTLCompareFunction, pass: MTLStencilOperation, writes: Bool) -> MTLDepthStencilState? {
-                let d = MTLDepthStencilDescriptor()
-                d.depthCompareFunction = .always; d.isDepthWriteEnabled = false
-                let s = MTLStencilDescriptor()
-                s.stencilCompareFunction = compare; s.stencilFailureOperation = .keep
-                s.depthFailureOperation = .keep; s.depthStencilPassOperation = pass
-                s.readMask = 0xff; s.writeMask = writes ? 0xff : 0
-                d.frontFaceStencil = s; d.backFaceStencil = s
-                return device.makeDepthStencilState(descriptor: d)
-            }
-            guard let write = state(compare: .always, pass: .replace, writes: true),
-                  let consume = state(compare: .equal, pass: .zero, writes: true),
-                  let ignore = state(compare: .always, pass: .keep, writes: false) else { return nil }
-            writeMask = write; consumeMask = consume; ignoreMask = ignore
+            pipelineCache[ObjectIdentifier(device)] = values
+            return values
         } catch { return nil }
+    }
+
+    init?(device: MTLDevice) {
+        self.device = device
+        guard let values = Self.sharedPipelines(for: device) else { return nil }
+        pipelines = values
+        func state(compare: MTLCompareFunction, pass: MTLStencilOperation, writes: Bool) -> MTLDepthStencilState? {
+            let d = MTLDepthStencilDescriptor()
+            d.depthCompareFunction = .always; d.isDepthWriteEnabled = false
+            let s = MTLStencilDescriptor()
+            s.stencilCompareFunction = compare; s.stencilFailureOperation = .keep
+            s.depthFailureOperation = .keep; s.depthStencilPassOperation = pass
+            s.readMask = 0xff; s.writeMask = writes ? 0xff : 0
+            d.frontFaceStencil = s; d.backFaceStencil = s
+            return device.makeDepthStencilState(descriptor: d)
+        }
+        guard let write = state(compare: .always, pass: .replace, writes: true),
+              let consume = state(compare: .equal, pass: .zero, writes: true),
+              let ignore = state(compare: .always, pass: .keep, writes: false) else { return nil }
+        writeMask = write; consumeMask = consume; ignoreMask = ignore
     }
 
     /// Only the versioned native ink's convex union is accepted here. General

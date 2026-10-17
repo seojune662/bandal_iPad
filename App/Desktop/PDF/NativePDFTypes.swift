@@ -23,7 +23,7 @@ struct NativePDFInkStyle: Codable, Equatable {
     var width: Double
     var opacity: Double
     var isValid: Bool {
-        ["ink", "red", "orange", "yellow", "green", "blue", "violet"].contains(color)
+        ["ink", "red", "orange", "yellow", "green", "blue", "violet", "canvasLightInk"].contains(color)
             && width.isFinite && width > 0 && width <= 1
             && opacity.isFinite && (0...1).contains(opacity)
     }
@@ -47,12 +47,14 @@ struct NativePDFStrokeInput: Codable, Equatable {
     /// Optional only to decode journals written by earlier diagnostic builds.
     /// Every new native stroke binds to its immutable opened PDF snapshot.
     var documentRevision: String? = nil
+    /// The fit is journaled before ACK so a restart cannot lose a confirmed correction.
+    var heldShape: NativePDFHeldShape? = nil
 
     func validate() throws {
         guard !courseId.isEmpty, !relPath.isEmpty, page > 0,
               ["ink", "highlighter"].contains(kind), [2, 3, 4, 5].contains(data.inkVersion),
               !data.points.isEmpty, data.points.count <= 250_000,
-              data.points.allSatisfy(\.isValid), style.isValid,
+              data.points.allSatisfy(\.isValid), style.isValid, heldShape?.isValid != false,
               UUID(uuidString: clientMutationId) != nil else {
             throw NativePDFError.invalid("필기 자료를 확인할 수 없습니다.")
         }

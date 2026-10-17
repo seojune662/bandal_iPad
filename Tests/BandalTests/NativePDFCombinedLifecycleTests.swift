@@ -77,7 +77,9 @@ final class NativePDFCombinedLifecycleTests: XCTestCase {
         var nextMapper = oldMapper
         nextMapper.canvasToPDF.tx += 19
         nextMapper.canvasToPDF.ty -= 23
-        f.surface.frame.origin = CGPoint(x: -14, y: -17)
+        // The production viewport deliberately keeps sub-grid scrolling in
+        // one staged crop. Cross its 64-point boundary to exercise a new crop.
+        f.surface.frame.origin = CGPoint(x: -78, y: -17)
         f.surface.mapper = nextMapper
         f.surface.refreshViewport()
         XCTAssertNotEqual(f.surface.mapper?.canvasToPDF, oldMapper.canvasToPDF)

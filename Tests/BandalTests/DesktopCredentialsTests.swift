@@ -82,4 +82,21 @@ final class DesktopCredentialsTests: XCTestCase {
         }
         XCTAssertFalse(accessed); XCTAssertTrue(fixture.values.isEmpty)
     }
+    func testManualStagedSaveCannotCommitAfterSameOriginNavigationAndFillCanSuppressAutoSubmit() async throws {
+        let fixture = Fixture(), service = fixture.service
+        var generation = 1
+        service.target = { guest, origin in .init(guestID: guest, tabID: "tab", profileID: "default", origin: origin, generation: generation) }
+        service.capture = { _ in ["username": "student", "password": "fixture-only"] }
+        let base: [String: Any] = ["origin": "https://school.example", "guestWebContentsId": 7]
+        _ = try await service.handle(channel: "credentials:capture", request: base.merging(["mode": "stage"], uniquingKeysWith: { _, new in new }))
+        XCTAssertTrue(fixture.values.isEmpty, "Showing a save confirmation cannot persist a password")
+        generation += 1
+        let rejected = try await service.handle(channel: "credentials:capture", request: base.merging(["mode": "commit"], uniquingKeysWith: { _, new in new }))
+        XCTAssertTrue(rejected is NSNull); XCTAssertTrue(fixture.values.isEmpty)
+        _ = try await service.handle(channel: "credentials:save", request: ["origin": "https://school.example", "username": "student", "password": "fixture-only", "autoSubmit": true])
+        var submitted: Bool?
+        service.fill = { _, _, _, autoSubmit in submitted = autoSubmit; return ["filled": true, "submitted": autoSubmit] }
+        let result = try await service.handle(channel: "credentials:fill", request: base.merging(["autoSubmit": false], uniquingKeysWith: { _, new in new }))
+        XCTAssertEqual(submitted, false); XCTAssertEqual((result as? [String: Bool])?["submitted"], false)
+    }
 }

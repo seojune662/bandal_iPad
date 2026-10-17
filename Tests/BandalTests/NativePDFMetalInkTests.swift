@@ -503,6 +503,76 @@ final class NativePDFMetalInkTests: XCTestCase {
         XCTAssertTrue(cleared.allSatisfy { $0 == 0 }, "Finished live ink must release its backdrop frame")
     }
 
+    func testGrayPaperStaysNeutralInLiveAndRetainedHighlighterFramesAndAfterErasure() throws {
+        let renderer = try XCTUnwrap(NativePDFMetalInk())
+        renderer.frame = CGRect(x: 0, y: 0, width: 32, height: 32)
+        // Explicit gray input is deterministic; UIGraphicsImageRenderer may
+        // choose either R8 or RGB depending on device/OS and image content.
+        var gray = [UInt8](repeating: 255, count: 32 * 32)
+        for y in 0..<32 { for x in 6..<10 { gray[y * 32 + x] = 0 } }
+        renderer.backdrop = try grayPaper(gray, alpha: false)
+        let polygon = [CGPoint(x: 2, y: 12), CGPoint(x: 30, y: 12),
+                       CGPoint(x: 30, y: 20), CGPoint(x: 2, y: 20)]
+        renderer.strokes = [.init(polygons: [polygon], color: .yellow, opacity: 0.5, multiply: true)]
+        let live = try XCTUnwrap(renderer.renderedPixels(width: 32, height: 32))
+        func pixel(_ data: Data, _ x: Int, _ y: Int) -> [UInt8] {
+            Array(data[(y * 32 + x) * 4..<(y * 32 + x) * 4 + 4])
+        }
+        XCTAssertEqual(pixel(live, 16, 3), [255, 255, 255, 255], "Gray paper must not become a red R8 sample")
+        XCTAssertEqual(pixel(live, 8, 16), [0, 0, 0, 255], "Highlighter preserves dark paper content")
+        let highlighted = pixel(live, 16, 16)
+        XCTAssertEqual(highlighted[0], 128, accuracy: 1)
+        XCTAssertEqual(Array(highlighted[1...]), [255, 255, 255])
+
+        let retained = try XCTUnwrap(renderer.retainedRenderer)
+        let mesh = try XCTUnwrap(retained.makeMesh(convexPolygons: [polygon]))
+        renderer.strokes = []
+        renderer.retainedItems = [.init(mesh: mesh, color: SIMD4<Float>(0.5, 0.5, 0, 0.5), multiply: true)]
+        let committed = try XCTUnwrap(renderer.renderedPixels(width: 32, height: 32))
+        XCTAssertEqual(pixel(committed, 16, 3), [255, 255, 255, 255])
+        XCTAssertEqual(pixel(committed, 8, 16), [0, 0, 0, 255])
+        let committedHighlight = pixel(committed, 16, 16)
+        // Live ink quantizes the half-alpha union texture before compositing;
+        // the retained stencil pass blends once, so one BGRA8 LSB may differ.
+        XCTAssertEqual(committedHighlight[0], highlighted[0], accuracy: 1)
+        XCTAssertEqual(Array(committedHighlight[1...]), [255, 255, 255])
+
+        renderer.retainedItems = []
+        let erased = try XCTUnwrap(renderer.renderedPixels(width: 32, height: 32))
+        XCTAssertEqual(pixel(erased, 16, 16), [255, 255, 255, 255], "Erasing the last mark reveals neutral paper")
+        XCTAssertEqual(pixel(erased, 8, 16), [0, 0, 0, 255])
+    }
+
+    func testGrayAlphaPaperPreservesPremultiplicationAndImageOrientation() throws {
+        let renderer = try XCTUnwrap(NativePDFMetalInk())
+        renderer.frame = CGRect(x: 0, y: 0, width: 32, height: 32)
+        var grayAlpha = [UInt8](repeating: 0, count: 32 * 32 * 2)
+        for y in 0..<32 { for x in 0..<32 {
+            let alpha: UInt8 = y < 16 ? 128 : 64
+            grayAlpha[(y * 32 + x) * 2] = alpha // Premultiplied white.
+            grayAlpha[(y * 32 + x) * 2 + 1] = alpha
+        } }
+        renderer.backdrop = try grayPaper(grayAlpha, alpha: true)
+        renderer.retainedItems = []
+        let pixels = try XCTUnwrap(renderer.renderedPixels(width: 32, height: 32))
+        for (y, expected) in [(4, UInt8(128)), (28, UInt8(64))] {
+            let offset = (y * 32 + 16) * 4
+            XCTAssertEqual(Array(pixels[offset..<offset + 4]), [expected, expected, expected, expected],
+                "Gray expansion preserves all color channels, alpha, and top-to-bottom row order")
+        }
+    }
+
+    private func grayPaper(_ bytes: [UInt8], alpha: Bool) throws -> CGImage {
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
+        let image = try XCTUnwrap(CGImage(width: 32, height: 32, bitsPerComponent: 8,
+            bitsPerPixel: alpha ? 16 : 8, bytesPerRow: alpha ? 64 : 32,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGBitmapInfo(rawValue: (alpha ? CGImageAlphaInfo.premultipliedLast : .none).rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        XCTAssertEqual(image.colorSpace?.model, .monochrome)
+        return image
+    }
+
     func testCommittedHighlighterKeepsDarkPDFContentAndUniformUnionOpacity() throws {
         let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true; format.preferredRange = .standard
         let mapper = InkCoordinateMapper(canvasToPDF: CGAffineTransform(a: 1,b: 0,c: 0,d: -1,tx: 0,ty: 32), geometry: InkPageGeometry(cropBox: CGRect(x: 0,y: 0,width: 32,height: 32), rotation: 0))

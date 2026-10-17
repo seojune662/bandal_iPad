@@ -1,6 +1,34 @@
 import UIKit
 import MetalKit
 
+enum NativePDFMetalPaperTexture {
+    private enum UploadError: Error { case colorConversionFailed }
+
+    static func load(device: MTLDevice, image: CGImage) throws -> MTLTexture {
+        let source: CGImage
+        if image.colorSpace?.model == .monochrome {
+            // UIKit can optimize an entirely gray paper raster to one channel.
+            // Metal samples an R8 texture as (gray, 0, 0, 1), not gray RGB;
+            // expand it before upload, preserving any premultiplied alpha.
+            let info = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let context = CGContext(data: nil, width: image.width, height: image.height,
+                    bitsPerComponent: 8, bytesPerRow: image.width * 4, space: space, bitmapInfo: info) else {
+                throw UploadError.colorConversionFailed
+            }
+            context.setBlendMode(.copy)
+            context.interpolationQuality = .none
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            guard let converted = context.makeImage() else { throw UploadError.colorConversionFailed }
+            source = converted
+        } else {
+            source = image
+        }
+        return try MTKTextureLoader(device: device).newTexture(cgImage: source,
+            options: [.SRGB: false, .origin: MTKTextureLoader.Origin.topLeft.rawValue])
+    }
+}
+
 /// Tracks outstanding presentation callbacks without retaining drawables.
 final class NativePDFInkDrawableBudget: @unchecked Sendable {
     private let lock = NSLock()
@@ -503,18 +531,12 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
         var y: SIMD4<Float>
     }
 
-    init?(renderer: Void = (),
-          drawableAcquirer: @escaping @Sendable (CAMetalLayer) -> CAMetalDrawable? = { $0.nextDrawable() },
-          textureLoader: ((MTLDevice, CGImage) throws -> MTLTexture)? = nil,
-          clock: @escaping () -> CFTimeInterval = CACurrentMediaTime) {
-        drawableMailbox = NativePDFInkDrawableMailbox(acquire: drawableAcquirer)
-        self.textureLoader = textureLoader ?? { device, image in
-            try MTKTextureLoader(device: device).newTexture(cgImage: image,
-                options: [.SRGB: false, .origin: MTKTextureLoader.Origin.topLeft.rawValue])
-        }
-        textureClock = clock
-        guard let gpu = MTLCreateSystemDefaultDevice(), let commands = gpu.makeCommandQueue() else { return nil }
-        self.commands = commands
+    private struct SharedPipelines { let fill: [Int: MTLRenderPipelineState]; let composite: MTLRenderPipelineState; let multiply: MTLRenderPipelineState }
+    private static var pipelineCache: [ObjectIdentifier: SharedPipelines] = [:]
+    /// Pipeline states are immutable and shareable across command queues.
+    /// Compiling the source per page overlay cost a visible hitch on scroll.
+    private static func sharedPipelines(for gpu: MTLDevice) -> SharedPipelines? {
+        if let cached = pipelineCache[ObjectIdentifier(gpu)] { return cached }
         let source = #"""
         #include <metal_stdlib>
         using namespace metal;
@@ -549,7 +571,6 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
                 if let pipeline = try? gpu.makeRenderPipelineState(descriptor: fill) { pipelines[samples] = pipeline }
             }
             guard pipelines[1] != nil else { return nil }
-            fillPipelines = pipelines
             let composition = MTLRenderPipelineDescriptor()
             composition.vertexFunction = library.makeFunction(name: "quadVertex")
             composition.fragmentFunction = library.makeFunction(name: "composite")
@@ -557,12 +578,28 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
             attachment.pixelFormat = .bgra8Unorm; attachment.isBlendingEnabled = true
             attachment.sourceRGBBlendFactor = .one; attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
             attachment.sourceAlphaBlendFactor = .one; attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-            compositePipeline = try gpu.makeRenderPipelineState(descriptor: composition)
+            let composite = try gpu.makeRenderPipelineState(descriptor: composition)
             // alpha * source * destination + (1-alpha) * destination.
             // The union texture prevents extra darkening at self-crossings.
             attachment.sourceRGBBlendFactor = .destinationColor
-            multiplyPipeline = try gpu.makeRenderPipelineState(descriptor: composition)
+            let shared = SharedPipelines(fill: pipelines, composite: composite, multiply: try gpu.makeRenderPipelineState(descriptor: composition))
+            pipelineCache[ObjectIdentifier(gpu)] = shared
+            return shared
         } catch { return nil }
+    }
+    init?(renderer: Void = (),
+          drawableAcquirer: @escaping @Sendable (CAMetalLayer) -> CAMetalDrawable? = { $0.nextDrawable() },
+          textureLoader: ((MTLDevice, CGImage) throws -> MTLTexture)? = nil,
+          clock: @escaping () -> CFTimeInterval = CACurrentMediaTime) {
+        drawableMailbox = NativePDFInkDrawableMailbox(acquire: drawableAcquirer)
+        self.textureLoader = textureLoader ?? { device, image in
+            try NativePDFMetalPaperTexture.load(device: device, image: image)
+        }
+        textureClock = clock
+        guard let gpu = MTLCreateSystemDefaultDevice(), let commands = gpu.makeCommandQueue(),
+              let shared = Self.sharedPipelines(for: gpu) else { return nil }
+        self.commands = commands
+        fillPipelines = shared.fill; compositePipeline = shared.composite; multiplyPipeline = shared.multiply
         super.init(frame: .zero, device: gpu)
         delegate = self; isPaused = true; enableSetNeedsDisplay = false
         framebufferOnly = true; colorPixelFormat = .bgra8Unorm

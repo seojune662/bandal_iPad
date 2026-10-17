@@ -10,6 +10,9 @@ packages:
   sherpa-onnx:
     url: https://github.com/k2-fsa/sherpa-onnx
     exactVersion: 1.13.8
+  SwiftMath:
+    url: https://github.com/mgriebling/SwiftMath.git
+    exactVersion: 1.7.3
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -17,7 +20,7 @@ settings:
     SUPPORTS_MACCATALYST: NO
     SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "33"
+    CURRENT_PROJECT_VERSION: "41"
     GENERATE_INFOPLIST_FILE: NO
     ENABLE_USER_SCRIPT_SANDBOXING: YES
 targets:
@@ -32,9 +35,8 @@ targets:
       - path: App/Resources/Configuration.plist
         optional: true
         buildPhase: resources
-      - path: App/Resources/Desktop
+      - path: App/Resources/Brand
         type: folder
-        buildPhase: resources
       - path: App/Resources/DesktopNative
         type: folder
         buildPhase: resources
@@ -43,6 +45,7 @@ targets:
         buildPhase: resources
     dependencies:
       - package: BandalCore
+      - package: SwiftMath
       - package: sherpa-onnx
         product: sherpa-onnx
     settings:

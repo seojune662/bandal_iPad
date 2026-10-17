@@ -8,6 +8,7 @@ final class DesktopBrowserDownload: NSObject, WKDownloadDelegate {
     weak var host: DesktopBrowserHost?
     weak var page: DesktopBrowserPage?
     let webContentsID: Int
+    let sourceTabID: String?
     let courseID: String?
     let profileID: String
     let isPrivate: Bool
@@ -31,6 +32,7 @@ final class DesktopBrowserDownload: NSObject, WKDownloadDelegate {
     private var lastProgress = Date.distantPast
     var payload: [String: Any] {
         ["id": id, "webContentsId": page == nil ? NSNull() : webContentsID as Any,
+         "tabId": sourceTabID as Any? ?? NSNull(), "profileId": profileID, "isPrivate": isPrivate,
          "fileName": destination?.lastPathComponent ?? savedFileName,
          "receivedBytes": max(0, download?.progress.completedUnitCount ?? receivedBytes), "totalBytes": max(0, download?.progress.totalUnitCount ?? totalBytes),
          "state": state, "paused": paused, "relPath": relPath as Any? ?? NSNull(), "courseId": courseID as Any? ?? NSNull(),
@@ -39,13 +41,13 @@ final class DesktopBrowserDownload: NSObject, WKDownloadDelegate {
     }
     init(download: WKDownload, page: DesktopBrowserPage, host: DesktopBrowserHost) {
         id = UUID().uuidString; self.download = download; self.page = page; self.host = host
-        webContentsID = page.id; courseID = page.courseID; profileID = page.profileID; isPrivate = page.isPrivate
+        webContentsID = page.id; sourceTabID = page.tabID; courseID = page.courseID; profileID = page.profileID; isPrivate = page.isPrivate
         if (download.originalRequest?.httpMethod ?? "GET") == "GET" { retryURL = download.originalRequest?.url }
         savedFileName = retryURL?.lastPathComponent ?? "다운로드"
         super.init(); observe()
     }
     init(restoring record: BrowserDownloadStore.Record, host: DesktopBrowserHost) {
-        id = record.id; self.host = host; webContentsID = 0; courseID = record.courseID; profileID = record.profileID; isPrivate = false
+        id = record.id; self.host = host; webContentsID = 0; sourceTabID = nil; courseID = record.courseID; profileID = record.profileID; isPrivate = false
         savedFileName = record.fileName; retryURL = record.url.flatMap(URL.init(string:)); receivedBytes = record.receivedBytes; totalBytes = record.totalBytes
         relPath = record.relPath; state = record.state; failureReason = record.failureReason
         destination = record.destinationLeaf.map { host.root.appendingPathComponent("Downloads").appendingPathComponent(record.id).appendingPathComponent($0) }
@@ -134,7 +136,8 @@ final class DesktopBrowserDownload: NSObject, WKDownloadDelegate {
         guard self.download === download else { completionHandler(nil); return }
         do {
             guard let host else { completionHandler(nil); return }
-            let folder = host.root.appendingPathComponent("Downloads", isDirectory: true).appendingPathComponent(id, isDirectory: true)
+            let base = isPrivate ? FileManager.default.temporaryDirectory.appendingPathComponent("BandalPrivateBrowserDownloads", isDirectory: true) : host.root.appendingPathComponent("Downloads", isDirectory: true)
+            let folder = base.appendingPathComponent(id, isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let leaf = (suggestedFilename as NSString).lastPathComponent
             let safe = String(leaf.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }).replacingOccurrences(of: "\\", with: "_").replacingOccurrences(of: ":", with: "_")
@@ -149,7 +152,7 @@ final class DesktopBrowserDownload: NSObject, WKDownloadDelegate {
         state = "completed"; paused = false; resumeData = nil; observation = nil
         // Claim the import before publishing completion. Otherwise the visible
         // "save again" action can race this asynchronous automatic import.
-        if let destination, courseID != nil, let callback = host?.onDownload {
+        if !isPrivate, let destination, courseID != nil, let callback = host?.onDownload {
             savingMaterial = true; publish()
             Task { [self] in
                 try? await importMaterial(destination, using: callback)
@@ -202,15 +205,20 @@ extension DesktopBrowserHost {
         if action == "retry" { try await item.retry(); return ["ok": true] }
         guard item.state == "completed", let url = item.destination, FileManager.default.fileExists(atPath: url.path) else { throw DesktopBrowserError.unavailable("완료된 다운로드 파일이 없습니다.") }
         if action == "open", let course = item.courseID, let relPath = item.relPath {
-            emit("ui:openMaterial", ["courseId": course, "relPath": relPath, "positionSec": 0, "playbackRate": 1]); return ["ok": true]
+            // The import can finish between a download row snapshot and its
+            // action. Resolve the current canonical material in this route too.
+            if let onOpenMaterial { onOpenMaterial(course, relPath) }
+            else { emit("ui:openMaterial", ["courseId": course, "relPath": relPath, "positionSec": 0, "playbackRate": 1]) }
+            return ["ok": true]
         }
         guard let presenter = presentingController, presenter.presentedViewController == nil else { throw DesktopBrowserError.unavailable("다른 창을 닫은 뒤 다시 시도해 주세요.") }
         switch action {
         case "saveAs", "reveal": presenter.present(UIDocumentPickerViewController(forExporting: [url], asCopy: true), animated: true)
         case "open":
             let share = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-            share.popoverPresentationController?.sourceView = container
-            share.popoverPresentationController?.sourceRect = CGRect(x: (container?.bounds.midX ?? 0), y: 48, width: 1, height: 1)
+            let source = container ?? presenter.view
+            share.popoverPresentationController?.sourceView = source
+            share.popoverPresentationController?.sourceRect = CGRect(x: source?.bounds.midX ?? 0, y: 48, width: 1, height: 1)
             presenter.present(share, animated: true)
         default: throw DesktopBrowserError.invalid("다운로드 파일 동작")
         }

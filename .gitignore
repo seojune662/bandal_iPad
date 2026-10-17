@@ -2,15 +2,12 @@
 build/
 .derivedData/
 .derivedData-device/
+.derivedData-signed/
 *.xcuserstate
 xcuserdata/
 .DS_Store
-node_modules/
 .env*
 !.env.example
-App/Resources/Editor/
-App/Resources/Desktop/
-/Vendor/
 *.ipa
 *.xcarchive
 backend/supabase/.temp/

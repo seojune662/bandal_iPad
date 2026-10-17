@@ -2,7 +2,6 @@ import BandalCore
 import CryptoKit
 import Darwin
 import Foundation
-import JavaScriptCore
 import PDFKit
 #if canImport(UIKit)
 import UIKit
@@ -10,15 +9,9 @@ import UIKit
 import AppKit
 #endif
 
-@objc protocol DesktopNativeExports: JSExport {
-    func perform(_ request: String) -> String
-    func emit(_ channel: String, _ payload: String)
-    func log(_ level: String, _ message: String)
-}
-
 /// Runs exclusively on DesktopRuntime's serial queue. Paths are verified here,
-/// below JavaScript, including symlinks and file descriptor ownership.
-final class DesktopNativePrimitives: NSObject, DesktopNativeExports {
+/// including symlinks and file descriptor ownership.
+final class DesktopNativePrimitives: NSObject {
     let root: URL
     let legacyRoot: URL
     let database: DesktopSQLite

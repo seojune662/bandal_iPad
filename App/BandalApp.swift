@@ -4,8 +4,9 @@ import SwiftUI
 struct BandalApp: App {
     var body: some Scene {
         WindowGroup {
-            DesktopShell()
+            NativeWorkspaceView()
                 .statusBarHidden(true)
+                .ignoresSafeArea(.container, edges: .top)
         }
     }
 }

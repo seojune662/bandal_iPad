@@ -1,3 +1,5 @@
+> **Historical / 과거 구현 기록** — 이전 빌드의 구현·검증 기록이며, 삭제된 웹 UI·JavaScriptCore 경로가 포함될 수 있습니다. 현재 Swift 앱의 구조·빌드·검증 범위는 [README](../README.md)를 우선합니다. 아래 결과는 현재 빌드의 검증 결과가 아닙니다.
+
 # 설정 동작 검증 기록
 
 현재 기준은 원본 `SettingsApp`의 20개 분류와 `TabsSettingsPanel`의 6개 하위 탭이다. 화면이 열리거나 IPC handler가 존재하는 것은 기능 완료의 증거로 사용하지 않는다.

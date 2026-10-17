@@ -14,7 +14,7 @@ final class LearningTests: XCTestCase {
         XCTAssertFalse(quiz.questions[1].matches(""))
         XCTAssertEqual(quiz.questions[2].type, .shortAnswer)
         XCTAssertEqual(quiz.questions[2].explanation, "The principle")
-        let restored = try AppModel.decoder.decode(LearningQuiz.self, from: AppModel.encoder.encode(quiz))
+        let restored = try JSONDecoder().decode(LearningQuiz.self, from: JSONEncoder().encode(quiz))
         XCTAssertLessThan(abs(restored.createdAt.timeIntervalSince(quiz.createdAt)), 1)
         var expected = quiz; expected.createdAt = restored.createdAt
         XCTAssertEqual(restored, expected)
@@ -50,30 +50,4 @@ final class LearningTests: XCTestCase {
         XCTAssertEqual(merged.currentIndex, 1)
     }
 
-    @MainActor
-    func testArticleQuizAndProgressSurviveRepositoryReload() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let model = AppModel(storageRoot: directory, seedWelcome: false)
-        while model.loading { await Task.yield() }
-        model.addCourse("Reading")
-        let library = LearningLibrary()
-        let article = LearningArticle(courseID: model.courseID, title: "Saved source", sourceURL: "https://example.org/article", paragraphs: ["First paragraph", "Second paragraph"])
-        let quiz = LearningQuiz(courseID: model.courseID, title: "Recall", questions: [LearningQuizQuestion(type: .cloze, prompt: "___", answer: "A")])
-        let progress = LearningReadingProgress(courseID: model.courseID, articleID: article.id, paragraphIndex: 1, completed: true)
-        library.save(article, model: model); library.save(quiz, model: model); library.save(progress, model: model)
-        let answer = LearningQuizAnswer(response: "A", correct: true, selfChecked: false, submitted: true)
-        let attempt = LearningQuizAttempt(attemptID: UUID().uuidString, courseID: model.courseID, quizID: quiz.id, answers: [quiz.questions[0].id: answer], currentIndex: 0, startedAt: Date(), completedAt: Date())
-        library.save(attempt, model: model)
-        await model.flush()
-        let reopened = AppModel(storageRoot: directory, seedWelcome: false)
-        while reopened.loading { await Task.yield() }
-        let restored = LearningLibrary(); await restored.reload(reopened)
-        XCTAssertEqual(restored.articles.first?.paragraphs, article.paragraphs)
-        XCTAssertEqual(restored.quizzes.first?.questions, quiz.questions)
-        XCTAssertEqual(restored.latestProgress(article.id)?.paragraphIndex, 1)
-        XCTAssertEqual(restored.latestProgress(article.id)?.completed, true)
-        XCTAssertEqual(restored.attempts.first?.score, 1)
-        XCTAssertNil(restored.error)
-    }
 }

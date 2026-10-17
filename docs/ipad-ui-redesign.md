@@ -1,3 +1,5 @@
+> **Historical / 과거 구현 기록** — 이전 빌드의 구현·검증 기록이며, 삭제된 웹 UI·JavaScriptCore 경로가 포함될 수 있습니다. 현재 Swift 앱의 구조·빌드·검증 범위는 [README](../README.md)를 우선합니다. 아래 결과는 현재 빌드의 검증 결과가 아닙니다.
+
 # 반달 iPad UI·UX 개선 결과
 
 2026-10-15. 실제 실행되는 React/Dockview 앱의 iPad 표현 계층에 적용했다.

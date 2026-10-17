@@ -101,7 +101,9 @@ final class NativePDFSurfaceLifecycleTests: XCTestCase {
         surface.refreshViewport()
         let target = try XCTUnwrap(metal.pendingFrameGeometry)
         XCTAssertNotEqual(target.pixelSize, oldGeometry.pixelSize)
-        XCTAssertEqual(target.canvasRect, visible)
+        let expectedCrop = try XCTUnwrap(NativePDFRenderViewport(canvasBounds: surface.bounds,
+            visibleRect: visible, canvasToWindow: .identity, screenScale: window.screen.scale, stabilized: true))
+        XCTAssertEqual(target.canvasRect, expectedCrop.canvasRect)
         XCTAssertFalse(metal.isHidden)
         XCTAssertTrue(probe.waitForFirstAcquisition(), "Re-entry must request a drawable for the staged viewport")
         XCTAssertEqual(probe.requestedSizes, [target.pixelSize],

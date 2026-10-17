@@ -1,12 +1,18 @@
 # Third-party components
 
-- Bandal desktop components and icon: MIT; see `LICENSE` and `WebEditor/DESKTOP-THIRD-PARTY-LICENSES.md`.
-- The original desktop renderer and repository snapshot is recorded in `DesktopRuntime/upstream/manifest.json`. React, Dockview, Milkdown/ProseMirror, Vite, PDF.js, pdf-lib, perfect-freehand, Mammoth, JSZip, SheetJS and Silurus OOXML versions are pinned in `DesktopRuntime/pnpm-lock.yaml`; upstream licenses remain in installed packages. The earlier standalone editor is retained under `WebEditor` for history, but is not the application entry point.
-- Original desktop and Noto Sans KR PDF font notices are preserved in `DesktopRuntime/assets/PDF/THIRD_PARTY_LICENSES.md` and copied into the app at build time. Pretendard font subsets are bundled from the desktop dependency. Review distribution notices before App Store submission.
-- PDF.js 5.4.296 CMaps, standard fonts and WebAssembly decoders are bundled locally under `Desktop/pdfjs`. The build copies the package Apache-2.0 `LICENSE`, Adobe `cmaps/LICENSE`, Foxit/PDFium and Liberation font notices, and decoder notices from `wasm/` alongside the exact assets; `pdfjs/manifest.json` verifies every distributed file.
-- sherpa-onnx 1.13.8: Apache-2.0, https://github.com/k2-fsa/sherpa-onnx . The package includes ONNX Runtime under its upstream license.
-- On-device speech models: separately downloaded, revision/size/hash pinned in `App/Recording/LocalSpeech.swift`; verify each model's redistribution terms before bundling models in a store release.
-- Offline dictionary: source attribution and complete CC BY-SA 4.0 and WordNet license texts are included in `App/Resources/Dictionary/` and the application bundle.
-- Apple frameworks are supplied by the operating system/SDK.
+The current iPad application uses SwiftUI, UIKit, PDFKit, Metal and Swift storage/services. The former React/Dockview application, JavaScriptCore backend, npm dependencies, PDF.js assets and bundled Noto/Pretendard fonts are no longer part of this tree or app bundle.
 
-API provider keys, Supabase sessions, browser cookies, user documents and downloaded speech model binaries are not committed to this repository.
+- **Bandal code and icon:** MIT; see [LICENSE](LICENSE).
+- **perfect-freehand legacy ink geometry:** the Swift port preserves the MIT attribution to Steve Ruiz (2021). The complete notice is retained in [NativePDFLegacyInk-LICENSE.txt](App/Native/Storage/NativePDFLegacyInk-LICENSE.txt) and in the bundled [native resource notices](App/Resources/DesktopNative/THIRD_PARTY_LICENSES.md). This port reproduces existing unversioned strokes; it does not require the npm package at runtime.
+- **Mozilla Readability / Arc90 readability.js:** Apache-2.0. The bundled `article-extraction.js` includes the copyright notice and article extraction implementation. See [Readability-LICENSE](App/Resources/DesktopNative/Readability-LICENSE) and the [Readability source](https://github.com/mozilla/readability). The other two bundled scripts, `browser-agent.js` and `web-pip.js`, are Bandal browser integration code under the repository MIT license. These scripts operate on web content inside WebKit.
+- **sherpa-onnx 1.13.8:** Apache-2.0, pinned in [project.yml](project.yml); see [upstream source and licenses](https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.8). Its native package includes ONNX Runtime with upstream license notices. Downloaded package notices must accompany redistributed native components.
+- **On-device speech models:** downloaded separately, with revision, size and SHA-256 pinned in [LocalSpeech.swift](App/Recording/LocalSpeech.swift). No model binaries are bundled in this repository; each model retains its own upstream terms.
+- **Offline dictionary:** source attribution and complete CC BY-SA 4.0 and WordNet 3.0 license texts are included in [App/Resources/Dictionary](App/Resources/Dictionary/) and the application bundle. Sources are Princeton WordNet 3.0 and English Wiktionary via kaikki.org/wiktextract; see [UPSTREAM-ATTRIBUTION.txt](App/Resources/Dictionary/UPSTREAM-ATTRIBUTION.txt).
+- **SwiftMath 1.7.3:** MIT; the native Markdown math renderer uses this Swift package. See [SwiftMath-LICENSE.txt](App/Resources/DesktopNative/SwiftMath-LICENSE.txt). Its unmodified mathFonts.bundle includes its font license notices, including the GUST Font License.
+- **Apple frameworks:** supplied by the operating system and SDK.
+
+The bundled [resource notices](App/Resources/DesktopNative/THIRD_PARTY_LICENSES.md) also retain the earlier Orca design acknowledgement as historical attribution. It does not identify an active Orca runtime dependency.
+
+The optional Python PowerPoint conversion service and Supabase schema in `backend/` run separately from the iPad app. Their deployment dependencies are documented alongside those services.
+
+API provider keys, account sessions, browser cookies, user documents and downloaded speech model binaries are not committed to this repository.

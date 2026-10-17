@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 import Network
 import WebKit
 @testable import Bandal
@@ -6,6 +7,37 @@ import WebKit
 @MainActor
 final class BrowserDownloadRecoveryTests: XCTestCase {
     private func root() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent("browser-download-recovery-\(UUID())") }
+    func testNativeOpenResolvesMaterialImportedAfterDownloadSnapshotWithoutPresenter() async throws {
+        let root = root(); defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = NativeWorkspaceStore(storageRoot: root)
+        let services = NativePlatformServices(store: workspace, credentialEnvironment: .init(read: { _ in nil }, write: { _, _ in }))
+        defer { withExtendedLifetime(services) {} }
+        let host = services.browser, id = UUID().uuidString
+        let downloadStore = try XCTUnwrap(host.downloadStore)
+        try FileManager.default.createDirectory(at: downloadStore.folder(id), withIntermediateDirectories: true)
+        let file = downloadStore.folder(id).appendingPathComponent("lecture.md")
+        try Data("# Downloaded note".utf8).write(to: file)
+        let record = BrowserDownloadStore.Record(id: id, profileID: "default", courseID: "course", fileName: "lecture.md", url: "https://school.test/lecture.md", destinationLeaf: "lecture.md", relPath: nil, state: "completed", receivedBytes: 17, totalBytes: 17, failureReason: nil)
+        let item = DesktopBrowserDownload(restoring: record, host: host)
+        host.downloads[id] = item
+        let clickedSnapshot = item.payload
+        XCTAssertTrue(clickedSnapshot["relPath"] is NSNull)
+        item.relPath = "Imported/lecture.md" // Automatic import completes after the row snapshot.
+        var opened: [[String: Any]] = [], legacyEvents = 0
+        let nativeOpen = expectation(description: "Native workspace receives the imported material")
+        let subscription = workspace.events.sink { event in
+            if event.channel == "nativeWorkspace:openDocument", let payload = event.payload as? [String: Any] { opened.append(payload); nativeOpen.fulfill() }
+            if event.channel == "ui:openMaterial" { legacyEvents += 1 }
+        }
+        defer { subscription.cancel() }
+        _ = try await host.handle(channel: "browser:downloadFile", request: ["id": id, "action": "open"])
+        await fulfillment(of: [nativeOpen], timeout: 3)
+        XCTAssertNil(host.presentingController)
+        XCTAssertEqual(opened.count, 1); XCTAssertEqual(legacyEvents, 0)
+        XCTAssertEqual(opened.first?["courseId"] as? String, "course")
+        XCTAssertEqual(opened.first?["relPath"] as? String, "Imported/lecture.md")
+        XCTAssertEqual(opened.first?["kind"] as? String, "note")
+    }
     func testCompletedRecordsSurviveContainerRelocationAndDismissPreservesFiles() throws {
         let original = root(), relocated = root()
         defer { try? FileManager.default.removeItem(at: original); try? FileManager.default.removeItem(at: relocated) }
@@ -91,13 +123,16 @@ final class BrowserDownloadRecoveryTests: XCTestCase {
             try FileManager.default.copyItem(at: source,to: destination)
             return "imported-lecture.pdf"
         }
-        let page = try host.createPage(tabID: "download-import",profileID: "default",isPrivate: false,courseID: "course")
+        _ = try await host.handle(channel: "browser:createPage", request: ["tabId": "download-import", "courseId": "course"])
         defer { host.destroy("download-import") }
-        let transfer = await page.webView.startDownload(using: URLRequest(url: URL(string: "http://127.0.0.1:\(port)/lecture.pdf")!))
-        host.track(transfer,page: page)
+        _ = try await host.handle(channel: "browser:pageAction", request: ["tabId": "download-import", "action": "downloadURL", "args": ["http://127.0.0.1:\(port)/lecture.pdf"]])
         let id = try XCTUnwrap(host.downloads.keys.first)
-        try await wait { release != nil }
         let item = try XCTUnwrap(host.downloads[id])
+        try await wait { release != nil || item.state == "interrupted" }
+        guard item.state == "completed" else {
+            XCTFail("Download did not reach automatic import: \(item.payload), requests=\(server.requestCount)")
+            throw NSError(domain: "BrowserDownloadFixture", code: 1)
+        }
         XCTAssertEqual(item.state,"completed"); XCTAssertTrue(item.isChangingTransfer)
         XCTAssertEqual(item.payload["recoverable"] as? Bool,false)
         do {
@@ -113,10 +148,45 @@ final class BrowserDownloadRecoveryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("imported-lecture.pdf")),server.body)
         XCTAssertEqual(host.downloadStore?.records.first(where: { $0.id == id })?.relPath,"imported-lecture.pdf")
     }
+    func testPrivateDownloadStaysOutOfNormalHistoryAndCourseUntilExplicitSave() async throws {
+        let root = root(); defer { try? FileManager.default.removeItem(at: root) }
+        let server = try BrowserRecoveryFixtureServer(), port = try await server.start(); defer { server.stop() }
+        let host = DesktopBrowserHost(root: root)
+        var imports = 0
+        host.onDownload = { source, course in
+            imports += 1; XCTAssertEqual(course, "private-course")
+            XCTAssertEqual(try Data(contentsOf: source), server.body)
+            return "explicitly-saved.pdf"
+        }
+        _ = try await host.handle(channel: "browser:createPage", request: ["tabId": "native-scope.private.download", "isPrivate": true, "courseId": "private-course"])
+        let page = try XCTUnwrap(host.pages["native-scope.private.download"])
+        defer { host.destroy(page.tabID) }
+        _ = try await host.handle(channel: "browser:pageAction", request: ["tabId": page.tabID, "action": "downloadURL", "args": ["http://127.0.0.1:\(port)/lecture.pdf"]])
+        let item = try XCTUnwrap(host.downloads.values.first)
+        try await wait { item.state == "completed" || item.state == "interrupted" }
+        XCTAssertEqual(item.state, "completed", "\(item.payload), requests=\(server.requestCount)"); XCTAssertEqual(imports, 0)
+        XCTAssertNil(item.relPath); XCTAssertEqual(item.payload["recoverable"] as? Bool, true)
+        XCTAssertEqual(item.payload["profileId"] as? String, "default")
+        XCTAssertEqual(item.payload["isPrivate"] as? Bool, true)
+        XCTAssertEqual(item.payload["tabId"] as? String, page.tabID)
+        let file = try XCTUnwrap(item.destination)
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        XCTAssertFalse(file.path.hasPrefix(host.root.path), "A private filename must not enter the normal Documents download directory")
+        XCTAssertEqual(try Data(contentsOf: file), server.body)
+        XCTAssertTrue(host.downloadStore?.records.isEmpty == true)
+        XCTAssertTrue(DesktopBrowserHost(root: root).downloads.isEmpty, "Private metadata must not reappear after restart")
+        _ = try await host.handle(channel: "browser:downloadFile", request: ["id": item.id, "action": "retry"])
+        XCTAssertEqual(imports, 1); XCTAssertEqual(item.relPath, "explicitly-saved.pdf")
+        XCTAssertTrue(host.downloadStore?.records.isEmpty == true)
+    }
+
     private func wait(_ ready: () -> Bool) async throws {
         let end = Date().addingTimeInterval(15)
         while !ready() && Date() < end { try await Task.sleep(for: .milliseconds(30)) }
-        XCTAssertTrue(ready(), "WebKit download timed out")
+        guard ready() else {
+            XCTFail("WebKit download timed out")
+            throw NSError(domain: "BrowserDownloadFixture", code: 2)
+        }
     }
 }
 

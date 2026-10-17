@@ -74,7 +74,7 @@ final class DesktopRecordingService {
                 case "recordings:control":
                     let id = try requiredID(request)
                     switch request["action"] as? String {
-                    case "start": return try await start(id: id, deviceID: "default")
+                    case "start": return try await start(id: id, deviceID: request["deviceId"] as? String ?? "default")
                     case "pause": return try await finish(id: id, status: "paused")
                     case "stop": return try await finish(id: id, status: "processing")
                     case "interrupt": return try await finish(id: id, status: "interrupted")

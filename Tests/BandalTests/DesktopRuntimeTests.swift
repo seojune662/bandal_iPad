@@ -1,5 +1,4 @@
 import XCTest
-import JavaScriptCore
 import UIKit
 import Darwin
 import CryptoKit
@@ -41,6 +40,18 @@ final class DesktopRuntimeTests: XCTestCase {
             XCTAssertEqual((error as? DesktopRuntimeError)?.code, "SQLITE_RANGE")
         }
         XCTAssertEqual(try database.query("SELECT id FROM bindings", params: [:]).count, 1, "A missing named value must not insert an accidental SQL NULL")
+    }
+
+    func testSQLiteIntegersBridgeDirectlyToSwiftAndRetainFullWidth() throws {
+        let database = try DesktopSQLite(url:directory.appendingPathComponent("native-integers.db"))
+        try database.exec("CREATE TABLE integers(id INTEGER PRIMARY KEY, value INTEGER)")
+        let result = try database.run("INSERT INTO integers(value) VALUES(?)",params:[Int.max])
+        XCTAssertEqual(result["lastInsertRowid"] as? Int,1)
+        let row = try XCTUnwrap(database.query("SELECT id,value,1 AS page FROM integers",params:[]).first)
+        XCTAssertEqual(row["id"] as? Int,1)
+        XCTAssertEqual(row["page"] as? Int,1)
+        XCTAssertEqual(row["value"] as? Int,Int.max)
+        XCTAssertEqual((row["value"] as? NSNumber)?.int64Value,Int64.max)
     }
 
     func testFilesystemBlocksEscapesAndKeepsOriginalOnExclusiveWriteFailure() throws {
@@ -116,13 +127,11 @@ final class DesktopRuntimeTests: XCTestCase {
         XCTAssertThrowsError(try native.perform("fs.open", args: ["path": link.path, "flags": Int(O_RDONLY | O_NOFOLLOW)]))
     }
 
-    func testJSExportBridgeReportsStorageErrorsWithoutLosingErrorCode() throws {
+    func testSwiftStorageBoundaryPreservesErrorCode() throws {
         let native = try DesktopNativePrimitives(root: directory, legacyRoot: directory.appendingPathComponent("Legacy"))
-        let context = try XCTUnwrap(JSContext())
-        context.setObject(native, forKeyedSubscript: "__bandalNative" as NSString)
-        let error = context.evaluateScript("JSON.parse(__bandalNative.perform(JSON.stringify({op:'fs.readFile',args:{path:'/etc/passwd'}}))).error.code")
-        XCTAssertNil(context.exception)
-        XCTAssertEqual(error?.toString(), "EACCES")
+        let raw = native.perform("{\"op\":\"fs.readFile\",\"args\":{\"path\":\"/etc/passwd\"}}")
+        let result = try DesktopJSON.decode(Data(raw.utf8)) as? [String:Any]
+        XCTAssertEqual((result?["error"] as? [String:Any])?["code"] as? String,"EACCES")
     }
 
     func testMoveRecoveryLockExcludesAnotherRuntimeAndReleasesWithItsOwner() throws {

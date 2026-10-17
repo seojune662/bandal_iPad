@@ -1,8 +1,8 @@
 import Darwin
 import Foundation
 
-/// Opened once, then read in bounded chunks. This avoids round-tripping entire
-/// videos/PDFs through JavaScriptCore for every WebKit Range request.
+/// Opened once and read in bounded chunks, with descriptor identity checks
+/// protecting long-running media reads and document exports.
 final class DesktopMaterialFile: @unchecked Sendable {
     let handle: FileHandle
     let size: Int64

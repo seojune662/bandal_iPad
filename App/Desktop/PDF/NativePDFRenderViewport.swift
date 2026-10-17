@@ -6,13 +6,17 @@ import UIKit
 struct NativePDFRenderViewport: Equatable {
     static let maximumPixels: CGFloat = 8_000_000
     static let maximumDimension: CGFloat = 4096
+    static let scrollPadding: CGFloat = 0.25
+    static let grid: CGFloat = 64
     var canvasRect: CGRect
     var pixelScale: CGFloat
     var pixelSize: CGSize {
         CGSize(width: ceil(canvasRect.width * pixelScale), height: ceil(canvasRect.height * pixelScale))
     }
 
-    init?(canvasBounds: CGRect, visibleRect: CGRect, canvasToWindow: CGAffineTransform, screenScale: CGFloat) {
+    /// `stabilized` pads along the scroll axis and snaps to a coarse grid so
+    /// ordinary scrolling keeps the staged drawable instead of resizing it.
+    init?(canvasBounds: CGRect, visibleRect: CGRect, canvasToWindow: CGAffineTransform, screenScale: CGFloat, stabilized: Bool = false) {
         let values = [canvasBounds.minX, canvasBounds.minY, canvasBounds.width, canvasBounds.height,
                       visibleRect.minX, visibleRect.minY, visibleRect.width, visibleRect.height,
                       canvasToWindow.a, canvasToWindow.b, canvasToWindow.c, canvasToWindow.d, screenScale]
@@ -26,6 +30,8 @@ struct NativePDFRenderViewport: Equatable {
         let magnification = sqrt(max(0, (trace + sqrt(max(0, trace*trace-4*determinant*determinant))) / 2))
         let requestedScale = screenScale * magnification
         guard requestedScale.isFinite, requestedScale > 0 else { return nil }
+        if stabilized { clipped = Self.stabilize(clipped, within: canvasBounds, scale: requestedScale) }
+        guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return nil }
         // Snap to physical pixels so slow scrolling does not repeatedly change
         // glyph sampling. Expand only within the page; no offscreen full bitmap.
         let left = floor(clipped.minX * requestedScale) / requestedScale
@@ -37,6 +43,17 @@ struct NativePDFRenderViewport: Equatable {
                         Self.maximumDimension / max(clipped.width, clipped.height))
         guard scale.isFinite, scale > 0 else { return nil }
         canvasRect = clipped; pixelScale = scale
+    }
+    /// Pads vertically within the pixel budget, then snaps to the grid.
+    static func stabilize(_ clipped: CGRect, within canvasBounds: CGRect, scale requestedScale: CGFloat) -> CGRect {
+        let budgetHeight = min(Self.maximumPixels / (requestedScale * requestedScale * clipped.width),
+                               Self.maximumDimension / requestedScale) - clipped.height
+        let pad = max(0, min(clipped.height * Self.scrollPadding, budgetHeight / 2))
+        let padded = clipped.insetBy(dx: 0, dy: -pad)
+        let grid = Self.grid
+        return CGRect(x: floor(padded.minX / grid) * grid, y: floor(padded.minY / grid) * grid,
+            width: ceil(padded.maxX / grid) * grid - floor(padded.minX / grid) * grid,
+            height: ceil(padded.maxY / grid) * grid - floor(padded.minY / grid) * grid).intersection(canvasBounds)
     }
 
     func localPoint(_ canvasPoint: CGPoint) -> CGPoint {

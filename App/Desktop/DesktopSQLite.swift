@@ -1,8 +1,7 @@
 import Foundation
 import SQLite3
 
-/// The desktop repositories retain their SQL and transaction boundaries. Only
-/// better-sqlite3's small synchronous binding is replaced on iPad.
+/// Swift repositories retain the existing SQL schema and transaction boundaries.
 final class DesktopSQLite {
     private let db: OpaquePointer
 
@@ -41,7 +40,9 @@ final class DesktopSQLite {
             for index in 0..<sqlite3_column_count(statement) {
                 let name = String(cString: sqlite3_column_name(statement, index))
                 switch sqlite3_column_type(statement, index) {
-                case SQLITE_INTEGER: row[name] = sqlite3_column_int64(statement, index)
+                // iPadOS uses 64-bit Int. Return that native type so repository
+                // results keep working when read directly by Swift UI models.
+                case SQLITE_INTEGER: row[name] = Int(sqlite3_column_int64(statement, index))
                 case SQLITE_FLOAT: row[name] = sqlite3_column_double(statement, index)
                 case SQLITE_TEXT: row[name] = String(cString: sqlite3_column_text(statement, index))
                 case SQLITE_BLOB:
@@ -61,7 +62,7 @@ final class DesktopSQLite {
         var status = sqlite3_step(statement)
         while status == SQLITE_ROW { status = sqlite3_step(statement) }
         guard status == SQLITE_DONE else { throw failure() }
-        return ["changes": Int(sqlite3_changes(db)), "lastInsertRowid": sqlite3_last_insert_rowid(db)]
+        return ["changes": Int(sqlite3_changes(db)), "lastInsertRowid": Int(sqlite3_last_insert_rowid(db))]
     }
 
     private func prepare(_ sql: String, params: Any?) throws -> OpaquePointer {

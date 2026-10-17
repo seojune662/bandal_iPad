@@ -1,0 +1,1482 @@
+{
+  "universities": [
+    {
+      "id": "snu",
+      "nameKo": "서울대학교",
+      "nameEn": "Seoul National University",
+      "aliases": [
+        "서울대",
+        "SNU",
+        "Seoul National",
+        "관악"
+      ],
+      "domain": "snu.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "canvas",
+        "template": "https://myetl.snu.ac.kr/courses/{id}",
+        "idPattern": "^https?://myetl\\.snu\\.ac\\.kr/courses/(\\d+)(?:[/?#].*)?$",
+        "hint": "내 강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (myetl.snu.ac.kr/courses/12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "snu.portal",
+          "kind": "portal",
+          "label": "마이스누",
+          "labelEn": "mySNU",
+          "url": "https://my.snu.ac.kr/",
+          "verification": "verified",
+          "note": "학사정보·성적·증명서·등록이 모두 이 안에 있어요."
+        },
+        {
+          "id": "snu.myetl",
+          "kind": "lms",
+          "label": "내 강의실",
+          "labelEn": "myeTL",
+          "url": "https://myetl.snu.ac.kr/login",
+          "verification": "verified",
+          "note": "루트(/)로 들어가면 로그인 전에는 JSON 원문이 보여요. /login이 SSO로 태워줍니다."
+        },
+        {
+          "id": "snu.etl",
+          "kind": "lms",
+          "label": "eTL 강좌",
+          "labelEn": "New eTL",
+          "url": "https://etl.snu.ac.kr/",
+          "verification": "verified",
+          "note": "강좌 카탈로그·공지 전용이에요. 실제 강의실은 \"내 강의실\"입니다."
+        },
+        {
+          "id": "snu.oldetl",
+          "kind": "lms",
+          "label": "구 eTL",
+          "url": "https://oldetl.snu.ac.kr/",
+          "secondary": true,
+          "verification": "verified",
+          "note": "지난 학기 자료 조회용 Moodle이에요."
+        },
+        {
+          "id": "snu.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.snu.ac.kr/",
+          "verification": "verified",
+          "note": "NetFUNNEL 대기열을 써요. 대기 중에는 탭을 닫지 마세요."
+        },
+        {
+          "id": "snu.library",
+          "kind": "library",
+          "label": "중앙도서관",
+          "url": "https://lib.snu.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "snu.library.search",
+          "kind": "library",
+          "label": "자료검색",
+          "url": "https://lib.snu.ac.kr/find/",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "snu.library.proxy",
+          "kind": "other",
+          "label": "학외 접속",
+          "url": "https://lib.snu.ac.kr/using/proxy/",
+          "secondary": true,
+          "verification": "verified",
+          "note": "한 번 로그인해 두면 같은 세션으로 전자자원 접근이 유지돼요."
+        },
+        {
+          "id": "snu.mail",
+          "kind": "mail",
+          "label": "학생 메일",
+          "url": "https://mail.google.com/",
+          "opensExternally": true,
+          "externalReason": "federated-login",
+          "verification": "verified",
+          "note": "@snu.ac.kr 계정은 Google Workspace예요."
+        },
+        {
+          "id": "snu.mail.staff",
+          "kind": "mail",
+          "label": "교직원 메일",
+          "url": "https://snu.gov-dooray.com/",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "snu.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.snu.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "snu.calendar",
+          "kind": "other",
+          "label": "학사일정",
+          "url": "https://www.snu.ac.kr/academics/resources/calendar",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "snu.snugenie",
+          "kind": "other",
+          "label": "스누지니",
+          "url": "https://snugenie.snu.ac.kr/",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "snu.extra",
+          "kind": "other",
+          "label": "비교과",
+          "url": "https://extra.snu.ac.kr/main.html",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "snu.food",
+          "kind": "other",
+          "label": "생협 식단",
+          "url": "https://snuco.snu.ac.kr/foodmenu/",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "snu.map",
+          "kind": "other",
+          "label": "캠퍼스 지도",
+          "url": "https://map.snu.ac.kr/web/main.action",
+          "secondary": true,
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "yonsei",
+      "nameKo": "연세대학교",
+      "nameEn": "Yonsei University",
+      "aliases": [
+        "연세대",
+        "Yonsei",
+        "신촌"
+      ],
+      "domain": "yonsei.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "moodle",
+        "template": "https://ys.learnus.org/course/view.php?id={id}",
+        "idPattern": "^https?://ys\\.learnus\\.org/course/view\\.php\\?(?:[^#]*&)?id=(\\d+)",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (ys.learnus.org/course/view.php?id=12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "yonsei.portal",
+          "kind": "portal",
+          "label": "연세포탈",
+          "url": "https://portal.yonsei.ac.kr/portal/MainCtr/index.do",
+          "opensExternally": true,
+          "externalReason": "ua-sniffing",
+          "verification": "verified",
+          "note": "browserCheck.js가 분류하지 못한 브라우저를 전부 안내 페이지로 돌려보내요. 수강신청도 이 포털 안에 있습니다."
+        },
+        {
+          "id": "yonsei.lms",
+          "kind": "lms",
+          "label": "LearnUs",
+          "url": "https://ys.learnus.org/",
+          "verification": "verified"
+        },
+        {
+          "id": "yonsei.library",
+          "kind": "library",
+          "label": "학술정보원",
+          "url": "https://library.yonsei.ac.kr/",
+          "verification": "verified",
+          "note": "중간 인증서 체인이 불완전해서 드물게 경고가 뜰 수 있어요."
+        },
+        {
+          "id": "yonsei.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://mail.yonsei.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "yonsei.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.yonsei.ac.kr/sc/index.do",
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "korea",
+      "nameKo": "고려대학교",
+      "nameEn": "Korea University",
+      "aliases": [
+        "고려대",
+        "Korea University",
+        "KU",
+        "안암"
+      ],
+      "domain": "korea.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "canvas",
+        "template": "https://canvas.korea.ac.kr/courses/{id}",
+        "idPattern": "^https?://canvas\\.korea\\.ac\\.kr/courses/(\\d+)(?:[/?#].*)?$",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (canvas.korea.ac.kr/courses/12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "korea.portal",
+          "kind": "portal",
+          "label": "KUPID",
+          "url": "https://portal.korea.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "korea.ams",
+          "kind": "portal",
+          "label": "학사정보",
+          "labelEn": "AMS",
+          "url": "https://ams.korea.ac.kr/",
+          "secondary": true,
+          "verification": "partial"
+        },
+        {
+          "id": "korea.lms",
+          "kind": "lms",
+          "label": "LMS",
+          "url": "https://lms.korea.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "korea.canvas",
+          "kind": "lms",
+          "label": "강의실",
+          "url": "https://canvas.korea.ac.kr/",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "korea.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.korea.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "korea.library",
+          "kind": "library",
+          "label": "도서관",
+          "url": "https://library.korea.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "korea.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://mail.korea.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "korea.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.korea.ac.kr/sites/ko/index.do",
+          "verification": "verified"
+        },
+        {
+          "id": "korea.cert",
+          "kind": "other",
+          "label": "증명발급",
+          "url": "https://kucert.korea.ac.kr/",
+          "opensExternally": true,
+          "externalReason": "native-plugin",
+          "secondary": true,
+          "verification": "partial",
+          "note": "문서보안 프로그램을 설치해야 해서 앱 안에서는 동작하지 않아요."
+        }
+      ]
+    },
+    {
+      "id": "skku",
+      "nameKo": "성균관대학교",
+      "nameEn": "Sungkyunkwan University",
+      "aliases": [
+        "성균관대",
+        "SKKU",
+        "Sungkyunkwan",
+        "성대"
+      ],
+      "domain": "skku.edu",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "canvas",
+        "template": "https://canvas.skku.edu/courses/{id}",
+        "idPattern": "^https?://canvas\\.skku\\.edu/courses/(\\d+)(?:[/?#].*)?$",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (canvas.skku.edu/courses/12345)",
+        "reliable": false
+      },
+      "services": [
+        {
+          "id": "skku.portal",
+          "kind": "portal",
+          "label": "킹고포털",
+          "url": "https://portal.skku.edu/",
+          "verification": "partial"
+        },
+        {
+          "id": "skku.lms",
+          "kind": "lms",
+          "label": "아이캠퍼스",
+          "labelEn": "i-Campus",
+          "url": "https://icampus.skku.edu/",
+          "verification": "verified",
+          "note": "녹화강의 재생에 Windows 전용 EverLec을 쓰는 과목이 있어요."
+        },
+        {
+          "id": "skku.canvas",
+          "kind": "lms",
+          "label": "강의실",
+          "url": "https://canvas.skku.edu/login",
+          "secondary": true,
+          "verification": "partial"
+        },
+        {
+          "id": "skku.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.skku.edu/skku/",
+          "verification": "verified"
+        },
+        {
+          "id": "skku.library",
+          "kind": "library",
+          "label": "도서관",
+          "url": "https://lib.skku.edu/",
+          "verification": "verified"
+        },
+        {
+          "id": "skku.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://mail.google.com/",
+          "opensExternally": true,
+          "externalReason": "federated-login",
+          "verification": "verified",
+          "note": "성균관대 메일은 Google Workspace예요."
+        },
+        {
+          "id": "skku.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.skku.edu/skku/index.do",
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "hanyang",
+      "nameKo": "한양대학교",
+      "nameEn": "Hanyang University",
+      "aliases": [
+        "한양대",
+        "Hanyang",
+        "HYU",
+        "ERICA",
+        "에리카"
+      ],
+      "domain": "hanyang.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "canvas",
+        "template": "https://learning.hanyang.ac.kr/courses/{id}",
+        "idPattern": "^https?://learning\\.hanyang\\.ac\\.kr/courses/(\\d+)(?:[/?#].*)?$",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (learning.hanyang.ac.kr/courses/12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "hanyang.portal",
+          "kind": "portal",
+          "label": "HY-in",
+          "url": "https://portal.hanyang.ac.kr/sso/lgin.do",
+          "verification": "verified"
+        },
+        {
+          "id": "hanyang.canvas",
+          "kind": "lms",
+          "label": "강의실",
+          "url": "https://learning.hanyang.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "hanyang.lms",
+          "kind": "lms",
+          "label": "LMS",
+          "url": "https://lms.hanyang.ac.kr/",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "hanyang.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://portal.hanyang.ac.kr/sugang/sulg.do",
+          "verification": "verified",
+          "note": "sugang.hanyang.ac.kr은 TLS 연결이 불안정해서 포털 경로를 씁니다."
+        },
+        {
+          "id": "hanyang.library.seoul",
+          "kind": "library",
+          "label": "도서관(서울)",
+          "url": "https://lib.hanyang.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "hanyang.library.erica",
+          "kind": "library",
+          "label": "도서관(ERICA)",
+          "url": "https://information.hanyang.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "hanyang.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://mail.google.com/",
+          "opensExternally": true,
+          "externalReason": "federated-login",
+          "verification": "verified",
+          "note": "한양대 메일은 Google Workspace예요."
+        },
+        {
+          "id": "hanyang.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.hanyang.ac.kr/home",
+          "verification": "verified"
+        },
+        {
+          "id": "hanyang.homepage.erica",
+          "kind": "homepage",
+          "label": "홈페이지(ERICA)",
+          "url": "https://www.hanyang.ac.kr/erica",
+          "secondary": true,
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "cau",
+      "nameKo": "중앙대학교",
+      "nameEn": "Chung-Ang University",
+      "aliases": [
+        "중앙대",
+        "CAU",
+        "Chung-Ang",
+        "흑석"
+      ],
+      "domain": "cau.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "canvas",
+        "template": "https://eclass3.cau.ac.kr/courses/{id}",
+        "idPattern": "^https?://eclass3\\.cau\\.ac\\.kr/courses/(\\d+)(?:[/?#].*)?$",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (eclass3.cau.ac.kr/courses/12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "cau.portal",
+          "kind": "portal",
+          "label": "중앙대 포탈",
+          "url": "https://mportal.cau.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "cau.lms",
+          "kind": "lms",
+          "label": "e-Class",
+          "url": "https://eclass3.cau.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "cau.canvas",
+          "kind": "lms",
+          "label": "CAU-ON",
+          "url": "https://canvas.cau.ac.kr/",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "cau.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.cau.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "cau.library.seoul",
+          "kind": "library",
+          "label": "도서관(서울)",
+          "url": "https://library.cau.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "cau.library.davinci",
+          "kind": "library",
+          "label": "도서관(다빈치)",
+          "url": "https://alibrary.cau.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "cau.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://mail.cau.ac.kr/",
+          "opensExternally": true,
+          "externalReason": "federated-login",
+          "verification": "verified",
+          "note": "중앙대 메일은 Microsoft 365예요."
+        },
+        {
+          "id": "cau.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.cau.ac.kr/",
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "khu",
+      "nameKo": "경희대학교",
+      "nameEn": "Kyung Hee University",
+      "aliases": [
+        "경희대",
+        "KHU",
+        "Kyung Hee",
+        "회기",
+        "국제캠"
+      ],
+      "domain": "khu.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "canvas",
+        "template": "https://khcanvas.khu.ac.kr/courses/{id}",
+        "idPattern": "^https?://khcanvas\\.khu\\.ac\\.kr/courses/(\\d+)(?:[/?#].*)?$",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (khcanvas.khu.ac.kr/courses/12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "khu.portal",
+          "kind": "portal",
+          "label": "포털",
+          "url": "https://portal.khu.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "khu.info21",
+          "kind": "portal",
+          "label": "인포21",
+          "labelEn": "Info21",
+          "url": "https://info21.khu.ac.kr/",
+          "verification": "partial",
+          "note": "통합 아이디의 기준이 되는 학사정보 시스템이에요."
+        },
+        {
+          "id": "khu.lms",
+          "kind": "lms",
+          "label": "e-Campus",
+          "url": "https://e-campus.khu.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "khu.canvas",
+          "kind": "lms",
+          "label": "강의실",
+          "url": "https://khcanvas.khu.ac.kr/",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "khu.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.khu.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "khu.library",
+          "kind": "library",
+          "label": "중앙도서관",
+          "url": "https://lib.khu.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "khu.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://mail.khu.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "khu.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.khu.ac.kr/",
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "sogang",
+      "nameKo": "서강대학교",
+      "nameEn": "Sogang University",
+      "aliases": [
+        "서강대",
+        "Sogang",
+        "노고산"
+      ],
+      "domain": "sogang.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "ilos",
+        "template": "https://cyber.sogang.ac.kr/ilos/st/course/submain_form.acl?KJKEY={id}",
+        "idPattern": "^https?://cyber\\.sogang\\.ac\\.kr/ilos/st/course/submain_form\\.acl\\?(?:[^#]*&)?KJKEY=([A-Za-z0-9_-]+)",
+        "hint": "강의실 주소를 붙여넣어 주세요. 이 학교의 과목 키는 숫자가 아니라 문자열(KJKEY)이라 로그인 세션에 따라 달라질 수 있어요.",
+        "reliable": false
+      },
+      "services": [
+        {
+          "id": "sogang.portal",
+          "kind": "portal",
+          "label": "SAINT",
+          "url": "https://saint.sogang.ac.kr/irj/portal",
+          "opensExternally": true,
+          "externalReason": "ua-sniffing",
+          "verification": "partial",
+          "note": "SAP 포털이 브라우저를 가려서 \"iView를 열 수 없습니다\"를 돌려줘요."
+        },
+        {
+          "id": "sogang.lms",
+          "kind": "lms",
+          "label": "사이버캠퍼스",
+          "url": "https://cyber.sogang.ac.kr/ilos/main/main_form.acl",
+          "verification": "verified"
+        },
+        {
+          "id": "sogang.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sis109.sogang.ac.kr/zu4a/zcmuik101",
+          "verification": "verified",
+          "note": "SAINT와 동시에 로그인하면 중복 로그인 문제가 생길 수 있어요."
+        },
+        {
+          "id": "sogang.library",
+          "kind": "library",
+          "label": "로욜라도서관",
+          "url": "https://library.sogang.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "sogang.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://mail.sogang.ac.kr/",
+          "verification": "partial"
+        },
+        {
+          "id": "sogang.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.sogang.ac.kr/",
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "ewha",
+      "nameKo": "이화여자대학교",
+      "nameEn": "Ewha Womans University",
+      "aliases": [
+        "이화여대",
+        "이대",
+        "Ewha",
+        "이화"
+      ],
+      "domain": "ewha.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "moodle",
+        "template": "https://cyber.ewha.ac.kr/course/view.php?id={id}",
+        "idPattern": "^https?://cyber\\.ewha\\.ac\\.kr/course/view\\.php\\?(?:[^#]*&)?id=(\\d+)",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (cyber.ewha.ac.kr/course/view.php?id=12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "ewha.eureka",
+          "kind": "portal",
+          "label": "유레카",
+          "labelEn": "EUREKA",
+          "url": "https://eureka.ewha.ac.kr/",
+          "verification": "partial",
+          "note": "통합로그인의 기준이 되는 시스템이에요."
+        },
+        {
+          "id": "ewha.portal",
+          "kind": "portal",
+          "label": "이화포탈",
+          "url": "https://portal.ewha.ac.kr/",
+          "secondary": true,
+          "verification": "unverified",
+          "note": "정확한 진입 경로를 아직 확인하지 못했어요."
+        },
+        {
+          "id": "ewha.lms",
+          "kind": "lms",
+          "label": "사이버캠퍼스",
+          "url": "https://cyber.ewha.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "ewha.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.ewha.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "ewha.library",
+          "kind": "library",
+          "label": "중앙도서관",
+          "url": "https://lib.ewha.ac.kr/",
+          "verification": "partial"
+        },
+        {
+          "id": "ewha.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://mail.google.com/",
+          "opensExternally": true,
+          "externalReason": "federated-login",
+          "verification": "verified",
+          "note": "이화여대 메일은 Google Workspace예요."
+        },
+        {
+          "id": "ewha.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.ewha.ac.kr/",
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "kaist",
+      "nameKo": "한국과학기술원",
+      "nameEn": "KAIST",
+      "aliases": [
+        "KAIST",
+        "카이스트",
+        "한국과학기술원",
+        "대전"
+      ],
+      "domain": "kaist.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "moodle",
+        "template": "https://klms.kaist.ac.kr/course/view.php?id={id}",
+        "idPattern": "^https?://klms\\.kaist\\.ac\\.kr/course/view\\.php\\?(?:[^#]*&)?id=(\\d+)",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (klms.kaist.ac.kr/course/view.php?id=12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "kaist.portal",
+          "kind": "portal",
+          "label": "KAIST 포털",
+          "url": "https://portal.kaist.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "kaist.lms",
+          "kind": "lms",
+          "label": "KLMS",
+          "url": "https://klms.kaist.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "kaist.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.kaist.ac.kr/",
+          "opensExternally": true,
+          "externalReason": "ua-sniffing",
+          "verification": "verified",
+          "note": "browserCheck.js가 분류하지 못한 브라우저에서 빈 화면을 남겨요."
+        },
+        {
+          "id": "kaist.library",
+          "kind": "library",
+          "label": "도서관",
+          "url": "https://library.kaist.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "kaist.mail",
+          "kind": "mail",
+          "label": "메일",
+          "url": "https://mail.kaist.ac.kr/",
+          "verification": "verified",
+          "note": "Dooray라서 학사 로그인과는 별개 세션이에요."
+        },
+        {
+          "id": "kaist.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.kaist.ac.kr/kr/",
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "postech",
+      "nameKo": "포항공과대학교",
+      "nameEn": "POSTECH",
+      "aliases": [
+        "POSTECH",
+        "포스텍",
+        "포항공대",
+        "포공"
+      ],
+      "domain": "postech.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "moodle",
+        "template": "https://plms.postech.ac.kr/course/view.php?id={id}",
+        "idPattern": "^https?://plms\\.postech\\.ac\\.kr/course/view\\.php\\?(?:[^#]*&)?id=(\\d+)",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (plms.postech.ac.kr/course/view.php?id=12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "postech.povis",
+          "kind": "portal",
+          "label": "POVIS",
+          "url": "https://povis.postech.ac.kr/",
+          "verification": "verified",
+          "note": "수강신청도 POVIS 안에 있어요."
+        },
+        {
+          "id": "postech.podium",
+          "kind": "portal",
+          "label": "PODIUM",
+          "url": "https://podium.postech.ac.kr/",
+          "secondary": true,
+          "verification": "partial",
+          "note": "POVIS와 함께 살아 있어요. 학과 안내에 따라 다를 수 있습니다."
+        },
+        {
+          "id": "postech.lms",
+          "kind": "lms",
+          "label": "PLMS",
+          "url": "https://plms.postech.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "postech.library",
+          "kind": "library",
+          "label": "학술정보관",
+          "url": "https://library.postech.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "postech.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://mail.postech.ac.kr/",
+          "opensExternally": true,
+          "externalReason": "federated-login",
+          "verification": "verified",
+          "note": "Microsoft Exchange + ADFS 로그인이에요."
+        },
+        {
+          "id": "postech.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.postech.ac.kr/kor/index.do",
+          "verification": "verified"
+        },
+        {
+          "id": "postech.cert",
+          "kind": "other",
+          "label": "증명발급",
+          "url": "http://cert.postech.ac.kr/",
+          "opensExternally": true,
+          "externalReason": "native-plugin",
+          "secondary": true,
+          "verification": "partial",
+          "note": "문서보안 프로그램을 설치해야 해서 앱 안에서는 동작하지 않아요."
+        }
+      ]
+    },
+    {
+      "id": "konkuk",
+      "nameKo": "건국대학교",
+      "nameEn": "Konkuk University",
+      "aliases": [
+        "건국대",
+        "Konkuk",
+        "KU",
+        "건대"
+      ],
+      "domain": "konkuk.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "ilos",
+        "template": "https://ecampus.konkuk.ac.kr/ilos/st/course/submain_form.acl?KJKEY={id}",
+        "idPattern": "^https?://ecampus\\.konkuk\\.ac\\.kr/ilos/st/course/submain_form\\.acl\\?(?:[^#]*&)?KJKEY=([A-Za-z0-9_-]+)",
+        "hint": "강의실 주소를 붙여넣어 주세요. 이 학교의 과목 키는 숫자가 아니라 문자열(KJKEY)이라 로그인 세션에 따라 달라질 수 있어요.",
+        "reliable": false
+      },
+      "services": [
+        {
+          "id": "konkuk.portal",
+          "kind": "portal",
+          "label": "위인전",
+          "labelEn": "WeIn",
+          "url": "https://wein.konkuk.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "konkuk.kuis",
+          "kind": "portal",
+          "label": "학사정보",
+          "labelEn": "KUIS",
+          "url": "https://kuis.konkuk.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "konkuk.lms",
+          "kind": "lms",
+          "label": "eCampus",
+          "url": "https://ecampus.konkuk.ac.kr/ilos/index.acl",
+          "verification": "verified"
+        },
+        {
+          "id": "konkuk.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.konkuk.ac.kr/sugang/index.jsp",
+          "verification": "verified"
+        },
+        {
+          "id": "konkuk.library",
+          "kind": "library",
+          "label": "상허기념도서관",
+          "url": "https://library.konkuk.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "konkuk.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://kumail.konkuk.ac.kr/",
+          "opensExternally": true,
+          "externalReason": "federated-login",
+          "verification": "verified",
+          "note": "건국대 메일은 Microsoft 365 + ADFS예요."
+        },
+        {
+          "id": "konkuk.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.konkuk.ac.kr/konkuk/index.do",
+          "verification": "verified",
+          "note": "리다이렉트가 5번 일어나서 열리는 데 잠깐 걸릴 수 있어요."
+        }
+      ]
+    },
+    {
+      "id": "dongguk",
+      "nameKo": "동국대학교",
+      "nameEn": "Dongguk University",
+      "aliases": [
+        "동국대",
+        "Dongguk",
+        "충무로"
+      ],
+      "domain": "dongguk.edu",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "moodle",
+        "template": "https://eclass.dongguk.edu/course/view.php?id={id}",
+        "idPattern": "^https?://eclass\\.dongguk\\.edu/course/view\\.php\\?(?:[^#]*&)?id=(\\d+)",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (eclass.dongguk.edu/course/view.php?id=12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "dongguk.portal",
+          "kind": "portal",
+          "label": "uDRIMS",
+          "url": "https://nportal.dongguk.edu/comm/login/user/login.do",
+          "verification": "verified",
+          "note": "portal.dongguk.edu는 이 주소로 강제 이동시켜요."
+        },
+        {
+          "id": "dongguk.lms",
+          "kind": "lms",
+          "label": "이클래스",
+          "url": "https://eclass.dongguk.edu/",
+          "verification": "verified"
+        },
+        {
+          "id": "dongguk.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.dongguk.edu/",
+          "verification": "verified"
+        },
+        {
+          "id": "dongguk.library",
+          "kind": "library",
+          "label": "중앙도서관",
+          "url": "https://lib.dongguk.edu/",
+          "verification": "verified"
+        },
+        {
+          "id": "dongguk.mail",
+          "kind": "mail",
+          "label": "CloudMail",
+          "url": "https://mail.dongguk.edu/",
+          "verification": "verified"
+        },
+        {
+          "id": "dongguk.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.dongguk.edu/main",
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "pusan",
+      "nameKo": "부산대학교",
+      "nameEn": "Pusan National University",
+      "aliases": [
+        "부산대",
+        "PNU",
+        "Pusan",
+        "부산국립대"
+      ],
+      "domain": "pusan.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "moodle",
+        "template": "https://plato.pusan.ac.kr/course/view.php?id={id}",
+        "idPattern": "^https?://plato\\.pusan\\.ac\\.kr/course/view\\.php\\?(?:[^#]*&)?id=(\\d+)",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (plato.pusan.ac.kr/course/view.php?id=12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "pusan.portal",
+          "kind": "portal",
+          "label": "학생지원시스템",
+          "url": "https://onestop.pusan.ac.kr/",
+          "verification": "verified",
+          "note": "처음 로그인할 때 이메일 2차 인증이 필요해요."
+        },
+        {
+          "id": "pusan.one",
+          "kind": "portal",
+          "label": "교육정보시스템",
+          "url": "https://one.pusan.ac.kr/",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "pusan.lms",
+          "kind": "lms",
+          "label": "PLATO",
+          "url": "https://plato.pusan.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "pusan.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.pusan.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "pusan.library",
+          "kind": "library",
+          "label": "도서관",
+          "url": "https://lib.pusan.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "pusan.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://mail.pusan.ac.kr/mail",
+          "verification": "verified"
+        },
+        {
+          "id": "pusan.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.pusan.ac.kr/kor/",
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "knu",
+      "nameKo": "경북대학교",
+      "nameEn": "Kyungpook National University",
+      "aliases": [
+        "경북대",
+        "KNU",
+        "Kyungpook",
+        "대구"
+      ],
+      "domain": "knu.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "canvas",
+        "template": "https://canvas.knu.ac.kr/courses/{id}",
+        "idPattern": "^https?://canvas\\.knu\\.ac\\.kr/courses/(\\d+)(?:[/?#].*)?$",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (canvas.knu.ac.kr/courses/12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "knu.portal",
+          "kind": "portal",
+          "label": "통합포털",
+          "url": "https://on.knu.ac.kr/",
+          "verification": "verified",
+          "note": "로그인이 여러 화면을 거쳐서 넘어가요. 중간에 멈춘 것처럼 보여도 기다려 주세요."
+        },
+        {
+          "id": "knu.knuin",
+          "kind": "portal",
+          "label": "학사정보",
+          "labelEn": "KNUIN",
+          "url": "https://knuin.knu.ac.kr/knuin/index.knu",
+          "secondary": true,
+          "verification": "partial"
+        },
+        {
+          "id": "knu.lms",
+          "kind": "lms",
+          "label": "LMS",
+          "url": "https://lms.knu.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "knu.canvas",
+          "kind": "lms",
+          "label": "강의실",
+          "url": "https://canvas.knu.ac.kr/",
+          "secondary": true,
+          "verification": "verified"
+        },
+        {
+          "id": "knu.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.knu.ac.kr/",
+          "verification": "partial"
+        },
+        {
+          "id": "knu.library",
+          "kind": "library",
+          "label": "도서관",
+          "url": "https://kudos.knu.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "knu.mail",
+          "kind": "mail",
+          "label": "웹메일",
+          "url": "https://mail.knu.ac.kr/mail",
+          "verification": "verified"
+        },
+        {
+          "id": "knu.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.knu.ac.kr/wbbs/wbbs/main/main.action",
+          "verification": "verified"
+        }
+      ]
+    },
+    {
+      "id": "inha",
+      "nameKo": "인하대학교",
+      "nameEn": "Inha University",
+      "aliases": [
+        "인하대",
+        "Inha",
+        "인천"
+      ],
+      "domain": "inha.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "moodle",
+        "template": "https://learn.inha.ac.kr/course/view.php?id={id}",
+        "idPattern": "^https?://learn\\.inha\\.ac\\.kr/course/view\\.php\\?(?:[^#]*&)?id=(\\d+)",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (learn.inha.ac.kr/course/view.php?id=12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "inha.portal",
+          "kind": "portal",
+          "label": "인하포털",
+          "url": "https://portal.inha.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "inha.lms",
+          "kind": "lms",
+          "label": "I-Class",
+          "url": "https://learn.inha.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "inha.registration",
+          "kind": "registration",
+          "label": "수강신청",
+          "url": "https://sugang.inha.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "inha.library",
+          "kind": "library",
+          "label": "정석학술정보관",
+          "url": "https://lib.inha.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "inha.mail",
+          "kind": "mail",
+          "label": "메일",
+          "url": "https://cloud.inha.ac.kr/t/inha.ac.kr",
+          "opensExternally": true,
+          "externalReason": "federated-login",
+          "verification": "verified",
+          "note": "Google Workspace로 연결돼요."
+        },
+        {
+          "id": "inha.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.inha.ac.kr/kr/index.do",
+          "verification": "verified"
+        },
+        {
+          "id": "inha.cert",
+          "kind": "other",
+          "label": "증명발급",
+          "url": "https://cert.inha.ac.kr/",
+          "opensExternally": true,
+          "externalReason": "native-plugin",
+          "secondary": true,
+          "verification": "verified",
+          "note": "보안 프로그램 설치를 요구해서 앱 안에서는 동작하지 않아요."
+        }
+      ]
+    },
+    {
+      "id": "ajou",
+      "nameKo": "아주대학교",
+      "nameEn": "Ajou University",
+      "aliases": [
+        "아주대",
+        "Ajou",
+        "수원"
+      ],
+      "domain": "ajou.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "blackboard",
+        "template": "https://eclass2.ajou.ac.kr/ultra/courses/_{id}_1/cl/outline",
+        "idPattern": "^https?://eclass2\\.ajou\\.ac\\.kr/\\S*_(\\d+)_1",
+        "hint": "강의실 주소를 붙여넣어 주세요. Blackboard는 과목 번호를 _12345_1 형태로 씁니다.",
+        "reliable": false
+      },
+      "services": [
+        {
+          "id": "ajou.portal",
+          "kind": "portal",
+          "label": "아주대 포탈",
+          "url": "https://portal.ajou.ac.kr/main.do",
+          "verification": "verified"
+        },
+        {
+          "id": "ajou.haksa",
+          "kind": "portal",
+          "label": "학사서비스",
+          "url": "https://mhaksa.ajou.ac.kr:30443/",
+          "secondary": true,
+          "verification": "partial"
+        },
+        {
+          "id": "ajou.lms",
+          "kind": "lms",
+          "label": "eClass",
+          "url": "https://eclass2.ajou.ac.kr/",
+          "verification": "partial",
+          "note": "Blackboard 기반이고, 다른 시스템으로 이관이 진행 중일 수 있어요."
+        },
+        {
+          "id": "ajou.library",
+          "kind": "library",
+          "label": "도서관",
+          "url": "https://library.ajou.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "ajou.mail",
+          "kind": "mail",
+          "label": "메일",
+          "url": "https://mail.google.com/a/ajou.ac.kr",
+          "opensExternally": true,
+          "externalReason": "federated-login",
+          "verification": "verified",
+          "note": "아주대는 자체 웹메일 없이 Google Workspace를 써요."
+        },
+        {
+          "id": "ajou.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.ajou.ac.kr/kr/index.do",
+          "verification": "verified"
+        },
+        {
+          "id": "ajou.aims",
+          "kind": "other",
+          "label": "AIMS2",
+          "url": "https://aims.ajou.ac.kr/",
+          "opensExternally": true,
+          "externalReason": "native-plugin",
+          "secondary": true,
+          "verification": "partial",
+          "note": "ActiveX/NPAPI 기반이라 최신 브라우저에서도 별도 프로그램이 필요해요."
+        }
+      ]
+    },
+    {
+      "id": "sejong",
+      "nameKo": "세종대학교",
+      "nameEn": "Sejong University",
+      "aliases": [
+        "세종대",
+        "Sejong",
+        "군자"
+      ],
+      "domain": "sejong.ac.kr",
+      "verifiedAt": "2026-08-05",
+      "courseLink": {
+        "platform": "moodle",
+        "template": "https://ecampus.sejong.ac.kr/course/view.php?id={id}",
+        "idPattern": "^https?://ecampus\\.sejong\\.ac\\.kr/course/view\\.php\\?(?:[^#]*&)?id=(\\d+)",
+        "hint": "강의실에서 과목을 연 뒤 주소창을 통째로 붙여넣어 주세요. (ecampus.sejong.ac.kr/course/view.php?id=12345)",
+        "reliable": true
+      },
+      "services": [
+        {
+          "id": "sejong.portal",
+          "kind": "portal",
+          "label": "세종대 포털",
+          "url": "https://portal.sejong.ac.kr/jsp/login/loginSSL.jsp",
+          "opensExternally": true,
+          "externalReason": "native-plugin",
+          "verification": "verified",
+          "note": "키보드보안 프로그램(nProtect)이 필요해서 앱 안에서는 로그인 버튼이 눌리지 않아요."
+        },
+        {
+          "id": "sejong.sjpt",
+          "kind": "portal",
+          "label": "학사정보",
+          "url": "https://sjpt.sejong.ac.kr/",
+          "verification": "verified",
+          "note": "수강신청도 이 안에 있어요."
+        },
+        {
+          "id": "sejong.lms",
+          "kind": "lms",
+          "label": "집현캠퍼스",
+          "url": "https://ecampus.sejong.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "sejong.library",
+          "kind": "library",
+          "label": "학술정보원",
+          "url": "https://library.sejong.ac.kr/",
+          "verification": "verified"
+        },
+        {
+          "id": "sejong.mail",
+          "kind": "mail",
+          "label": "학생 메일",
+          "url": "https://outlook.office.com/mail/",
+          "opensExternally": true,
+          "externalReason": "federated-login",
+          "verification": "partial",
+          "note": "학생 계정(@sju.ac.kr)은 Microsoft 365예요."
+        },
+        {
+          "id": "sejong.mail.staff",
+          "kind": "mail",
+          "label": "교직원 메일",
+          "url": "https://mail.sejong.ac.kr/",
+          "opensExternally": true,
+          "externalReason": "native-plugin",
+          "secondary": true,
+          "verification": "verified",
+          "note": "포털과 같은 키보드보안 프로그램을 써요."
+        },
+        {
+          "id": "sejong.homepage",
+          "kind": "homepage",
+          "label": "학교 홈페이지",
+          "url": "https://www.sejong.ac.kr/kor/index.do",
+          "verification": "verified"
+        }
+      ]
+    }
+  ],
+  "common": [
+    {
+      "id": "common.everytime",
+      "kind": "community",
+      "label": "에브리타임",
+      "labelEn": "Everytime",
+      "url": "https://everytime.kr/",
+      "verification": "partial",
+      "note": "학교 인증을 마친 계정으로 로그인하면 우리 학교 게시판·시간표가 보여요."
+    }
+  ]
+}

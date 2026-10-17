@@ -2,12 +2,13 @@ import Foundation
 import UIKit
 import WebKit
 
-/// Implements the desktop renderer's nativePageHandle contract. The React
-/// shell owns chrome and layout; these WKWebViews contain external sites only.
+/// Website sessions hosted inside the native browser's SwiftUI chrome.
+/// These WKWebViews contain external sites only.
 @MainActor
 final class DesktopBrowserHost: NSObject {
     var emit: (String, Any) -> Void = { _, _ in }
     var onDownload: ((URL, String?) async throws -> String?)?
+    var onOpenMaterial: ((String, String) -> Void)?
     var onCourseForURL: ((URL) -> String?)?
     var onDeleteProfile: ((String) throws -> Void)?
     var isImportingProfile: (String) -> Bool = { _ in false }
@@ -16,6 +17,13 @@ final class DesktopBrowserHost: NSObject {
     weak var presenter: UIViewController?
     weak var shell: WKWebView?
     weak var container: UIView?
+    private var usesNativeLayout = false
+    private final class NativeViewport {
+        weak var view: UIView?
+        var selectedTabID: String?
+        init(view: UIView, selectedTabID: String?) { self.view = view; self.selectedTabID = selectedTabID }
+    }
+    private var nativeViewports: [ObjectIdentifier: NativeViewport] = [:]
     let root: URL
     private(set) var persistence: DesktopBrowserPersistence?
     private(set) var presentationStore: BrowserPresentationStore?
@@ -25,12 +33,17 @@ final class DesktopBrowserHost: NSObject {
     var downloads: [String: DesktopBrowserDownload] = [:]
     private var nextPageID = 1
     private var hostOccluded = false
+    #if DEBUG
+    private var lastLayoutDiagnostic = ""
+    #endif
     private var surfaceOccluded = false
     private var surfaceInputBlocked = false
     private var surfaceOverlays: [CGRect] = []
     private var rendererGeneration = 0
     private var rendererOwnershipRevisions: [String: Int] = [:]
-    private var recentPopups: [Date] = []
+    private var popupAdmission = BrowserPopupAdmission()
+    private var popupOwners: [String: Int] = [:]
+    private var switchingSessionIDs = Set<String>()
     private var releasingInactivePages = false
     private var deletingProfileIDs = Set<String>()
     var isPresentingPageShare = false
@@ -151,8 +164,21 @@ final class DesktopBrowserHost: NSObject {
         return try await BrowserLinkedFile.fetch(address, cookies: cookies, doNotTrack: doNotTrack)
     }
     func attach(to view: UIView, shell: WKWebView) {
+        usesNativeLayout = false
         self.container = view; self.shell = shell
         for page in pages.values { if let live = page.liveWebView, live.superview !== view { view.addSubview(live) } }
+        layoutPages()
+    }
+    /// SwiftUI provides the viewport directly; no application web shell is
+    /// involved. Website views keep their existing profile, cookies and forms.
+    func attachNative(to view: UIView, selectedTabID: String?) {
+        usesNativeLayout = true; shell = nil; container = view
+        nativeViewports[ObjectIdentifier(view)] = NativeViewport(view: view, selectedTabID: selectedTabID)
+        layoutPages()
+    }
+    func detachNative(from view: UIView) {
+        nativeViewports.removeValue(forKey: ObjectIdentifier(view))
+        if container === view { container = nativeViewports.values.compactMap(\.view).first }
         layoutPages()
     }
     func setPresentation(blocked: Bool, inputBlocked: Bool, overlays: [CGRect]) {
@@ -178,9 +204,34 @@ final class DesktopBrowserHost: NSObject {
         layoutPages()
     }
     func layoutPages() {
+        if usesNativeLayout {
+            nativeViewports = nativeViewports.filter { $0.value.view != nil }
+            for page in pages.values {
+                let viewport = nativeViewports.values.first { $0.selectedTabID == page.tabID }
+                let visible = viewport?.view != nil && !hostOccluded && !surfaceOccluded
+                guard visible, let target = viewport?.view else {
+                    page.bounds = nil
+                    page.liveWebView?.isHidden = true; page.liveWebView?.accessibilityElementsHidden = true
+                    continue
+                }
+                page.bounds = target.bounds
+                let webView = page.webView
+                if webView.superview !== target { target.addSubview(webView) }
+                webView.frame = target.bounds
+                webView.isHidden = false; webView.accessibilityElementsHidden = false
+                webView.isUserInteractionEnabled = !surfaceInputBlocked
+                (webView as? DesktopBrowserWebView)?.excludedRects = []
+            }
+            onLayout?()
+            return
+        }
         guard let container, let shell else { return }
         defer { onLayout?() }
         for page in pages.values {
+            #if DEBUG
+            let diagnostic = "[bandal.browser.layout] bounds=\(page.bounds.map { "\(Int($0.minX)),\(Int($0.minY)),\(Int($0.width))x\(Int($0.height))" } ?? "nil") hostOccluded=\(hostOccluded) surfaceOccluded=\(surfaceOccluded) inputBlocked=\(surfaceInputBlocked) zoom=\(shell.scrollView.zoomScale) offset=\(Int(shell.scrollView.contentOffset.y))"
+            if diagnostic != lastLayoutDiagnostic { lastLayoutDiagnostic = diagnostic; NSLog("%@", diagnostic) }
+            #endif
             guard let rect = page.bounds, !hostOccluded, !surfaceOccluded else {
                 page.liveWebView?.isHidden = true; page.liveWebView?.accessibilityElementsHidden = true; continue
             }
@@ -206,9 +257,13 @@ final class DesktopBrowserHost: NSObject {
         case "browser:sharePage": return try await sharePage(owned(request))
         case "browser:dismissDownload": return try dismissDownload(request)
         case "browser:downloadsSnapshot": return downloads.values.map(\.payload)
+        case "browser:switchPageSession": return try await switchPageSession(request)
         case "browser:sitePresentation": return try await presentationRequest(request, page: owned(request), update: false)
         case "browser:setSitePresentation": return try await presentationRequest(request, page: owned(request), update: true)
         case "browser:createPage":
+            #if DEBUG
+            NSLog("[bandal.browser.action] createPage")
+            #endif
             let generation = rendererGeneration
             try await prepareBrowserNetwork()
             guard generation == rendererGeneration else { throw CancellationError() }
@@ -240,7 +295,13 @@ final class DesktopBrowserHost: NSObject {
             if hostOccluded { shell?.becomeFirstResponder() }
             layoutPages(); return ["ok": true]
         case "browser:pageAction":
+            #if DEBUG
+            NSLog("[bandal.browser.action] %@", (request["action"] as? String) ?? "?")
+            do { return try await action(try owned(request), action: Self.string(request, "action"), args: request["args"] as? [Any] ?? []) }
+            catch { NSLog("[bandal.browser.action] failed %@ %@", (request["action"] as? String) ?? "?", String(describing: type(of: error))); throw error }
+            #else
             return try await action(try owned(request), action: Self.string(request, "action"), args: request["args"] as? [Any] ?? [])
+            #endif
         case "browser:retryNavigation", "browser:returnToForm":
             let page = try owned(request)
             guard let navigationID = request["navigationId"] as? Int, navigationID > 0 else { throw DesktopBrowserError.invalid("탐색 식별자") }
@@ -278,7 +339,9 @@ final class DesktopBrowserHost: NSObject {
             let item = DesktopBrowserProfile(id: id, name: name, color: color, icon: icon)
             if let index = state.profiles.firstIndex(where: { $0.id == id }) { state.profiles[index] = item }
             else { guard state.profiles.count < 30 else { throw DesktopBrowserError.invalid("프로필 개수") }; state.profiles.append(item) }
-            try persistence.commit(state); return item.json
+            try persistence.commit(state)
+            emit("browser:profiles-changed", ["profileId": id, "action": "saved"])
+            return item.json
         case "browser:deleteProfile":
             let id = try Self.string(request, "id")
             guard id != "default" else { throw DesktopBrowserError.invalid("기본 프로필은 삭제할 수 없습니다") }
@@ -295,7 +358,9 @@ final class DesktopBrowserHost: NSObject {
             try downloadStore?.forgetProfile(id)
             downloads = downloads.filter { $0.value.profileID != id }
             var state = persistence.state; state.profiles.removeAll { $0.id == id }; state.visits.removeAll { $0.profileID == id }; state.permissions.removeAll { $0.profileID == id }
-            try persistence.commit(state); return ["ok": true]
+            try persistence.commit(state)
+            emit("browser:profiles-changed", ["profileId": id, "action": "deleted"])
+            return ["ok": true]
         case "browser:recordVisit":
             let profile = try profileID(request); let raw = try Self.string(request, "url", limit: 20_000)
             let url = try Self.navigationURL(raw)
@@ -373,6 +438,54 @@ final class DesktopBrowserHost: NSObject {
         }
     }
 
+    /// Keep the existing document alive until validation, WebKit preparation,
+    /// and the site's unload decision all succeed. URL-only recreation in the
+    /// UI would destroy login forms even when the user cancels this operation.
+    private func switchPageSession(_ request: [String: Any]) async throws -> [String: Any] {
+        let old = try owned(request), profile = try profileID(request)
+        let privateMode = request["isPrivate"] as? Bool ?? false
+        if let expected = request["expectedWebContentsId"] as? Int, expected != old.id {
+            throw DesktopBrowserError.unavailable("브라우저 탭이 변경됐습니다. 다시 선택해 주세요.")
+        }
+        if old.profileID == profile && old.isPrivate == privateMode { return ["allowed": true, "state": old.state] }
+        guard switchingSessionIDs.insert(old.tabID).inserted else { throw DesktopBrowserError.unavailable("이 탭의 프로필을 변경하고 있습니다.") }
+        defer { switchingSessionIDs.remove(old.tabID) }
+        let document = old.state["authDocumentId"] as? String
+        let address = old.state["url"] as? String ?? "about:blank"
+        let destination = try Self.navigationURL(address)
+        func unchanged() throws {
+            guard pages[old.tabID] === old, old.state["authDocumentId"] as? String == document,
+                  old.state["url"] as? String == address, isProfileAvailable(profile) else {
+                throw DesktopBrowserError.unavailable("페이지가 변경됐습니다. 다시 선택해 주세요.")
+            }
+        }
+        try await prepareBrowserNetwork()
+        try unchanged()
+        if !old.isSuspended {
+            let cancelled = try await old.webView.evaluateJavaScript("(()=>{const e=new Event('beforeunload',{cancelable:true});return !window.dispatchEvent(e)||e.returnValue===false})()") as? Bool ?? false
+            try unchanged()
+            if cancelled {
+                let allowed = await confirm(title: "프로필을 바꿀까요?", message: "작성 중인 내용이 저장되지 않을 수 있습니다.")
+                try unchanged()
+                if !allowed { return ["allowed": false] }
+            }
+        }
+        let replacement = DesktopBrowserPage(host: self, id: nextPageID, tabID: old.tabID, profileID: profile,
+            isPrivate: privateMode, courseID: old.courseID, configuration: nil)
+        nextPageID += 1
+        replacement.bounds = old.bounds; replacement.ownershipRevision = old.ownershipRevision + 1
+        replacement.webView.pageZoom = old.liveWebView?.pageZoom ?? CGFloat(pow(1.2, old.state["zoomLevel"] as? Double ?? 0))
+        pages[old.tabID] = replacement
+        rendererOwnershipRevisions.removeValue(forKey: old.tabID)
+        old.close()
+        if old.isPrivate, !pages.values.contains(where: { $0.profileID == old.profileID && $0.isPrivate }) {
+            persistence?.discardPrivateStore(old.profileID); presentationStore?.discardPrivate(old.profileID)
+        }
+        replacement.load(navigationRequest(destination))
+        layoutPages(); replacement.send("session-switched")
+        return ["allowed": true, "state": replacement.state]
+    }
+
     private func action(_ page: DesktopBrowserPage, action: String, args: [Any]) async throws -> Any {
         func string(_ index: Int) throws -> String {
             guard args.indices.contains(index), let value = args[index] as? String else { throw DesktopBrowserError.invalid(action) }; return value
@@ -389,19 +502,27 @@ final class DesktopBrowserHost: NSObject {
         case "setZoomLevel":
             guard let level = args.first as? Double, level.isFinite, (-8...8).contains(level) else { throw DesktopBrowserError.invalid("확대 배율") }
             view.pageZoom = pow(1.2, level)
+            page.send("zoom-updated", ["zoomLevel": level])
         case "executeJavaScript":
             let source = try string(0)
             guard source.utf8.count <= 1_000_000 else { throw DesktopBrowserError.invalid("스크립트 크기") }
             return try await view.callAsyncJavaScript("return await (0,eval)(source)", arguments: ["source": source], in: nil, contentWorld: .page) ?? NSNull()
         case "findInPage":
             let text = try string(0), options = args.count > 1 ? args[1] as? [String: Any] ?? [:] : [:]
+            guard text.utf8.count <= 10_000 else { throw DesktopBrowserError.invalid("검색어 길이") }
             page.findRequest += 1
             let id = page.findRequest
+            let documentID = page.state["authDocumentId"] as? String
+            let matchCase = options["matchCase"] as? Bool ?? false
             let result = try await view.callAsyncJavaScript(BrowserScripts.find, arguments: ["query": text, "next": options["findNext"] as? Bool ?? false, "forward": options["forward"] as? Bool ?? true, "matchCase": options["matchCase"] as? Bool ?? false], in: nil, contentWorld: .defaultClient) as? [String: Any] ?? [:]
-            page.send("found-in-page", ["result": ["requestId": id, "activeMatchOrdinal": result["ordinal"] ?? 0, "matches": result["matches"] ?? 0, "finalUpdate": true]])
+            guard pages[page.tabID] === page, page.liveWebView === view, page.findRequest == id,
+                  page.state["authDocumentId"] as? String == documentID else { return id }
+            page.send("found-in-page", ["result": ["requestId": id, "query": text, "matchCase": matchCase,
+                "activeMatchOrdinal": result["ordinal"] ?? 0, "matches": result["matches"] ?? 0, "finalUpdate": true]])
             return id
         case "stopFindInPage":
-            _ = try? await view.callAsyncJavaScript("globalThis.__bandalNativeFind=null;getSelection()?.removeAllRanges()", arguments: [:], in: nil, contentWorld: .defaultClient)
+            page.findRequest += 1
+            _ = try? await view.callAsyncJavaScript(BrowserScripts.stopFind, arguments: [:], in: nil, contentWorld: .defaultClient)
         case "printToPDF":
             let data = try await BrowserPrint.pdf(webView: view, options: args.first as? [String: Any] ?? [:])
             return ["__bandalBytes": data.base64EncodedString()]
@@ -442,23 +563,28 @@ final class DesktopBrowserHost: NSObject {
     }
     func destroy(_ id: String) {
         guard let page = pages.removeValue(forKey: id) else { return }
+        if let owner = popupOwners.removeValue(forKey: id) { popupAdmission.release(owner: owner) }
         rendererOwnershipRevisions.removeValue(forKey: id)
         page.close()
         if page.isPrivate, !pages.values.contains(where: { $0.profileID == page.profileID && $0.isPrivate }) { persistence?.discardPrivateStore(page.profileID); presentationStore?.discardPrivate(page.profileID) }
     }
     func popup(from opener: DesktopBrowserPage, configuration: WKWebViewConfiguration, action: WKNavigationAction) -> WKWebView? {
-        guard let url = action.request.url, (try? Self.navigationURL(url.absoluteString)) != nil else { return nil }
-        let origin = opener.webView.url.flatMap(Self.origin) ?? ""
+        let frameOrigin = action.sourceFrame.securityOrigin
+        let sourceOrigin = BrowserPopupAdmission.sourceOrigin(scheme: frameOrigin.protocol, host: frameOrigin.host, port: frameOrigin.port)
+        guard pages[opener.tabID] === opener, let url = action.request.url,
+              BrowserPopupAdmission.accepts(url, opener: sourceOrigin) else { return nil }
+        let origin = sourceOrigin.flatMap(Self.origin) ?? ""
         let remembered = persistence?.state.permissions.first { $0.profileID == opener.profileID && $0.origin == origin && $0.permission == "popups" }?.decision
         let blocked = remembered == "denied" || (popupBehavior == "strict" && remembered != "granted")
-        recentPopups.removeAll { Date().timeIntervalSince($0) > 3 }
-        guard !blocked, recentPopups.count < 6, pages.count < 64 else {
-            emit("browser:popup-blocked", ["profileId": opener.profileID, "isPrivate": opener.isPrivate, "url": url.absoluteString, "origin": origin, "reason": blocked ? "policy" : "limit"]); return nil
+        let rejection = blocked ? "policy" : pages.count >= 64 ? "limit" : popupAdmission.admit(owner: opener.id)
+        guard rejection == nil else {
+            emit("browser:popup-blocked", ["tabId": opener.tabID, "profileId": opener.profileID, "isPrivate": opener.isPrivate, "url": url.absoluteString, "origin": origin, "reason": rejection!]); return nil
         }
-        recentPopups.append(Date())
         opener.preventsSuspension = true // Preserve window.opener authentication flows.
-        let tabID = UUID().uuidString
-        guard let child = try? createPage(tabID: tabID, profileID: opener.profileID, isPrivate: opener.isPrivate, courseID: opener.courseID, configuration: configuration) else { return nil }
+        let scope = opener.tabID.hasPrefix("native-scope.") ? opener.tabID.split(separator: ".").dropLast().joined(separator: ".") + "." : ""
+        let tabID = scope + UUID().uuidString
+        guard let child = try? createPage(tabID: tabID, profileID: opener.profileID, isPrivate: opener.isPrivate, courseID: opener.courseID, configuration: configuration) else { popupAdmission.release(owner: opener.id); return nil }
+        popupOwners[tabID] = opener.id
         child.expectPopupRequest(action.request)
         emit("browser:open-url", ["tabId": tabID, "openerTabId": opener.tabID, "courseId": opener.courseID as Any? ?? NSNull(), "url": url.absoluteString, "isPrivate": opener.isPrivate, "profileId": opener.profileID, "webContentsId": child.id])
         return child.webView

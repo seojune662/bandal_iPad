@@ -139,6 +139,20 @@ final class DesktopSyncTests: XCTestCase {
         XCTAssertEqual(reread.count, retained.count)
     }
 
+    func testPDFPageHistoryReferencesIncludeOriginalsAndRejectInconsistentDuplicate() throws {
+        let current = String(repeating: "c", count: 64), original = String(repeating: "a", count: 64)
+        func record(_ assets: [[String: Any]]) throws -> StoredRecord {
+            try DesktopSyncService.record(["id": "material:pages", "kind": "material", "payload": ["kind": "pdf", "revision": current, "byteCount": 50, "fileName": "current.pdf", "desktop": ["pageLineageAssets": assets]]])
+        }
+        let ancestor: [String: Any] = ["sha256": original, "byteCount": 80, "originalName": "original.pdf", "contentType": "application/pdf"]
+        let references = try DesktopSyncService.references(record([ancestor, ancestor]))
+        XCTAssertEqual(references.map(\.sha256), [current, original])
+        var inconsistent = ancestor; inconsistent["byteCount"] = 81
+        XCTAssertThrowsError(try DesktopSyncService.references(record([ancestor, inconsistent])))
+        var invalid = ancestor; invalid["sha256"] = "../original"
+        XCTAssertThrowsError(try DesktopSyncService.references(record([invalid])))
+    }
+
     func testLearningManifestReferencesAllAssetsEvenWhenFileRecordsAreOutsidePushBatch() throws {
         let hashA = String(repeating: "a", count: 64), hashB = String(repeating: "b", count: 64)
         let record = try DesktopSyncService.record(["id": "artifact:project", "kind": "artifact", "payload": [

@@ -239,6 +239,53 @@ final class NativePDFHostTests: XCTestCase {
         do { _ = try await reopened.handle("pdfNative:setEnabled", request: ["enabled": "yes"]); XCTFail("Reject malformed setting values") } catch {}
         XCTAssertTrue(UserDefaults.standard.bool(forKey: "bandal.nativePDF.enabled"))
     }
+    func testImmediateNavigateFlushAndHiddenViewportRetainActualPageAndZoom() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-pdf-viewport-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("three-pages.pdf")
+        try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 400, height: 600)).pdfData { context in
+            for number in 1...3 { context.beginPage(); ("Page \(number)" as NSString).draw(at: CGPoint(x: 30, y: 30), withAttributes: [.font: UIFont.systemFont(ofSize: 20)]) }
+        }.write(to: url)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first { $0.isKeyWindow }, window = UIWindow(windowScene: scene)
+        let controller = UIViewController(); window.rootViewController = controller; window.makeKeyAndVisible(); window.layoutIfNeeded()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        let host = try NativePDFHost(root: root, directEnabled: true) { channel, request in
+            if channel == "nativePDF:binding" { return ["materialID": "viewport", "documentRevision": request["documentRevision"]!] }
+            return url.path
+        }
+        host.attach(to: controller.view); defer { host.closeAll() }
+        let identity: [String: Any] = ["surfaceId": "viewport", "generation": "one", "courseId": "course", "relPath": "three-pages.pdf"]
+        _ = try await host.handle("pdfNative:open", request: identity)
+        _ = try await host.handle("pdfNative:layout", request: identity.merging(["visible": true,
+            "rect": ["x": 0.0, "y": 0.0, "width": 600.0, "height": 700.0]]) { _, new in new })
+        controller.view.layoutIfNeeded(); host.layout()
+        var receivedPage = 0
+        host.emit = { channel, value in
+            guard channel == "pdfNative:event", let event = value as? [String: Any], event["type"] as? String == "viewport" else { return }
+            receivedPage = (event["payload"] as? [String: Any])?["page"] as? Int ?? 0
+        }
+        _ = try await host.handle("pdfNative:navigate", request: identity.merging([
+            "page": 2, "zoom": 1.6, "progress": 0.6, "horizontalProgress": 0.5]) { _, new in new })
+        // No event-delay sleep: this is the exact close/tab-switch barrier.
+        let result = try await host.handle("pdfNative:flush", request: identity) as? [String: Any]
+        let viewport = try XCTUnwrap(result?["viewport"] as? [String: Any])
+        XCTAssertEqual(viewport["page"] as? Int, 2)
+        XCTAssertEqual(try XCTUnwrap(viewport["zoom"] as? Double), 1.6, accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(viewport["progress"] as? Double), 0.6, accuracy: 0.025)
+        XCTAssertNotNil(NativePDFWorkspacePreferences.Viewport(revision: "fixture-revision", values: viewport),
+                        "The direct host reply must be usable for exact scroll persistence without a JSON bridge")
+        let deadline = Date().addingTimeInterval(2)
+        while receivedPage != 2 && Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(receivedPage, 2, "Programmatic navigation must publish after leaving the navigation guard")
+        _ = try await host.handle("pdfNative:layout", request: identity.merging(["visible": false]) { _, new in new })
+        let hidden = try await host.handle("pdfNative:flush", request: identity) as? [String: Any]
+        let hiddenViewport = try XCTUnwrap(hidden?["viewport"] as? [String: Any])
+        XCTAssertEqual(hiddenViewport["page"] as? Int, 2)
+        XCTAssertEqual(try XCTUnwrap(hiddenViewport["zoom"] as? Double), 1.6, accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(hiddenViewport["progress"] as? Double), 0.6, accuracy: 0.025)
+    }
     func testNativeCompletionIsJournaledBeforeEventAndReplayedAfterReopen() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-pdf-host-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -284,7 +331,20 @@ final class NativePDFHostTests: XCTestCase {
             completed = event["payload"] as? [String: Any]
             XCTAssertEqual(try? NativePDFJournal(root: root).pending(courseID: "course", relativePath: "fixture.pdf").count, 1, "Journal must precede completion delivery")
         }
-        try surface.onStroke?(.init(mutationID: UUID().uuidString.lowercased(), kind: "ink", points: [.init(x: 0.2, y: 0.3, p: 0, t: 0), .init(x: 0.2, y: 0.3, p: 1, t: 12)], style: .init(color: "blue", width: 0.004, opacity: 1)))
+        let pendingStroke = NativePDFCompletedStroke(mutationID: UUID().uuidString.lowercased(), kind: "ink",
+            points: [.init(x: 0.2, y: 0.3, p: 0, t: 0), .init(x: 0.2, y: 0.3, p: 1, t: 12)], style: .init(color: "blue", width: 0.004, opacity: 1))
+        try surface.onCheckpoint?(pendingStroke)
+        let second = try host(); defer { second.closeAll() }
+        var secondIdentity = identity; secondIdentity["surfaceId"] = "other-pane"; secondIdentity["generation"] = "other-generation"
+        let secondState = try await second.handle("pdfNative:open", request: secondIdentity) as? [String: Any]
+        XCTAssertTrue((secondState?["pending"] as? [Any] ?? []).isEmpty, "A duplicate pane cannot recover the first pane's live provisional stroke")
+        let provisional = try NativePDFJournal(root: root).pending(courseID: "course", relativePath: "fixture.pdf")
+        XCTAssertEqual(provisional.first?.provisional, true, "Opening another Host must not finalize a measured checkpoint")
+        let secondFlushed = try await second.handle("pdfNative:flush", request: secondIdentity) as? [String: Any]
+        XCTAssertTrue((secondFlushed?["pending"] as? [Any] ?? []).isEmpty)
+        XCTAssertEqual(try NativePDFJournal(root: root).pending(courseID: "course", relativePath: "fixture.pdf").first?.provisional, true)
+        second.closeAll()
+        try surface.onStroke?(pendingStroke)
         _ = try await first.handle("pdfNative:flush", request: identity) // Completion delivery follows durable worker storage.
         let completedID = try XCTUnwrap(completed?["clientMutationId"] as? String)
         XCTAssertEqual(completed?["documentRevision"] as? String, opened?["revision"] as? String)

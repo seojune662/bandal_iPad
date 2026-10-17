@@ -42,6 +42,9 @@ private final class BrowserNavigationAttempt {
 @MainActor
 final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UIGestureRecognizerDelegate {
     weak var host: DesktopBrowserHost?
+    /// Never updated, so it denies every Scribble gesture: a Pencil tap on a
+    /// website text field then presents the keyboard instead of the Scribble bar.
+    private let scribbleDenial = DesktopScribblePolicy()
     let id: Int
     let tabID: String
     let profileID: String
@@ -90,6 +93,8 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         let cached = suspended?.state ?? restoring?.state
         let requestedURL = failedNavigation?.request.url ?? (currentNavigation?.committed == false && currentNavigation?.ignored == false ? currentNavigation?.request.url : nil)
         return ["id": id, "stateRevision": revision, "authDocumentId": documentID,
+         "profileId": profileID, "isPrivate": isPrivate,
+         "zoomLevel": liveWebView.map { log(Double($0.pageZoom)) / log(1.2) } ?? cached?["zoomLevel"] ?? 0,
          "navigationId": failedNavigation?.id ?? currentNavigation?.id ?? navigationSequence,
          "estimatedProgress": failedNavigation == nil ? min(1, max(0, liveWebView?.estimatedProgress ?? 0)) : 0,
          "url": requestedURL?.absoluteString ?? recoveredURL?.absoluteString ?? liveWebView?.url?.absoluteString ?? cached?["url"] ?? "about:blank",
@@ -130,6 +135,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         webView.nativePage = self
         liveWebView = webView
         webView.navigationDelegate = self; webView.uiDelegate = self
+        scribbleDenial.attach(to: webView)
         webView.allowsBackForwardNavigationGestures = host?.swipeNavigation ?? true
         webView.isInspectable = false
         webView.accessibilityIdentifier = "desktop-browser-\(tabID)"
@@ -190,6 +196,19 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         // Keep navigation objects alive so ObjectIdentifier cannot be reused.
         navigations = navigations.filter { $0.value.1.id >= navigationSequence - 32 }
     }
+    /// WebKit canonicalizes the request it reports back (a trailing slash on
+    /// an empty path, lowercase host). Comparing raw URLs cancelled every
+    /// explicit load of a bare origin such as https://www.google.com.
+    static func sameNavigationTarget(_ requested: URL?, _ reported: URL) -> Bool {
+        guard let requested else { return false }
+        func canonical(_ url: URL) -> String {
+            guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else { return url.absoluteString }
+            components.scheme = components.scheme?.lowercased(); components.host = components.host?.lowercased()
+            if components.path.isEmpty { components.path = "/" }
+            return components.string ?? url.absoluteString
+        }
+        return canonical(requested) == canonical(reported)
+    }
     @discardableResult
     func load(_ request: URLRequest) -> WKNavigation? {
         let view = webView
@@ -197,6 +216,9 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         pendingRequest = request; pendingExplicitNavigation = attempt
         let navigation = view.load(request)
         remember(navigation, attempt: attempt)
+        #if DEBUG
+        NSLog("[bandal.browser.nav] load scheme=%@ navigation=%d window=%d hidden=%d", request.url?.scheme ?? "-", navigation == nil ? 0 : 1, view.window == nil ? 0 : 1, view.isHidden ? 1 : 0)
+        #endif
         return navigation
     }
     /// WebKit starts the supplied popup navigation itself. Observe its full
@@ -256,10 +278,17 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
     @objc private func focused(_ recognizer: UITapGestureRecognizer) { send("focus", ["webContentsId": id]) }
     func webView(_ webView: WKWebView, contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo, completionHandler: @escaping (UIContextMenuConfiguration?) -> Void) {
         Task { [weak self] in
-            if let self, let params = try? await webView.callAsyncJavaScript(BrowserScripts.contextMenu, arguments: [:], in: nil, contentWorld: .defaultClient) as? [String: Any] {
-                self.send("context-menu", ["params": params])
-            }
-            completionHandler(nil)
+            guard let self, self.liveWebView === webView, self.host?.pages[self.tabID] === self else { completionHandler(nil); return }
+            let document = self.state["authDocumentId"] as? String
+            var params = (try? await webView.callAsyncJavaScript(BrowserScripts.contextMenu, arguments: [:], in: nil, contentWorld: .defaultClient)) as? [String: Any] ?? [:]
+            guard self.liveWebView === webView, self.host?.pages[self.tabID] === self,
+                  self.state["authDocumentId"] as? String == document else { completionHandler(nil); return }
+            if let link = elementInfo.linkURL { params["linkURL"] = link.absoluteString }
+            self.send("context-menu", ["params": params])
+            let values = params
+            completionHandler(UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] suggested in
+                UIMenu(children: self?.contextMenuItems(values, suggested: suggested) ?? suggested)
+            })
         }
     }
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
@@ -273,9 +302,12 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         }
         if navigationAction.targetFrame?.isMainFrame == true {
             if let explicit = pendingExplicitNavigation, !explicit.started,
-               explicit.request.url != url {
+               !Self.sameNavigationTarget(explicit.request.url, url) {
                 // An earlier load's policy callback can arrive after a newer
                 // address was submitted. Do not let it replace the new target.
+                #if DEBUG
+                NSLog("[bandal.browser.nav] policy cancel: stale explicit target")
+                #endif
                 decisionHandler(.cancel, preferences); return
             }
             if navigationAction.shouldPerformDownload {
@@ -285,8 +317,13 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
                 pendingRequest = navigationAction.request
             }
         }
-        decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow, preferences)
+        // Universal links stay in the in-app browser; the user asked for the
+        // website, not the installed app (YouTube results opened the YouTube app).
+        // WebKit's "allow without app link" policy is `.allow + 2` and has no
+        // public Swift constant.
+        decisionHandler(navigationAction.shouldPerformDownload ? .download : Self.allowWithoutAppLink, preferences)
     }
+    private static let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if navigationResponse.isForMainFrame { httpStatus = (navigationResponse.response as? HTTPURLResponse)?.statusCode ?? 0 }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
@@ -295,6 +332,9 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         decisionHandler(download ? .download : .allow)
     }
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        #if DEBUG
+        NSLog("[bandal.browser.nav] start hidden=%d frame=%@ superview=%d", webView.isHidden ? 1 : 0, NSCoder.string(for: webView.frame), webView.superview == nil ? 0 : 1)
+        #endif
         guard liveWebView === webView else { return }
         let attempt: BrowserNavigationAttempt
         if let navigation, let tracked = navigations[ObjectIdentifier(navigation)]?.1 {
@@ -310,7 +350,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         // The first navigation belongs to interactionState restoration; a
         // later navigation while scroll restoration runs invalidates that work.
         if scrollRestoration != nil { scrollRestoration?.cancel(); scrollRestoration = nil; restoring = nil }
-        documentID = UUID().uuidString; httpStatus = 0; send("did-start-loading")
+        documentID = UUID().uuidString; findRequest += 1; httpStatus = 0; send("did-start-loading")
     }
     func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
         guard let attempt = active(navigation, webView: webView), let url = webView.url else { return }
@@ -325,6 +365,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         return attempt
     }
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        scribbleDenial.refreshAttachments()
         guard let attempt = active(navigation, webView: webView) else { return }
         if let pendingRequest, pendingRequest.url == webView.url { attempt.request = pendingRequest }
         attempt.committed = true; attempt.request.url = webView.url; committedURL = webView.url; recoveredURL = nil
@@ -333,6 +374,10 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         send("did-navigate", ["url": webView.url?.absoluteString ?? "", "httpResponseCode": httpStatus])
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        scribbleDenial.refreshAttachments()
+        #if DEBUG
+        NSLog("[bandal.browser.nav] finish hidden=%d frame=%@", webView.isHidden ? 1 : 0, NSCoder.string(for: webView.frame))
+        #endif
         guard active(navigation, webView: webView) != nil else { return }
         if let saved = restoring {
             if let url = saved.state["url"] as? String, webView.url?.absoluteString == url {
@@ -353,7 +398,11 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         }
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error, navigation: navigation, webView: webView) }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error, navigation: navigation, webView: webView) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        #if DEBUG
+        NSLog("[bandal.browser.nav] provisionalFail code=%ld", (error as NSError).code)
+        #endif
+ failed(error, navigation: navigation, webView: webView) }
     private func failed(_ error: Error, navigation: WKNavigation?, webView: WKWebView) {
         let error = error as NSError
         guard let kind = BrowserNavigationFailure.kind(error), liveWebView === webView else { return }
@@ -461,23 +510,47 @@ enum BrowserScripts {
     static let observation = """
     (()=>{const original=console.log;console.log=function(...args){try{if(typeof args[0]==='string'&&args[0].startsWith('__bandal')&&args[0].length<150000)window.webkit.messageHandlers.browserObservation.postMessage({console:args[0]})}catch{};return original.apply(this,args)}})();
     """
+    static let stopFind = """
+    globalThis.__bandalNativeFind=null;getSelection()?.removeAllRanges();
+    globalThis.CSS?.highlights?.delete('bandal-find-all');
+    globalThis.CSS?.highlights?.delete('bandal-find-active');
+    document.getElementById('__bandalNativeFindStyle')?.remove();
+    """
     static let find = #"""
     const previous=globalThis.__bandalNativeFind;
+    // Rebuild against the current DOM even for next/previous. Connected Range
+    // objects follow text edits, so retaining them can select non-matching text
+    // indefinitely on live articles, search results and SPA navigation.
     let ranges=[];
-    if(next&&previous?.query===query&&previous.matchCase===matchCase){ranges=previous.ranges.filter(r=>r.startContainer.isConnected&&r.endContainer.isConnected)}
-    else if(query){
+    if(query){
       const segments=[], blocks=new WeakMap();let text='',lastBlock=null;
       const blockOf=element=>{if(blocks.has(element))return blocks.get(element);let block=element;while(block.parentElement&&getComputedStyle(block).display==='inline')block=block.parentElement;blocks.set(element,block);return block};
-      const walker=document.createTreeWalker(document.body||document.documentElement,NodeFilter.SHOW_TEXT,{acceptNode(node){const p=node.parentElement;if(!p||p.closest('script,style,noscript,textarea,input,[hidden]')||!p.getClientRects().length||getComputedStyle(p).visibility==='hidden')return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
-      let node;while((node=walker.nextNode())&&text.length<2000000){const block=blockOf(node.parentElement);if(lastBlock&&lastBlock!==block)text+='\n';lastBlock=block;const start=text.length;text+=node.textContent;segments.push({node,start,end:text.length})}
+      const walker=document.createTreeWalker(document.body||document.documentElement,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT,{acceptNode(node){
+        const p=node.nodeType===Node.TEXT_NODE?node.parentElement:node;
+        if(!p||p.closest('script,style,noscript,textarea,input,[hidden]')||!p.getClientRects().length||getComputedStyle(p).visibility==='hidden')return NodeFilter.FILTER_REJECT;
+        return node.nodeType===Node.TEXT_NODE||p.tagName==='BR'?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_SKIP;
+      }});
+      let node;while((node=walker.nextNode())&&text.length<2000000){
+        if(node.nodeType!==Node.TEXT_NODE){text+='\n';continue}
+        const block=blockOf(node.parentElement);if(lastBlock&&lastBlock!==block)text+='\n';lastBlock=block;
+        const start=text.length;text+=node.textContent;segments.push({node,start,end:text.length});
+      }
       const escaped=query.split(/(\s+)/).map(part=>/^\s+$/.test(part)?'\\s+':part.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('');
       const expression=new RegExp(escaped,matchCase?'gu':'giu');let match;
       const startAt=offset=>{let lo=0,hi=segments.length;while(lo<hi){const mid=(lo+hi)>>1;if(segments[mid].end<=offset)lo=mid+1;else hi=mid}const segment=segments[lo];return segment?{node:segment.node,offset:Math.max(0,offset-segment.start)}:null};
       const endAt=offset=>{let lo=0,hi=segments.length;while(lo<hi){const mid=(lo+hi)>>1;if(segments[mid].start<offset)lo=mid+1;else hi=mid}const segment=segments[lo-1];return segment?{node:segment.node,offset:Math.min(segment.node.length,offset-segment.start)}:null};
       while((match=expression.exec(text))&&ranges.length<10000){if(!match[0].length){expression.lastIndex++;continue}const start=startAt(match.index),end=endAt(match.index+match[0].length);if(!start||!end)continue;const range=document.createRange();range.setStart(start.node,start.offset);range.setEnd(end.node,end.offset);if(!range.collapsed)ranges.push(range)}
     }
-    let index=next&&previous?.query===query&&previous.matchCase===matchCase?previous.index+(forward?1:-1):0;
+    let index=next&&previous?.query===query&&previous.matchCase===matchCase?previous.index+(forward?1:-1):(forward?0:ranges.length-1);
     if(ranges.length){index=(index%ranges.length+ranges.length)%ranges.length;const selection=getSelection();selection.removeAllRanges();selection.addRange(ranges[index]);ranges[index].startContainer.parentElement?.scrollIntoView({block:'center',inline:'nearest'})}else{index=-1;getSelection()?.removeAllRanges()}
+    // Native selection remains a fallback on engines without CSS Highlights.
+    // Highlights do not wrap/replace DOM text or alter editable form contents.
+    if(globalThis.CSS?.highlights&&globalThis.Highlight){
+      let style=document.getElementById('__bandalNativeFindStyle');
+      if(!style){style=document.createElement('style');style.id='__bandalNativeFindStyle';style.textContent='::highlight(bandal-find-all){background-color:#ffe08a;color:#171717}::highlight(bandal-find-active){background-color:#f5a623;color:#171717}';(document.head||document.documentElement).append(style)}
+      CSS.highlights.set('bandal-find-all',new Highlight(...ranges));
+      CSS.highlights.set('bandal-find-active',new Highlight(...(index<0?[]:[ranges[index]])));
+    }
     globalThis.__bandalNativeFind={query,matchCase,ranges,index};return {matches:ranges.length,ordinal:index+1};
     """#
     static let image = """

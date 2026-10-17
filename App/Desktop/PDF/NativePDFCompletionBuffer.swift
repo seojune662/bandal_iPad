@@ -7,6 +7,10 @@ struct NativePDFCompletedStroke: Equatable {
     var style: NativePDFInkStyle
     /// Captured at contact start; retries and late estimates preserve the renderer contract.
     var inkVersion = 4
+    /// The pen rested at the end of the stroke: the renderer may snap it to a shape.
+    var holdSnap = false
+    /// Frozen preview geometry; late estimates refine only the measured undo source.
+    var heldShape: NativePDFHeldShape? = nil
 }
 
 /// Retains completed measured data through disk-full/protection failures.

@@ -1,109 +1,77 @@
 # 반달 for iPad
 
-반달 데스크톱의 **실제 React·Dockview 화면**을 iPad 앱에서 실행하는 개발 버전입니다. 원본 작업 공간, 20개 설정 화면, CSS·로고·글꼴을 사용하며, Swift 호스트가 파일·SQLite·브라우저·녹음·계정 등 iPad 기능을 연결합니다. 최소 지원 OS는 iPadOS 18.0입니다.
+iPadOS 18 이상을 지원하는 Swift 앱입니다. 화면은 SwiftUI·UIKit, PDF와 필기는 PDFKit·Metal, 저장소와 서비스 처리는 Swift·SQLite로 구현합니다. 기본 진입점은 `BandalApp → NativeWorkspaceView`입니다.
 
-현재 기본 진입점은 `App/BandalApp.swift → DesktopShell`입니다. 초기 SwiftUI 작업 공간과 PDFKit/PencilKit 화면은 기본 화면이 아닙니다. 전체 계획이나 정식 출시가 완료된 상태는 아니며, 실제 계정·학교 사이트·Pencil·장시간 녹음 검증이 남아 있습니다. [구현 현황](docs/implementation-status.md)과 [기능별 연결 감사](DesktopRuntime/docs/feature-parity-audit.md)를 확인하세요.
+## 현재 구현
 
-**빌드 18은 2026-10-15 07:18 KST iPad에서 일반 실행 중이며 사용자 확인을 기다립니다.** 저장 왕복에서 필압 숫자의 소수 표현 또는 실제 Double 값이 바뀌어 전체 필기를 다시 그리는 원인을 재현해 수정했습니다. 실제 iPad 단위 61개(59 통과·비공개 자료 2개 제외), 연속 20획과 200획 확대·스크롤 UI 2개가 통과했습니다. 저장 뒤 전체 재생은 0회였고 현재 필기 76개와 PDF·노트 내용을 백업과 대조했습니다. 물리 Pencil 체감 해결이나 Goodnotes·Notability 동등성을 아직 판정하지 않습니다. 자세한 증거와 제한은 [구현 현황](docs/implementation-status.md)에 기록했습니다.
+- **자료실:** 과목·하위 폴더 탐색, 파일 가져오기·검색·이름 변경·이동·공유·휴지통 이동, 기존 폴더 연결·다시 연결, 과목 보관.
+- **문서:** PDF 검색·페이지 탐색, 종이를 고른 필기 노트 생성, 펜·형광펜·지우개, 객체 선택·이동·복제·삭제, 도형·텍스트, 원문 선택과 형광 표시·메모, 문서별 실행 취소, PDF 페이지 재배열·삭제·복구, PDF 페이지와 연결된 Markdown 필기, 화이트보드와 미디어 재생.
+- **작업 공간:** 데스크톱의 왼쪽 탐색 막대·과목 목록, 중앙 문서 탭·분할 화면, 오른쪽 자료 목록을 SwiftUI로 구현. 가로·세로 중첩 분할과 4분할 배치, 그룹별 탭 드래그·순서 변경·병합·크기 조절, 좁은 창의 영역 선택, 과목·문서·읽기 위치·분할 배치 복원. 문서와 브라우저 내부 탭은 같은 폭으로 축소되고 넘친 탭은 검색 가능한 목록에서 고릅니다. 브라우저·AI·녹음·학업 보드도 같은 도킹 공간에서 열립니다.
+- **Markdown:** UIKit 서식 편집기와 원문 모드, 제목·강조·목록·체크리스트·인용·코드·링크·위키 링크·이미지, 표 행/열 편집과 셀 이동, SwiftMath 수식 표시, 실행 취소·한글 조합 입력·원문 보존. PDF 페이지 필기의 경계와 알려지지 않은 메타데이터를 유지합니다.
+- **설정:** 데스크톱과 같은 20개 분류·검색, 테마·글꼴·밀도, 탭별 기본값, 학교 바로가기, 우측 위젯, 단축키 변경/JSON, 실제 권한·알림·캘린더·저장된 AI 사용량·캐시/진단. 여러 브라우저 패널은 웹페이지와 선택 상태를 각각 유지합니다.
+- **브라우저:** WebKit 주소 추천·즐겨찾기·프로필별 기록, 페이지 내 검색과 확대/축소, 프로필·비공개 세션, 다운로드 제어·복구·과목 저장, 링크/이미지 문맥 메뉴, 팝업 보고서, 명시적으로 확인하는 Keychain 로그인 관리.
+- **도구:** API 기반 AI 대화, 녹음·로컬 음성 인식, 할 일, 계정·동기화·충돌 사본 선택과 설정 화면.
 
-**빌드 17도 물리 Pencil 사용자 인수에 실패했습니다.** 합성 UIKit 입력과 실제 자료 복사본 검사는 통과했지만, 사용자는 두 번째 획 지연이 남는다고 답했습니다. 실제 로그에서 저장 왕복 뒤 최신 획의 appearance 변경으로 전체 객체를 약 1.16초 재생하며 입력 전달도 약 1초 늦어졌습니다. 숫자의 소수 표기 차이와 전달 중 Double 값의 변화가 원인임을 재현했고, 빌드 18에서 전달 경계와 비교를 수정했습니다. 합성 검사 결과를 사용자 체감 해결이나 경쟁 앱 동등 품질로 대신하지 않습니다. 검사 자료 복사 중 삭제 사고와 백업 복구의 한계도 [구현 현황](docs/implementation-status.md)에 기록했습니다.
-
-**빌드 16은 캐시 초기화 후 사용자 검증도 실패했습니다.** 2026-10-15 06:22 KST 일반 실행 뒤 사용자는 문서 조작이 버벅이고 필기가 뒤늦게 따라온다고 보고했습니다. 실제 로그에서 전체71획 배경 재생이 약1초씩 반복되며 두 번째 Pencil 입력 전달이1,089ms 지연된 것을 확인했습니다. 사용자 문서·필기의 격리된 복사본과 실제 화면 배치를 통해 빌드 17 좌표 안정화 회귀를 추가했습니다. 뒤늦은 필압 보정의 접미부 재생, 이동·확대 중 타일 표시와 비동기 crop, 일부기기의 기본pinch 보완은 자동 검사에 통과했지만 실제문서의 반복전체재생을 막지 못했습니다. Doxens v4 곡선, 원본 좌표·필압·시간과 기존 획 버전은 보존합니다.
-
-**빌드15 자동 검사가 실제 사용 문제를 충분히 재현하지 못했습니다.** 빌드14에서는 사용자가 “줄었지만 여전히 남음”이라고 답했습니다. 빌드15는 실제 iPad 관련 단위24개(나누어 실행)와 UI3개를 통과했고, 약1초 정지를 재현한 호출의 최악CPU시간은 **0.725ms**였습니다. 빠른20획×3검사에서60획/180원본점과최종픽셀을보존했습니다. 이 CPU 수치를 펜촉→화면 지연으로 간주하거나 Goodnotes/Notability 수준 달성으로 판정하지 않습니다. [검증 기록](docs/implementation-status.md), [Doxens 이식과 품질 기준](docs/handwriting-quality.md)을 확인하세요.
-
-**빌드16 자동 검증과 자료 보존:** 실제기기의 합성200획 페이지 탐색·재실행, 연속20획 표시·저장과 관련 단위 검사는 통과했으나 위 사용자 문제를 놓쳤습니다. 캐시 초기화 전후 필기92행의 모든 열과 캐시를 제외한 PDF3개 경로·SHA-256이 일치했고 SQLite 무결성도 확인했습니다. 데스크톱 공통 v4와 Windows PDF·동기화 내구성 수정은 [0.84.5 릴리스](https://github.com/seojune662/bandal/releases/tag/v0.84.5)로 공개했고 설치 파일과 자동 업데이트 피드를 검증했습니다.
-
-**이전 오류 조사:** 빌드 4에서 사용자가 PDF를 열 때 빨간 오류 배너가 남는다고 보고했습니다. 키 이름이 없는 `keydown`을 원본 화면에 전달하면 같은 `undefined … t.trim` 오류가 발생하는 경로를 재현해, iPad 입력 경계에서 잘못된 이벤트만 차단했습니다. 정상 단축키·텍스트·한글 조합 입력을 보존하는 WebKit 회귀와 실기기 PDF 자료 목록·필기 도구 검사 2개가 통과했습니다. 빌드 6은 2026-10-14 03:38 KST에 일반 실행했고, 이후 사용자가 **“지금은 상자가 안 뜸”**이라고 확인했습니다. 실제 사용자 오류의 스택은 확보하지 못해 해당 입력 경로가 원인이었다고 단정하지 않습니다. 재발 시 확인할 오류 종류·번들 위치와 잘못된 입력 발생 여부만 기록합니다.
-
-iPadOS 경로 별칭·컨테이너 변경 대응, PDF 터치 대상 교체 처리, PDF.js 로컬 자산·라이선스 193개는 적용했습니다. 기존 PDF 바이트·필기 7획 보존도 별도 백업 대조로 확인했습니다. Apple Pencil 직접 필압·팜 리젝션 검증은 남아 있습니다.
-
-## 빌드와 실행
-
-필요 환경은 macOS, Xcode 26.2 이상, XcodeGen, Node.js 22 이상, pnpm 9.15.4입니다. Xcode가 공식 sherpa-onnx 1.13.8 Swift 패키지를 내려받습니다. iPhone과 Mac Catalyst는 대상이 아닙니다.
-
-```sh
-pnpm --dir DesktopRuntime install --frozen-lockfile
-node DesktopRuntime/scripts/build.mjs
-xcodegen generate
-open Bandal.xcodeproj
-```
-
-Xcode에서 `Bandal` scheme과 iPad를 선택해 실행합니다. 실기기 실행에는 Signing의 Development Team 설정이 필요합니다. 원본 데스크톱 버전 0.84.5와 iPad 배포 버전 0.1.0은 서로 다른 버전입니다.
-
-canonical 빌드 명령은 `node DesktopRuntime/scripts/build.mjs`입니다. 원본 스냅샷과 PDF 자산을 검증하고 renderer, backend, 미리보기 worker, 패키지 무결성을 순서대로 처리합니다. renderer만 다시 빌드하면 출력 폴더의 backend가 지워지므로 전체 명령을 사용하세요. `DesktopRuntime/node_modules`가 없으면 기존 `../bandal/node_modules`를 재사용하는 개발 경로도 있지만, 독립 환경에서는 위의 잠금 파일 설치를 사용합니다.
-
-명령행 시뮬레이터 빌드:
-
-```sh
-bash Scripts/build.sh
-```
+앱 화면·저장소·서비스 실행에는 React, Dockview, Node.js, JavaScriptCore가 필요하지 않습니다. `DesktopRuntime`라는 Swift 타입 이름은 기존 채널 계약을 유지하기 위한 것으로, 현재는 Swift 저장소 작업을 직렬 큐에서 처리하고 플랫폼 서비스는 큐 밖에서 호출합니다. 브라우저 웹페이지의 기사 추출·요소 조작에는 두 개의 JavaScript 리소스를 WebKit 안에서 사용합니다. 번들에 남아 있는 `web-pip.js`는 현재 Swift 실행 경로에 연결되지 않았습니다.
 
 ## 구조
 
 | 경로 | 역할 |
 |---|---|
-| `DesktopRuntime/upstream/` | 데스크톱 0.84.3 스냅샷. 1,021개 파일의 해시·바이트 수를 manifest로 검증 |
-| `DesktopRuntime/renderer/` | 원본 엔트리 앞에 설치하는 WK IPC와 입력·파일·녹음 등의 플랫폼 어댑터 |
-| `DesktopRuntime/backend/` | 원본 저장소·서비스를 JavaScriptCore에서 실행하는 어댑터, 동기화 투영·이전 데이터 이행 |
-| `App/Desktop/` | WK 셸, 외부 브라우저, 실제 SQLite·파일·Keychain·AVFoundation·계정·메일·알림 등 Swift 연결 |
-| `Packages/BandalCore/` | 공통 동기화 레코드·전송 대기열·충돌·자산 무결성 |
-| `backend/` | Supabase 동기화 스키마와 별도 PPT 변환 서버 |
-| `Tests/` | 실제 SQLite·WK·오디오 파일을 사용하는 단위 테스트와 원본 화면 XCUITest |
+| `App/Native/` | SwiftUI 화면, UIKit 편집기, 문서 탐색과 저장 수명주기 |
+| `App/Native/Storage/` | SQLite 마이그레이션, 자료·노트·PDF·화이트보드·검색·학습·할 일·녹음·대화 저장소, 동기화 투영과 복구 저널 |
+| `App/Desktop/DesktopRuntime.swift` | Swift 채널 디스패처와 저장소 초기화 |
+| `App/Desktop/PDF/` | PDFKit, Pencil 입력, Metal 필기 렌더러와 획 저널 |
+| `App/Desktop/` | WebKit·파일 접근·계정·네트워크·동기화 등 네이티브 서비스 |
+| `App/Recording/` | PCM 녹음과 sherpa-onnx 로컬 음성 인식 |
+| `App/Resources/DesktopNative/` | 웹페이지 상호작용용 JavaScript, 학교·설정 언어 JSON, 관련 고지 |
+| `Packages/BandalCore/` | 공통 레코드, 동기화 전송 대기열·충돌·자산 무결성 |
+| `Tests/BandalTests/`, `Tests/BandalUITests/` | Swift 단위·통합 테스트와 네이티브 화면 흐름 테스트 |
+| `backend/` | 앱과 별도로 배포하는 Supabase SQL 및 Python PowerPoint 변환 서버 |
 
-원본 스냅샷을 직접 수정하지 않고, 소스 구문을 확인하는 빌드 변환으로 iPad 입력과 연결부를 적용합니다. PDF는 원본 PDF.js 뷰어·필기 도구를 기본으로 사용하며, DEBUG 실험실에서 PDFKit/UIKit/Metal 본문을 비교할 수 있습니다. 새 본문도 원본 필기 객체·저장·실행 취소를 사용합니다. 노트와 화이트보드는 원본 편집기입니다. 외부 웹사이트는 별도 WKWebView에 표시하며 앱 IPC를 노출하지 않습니다.
+## 저장과 기존 자료
 
-## 계정·저장·기존 데이터
+기존 `Documents/BandalDesktop/bandal.db`의 버전 37까지의 스키마와 과목 폴더를 이어 사용합니다. 초기 `Documents/Bandal` 자료는 Swift 이행 코드가 원본을 유지하며 복사합니다. PDF 원본, 기존 필기 좌표·필압·획 버전, 알려지지 않은 이전 데이터의 보관본을 유지합니다. 외부 폴더 연결은 보안 범위 북마크를 사용합니다.
 
-AI API 키와 계정 토큰은 Keychain에 보관합니다. 브라우저 로그인·쿠키는 프로필별로 분리하고 일반 콘텐츠 동기화에 넣지 않습니다. 원본 계정 화면에는 동기화 상태와 충돌 사본 처리가 연결되어 있습니다. 실제 두 기기의 계정 동시 편집·네트워크 단절 검증은 아직 출시 조건입니다.
+문서 전환·백그라운드 진입은 저장을 기다립니다. Markdown은 파일 수정 시점 검사와 복구 초안을, PDF·화이트보드는 내구성 저널과 멱등 변경 ID를 사용합니다. 이름 변경·삭제·다시 연결·동기화 반영 전에는 열린 편집기의 입력을 멈추고 저장을 마칩니다. 이름 변경은 관련 경로와 노트·학습 출처를 함께 갱신하며 실패·재실행 복구 기록을 남깁니다. 파일 삭제는 앱의 `Trash`로 이동합니다.
 
-Supabase 서버 설정은 [backend 안내](backend/README.md)를 따릅니다. 기존 데스크톱의 공개 설정만 빌드에 넣는 선택 명령은 다음과 같습니다. 개인 세션이나 서비스 역할 키를 복사하지 않습니다.
+동기화 전송과 로컬 파일·DB 반영도 Swift로 처리합니다. 자산 해시를 확인하고 충돌 사본과 지원하지 않는 레코드를 보존합니다. 예전 Dockview 배치는 이행 자료로 남지만 현재 화면을 실행하는 데 사용하지 않습니다.
 
-```sh
-python3 Scripts/configure-public-env.py --desktop ../bandal
-xcodegen generate
-```
+## 빌드와 검증
 
-초기 iPad 버전의 `Documents/Bandal` 자료는 새 `Documents/BandalDesktop` 저장소로 복사·검증한 뒤 이행합니다. 원본은 삭제하지 않으며 이행 영수증으로 중복 적용을 막습니다. 실제 백업 복사본에서 현재 필기 **7획과 삭제 ID 11개**를 포함해 PDF·노트·필기 보존 및 반복 실행 안전성을 확인했습니다.
-
-빌드 4 설치 후 백업에서도 SQLite 무결성 검사 통과, 기존 PDF 18,872바이트와 SHA-256 동일, 필기 7개 행의 모든 열이 빌드 3 검증본과 동일함을 확인했습니다. 초기 자동 검사와 일반 실행 관찰에서는 새 renderer 오류가 없었지만, 이후 사용자의 오류 배너 보고가 있어 정상 사용 완료의 근거로 삼지 않습니다.
-
-[후속 화면 상태 이행](DesktopRuntime/backend/legacy-view-state.ts)은 이전 탭 순서·분할·포커스·선택 과목과 검증된 PDF 페이지를 원본 저장 형식으로 복원합니다. 현재 원본 UI에서 저장한 값은 덮어쓰지 않고, 비공개·삭제·문서 불일치 등 제외 상태는 보관본과 이유를 남깁니다. 원본 API와 WebKit Dockview fixture 검증을 통과했으며, 빌드 4에서는 기존 사용자 자료를 초기화하지 않고 여는 실기기 검사도 통과했습니다. 이전 PDFKit의 세부 스크롤 좌표·배율은 이행 범위에 포함하지 않습니다.
-
-Google 메일의 iOS OAuth 설정과 인증된 구형 `.ppt` 변환 서버는 아직 준비되지 않은 외부 조건입니다. 코드 연결을 실제 로그인·변환 완료로 보지 않습니다.
-
-## 검증 실행
-
-원본·패키지 및 플랫폼 타입 검사:
+앱 빌드에는 macOS, Xcode 26.2 이상, XcodeGen이 필요합니다. Swift 패키지는 Xcode가 해석합니다. Node.js·pnpm 설치나 JavaScript 번들 생성 단계는 없습니다. 전체 테스트 스크립트의 독립 서버 단위 테스트에는 Python 3가 필요합니다.
 
 ```sh
-pnpm --dir DesktopRuntime run verify
-pnpm --dir DesktopRuntime run typecheck
-pnpm --dir DesktopRuntime exec playwright install chromium webkit
-pnpm --dir DesktopRuntime test
-pnpm --dir DesktopRuntime run test:backend
-pnpm --dir DesktopRuntime run test:pencil
-pnpm --dir DesktopRuntime run test:browser
-pnpm --dir DesktopRuntime run test:settings
-pnpm --dir DesktopRuntime run test:ink
-pnpm --dir DesktopRuntime run test:workspace
-pnpm --dir DesktopRuntime run test:pdf-export
+bash Scripts/build.sh
+BANDAL_DESTINATION='platform=iOS Simulator,id=SIMULATOR_UUID' bash Scripts/test.sh
 ```
 
-네이티브·원본 화면 테스트는 canonical 빌드 후 사용 가능한 iPad 시뮬레이터를 지정합니다.
+`build.sh`는 기본적으로 서명 없이 iOS Simulator용 앱을 빌드합니다. `BANDAL_DESTINATION`으로 대상을 지정할 수 있습니다. `test.sh`는 BandalCore 패키지 테스트, Python 변환 서버 단위 테스트, `project.yml`의 기본 `Bandal` 스킴에 지정된 **전체 BandalTests·BandalUITests**를 실행합니다. 추가 Xcode 테스트 인자는 스크립트 끝에 전달할 수 있습니다.
 
-```sh
-xcrun simctl list devices available
-node DesktopRuntime/scripts/build.mjs
-xcodegen generate
-xcodebuild -project Bandal.xcodeproj -scheme Bandal \
-  -destination 'platform=iOS Simulator,id=SIMULATOR_UUID' \
-  -derivedDataPath .derivedData -clonedSourcePackagesDirPath .build/SourcePackages \
-  CODE_SIGNING_ALLOWED=NO test
-```
+`App/Resources/Configuration.plist`는 선택 사항입니다. 공개 서버 설정을 넣을 때는 `Scripts/configure-public-env.py`를 사용할 수 있습니다. API 키·계정 세션은 저장소에 넣지 않습니다. 서버 배포와 별도 검증은 [동기화 서버 안내](backend/README.md), [PowerPoint 변환 서버 안내](backend/ppt-converter/README.md)를 따릅니다. Python 서버는 앱 내부 실행 의존성이 아닙니다.
 
-코어·호환 도구·renderer 검사와 Xcode 테스트를 함께 실행하려면 `BANDAL_DESTINATION='platform=iOS Simulator,id=SIMULATOR_UUID' bash Scripts/test.sh`를 사용합니다. 뒤에 `-only-testing:BandalTests/DesktopBrowserMemoryTests`처럼 Xcode 선택 인자를 붙일 수 있습니다. Node backend fixture의 SQLite 바인딩도 `DesktopRuntime` 잠금 파일에 고정되어 있습니다.
+UI 테스트는 `--native-ui-testing`으로 격리된 `BandalDesktop-Native-UI-Tests` 저장소를 사용하며, `--reset-native-ui-testing`을 명시한 경우에만 이를 초기화합니다. 합성 필기 입력은 DEBUG 전용 인자와 격리 경로를 요구합니다. 테스트에는 저장·복구·기존 데이터 호환성 및 실제 네이티브 화면 흐름 검사가 포함됩니다.
 
-통과한 범위와 실패 후 재검증 기록은 [구현 현황](docs/implementation-status.md)에 배치별로 기록합니다. 화면 표시, 원본 코드 연결, 시뮬레이터 테스트, 실서비스 성공은 서로 다른 검증입니다.
+2026-10-17 최신 Release **0.1.0 (41)**를 실제 iPad에 설치했습니다. 다른 작업 폴더에서 만든 PDF 팔레트 개선을 Swift로 이식했습니다. 7색·물리 단위 굵기·불투명도·독립 펜/형광펜 설정·즐겨찾기 3개, 그린 뒤 유지하는 도형 보정, 서식 있는 한글 텍스트 상자를 지원합니다. 관련 고유 단위·통합 테스트 94개와 실제 iPad UI 흐름 5개가 최종 통과했습니다. 실제 화면에서 입력 영역·한글 표시·분할 팔레트를 확인했고 앱 업데이트 시 문서 설정이 끊기는 문제도 수정했습니다. 설치 전후 기존 자료 17개와 PDF·노트 필기 행, 기존 설정 48개의 보존도 확인했습니다. 이식 매핑, 저장 보장, 화면과 상세 검증은 [build 41 기록](docs/native-parity/build41/swift-writing-integration.md)에 정리합니다.
 
-기존 반달의 MIT 고지와 사전·모델·추가 라이브러리 고지는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 정리했습니다.
+build 40에서는 상태막대와 문서의 중복 안내 줄을 제거하고, 동일 폭 축소 탭·브라우저 기능·회색조 종이의 GPU 색상 처리를 개선했습니다. 관련 브라우저·도킹·GPU 회귀와 실제 iPad의 탭 이동·PDF·Markdown·필기 저장 및 화면 색상을 검증했습니다. 데스크톱 소스 대조, 상세 결과와 알려진 차이는 [현재 대조 기록](docs/native-parity/desktop-source-audit.md)에 정리합니다. 이전 build 39의 관련 단위·통합 110개 및 설정·사이드바 검증과 아래 build 38 결과는 별도 이력입니다.
+
+build 38 검증 기록:
+
+- 실제 iPad Pro 11형 3세대(iPadOS 26.5): 도킹·편집·설정 단위/통합 30개와 UI 흐름 7개 모두 통과. 실제 탭 드래그·배치 복원, PDF와 연결 노트의 분할·회전, Markdown 표·수식·단축키·재열기, 설정 검색·테마 복원, 두 브라우저의 독립 입력, PDF 페이지 재배열·삭제·되돌리기·복구 사본을 검사했습니다. 기기 화면 캡처도 직접 확인했습니다.
+- 최종 서명된 Release `0.1.0 (38)`에서도 Markdown UI 흐름을 통과한 뒤 기기에 설치하고 테스트 인자 없이 실행했습니다. 테스트 프레임워크·웹 앱 자산이 없는 82.9 MiB 번들을 확인했습니다. 설치 전후 기기 자료를 호스트로 백업해 기존 비테스트 파일 42개의 누락이 없고 자료 파일의 해시가 유지됨을 확인했습니다. 두 기존 데이터베이스의 무결성 검사도 통과했으며, 기존 설정에서 바뀐 값은 새 앱 컨테이너를 가리키는 `dataRoot`뿐입니다.
+- 추가 개편 회귀 검사: 도킹 10개, Markdown 원문 투영 21개, UIKit 편집·한글 조합·실행 취소·수식 테마 6개, 단축키 3개, 설정 14개, Markdown 저장 8개 모두 통과. 실제 탭 드래그·분할 크기 조절·병합·재시작 후 네 노트 전체 내용 보존, 표·수식 표시와 Cmd+W 후 재열기, 설정 검색·테마 복원·두 브라우저의 독립 입력 흐름도 시뮬레이터에서 통과했습니다.
+- iPad Pro 13형 시뮬레이터(iOS 26.3): 전체 `BandalTests` 739개 실행에서 733개 통과, 4개 건너뜀, 2개 테스트 실패. 동기화 충돌 사본 복원 동작을 수정했고, 병렬 Release 컴파일 중 시간 초과한 지우기 검사는 같은 제한 시간으로 재실행해 통과했습니다. 최신 코드의 관련 단위·통합 테스트 71개는 모두 통과했습니다. 최종 재검증은 영향 범위를 대상으로 했으며 전체 739개를 다시 실행하지는 않았습니다.
+- `BandalUITests` 9개 흐름 검증: 전체 실행에서 7개 통과. 회전 직후의 검사 대기와 변경된 테마 선택 컨트롤을 반영한 뒤, 레이아웃·브라우저·할 일/설정·Markdown의 4개 흐름을 최신 빌드로 다시 실행해 모두 통과했습니다. PDF 페이지 드래그 재배열·삭제·되돌리기·다시 실행·복구 사본, 필기·도형·올가미·원문 주석·화이트보드의 저장과 재실행도 통과했습니다.
+- `BandalCore` 29개 및 독립 PowerPoint 서버 단위 테스트 7개 통과.
+- `generic/platform=iOS` 대상 arm64 Release clean build 성공(서명 제외). 번들에서 기존 웹 앱·백엔드 자산이 없고 웹페이지 상호작용용 JavaScript 3개만 남은 것을 확인.
+
+건너뛴 4개는 별도 활성화가 필요한 공개 웹사이트 검사 1개, 제공되지 않은 개인 PDF·필기 재현 자료 검사 2개, 시뮬레이터가 지원하지 않는 실제 Metal 화면 표시 시각 검사 1개입니다.
+
+## 검증 경계
+
+실제 iPad의 터치·키보드·회전과 주요 화면 흐름은 검증했습니다. 물리 Apple Pencil의 지연·필압·팜 리젝션, 실제 AI 제공자 API·계정 로그인, 기기 간 동기화, 실제 파일 제공자와 장시간 녹음은 아직 검증하지 않았습니다. 합성 필기 검사는 물리 Pencil 검증을 대신하지 않습니다. PowerPoint 서버 단위 테스트도 실제 LibreOffice 변환·배포 환경 검증과 구분합니다.
+
+Markdown은 원문을 보존하는 네이티브 서식 편집과 원문 모드를 제공합니다. PDF는 기존 페이지 재배열·일부 삭제, 보존된 이력의 되돌리기·다시 실행, 변경 전 PDF와 필기의 별도 복구 사본을 지원합니다. 이후 필기나 연결 노트가 수정된 경우에는 원본에 덮어쓰는 복원을 막습니다. 빈 페이지 삽입·페이지 복제·회전은 아직 제공하지 않으며 암호화·서명 등 원본 보존을 검증할 수 없는 PDF는 읽기를 유지하고 페이지 편집을 제한합니다. 다중 도킹과 설정 분류는 Swift로 구현했습니다. iPadOS에서 실행할 수 없는 데스크톱 CLI·MCP 프로세스, Chromium 확장, 데스크톱 자동 업데이트는 연결된 기능으로 가장하지 않고 지원 범위를 표시합니다. 언어 설정은 설정 분류·검색 메뉴에 적용되며 전체 학습 화면의 영문 번역은 아직 제공하지 않습니다.
+
+`docs/native-parity/desktop-source-audit.md`는 현재 대조 기록입니다. `Historical` 표시가 있는 기존 구현·검증 문서는 과거 빌드의 기록입니다. 삭제된 웹 UI와 JavaScriptCore 경로가 포함될 수 있으며, 현재 구조와 실행 방법은 이 README를 우선합니다. 배포 구성요소의 출처는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 정리했습니다.

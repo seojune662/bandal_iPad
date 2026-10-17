@@ -23,9 +23,93 @@ final class NativePDFPencilGestureTests: XCTestCase {
         let surface = try XCTUnwrap(NativePDFInkSurface())
         surface.frame = CGRect(x: 0, y: 0, width: 600, height: 400)
         surface.mapper = .whiteboard(size: surface.bounds.size)
-        surface.tool = .init(name: "pen", style: .init(color: "ink", width: 0.004, opacity: 1))
+        surface.tool = .init(name: "pen", drawAndHold: true, style: .init(color: "ink", width: 0.004, opacity: 1))
         surface.isLoading = false
         return surface
+    }
+    func testDrawAndHoldPreviewsBeforeLiftAndResumingPreservesMeasuredInk() async throws {
+        let surface = try surface(), touch = PencilGestureTouch(kind: .pencil)
+        var saved: [NativePDFCompletedStroke] = []
+        surface.onStroke = { saved.append($0) }
+        XCTAssertTrue(surface.beginPencilGesture(touch, with: nil))
+        for i in 1...20 {
+            touch.point = CGPoint(x: 100 + i * 8, y: 100 + (i % 2)); touch.currentTime += 0.01
+            surface.movePencilGesture(touch, with: nil)
+        }
+        try await Task.sleep(for: .milliseconds(650))
+        XCTAssertEqual(surface.heldShape?.kind, "line", "A clean preview must exist while contact is still down")
+        XCTAssertTrue(saved.isEmpty, "A hold must not prematurely commit the raw stroke")
+        touch.point = CGPoint(x: 280, y: 140); touch.currentTime += 0.01
+        surface.movePencilGesture(touch, with: nil)
+        XCTAssertNil(surface.heldShape, "Moving again resumes freehand immediately")
+        surface.endPencilGesture(touch, with: nil)
+        XCTAssertEqual(saved.count, 1); XCTAssertEqual(saved[0].points.count, 22)
+        XCTAssertFalse(saved[0].holdSnap); XCTAssertNil(saved[0].heldShape)
+        XCTAssertEqual(saved[0].points.last?.y ?? 0, 0.35, accuracy: 0.001)
+    }
+    func testDrawAndHoldCancellationKeepsRawStrokeAndDisablingPreventsRecognition() async throws {
+        for enabled in [true, false] {
+            let surface = try surface(), touch = PencilGestureTouch(kind: .pencil)
+            surface.tool.drawAndHold = enabled
+            var saved: [NativePDFCompletedStroke] = []
+            surface.onStroke = { saved.append($0) }
+            XCTAssertTrue(surface.beginPencilGesture(touch, with: nil))
+            for _ in 1...15 {
+                touch.point.x += 8; touch.currentTime += 0.01
+                surface.movePencilGesture(touch, with: nil)
+            }
+            try await Task.sleep(for: .milliseconds(650))
+            XCTAssertEqual(surface.heldShape != nil, enabled)
+            surface.cancelPencilGesture(touch, with: nil)
+            XCTAssertEqual(saved.count, 1); XCTAssertEqual(saved[0].points.count, 16)
+            XCTAssertFalse(saved[0].holdSnap, "Interruption must not replace handwriting with a shape")
+            XCTAssertNil(saved[0].heldShape)
+        }
+    }
+    func testDrawAndHoldLiftRetainsPreviewFitAlongsideOriginalMeasuredPressure() async throws {
+        let surface = try surface(), touch = PencilGestureTouch(kind: .pencil)
+        var saved: [NativePDFCompletedStroke] = []
+        surface.onStroke = { saved.append($0) }
+        XCTAssertTrue(surface.beginPencilGesture(touch, with: nil))
+        for i in 1...16 {
+            touch.point.x += 8; touch.currentTime += 0.01; touch.pressure = i.isMultiple(of: 2) ? 0.2 : 0.8
+            surface.movePencilGesture(touch, with: nil)
+        }
+        try await Task.sleep(for: .milliseconds(650))
+        let fit = try XCTUnwrap(surface.heldShape)
+        surface.endPencilGesture(touch, with: nil)
+        XCTAssertEqual(saved.count, 1); XCTAssertTrue(saved[0].holdSnap)
+        XCTAssertEqual(saved[0].heldShape, fit)
+        XCTAssertEqual(saved[0].points.count, 17, "Raw samples remain available for undo and durability recovery")
+        XCTAssertEqual(Set(saved[0].points.map(\.p)), [0.2, 0.5, 0.8])
+        XCTAssertTrue(fit.points.allSatisfy { $0.p == 0.5 })
+    }
+    func testHighlighterHoldUsesScreenPointToleranceAndKeepsMeasuredSource() async throws {
+        let surface = try surface(), touch = PencilGestureTouch(kind: .pencil)
+        surface.tool = .init(name: "highlighter", drawAndHold: true, style: .init(color: "yellow", width: 0.014, opacity: 0.32))
+        // Multiply ink must have the same opaque PDF destination as production.
+        surface.pdfPage = PDFPage(image: UIGraphicsImageRenderer(size: surface.bounds.size).image { renderer in
+            UIColor.white.setFill(); renderer.fill(surface.bounds)
+        })
+        let scene = try await activeWindowScene(), controller = UIViewController()
+        let previous = scene.windows.first(where: \.isKeyWindow), window = UIWindow(windowScene: scene)
+        window.rootViewController = controller; window.makeKeyAndVisible()
+        controller.view.addSubview(surface); surface.layoutIfNeeded(); surface.refreshViewport()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        var saved: [NativePDFCompletedStroke] = []
+        surface.onStroke = { saved.append($0) }
+        XCTAssertTrue(surface.beginPencilGesture(touch, with: nil))
+        for _ in 1...15 { touch.point.x += 8; touch.currentTime += 0.01; surface.movePencilGesture(touch, with: nil) }
+        try await Task.sleep(for: .milliseconds(650))
+        let fit = try XCTUnwrap(surface.heldShape)
+        XCTAssertEqual(fit.kind, "line")
+        touch.point.x += 2; touch.currentTime += 0.01; surface.movePencilGesture(touch, with: nil)
+        XCTAssertEqual(surface.heldShape, fit, "Sub-3pt tip jitter keeps the accepted preview")
+        surface.endPencilGesture(touch, with: nil)
+        XCTAssertEqual(saved.count, 1); XCTAssertEqual(saved[0].kind, "highlighter")
+        XCTAssertEqual(saved[0].heldShape, fit); XCTAssertGreaterThan(saved[0].points.count, fit.points.count)
+        XCTAssertEqual(saved[0].style.opacity, 0.32)
+        XCTAssertFalse(NativePDFInkSurface.Tool().drawAndHold, "Non-PDF surfaces must explicitly opt into fitted-geometry persistence")
     }
     func testDeliveryTimingSeesPreviousCompletionBlockingAndRejectsSyntheticEpochs() throws {
         let surface = try surface()

@@ -239,7 +239,7 @@ final class NativePDFJournalQueue: @unchecked Sendable {
     /// Bounds queued value storage conservatively, not exact allocator RSS.
     /// Array/String COW keeps the accepted input stable if the caller mutates it.
     private static func charge(_ input: NativePDFStrokeInput, _ revision: String) -> Int {
-        let points = input.data.points.count.multipliedReportingOverflow(by: MemoryLayout<NativePDFPoint>.stride * 2)
+        let points = (input.data.points.count + (input.heldShape?.points.count ?? 0)).multipliedReportingOverflow(by: MemoryLayout<NativePDFPoint>.stride * 2)
         let strings = [input.courseId, input.relPath, input.kind, input.style.color, input.clientMutationId,
                        input.documentRevision ?? "", revision].reduce(0) { $0 + $1.utf8.count * 2 }
         let total = points.partialValue.addingReportingOverflow(strings + 2048)

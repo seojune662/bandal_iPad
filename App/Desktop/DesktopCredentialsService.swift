@@ -145,11 +145,17 @@ final class DesktopCredentialsService: NSObject, UIDocumentPickerDelegate {
             let login = id == nil ? (matching.count == 1 ? matching[0] : nil) : matching.first { $0.id == id }
             guard let login else { return ["filled": false, "submitted": false] }
             guard try target(guest, origin) == page else { throw DesktopRuntimeError("페이지가 바뀌었습니다. 다시 시도해 주세요.") }
-            return try await fill(page, login.username, login.password, login.autoSubmit)
+            // A manual native "fill" action can explicitly suppress an older
+            // saved auto-submit preference. It can never enable submission for
+            // an account that was not saved with that preference.
+            let submit = login.autoSubmit && request["autoSubmit"] as? Bool != false
+            return try await fill(page, login.username, login.password, submit)
         }
         guard ["save", "stage", "commit"].contains(mode) else { throw DesktopRuntimeError("로그인 저장 요청을 확인해 주세요.") }
         if mode == "commit" {
-            guard let pending = staged[guest], pending.expires > environment.now(), pending.target.profileID == page.profileID, pending.target.origin == origin else { return NSNull() }
+            guard let pending = staged[guest], pending.expires > environment.now(), pending.target == page else {
+                staged.removeValue(forKey: guest); return NSNull()
+            }
             let result = try save(["origin": origin, "username": pending.username, "password": pending.password, "autoSubmit": false], profile: page.profileID)
             staged.removeValue(forKey: guest); return result.summary
         }

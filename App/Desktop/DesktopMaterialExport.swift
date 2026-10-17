@@ -1,7 +1,7 @@
 import Foundation
 
-/// A stable, bounded-memory snapshot for QuickLook, Share and Files. No file
-/// contents cross JavaScriptCore, and the validated descriptor detects edits.
+/// A stable, bounded-memory snapshot for QuickLook, Share and Files.
+/// The validated descriptor detects changes during copying.
 enum DesktopMaterialExport {
     static func snapshot(path: String, root: URL) async throws -> URL {
         let task = Task.detached(priority: .userInitiated) {

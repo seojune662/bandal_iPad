@@ -6,6 +6,92 @@ import Network
 
 @MainActor
 final class BrowserPageActionsTests: XCTestCase {
+    func testInheritedAboutBlankFrameCanOpenItsOwnBlobReport() async throws {
+        let server = try BrowserFormsFixtureServer(), port = try await server.start()
+        defer { server.stop() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("browser-inherited-report-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host = DesktopBrowserHost(root: root)
+        _ = try await host.handle(channel: "browser:createPage", request: ["tabId": "native-scope.inherited.source", "isPrivate": true])
+        let source = try XCTUnwrap(host.pages["native-scope.inherited.source"])
+        defer { for id in Array(host.pages.keys) { host.destroy(id) } }
+        let loaded = expectation(description: "HTTP origin loaded")
+        var sourceFinished = false
+        host.emit = { channel, payload in
+            guard channel == "browser:page-event", let event = payload as? [String: Any],
+                  event["tabId"] as? String == source.tabID, event["name"] as? String == "did-finish-load", !sourceFinished else { return }
+            sourceFinished = true; loaded.fulfill()
+        }
+        source.load(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/form")!))
+        await fulfillment(of: [loaded], timeout: 15)
+        var openedIDs: [String] = []
+        var reportLoaded: XCTestExpectation?
+        var reportFinished = false
+        host.emit = { channel, payload in
+            guard let event = payload as? [String: Any] else { return }
+            if channel == "browser:open-url", let id = event["tabId"] as? String { openedIDs.append(id) }
+            if channel == "browser:page-event", event["name"] as? String == "did-finish-load",
+               openedIDs.count == 2, event["tabId"] as? String == openedIDs.last, !reportFinished {
+                reportFinished = true; reportLoaded?.fulfill()
+            }
+        }
+        let stagingOpened = try await source.webView.evaluateJavaScript("window.staging=window.open('about:blank','report-staging');window.staging!==null") as? Bool
+        XCTAssertEqual(stagingOpened, true)
+        let staging = try XCTUnwrap(openedIDs.first.flatMap { host.pages[$0] })
+        // document.write from the opener would also copy its document URL,
+        // defeating this test of a blank document with an inherited origin.
+        let stagingAddress = try await staging.webView.evaluateJavaScript("location.href") as? String
+        XCTAssertEqual(stagingAddress, "about:blank")
+        reportLoaded = expectation(description: "Inherited-origin Blob report loaded")
+        let opened = try await staging.webView.callAsyncJavaScript("""
+        const address=URL.createObjectURL(new Blob(['<!doctype html><title>Inherited report</title><p>Report</p>'],{type:'text/html'}));
+        return window.open(address,'nested-report')!==null;
+        """, arguments: [:], in: nil, contentWorld: .page) as? Bool
+        XCTAssertEqual(opened, true)
+        await fulfillment(of: [try XCTUnwrap(reportLoaded)], timeout: 15)
+        let report = try XCTUnwrap(openedIDs.last.flatMap { host.pages[$0] })
+        XCTAssertEqual(openedIDs.count, 2); XCTAssertTrue(report.dataStore === source.dataStore)
+        XCTAssertEqual(report.webView.url?.scheme, "blob")
+        let title = try await report.webView.evaluateJavaScript("document.title") as? String
+        XCTAssertEqual(title, "Inherited report")
+    }
+
+    func testSameOriginBlobReportPopupUsesSuppliedWebKitSessionAndKeepsOpener() async throws {
+        let server = try BrowserFormsFixtureServer(), port = try await server.start()
+        defer { server.stop() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("browser-blob-report-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host = DesktopBrowserHost(root: root)
+        _ = try await host.handle(channel: "browser:createPage", request: ["tabId": "native-scope.report.source", "isPrivate": true])
+        let opener = try XCTUnwrap(host.pages["native-scope.report.source"])
+        defer { for id in Array(host.pages.keys) { host.destroy(id) } }
+        let sourceLoaded = expectation(description: "Report source loaded"), reportLoaded = expectation(description: "Blob report loaded")
+        var childID: String?, sourceFinished = false, childFinished = false
+        host.emit = { channel, value in
+            guard let event = value as? [String: Any] else { return }
+            if channel == "browser:open-url" { childID = event["tabId"] as? String }
+            guard channel == "browser:page-event", event["name"] as? String == "did-finish-load" else { return }
+            if event["tabId"] as? String == opener.tabID, !sourceFinished { sourceFinished = true; sourceLoaded.fulfill() }
+            if event["tabId"] as? String == childID, !childFinished { childFinished = true; reportLoaded.fulfill() }
+        }
+        opener.load(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/form")!))
+        await fulfillment(of: [sourceLoaded], timeout: 15)
+        let opened = try await opener.webView.callAsyncJavaScript("""
+        const html='<!doctype html><title>Local report</title><p>Private report text</p><script>if(window.opener)window.opener.document.body.dataset.report="ready"</script>';
+        const address=URL.createObjectURL(new Blob([html],{type:'text/html'}));
+        return window.open(address,'bandal-report')!==null;
+        """, arguments: [:], in: nil, contentWorld: .page) as? Bool
+        XCTAssertEqual(opened, true)
+        await fulfillment(of: [reportLoaded], timeout: 15)
+        let child = try XCTUnwrap(host.pages[try XCTUnwrap(childID)])
+        XCTAssertTrue(child.tabID.hasPrefix("native-scope.report."))
+        XCTAssertTrue(child.dataStore === opener.dataStore); XCTAssertTrue(child.isPrivate)
+        XCTAssertEqual(child.webView.url?.scheme, "blob")
+        let title = try await child.webView.evaluateJavaScript("document.title") as? String
+        let status = try await opener.webView.evaluateJavaScript("document.body.dataset.report") as? String
+        XCTAssertEqual(title, "Local report"); XCTAssertEqual(status, "ready")
+    }
+
     func testRealHTTPPopupPreservesPostCookieAndOpenerAndMultipartUpload() async throws {
         let server = try BrowserFormsFixtureServer()
         let port = try await server.start()

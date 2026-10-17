@@ -28,6 +28,7 @@ struct DesktopSyncEnvironment {
 final class DesktopSyncService {
     var emit: ((String, Any) -> Void)?
     var flushOpenDocuments: (() async throws -> Void)?
+    var mutateOpenDocuments: ((@escaping @MainActor () async throws -> Any) async throws -> Any)?
     private let runtime: DesktopRuntime
     private let account: DesktopAccountService
     private let environment: DesktopSyncEnvironment
@@ -61,6 +62,14 @@ final class DesktopSyncService {
             Task { @MainActor in self?.requestSync() }
         }
         requestSync()
+    }
+
+    func stop() async {
+        timer?.invalidate(); timer = nil
+        if let foreground { NotificationCenter.default.removeObserver(foreground); self.foreground = nil }
+        generation += 1
+        let previous = active; previous?.cancel()
+        _ = try? await previous?.value
     }
 
     func accountChanged(_ event: [String: Any]) {
@@ -162,7 +171,9 @@ final class DesktopSyncService {
             _ = try await runtime.invokePrivate("nativeSync:import", request: ["records": [], "assets": localAssets,
                 "conflicts": [["id": preserved.id, "local": try Self.envelope(preserved.local), "remote": try Self.envelope(preserved.remote)]]])
         }
-        let result = try await runtime.invokePrivate("nativeSync:restoreConflict", request: ["conflictID": id, "variant": variant, "assets": localAssets]) as? [String: Any] ?? [:]
+        let result = try await applyToWorkspace { [self] in
+            try await runtime.invokePrivate("nativeSync:restoreConflict", request: ["conflictID": id, "variant": variant, "assets": localAssets])
+        } as? [String: Any] ?? [:]
         guard (result["applied"] as? NSNumber)?.intValue == 1 else { throw DesktopRuntimeError("선택한 사본을 적용하지 못했습니다. 충돌 사본은 보관되어 있습니다.") }
         try await environment.checkpoint("afterConflictMaterialization")
         let next = try await status()
@@ -258,13 +269,14 @@ final class DesktopSyncService {
                 try check(expected); downloaded[revision.sha256] = url.path
             }
         }
-        try await flushOpenDocuments?()
-        try check(expected)
-        let result = try await runtime.invokePrivate("nativeSync:import", request: [
-            "records": try records.map(Self.envelope),
-            "assets": downloaded.map { ["sha256": $0.key, "path": $0.value] },
-            "conflicts": try conflicts.map { ["id": $0.id, "local": try Self.envelope($0.local), "remote": try Self.envelope($0.remote)] }
-        ]) as? [String: Any]
+        let result = try await applyToWorkspace { [self] in
+            try check(expected)
+            return try await runtime.invokePrivate("nativeSync:import", request: [
+                "records": try records.map(Self.envelope),
+                "assets": downloaded.map { ["sha256": $0.key, "path": $0.value] },
+                "conflicts": try conflicts.map { ["id": $0.id, "local": try Self.envelope($0.local), "remote": try Self.envelope($0.remote)] }
+            ])
+        } as? [String: Any]
         guard let applied = result?["applied"] as? Int, let conflicts = result?["conflicts"] as? [Any],
               applied + conflicts.count == records.count else {
             throw DesktopRuntimeError("동기화 자료의 적용 결과를 확인하지 못했습니다. 복구 기록을 유지합니다.")
@@ -273,6 +285,12 @@ final class DesktopSyncService {
         try await environment.checkpoint("afterMaterialization")
         try check(expected)
         try await store.completeProjectionRecovery()
+    }
+
+    private func applyToWorkspace(_ action: @escaping @MainActor () async throws -> Any) async throws -> Any {
+        if let mutateOpenDocuments { return try await mutateOpenDocuments(action) }
+        try await flushOpenDocuments?()
+        return try await action()
     }
 
     private func token(identity: DesktopSyncIdentity, expected: Int) async throws -> String {
@@ -322,7 +340,19 @@ final class DesktopSyncService {
     }
 
     static func references(_ record: StoredRecord) throws -> [AssetRevision] {
-        if let single = try reference(record) { return [single] }
+        if let single = try reference(record) {
+            guard record.kind == "material", let value = try JSONSerialization.jsonObject(with: record.payload) as? [String: Any],
+                  let desktop = value["desktop"] as? [String: Any], let raw = desktop["pageLineageAssets"] else { return [single] }
+            guard value["kind"] as? String == "pdf", let ancestors = raw as? [[String: Any]] else { throw CoreError.assetIntegrity }
+            var result = [single], seen = [single.sha256: single.byteCount]
+            for input in ancestors {
+                let ancestor = try asset(input)
+                if let count = seen[ancestor.sha256] {
+                    guard count == ancestor.byteCount else { throw CoreError.assetIntegrity }
+                } else { seen[ancestor.sha256] = ancestor.byteCount; result.append(ancestor) }
+            }
+            return result
+        }
         guard !record.deleted, record.kind == "artifact",
               let value = try JSONSerialization.jsonObject(with: record.payload) as? [String: Any],
               value["recordType"] as? String == "desktop-learning-project" else { return [] }
