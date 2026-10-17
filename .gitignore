@@ -15,3 +15,6 @@ App/Resources/Configuration.plist
 __pycache__/
 *.pyc
 .derivedData*
+fastlane/report.xml
+fastlane/README.md
+fastlane/Preview.html
