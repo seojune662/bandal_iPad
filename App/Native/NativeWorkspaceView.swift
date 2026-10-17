@@ -70,7 +70,8 @@ struct NativeWorkspaceView: View {
                     } else {
                         NativeDockWorkspace(navigation: navigation, store: store, content: { workspace($0) }, empty: { emptyWorkspace },
                             perform: transition, persist: saveNavigation, closeDocuments: closeDocuments,
-                            openMaterials: { materialsRailOpen = true; compactMaterialsRail = true },
+                            materialsOpen: geometry.size.width < 900 ? compactMaterialsRail : materialsRailOpen,
+                            toggleMaterials: { toggleMaterialsRail(width: geometry.size.width) },
                             openNewTab: openNewTab)
                     }
                 }
@@ -210,6 +211,9 @@ struct NativeWorkspaceView: View {
     }
 
     private var railDivider: some View { NativeDesktopTheme.border.frame(width: 1) }
+    private func toggleMaterialsRail(width: CGFloat) {
+        if width < 900 { compactMaterialsRail.toggle() } else { materialsRailOpen.toggle() }
+    }
 
     private func globalNavigation(width: CGFloat) -> some View {
         VStack(spacing: 8) {
@@ -233,7 +237,9 @@ struct NativeWorkspaceView: View {
             NativeChromeButton(title: "마켓플레이스", symbol: "storefront", selected: auxiliary == .marketplace) { transition { section = .library; auxiliary = .marketplace; learningHome = false } }.accessibilityIdentifier("native-section-marketplace")
             NativeChromeButton(title: "도움말", symbol: "questionmark.circle", selected: auxiliary == .help) { transition { section = .library; auxiliary = .help; learningHome = false } }.accessibilityIdentifier("native-section-help")
             Spacer(minLength: 8)
-            NativeChromeButton(title: "계정", symbol: "person.crop.circle", selected: auxiliary == .account) { transition { section = .library; auxiliary = .account; learningHome = false } }.accessibilityIdentifier("native-section-account")
+            NativeAccountRailButton(store: store, selected: auxiliary == .account,
+                openAccount: { transition { section = .library; auxiliary = .account; learningHome = false } },
+                openSettings: { openSettings("appearance") })
             NativeChromeButton(title: "설정", symbol: "gearshape", selected: section == .settings) { openSettings("appearance") }.accessibilityIdentifier("native-section-settings")
         }.padding(.top, 12).padding(.bottom, 12).frame(width: NativeDesktopTheme.navigationWidth)
             .background(NativeDesktopTheme.surface).overlay(alignment: .trailing) { railDivider }
@@ -636,6 +642,7 @@ struct NativeWorkspaceView: View {
             case "new-recording-tab": openTool(.recordings, new: true)
             case "open-study-board": toggleAcademicBoard()
             case "toggle-left-rail": courseRailOpen.toggle()
+            case "toggle-right-rail": toggleMaterialsRail(width: UIScreen.main.bounds.width)
             case "close-tab": if let id = navigation.activeID { closeDocuments([id]) }
             case "new-tab": if store.selectedCourseID == nil { openTool(.browser, new: true) } else { showingNewTabMenu = true }
             case "new-markdown": openNewTab(.markdown(title: nil), navigation.focusedGroupID ?? "")

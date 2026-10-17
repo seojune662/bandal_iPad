@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Visual contract: the notebook-style palette from the reference iPad renderer
-/// (`PdfPalette.tsx`). Tools on the first row; tool name · colours · thickness ·
-/// favourites on the second; a "<tool> 설정" sheet anchored inside the PDF body.
+/// (`PdfPalette.tsx`). Pages · history · view on the first row; tools · colours ·
+/// thickness · favourites on the second; a "<tool> 설정" sheet anchored inside the PDF body.
 @MainActor enum NativePDFPaletteLook {
     static let colorNames = ["ink": "먹색", "red": "빨강", "orange": "주황", "yellow": "노랑", "green": "초록", "blue": "파랑", "violet": "보라"]
     static let sizeNames = ["가는 선", "중간 선", "굵은 선"]
@@ -11,10 +11,6 @@ import SwiftUI
     }
     static func colorName(_ color: String) -> String { colorNames[color] ?? color }
     static func uiColor(_ color: String) -> Color { Color(uiColor: NativePDFInkSurface.color(color)) }
-    /// Reference: `min(22, 4 + round(effectiveWidth × 1200))`, capped at 17 in the row.
-    static func dot(_ width: Double, highlighter: Bool, cap: Double = 17) -> CGFloat {
-        CGFloat(min(cap, min(22, 4 + (NativePDFPaletteStyle.effectiveWidth(width, highlighter: highlighter) * 1200).rounded())))
-    }
     static func swatchSize(_ width: Double) -> CGFloat { CGFloat(12 + (width * 1000).rounded()) }
 }
 
@@ -157,32 +153,34 @@ struct NativePDFPaletteControls: View {
     }
 }
 
-/// Second docked row: tool name · colours + styles button · thickness stops · favourites.
+/// Second docked row: tools · colours · thickness slider + styles button · favourites.
 struct NativePDFPaletteQuickControls: View {
     @ObservedObject var model: NativePDFWorkspaceModel
     private var highlighter: Bool { model.tool == "highlighter" }
     var body: some View {
         HStack(spacing: 0) {
-            // Colours and thickness scroll in a narrow pane; favourites stay fixed
-            // at the trailing edge so every pane keeps them one tap away.
+            // Tools · colours · thickness scroll in a narrow pane; favourites stay
+            // fixed at the trailing edge so every pane keeps them one tap away.
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
-                    Text(NativePDFPaletteLook.toolName(model.tool)).font(.system(size: 11, weight: .bold)).foregroundStyle(NativeDesktopTheme.secondary).padding(.horizontal, 8)
+                    HStack(spacing: 0) { ForEach(NativePDFToolbar.tools, id: \.0) { NativePDFToolbar.toolButton(model, $0) } }
                     if model.isInkTool {
-                        group {
+                        group(leadingDivider: true) {
                             ForEach(NativePDFWorkspaceModel.colors, id: \.name) { item in
                                 NativePDFPaletteColorButton(model: model, item: item, id: "native-pdf-quick-color-" + item.name)
                             }
+                        }
+                        group(leadingDivider: true) {
+                            Slider(value: Binding(get: { model.width }, set: { model.setWidth($0) }), in: NativePDFPaletteStyle.widthRange(model.width, highlighter: highlighter))
+                                .tint(NativeDesktopTheme.accent).frame(width: 96, height: 44)
+                                .accessibilityLabel("선 굵기").accessibilityValue(model.widthLabel(for: model.width)).accessibilityIdentifier("native-pdf-quick-width")
+                            Text(model.widthLabel(for: model.width)).font(.system(size: 10)).monospacedDigit().lineLimit(1)
+                                .foregroundStyle(NativeDesktopTheme.secondary).frame(width: 46).padding(.leading, 2)
                             Button { model.showStyle.toggle() } label: {
                                 Image(systemName: "slider.horizontal.3").font(.system(size: 17)).frame(width: 44, height: 44)
                                     .foregroundStyle(model.showStyle ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary)
                                     .background(model.showStyle ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 10)).contentShape(Rectangle())
                             }.accessibilityLabel("필기 스타일").accessibilityValue(model.styleAccessibilityValue).accessibilityIdentifier("native-pdf-style")
-                        }
-                        group(leadingDivider: true) {
-                            ForEach(Array(model.quickWidths.enumerated()), id: \.offset) { index, width in
-                                NativePDFPaletteWidthButton(model: model, width: width, index: index, id: "native-pdf-width-\(index)")
-                            }
                         }
                     } else if model.tool == "lasso" {
                         Picker("올가미 방식", selection: Binding(get: { model.lassoMode }, set: { model.setLassoMode($0) })) {
@@ -191,11 +189,9 @@ struct NativePDFPaletteQuickControls: View {
                         Button { model.pasteObjects() } label: {
                             Label("붙여넣기", systemImage: "doc.on.clipboard").font(.system(size: 12)).frame(height: 44).padding(.horizontal, 8).contentShape(Rectangle())
                         }.disabled(!model.canPaste).opacity(model.canPaste ? 1 : 0.4).accessibilityIdentifier("native-pdf-paste")
-                    } else {
-                        Text(contextHint).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary).padding(8).lineLimit(1)
                     }
                 }.fixedSize(horizontal: true, vertical: false)
-            }.accessibilityIdentifier("native-pdf-quick-style-scroll")
+            }.accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-tool-scroll")
             group(leadingDivider: true) {
                 ForEach(model.favorites.indices, id: \.self) { index in
                     let preset = model.favorites[index], selected = model.isPenLike && model.currentPreset == preset
@@ -215,14 +211,6 @@ struct NativePDFPaletteQuickControls: View {
         HStack(spacing: 0) {
             if leadingDivider { Rectangle().fill(NativeDesktopTheme.border).frame(width: 1, height: 24).padding(.leading, 4).padding(.trailing, 6) }
             content()
-        }
-    }
-    private var contextHint: String {
-        switch model.tool {
-        case "text": return "페이지를 탭해 입력 · 아래에서 서식 선택"
-        case "eraser": return "펜으로 필기를 지우세요"
-        case "lasso": return "필기를 둘러싸서 선택하고 이동하세요"
-        default: return "개체를 선택해 이동하고 크기를 조절하세요"
         }
     }
 }
@@ -248,32 +236,8 @@ private struct NativePDFPaletteColorButton: View {
         Button {
             if selected { model.showStyle.toggle() } else { model.chooseColor(item.name) }
         } label: {
-            NativePDFSwatch(color: item.name, ring: selected).frame(width: 44, height: 44).contentShape(Rectangle())
+            NativePDFSwatch(color: item.name, ring: selected).frame(width: 36, height: 44).contentShape(Rectangle())
         }.accessibilityLabel(NativePDFPaletteLook.colorName(item.name)).accessibilityIdentifier(id)
-            .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
-private struct NativePDFPaletteWidthButton: View {
-    @ObservedObject var model: NativePDFWorkspaceModel
-    let width: Double
-    let index: Int
-    let id: String
-    var body: some View {
-        let selected = abs(model.width - width) < 0.0000001, highlighter = model.tool == "highlighter"
-        Button {
-            if selected { model.showStyle.toggle() } else { model.chooseQuickWidth(width) }
-        } label: {
-            VStack(spacing: 3) {
-                Circle().fill(selected ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary)
-                    .frame(width: NativePDFPaletteLook.dot(width, highlighter: highlighter), height: NativePDFPaletteLook.dot(width, highlighter: highlighter))
-                    .frame(height: 17)
-                    .background(Circle().stroke(NativeDesktopTheme.accent, lineWidth: 2).padding(-4).opacity(selected ? 1 : 0))
-                    .background(Circle().stroke(NativeDesktopTheme.surface, lineWidth: 2).padding(-2).opacity(selected ? 1 : 0))
-                Text(model.widthLabel(for: width)).font(.system(size: 9)).monospacedDigit().lineLimit(1)
-                    .foregroundStyle(selected ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary)
-            }.frame(width: 56, height: 44).contentShape(Rectangle())
-        }.accessibilityLabel(NativePDFPaletteLook.sizeNames[index] + " · " + model.widthLabel(for: width)).accessibilityIdentifier(id)
             .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

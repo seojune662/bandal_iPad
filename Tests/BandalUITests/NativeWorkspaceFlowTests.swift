@@ -96,11 +96,14 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         XCTAssertTrue(remove.waitForExistence(timeout: 10), app.debugDescription)
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.48, dy: 0.42))
             .press(forDuration: 0.05, thenDragTo: pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.56, dy: 0.54)), withVelocity: .slow, thenHoldForDuration: 0.05)
-        // Count remains one during an update; wait for its committed selection
-        // cleanup before sending another contact.
-        let moveCommitted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: remove)
-        XCTAssertEqual(XCTWaiter.wait(for: [moveCommitted], timeout: 15), .completed, app.debugDescription)
+        // A move keeps the selection (notebook behaviour); the bar is disabled
+        // while the update commits and the user releases it with ✕.
         expectInkCount(1, in: app)
+        let moveCommitted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: remove)
+        XCTAssertEqual(XCTWaiter.wait(for: [moveCommitted], timeout: 15), .completed, "Selection survives a move" + app.debugDescription)
+        app.buttons["선택 해제"].tap()
+        let released = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: remove)
+        XCTAssertEqual(XCTWaiter.wait(for: [released], timeout: 10), .completed, app.debugDescription)
         // This crossing is below the original line's endpoint (y=0.52), so
         // selection also proves the move changed geometry, not merely its count.
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.60))

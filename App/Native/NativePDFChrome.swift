@@ -6,15 +6,10 @@ struct NativePDFToolbar: View {
     @State private var entry = "1"
     var body: some View {
         VStack(spacing: 0) {
+            // Row 1: pages · history · export · view. Row 2: tools · colours · thickness · favourites.
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 4) { navigation; divider; if model.toolsExpanded { drawingTools }; Spacer(minLength: 0); viewActions }
-                VStack(spacing: 0) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 4) { navigation; Spacer(minLength: 0); viewActions }
-                        HStack(spacing: 4) { navigationControls(compact: true); Spacer(minLength: 0); compactViewActions }
-                    }
-                    if model.toolsExpanded { Divider(); ScrollView(.horizontal, showsIndicators: false) { drawingTools }.frame(height: 44).accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-tool-scroll") }
-                }
+                HStack(spacing: 4) { navigation; divider; history; Spacer(minLength: 0); viewActions }
+                HStack(spacing: 4) { navigationControls(compact: true); divider; history; Spacer(minLength: 0); compactViewActions }
             }
             if model.toolsExpanded { Divider(); NativePDFPaletteQuickControls(model: model) }
         }
@@ -47,16 +42,22 @@ struct NativePDFToolbar: View {
         }.fixedSize(horizontal: true, vertical: false)
     }
     private func navigate() { model.go(to: Int(entry) ?? model.page); entry = String(model.page) }
-    private var drawingTools: some View {
+    private var history: some View {
         HStack(spacing: 0) {
-            ForEach([("pen", "펜", "pencil.tip"), ("ballpoint", "볼펜", "pencil.line"), ("highlighter", "형광펜", "highlighter"), ("eraser", "지우개", "eraser"), ("text", "텍스트", "textformat"), ("lasso", "올가미", "lasso"), ("select", "손", "hand.point.up.left")], id: \.0) { value in
-                icon(value.1, value.2, id: "native-pdf-tool-" + value.0, active: model.tool == value.0, underline: true) { model.chooseTool(value.0) }
-            }
-            divider
             icon("되돌리기", "arrow.uturn.backward", id: "native-pdf-undo") { model.undo() }.disabled(!model.canUndo)
             icon("다시 실행", "arrow.uturn.forward", id: "native-pdf-redo") { model.redo() }.disabled(!model.canRedo)
             icon("필기 포함 PDF 내보내기", "square.and.arrow.up", id: "native-pdf-export") { model.exportPDF() }
-        }.fixedSize(horizontal: true, vertical: false).accessibilityElement(children: .contain)
+        }.fixedSize(horizontal: true, vertical: false)
+    }
+    static let tools = [("pen", "펜", "pencil.tip"), ("ballpoint", "볼펜", "pencil.line"), ("highlighter", "형광펜", "highlighter"), ("eraser", "지우개", "eraser"), ("text", "텍스트", "textformat"), ("lasso", "올가미", "lasso"), ("select", "손", "hand.point.up.left")]
+    static func toolButton(_ model: NativePDFWorkspaceModel, _ value: (String, String, String)) -> some View {
+        Button { model.chooseTool(value.0) } label: {
+            Image(systemName: value.2).font(.system(size: 17)).frame(width: 44, height: 44)
+                .foregroundStyle(model.tool == value.0 ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary)
+                .background(model.tool == value.0 ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(alignment: .bottom) { if model.tool == value.0 { Capsule().fill(NativeDesktopTheme.accent).frame(width: 20, height: 2).padding(.bottom, 4) } }
+                .contentShape(Rectangle())
+        }.accessibilityLabel(value.1).accessibilityIdentifier("native-pdf-tool-" + value.0).accessibilityAddTraits(model.tool == value.0 ? .isSelected : []).help(value.1)
     }
     private var viewActions: some View {
         HStack(spacing: 0) {

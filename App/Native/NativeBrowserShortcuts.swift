@@ -20,6 +20,7 @@ enum NativeBrowserShortcuts {
         Spec(id:"cycle-tab-prev",chord:"mod+shift+[",action:"prev-tab",label:"이전 탭",lifetime:true),
         Spec(id:"cycle-tab-next",chord:"mod+shift+]",action:"next-tab",label:"다음 탭",lifetime:true),
         Spec(id:"toggle-left-rail",chord:"mod+s",action:"toggle-left-rail",label:"사이드바 접기·펼치기",lifetime:true),
+        Spec(id:"toggle-right-rail",chord:"mod+alt+b",action:"toggle-right-rail",label:"자료 사이드바 접기·펼치기",lifetime:true),
         Spec(id:"browser-back",chord:"mod+[",action:"browser-back",label:"뒤로"),
         Spec(id:"browser-forward",chord:"mod+]",action:"browser-forward",label:"앞으로"),
         Spec(id:"browser-reload",chord:"mod+r",action:"reload",label:"새로고침"),

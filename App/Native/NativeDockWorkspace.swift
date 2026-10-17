@@ -38,7 +38,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     let perform: (@escaping @MainActor () -> Void) -> Void
     let persist: () -> Void
     let closeDocuments: ([String]) -> Void
-    let openMaterials: () -> Void
+    let materialsOpen: Bool
+    let toggleMaterials: () -> Void
     let openNewTab: (NativeNewTabAction, String) -> Void
     @StateObject private var drag = NativeDockDragSession()
     @State private var maximizedGroupID: String?
@@ -60,7 +61,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 ZStack(alignment: .topLeading) {
                     NativeDesktopTheme.bgApp
                     ForEach(geometry.panes) { pane in
-                        paneChrome(pane, focused: layout.focusedGroupID == pane.id)
+                        paneChrome(pane, focused: layout.focusedGroupID == pane.id,
+                                   corner: pane.frame.maxX >= bounds.maxX - 1 && pane.frame.minY <= bounds.minY + 1)
                             .frame(width: pane.frame.width, height: pane.frame.height)
                             .position(x: pane.frame.midX, y: pane.frame.midY)
                     }
@@ -154,16 +156,16 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         }
         return result
     }
-    private func paneChrome(_ pane: NativeDockPaneFrame, focused: Bool) -> some View {
+    private func paneChrome(_ pane: NativeDockPaneFrame, focused: Bool, corner: Bool) -> some View {
         VStack(spacing: 0) {
-            tabs(pane.group, topPadding: NativeDockHeaderMetrics.topPadding(for: pane.frame))
+            tabs(pane.group, topPadding: NativeDockHeaderMetrics.topPadding(for: pane.frame), corner: corner)
             Spacer(minLength: 0)
         }
         .background(NativeDesktopTheme.bgApp)
     }
-    private func tabs(_ group: NativeDockGroup, topPadding: CGFloat) -> some View {
+    private func tabs(_ group: NativeDockGroup, topPadding: CGFloat, corner: Bool) -> some View {
         GeometryReader { geometry in
-            let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - 140), count: group.tabs.count,
+            let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - (corner ? 184 : 140)), count: group.tabs.count,
                 activeIndex: group.tabs.firstIndex(of: group.activeID ?? "") ?? -1, spacing: density == "compact" ? 0 : 4)
             HStack(alignment: .bottom, spacing: 0) {
                 HStack(spacing: sizing.spacing) {
@@ -196,6 +198,16 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                             .presentationCompactAdaptation(.popover)
                     }
                 groupMenu(group)
+                // Desktop parity: the top-right pane carries the materials sidebar toggle.
+                if corner {
+                    Button(action: toggleMaterials) {
+                        Image(systemName: "sidebar.right").font(.system(size: 14))
+                            .foregroundStyle(materialsOpen ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityLabel(materialsOpen ? "자료 사이드바 접기" : "자료 사이드바 펼치기")
+                        .accessibilityIdentifier("native-toggle-materials-rail").accessibilityAddTraits(materialsOpen ? .isSelected : [])
+                        .help(materialsOpen ? "자료 사이드바 접기" : "자료 사이드바 펼치기")
+                }
             }.frame(height: headerHeight, alignment: .bottom).padding(.horizontal, 4).padding(.top, topPadding)
         }.frame(height: headerHeight + topPadding).clipped().background(NativeDesktopTheme.surface)
             .background { NativeDockTabStripBounds(groupID: group.id) }

@@ -42,7 +42,7 @@ final class NativePDFWritingUITests: XCTestCase {
         chooseTool("highlighter", in: app)
         XCTAssertEqual(app.buttons["native-pdf-style"].value as? String, markerStyle)
         chooseTool("ballpoint", in: app)
-        tap("native-pdf-width-0", in: app)
+        app.sliders["native-pdf-quick-width"].adjust(toNormalizedSliderPosition: 0.9)
         let ballpointStyle = app.buttons["native-pdf-style"].value as? String
         XCTAssertNotEqual(ballpointStyle, penStyle, "볼펜 keeps its own width")
         capture("Swift ballpoint with its own fixed-width style")

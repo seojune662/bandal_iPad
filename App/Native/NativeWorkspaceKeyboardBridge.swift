@@ -26,7 +26,7 @@ struct NativeWorkspaceKeyboardBridge: View {
         }
     }
     private func apply(_ settings: [String:Any]) {
-        let actions: Set<String> = ["new-tab","new-markdown","new-whiteboard","new-ai-tab","new-recording-tab","open-study-board","close-tab","prev-tab","next-tab","activate-last-tab","toggle-left-rail"]
+        let actions: Set<String> = ["new-tab","new-markdown","new-whiteboard","new-ai-tab","new-recording-tab","open-study-board","close-tab","prev-tab","next-tab","activate-last-tab","toggle-left-rail","toggle-right-rail"]
         bindings = NativeBrowserShortcuts.resolve(settings).compactMap { item in
             guard let action = item["action"] as? String, actions.contains(action) || action.hasPrefix("activate-tab-"), let raw = item["chord"] as? String else { return nil }
             let parts = raw.split(separator:"+"); guard let rawKey = parts.last, let key = NativeWorkspaceKeyEquivalent.resolve(String(rawKey)) else { return nil }

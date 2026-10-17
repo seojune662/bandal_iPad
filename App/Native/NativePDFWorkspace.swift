@@ -29,6 +29,10 @@ struct NativePDFWorkspace: View {
                     Button { model.clearSourceSelection() } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }.accessibilityLabel("원문 선택 해제")
                 }.padding(.horizontal, 16).background(.bar).disabled(model.isBusy || model.errorMessage != nil)
             }
+            if let draft = model.textEditorDraft {
+                NativePDFTextEditor(draft: draft, isBusy: model.isBusy, errorMessage: model.errorMessage, canCancel: !model.textSaveNeedsRecovery,
+                    onSave: model.finishText, onCancel: model.cancelText, onDelete: model.deleteText)
+            }
             Divider()
             GeometryReader { geometry in
                 HStack(spacing: 0) {
@@ -50,10 +54,6 @@ struct NativePDFWorkspace: View {
                     }
                 }
                 .onChange(of: geometry.size.width, initial: true) { _, width in model.setAvailableWidth(width) }
-            }
-            if let draft = model.textEditorDraft {
-                NativePDFTextEditor(draft: draft, isBusy: model.isBusy, errorMessage: model.errorMessage, canCancel: !model.textSaveNeedsRecovery,
-                    onSave: model.finishText, onCancel: model.cancelText, onDelete: model.deleteText)
             }
             if let error = model.errorMessage {
                 HStack(alignment: .top, spacing: 12) {
@@ -438,6 +438,11 @@ final class NativePDFWorkspaceModel: ObservableObject {
             } else if tool == "text", gesture == nil, let number = payload["page"] as? Int, number > 0, number <= pageCount,
                       let x = payload["x"] as? Double, let y = payload["y"] as? Double {
                 openText(at: CGPoint(x: x, y: y), page: number)
+            } else if selectionCount > 0, let number = payload["page"] as? Int, let x = payload["x"] as? Double, let y = payload["y"] as? Double {
+                // A finger tap outside the selection releases it; inside keeps it.
+                let inside = selectionPage == number && (NativePDFEditingGeometry.union(selectedRows, aspect: aspect(number))?
+                    .insetBy(dx: -0.018, dy: -0.018 / aspect(number)).contains(CGPoint(x: x, y: y)) ?? false)
+                if !inside { clearSelection() }
             }
         case "selectionFrame":
             guard selectionCount > 0, let x = payload["x"] as? Double, let y = payload["y"] as? Double,
@@ -655,7 +660,8 @@ final class NativePDFWorkspaceModel: ObservableObject {
         if phase == "up" {
             gesture = nil
             if !contact.preview.isEmpty {
-                performObjectEdit(contact.rows.isEmpty ? "create" : "update", values: contact.preview, expected: contact.rows)
+                // A moved or resized selection stays selected until the user taps outside or ✕.
+                performObjectEdit(contact.rows.isEmpty ? "create" : "update", values: contact.preview, expected: contact.rows, keepSelection: !contact.rows.isEmpty)
             } else if contact.tool == "lasso", contact.rows.isEmpty {
                 let polygon = lassoMode == "box"
                     ? [contact.start, CGPoint(x: last.x, y: contact.start.y), last, CGPoint(x: contact.start.x, y: last.y)]

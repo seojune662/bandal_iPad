@@ -12,7 +12,7 @@ struct NativePDFTextEditor: View {
     let onDelete: () -> Void
     @State private var extras = false
 
-    /// Docked under the page (above the software keyboard); the text itself is edited on the page.
+    /// Docked under the palette; the text itself is edited on the page.
     var body: some View {
         VStack(spacing: 0) {
             Divider()

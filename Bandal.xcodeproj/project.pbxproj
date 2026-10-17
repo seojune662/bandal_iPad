@@ -93,6 +93,7 @@
 		353FCC79C69483FAC3A896DF /* NativePlannerWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9563AEFCA79F2014F5E73258 /* NativePlannerWorkspace.swift */; };
 		35481D7886AE252D1E4D8D47 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 623F4CF3500788090B45D9AA /* Assets.xcassets */; };
 		3549C2A25CC59AEB9E099C62 /* NativeToolsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EEB0041F6760C277B71D110 /* NativeToolsModelTests.swift */; };
+		37AD5C4ABE1C4711F2A41B8F /* NativeAccountRailButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6A3FE7EEDFEA40482AD5F7 /* NativeAccountRailButton.swift */; };
 		37D450437DFE7EB92E963C50 /* NativePDFRetainedPaperCrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40B5AF6E6B408E08801536A5 /* NativePDFRetainedPaperCrop.swift */; };
 		388A4D43A02EC2041ABA7822 /* NativePDFShapeRecognitionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC48FF66E7271D705309B13D /* NativePDFShapeRecognitionTests.swift */; };
 		38AC77E1D2B525C4BA88BBF5 /* NativePDFRenderViewportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0643554B00E980651BA17D4A /* NativePDFRenderViewportTests.swift */; };
@@ -485,6 +486,7 @@
 		14A4F6BA95A1E872687B4675 /* NativeSettingsWidgetDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsWidgetDock.swift; sourceTree = "<group>"; };
 		15D0D2288E131C3390C3E172 /* NativePDFInkGeometryV5.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkGeometryV5.swift; sourceTree = "<group>"; };
 		1749E516108489B8F8FA11DF /* NativePDFPreferenceScopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPreferenceScopeTests.swift; sourceTree = "<group>"; };
+		1A6A3FE7EEDFEA40482AD5F7 /* NativeAccountRailButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAccountRailButton.swift; sourceTree = "<group>"; };
 		1BAAD8F5DE41C50507A70D31 /* NativePDFRepositoryValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRepositoryValidation.swift; sourceTree = "<group>"; };
 		1BC0F94A2105CD78404C9521 /* NativeWhiteboardPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWhiteboardPersistence.swift; sourceTree = "<group>"; };
 		1BD6A945EF9521FCEED197A8 /* DesktopStoragePath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopStoragePath.swift; sourceTree = "<group>"; };
@@ -1008,6 +1010,7 @@
 		28A6C898EBAB7A26A2A73429 /* Native */ = {
 			isa = PBXGroup;
 			children = (
+				1A6A3FE7EEDFEA40482AD5F7 /* NativeAccountRailButton.swift */,
 				A1F43278A2A256F6041E48A8 /* NativeAssistantService.swift */,
 				6522A32900B326D733BB93A5 /* NativeAssistantWorkspace.swift */,
 				6B1A22BEB310DB12EC6FC35A /* NativeAuxiliaryDestinations.swift */,
@@ -1817,6 +1820,7 @@
 				D8F9CAEA16CE35B2F4E3374F /* LocalSaveJournal.swift in Sources */,
 				271B068AAB5A3B13C5CE844B /* LocalSpeech.swift in Sources */,
 				708DBF49D5ACF876DA526B7F /* Models.swift in Sources */,
+				37AD5C4ABE1C4711F2A41B8F /* NativeAccountRailButton.swift in Sources */,
 				2F1B913C3DC8AF2CD1DE7AC4 /* NativeAssistantService.swift in Sources */,
 				8350AB6366278CE97AC99476 /* NativeAssistantWorkspace.swift in Sources */,
 				89327143FF8662D35A8A85E0 /* NativeAuxiliaryDestinations.swift in Sources */,
@@ -2036,7 +2040,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 46;
+				CURRENT_PROJECT_VERSION = 47;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -2106,7 +2110,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 46;
+				CURRENT_PROJECT_VERSION = 47;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

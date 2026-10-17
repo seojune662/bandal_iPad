@@ -205,7 +205,7 @@ final class NativePDFDocumentFlowTests: XCTestCase {
     @MainActor private func chooseColor(_ color: String, app: XCUIApplication) {
         tapControl("native-pdf-style", app: app)
         let item = app.buttons["native-pdf-color-" + color]
-        XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap(); app.buttons["완료"].firstMatch.tap()
+        XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap(); app.buttons["native-pdf-style-close"].firstMatch.tap()
     }
     @MainActor private func stroke(_ app: XCUIApplication, from: CGVector, to: CGVector) {
         let body = app.otherElements["native-pdf-workspace"]
