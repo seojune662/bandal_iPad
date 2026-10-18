@@ -15,6 +15,13 @@ final class NativePDFPageEditingTests: XCTestCase {
         XCTAssertNil(NativePDFPageEditing.moved(count: 3, from: 1, insertionSlot: 5))
         XCTAssertNil(NativePDFPageEditing.moved(count: 0, from: 1, insertionSlot: 1))
     }
+    func testInsertedPageIsATemplateCopyMarkerAfterItsSource() {
+        XCTAssertEqual(NativePDFPageEditing.inserted(count: 3, after: 3), [1, 2, 3, 0])
+        XCTAssertEqual(NativePDFPageEditing.inserted(count: 3, after: 1), [1, 0, 2, 3])
+        XCTAssertEqual(NativePDFPageEditing.inserted(count: 2, after: 0), [0, 1, 2])
+        XCTAssertNil(NativePDFPageEditing.inserted(count: 2, after: 3))
+        XCTAssertNil(NativePDFPageEditing.inserted(count: 0, after: 0))
+    }
     func testDeleteCannotRemoveLastPageAndPreservesStableSourceOrder() {
         XCTAssertNil(NativePDFPageEditing.deleted(count: 1, page: 1))
         XCTAssertNil(NativePDFPageEditing.deleted(count: 0, page: 1))

@@ -137,8 +137,12 @@ struct NativePDFPagesPanel: View {
     @State private var thumbnailHeights: [Int: CGFloat] = [:]
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Text("페이지").font(.system(size: 12, weight: .semibold)); Spacer(); Text("\(model.pageCount)쪽").font(.system(size: 10)) }
-                .foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 12).frame(height: 40)
+            HStack {
+                Text("페이지").font(.system(size: 12, weight: .semibold)); Spacer(); Text("\(model.pageCount)쪽").font(.system(size: 10))
+                Button { model.addPage(after: model.pageCount) } label: { Image(systemName: "plus").frame(width: 32, height: 32).contentShape(Rectangle()) }
+                    .disabled(!model.pageCanRestructure).accessibilityLabel("페이지 추가").accessibilityIdentifier("native-pdf-page-add")
+            }
+                .foregroundStyle(NativeDesktopTheme.muted).padding(.leading, 12).padding(.trailing, 4).frame(height: 40)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 4) {
@@ -175,7 +179,7 @@ struct NativePDFPagesPanel: View {
     private func thumbnail(_ number: Int) -> some View {
         VStack(spacing: 0) {
             Button { model.go(to: number) } label: {
-                NativePDFPageThumbnail(source: model.thumbnailSource, page: number)
+                NativePDFPageThumbnail(source: model.thumbnailSource, page: number, rows: model.thumbnailRows(number), inkRevision: model.thumbnailInkRevision)
                     .padding(3).overlay(RoundedRectangle(cornerRadius: 5).stroke(model.page == number ? NativeDesktopTheme.accent : .clear, lineWidth: 2))
             }.accessibilityLabel("\(number)페이지").accessibilityIdentifier("native-pdf-thumbnail-\(number)")
                 .accessibilityAddTraits(model.page == number ? .isSelected : [])
@@ -188,6 +192,7 @@ struct NativePDFPagesPanel: View {
                 Text(String(number)).font(.system(size: 11).monospacedDigit()).foregroundStyle(NativeDesktopTheme.muted)
                 Spacer()
                 Menu {
+                    Button("아래에 페이지 추가") { model.addPage(after: number) }.disabled(!model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-insert-below")
                     Button("위로 이동") { model.movePage(number, to: number - 1) }.disabled(number == 1 || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-move-up")
                     Button("아래로 이동") { model.movePage(number, to: number + 1) }.disabled(number == model.pageCount || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-move-down")
                     Button("페이지 삭제", role: .destructive) { model.requestDeletePage(number) }.disabled(model.pageCount == 1 || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-delete")

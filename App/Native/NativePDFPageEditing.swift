@@ -14,6 +14,11 @@ enum NativePDFPageEditing {
         guard slot != from, slot != from + 1 else { return nil }
         return moved(count: count, from: from, to: slot > from ? slot - 1 : slot)
     }
+    /// A new page after `page` (0 = before the first). `0` in the recipe is a template copy of the preceding page.
+    static func inserted(count: Int, after page: Int) -> [Int]? {
+        guard count > 0, (0...count).contains(page) else { return nil }
+        return Array(1...count).prefix(page) + [0] + Array(1...count).dropFirst(page)
+    }
     static func deleted(count: Int, page: Int) -> [Int]? {
         guard count > 1, (1...count).contains(page) else { return nil }
         return (1...count).filter { $0 != page }

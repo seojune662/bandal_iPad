@@ -16,6 +16,17 @@ final class NativePDFPageThumbnailSource {
         worker = Worker(url: root.appendingPathComponent("PDFOriginals/" + revision + ".pdf"))
         cache.countLimit = 40
     }
+    /// The original page with the current drawings on top; the base render is cached, the ink is cheap.
+    func image(page: Int, rows: [[String: Any]]) async -> UIImage? {
+        guard let base = await image(page: page) else { return nil }
+        guard !rows.isEmpty, !Task.isCancelled else { return base }
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        return UIGraphicsImageRenderer(size: base.size, format: format).image { renderer in
+            base.draw(in: CGRect(origin: .zero, size: base.size))
+            let mapper = InkCoordinateMapper.whiteboard(size: base.size)
+            for row in rows { NativePDFObjectRenderer.draw(row, in: renderer.cgContext, mapper: mapper, image: nil) }
+        }
+    }
     func image(page: Int) async -> UIImage? {
         if let image = cache.object(forKey: NSNumber(value: page)) { return image }
         guard !Task.isCancelled, let data = await worker.image(page: page), !Task.isCancelled, let image = UIImage(data: data) else { return nil }
@@ -45,6 +56,8 @@ final class NativePDFPageThumbnailSource {
 struct NativePDFPageThumbnail: View {
     let source: NativePDFPageThumbnailSource?
     let page: Int
+    var rows: [[String: Any]] = []
+    var inkRevision = 0
     @State private var image: UIImage?
     var body: some View {
         ZStack {
@@ -57,6 +70,6 @@ struct NativePDFPageThumbnail: View {
         .overlay(RoundedRectangle(cornerRadius: 3).stroke(NativeDesktopTheme.border, lineWidth: 1))
         .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
         .accessibilityHidden(true)
-        .task(id: (source?.revision ?? "") + ":" + String(page)) { image = await source?.image(page: page) }
+        .task(id: (source?.revision ?? "") + ":" + String(page) + ":" + String(inkRevision)) { if let next = await source?.image(page: page, rows: rows) { image = next } }
     }
 }

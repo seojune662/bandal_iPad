@@ -409,7 +409,13 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             final: final, ordered: ordered, prepared: prepared)
         // Surface transfers ownership after this synchronous callback succeeds.
         // Both the queue and this pending display retain the original value.
-        item.addPending(input); item.refreshOverlays()
+        // UIKit streams pressure/azimuth corrections in many small batches after
+        // the lift; each one must reach the journal now, but re-encoding the row
+        // and revalidating the page scene per batch was a third of the main
+        // thread. The first checkpoint still installs the row synchronously so
+        // the live stroke hands off without a gap.
+        if final || item.pending[input.clientMutationId] == nil { item.addPending(input); item.refreshOverlays(page: input.page) }
+        else { item.deferPendingDisplay(input) }
     }
     private func reconcileJournal() throws {
         let completed = journal.state.completed.value
@@ -861,6 +867,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                 // policy. A second pinch on PDFView competes with that pair.
                 scroll.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
                 scroll.pinchGestureRecognizer?.isEnabled = true
+                scroll.alwaysBounceVertical = true // pull past the last page to add one
                 if nativePinch !== scroll.pinchGestureRecognizer, nativePinch == nil {
                     nativePinch = scroll.pinchGestureRecognizer
                     nativePinch?.addTarget(self, action: #selector(pinchChanged(_:)))
@@ -1130,13 +1137,17 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             guard let mutation = target.mutationID else { return target }
             let saved = operationLedger.drawingID(for: mutation) ?? acknowledgedRows[mutation]
             let isPending = pending[mutation] != nil
-            let isPendingPlaceholder = isPending && target.drawingID?.utf8.elementsEqual(mutation.utf8) == true
+            // The scene freezes for the whole eraser contact, so it can still name
+            // the placeholder (id == mutation) after the ACK and canonical row
+            // retired the pending row mid-contact. A placeholder is never a
+            // mismatch; it resolves to whatever the ACK saved.
+            let isPlaceholder = target.drawingID?.utf8.elementsEqual(mutation.utf8) == true
             if UUID(uuidString: mutation) != nil, isPending || saved != nil {
-                if let supplied = target.drawingID, !isPendingPlaceholder, let saved,
+                if let supplied = target.drawingID, !isPlaceholder, let saved,
                    !supplied.utf8.elementsEqual(saved.utf8) {
                     throw NativePDFError.invalid("PDF 지우기 대상의 저장 식별자가 일치하지 않습니다.")
                 }
-                return NativePDFEraseTarget(drawingID: isPendingPlaceholder ? saved : (target.drawingID ?? saved), mutationID: mutation)
+                return NativePDFEraseTarget(drawingID: isPlaceholder ? saved : (target.drawingID ?? saved), mutationID: mutation)
             }
             // Persisted rows may carry a prior renderer session's alias. Only
             // a current native journal/ACK association authorizes sending M;
@@ -1159,11 +1170,29 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             overlays[input.page]?.rememberNativeMutationAlias(mutationID: mutationID, drawingID: drawingID)
         }
         acknowledgedRows[mutationID] = drawingID
-        refreshOverlays()
+        refreshOverlays(page: pending[mutationID]?.page)
         publishPendingCount()
+    }
+    private var deferredPendingInputs: [String: NativePDFStrokeInput] = [:]
+    private var deferredPendingTask: Task<Void, Never>?
+    /// Coalesces the display update of corrected checkpoints; the latest input per mutation wins.
+    func deferPendingDisplay(_ input: NativePDFStrokeInput) {
+        deferredPendingInputs[input.clientMutationId] = input
+        guard deferredPendingTask == nil else { return }
+        deferredPendingTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(60))
+            guard let self else { return }
+            self.deferredPendingTask = nil
+            let inputs = self.deferredPendingInputs.values; self.deferredPendingInputs = [:]
+            for input in inputs { self.addPending(input, notify: false) }
+            for page in Set(inputs.map(\.page)) { self.refreshOverlays(page: page) }
+            self.publishPendingCount()
+        }
     }
     func addPending(_ input: NativePDFStrokeInput, notify: Bool = true) {
         let started = CACurrentMediaTime(); defer { recordLatency("pendingRow", startedAt: started) }
+        // A newer row (final stroke or ACK) must not be overwritten by an older deferred checkpoint.
+        deferredPendingInputs.removeValue(forKey: input.clientMutationId)
         if pending[input.clientMutationId] == nil { pendingOrder.append(input.clientMutationId) }
         pending[input.clientMutationId] = input
         // Estimated-property corrections replace only their own immutable row.
@@ -1183,7 +1212,9 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private func publishPendingCount() {
         onEvent("pending", ["count": pending.keys.filter { acknowledgedRows[$0] == nil }.count])
     }
-    func refreshOverlays() {
+    /// `page` limits the row rebuild and retained-scene revalidation to one
+    /// overlay; a pending stroke only changes its own page.
+    func refreshOverlays(page only: Int? = nil) {
         let started = CACurrentMediaTime(); defer { recordLatency("refreshOverlays", startedAt: started) }
         // Only already-ACKed previews can be retired by the two-stream erase
         // barrier. Their original journal was removed by the normal stroke ACK.
@@ -1194,6 +1225,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             }
         }
         for (number, overlay) in overlays {
+            if let only, number != only { continue }
             overlay.retainedInkEnabled = nativeInkEraseEnabled
             overlay.nativeErasingEnabled = nativeInkEraseEnabled
             overlay.erasedIdentifiers = operationLedger.excludedIdentifiers(page: number)
@@ -1297,8 +1329,22 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         let rect = pdfView.convert(page.bounds(for: .cropBox), from: page)
         return ["x": rect.minX, "y": rect.minY, "width": rect.width, "height": rect.height]
     }
+    private var pullToAddArmed = false
+    /// Pulling well past the end while the finger is down, then releasing, adds a page.
+    private func checkPullToAddPage() {
+        guard let scroll = nativePan?.view as? UIScrollView, !loading else { return }
+        let rest = max(scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom, -scroll.adjustedContentInset.top)
+        let overscroll = scroll.contentOffset.y - rest
+        if scroll.isTracking {
+            if overscroll > 120, !pullToAddArmed { pullToAddArmed = true; UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+            else if overscroll < 40 { pullToAddArmed = false }
+        } else if pullToAddArmed {
+            pullToAddArmed = false; onEvent("pullToAddPage", [:])
+        }
+    }
     private func viewportChanged() {
         overlays.values.forEach { $0.refreshViewport() }
+        checkPullToAddPage()
         publishSelectionFrame()
         updateAccessibilityState()
         guard !navigating, !suspended else { return }
@@ -1444,7 +1490,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         overlay.onInteraction = { [weak self] tool, payload in self?.onEvent("interaction", payload.merging(["page": number, "tool": tool]) { _, new in new }) }
         overlay.onPointer = { [weak self] payload in self?.onEvent("pointer", payload.merging(["page": number]) { _, new in new }) }
         overlay.onInputOwnership = { [weak self] active in
-            if active { self?.onEvent("activate", [:]) }
+            self?.onEvent(active ? "activate" : "deactivate", [:])
             // Touch-type filtering isolates the stylus. Toggling the finger
             // recognizers here cancels an already active pan or pinch.
         }

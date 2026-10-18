@@ -99,6 +99,27 @@ final class NativePDFNativeEraseHostTests: XCTestCase {
     }
 
 
+    func testPlaceholderTargetResolvesToAcknowledgedDrawingWhenAckLandsMidContact() async throws {
+        let f = try await Fixture(); defer { f.close() }
+        try await f.snapshot([], epoch: 1, tool: "pen")
+        let mutation = UUID().uuidString
+        let stroke = NativePDFCompletedStroke(mutationID: mutation, kind: "ink",
+            points: [NativePDFPoint(x: 0.2, y: 0.3, p: 0.5, t: 0), NativePDFPoint(x: 0.4, y: 0.35, p: 0.5, t: 11)],
+            style: NativePDFInkStyle(color: "blue", width: 0.01, opacity: 0.45))
+        try XCTUnwrap(f.surface.onStroke)(stroke)
+        _ = try await f.call("pdfNative:flush", [:])
+        try await f.snapshot([], epoch: 2, tool: "eraser")
+        f.surface.onEraseBegin?()
+        // The ACK and the canonical row land while the eraser is still down. The
+        // frozen scene still reports the placeholder, which must not be a mismatch.
+        _ = try await f.call("pdfNative:ack", ["clientMutationId": mutation, "drawingId": "canonical-new"])
+        try await f.snapshot([Self.ink("canonical-new")], epoch: 2, tool: "eraser")
+        try XCTUnwrap(f.surface.onErase)([.init(drawingID: mutation, mutationID: mutation)])
+        let erase = try XCTUnwrap(f.events.last { $0.type == "eraseCommit" }?.payload)
+        let targets = try XCTUnwrap(erase["targets"] as? [[String: Any]])
+        XCTAssertEqual(targets[0]["drawingId"] as? String, "canonical-new")
+        XCTAssertEqual(targets[0]["clientMutationId"] as? String, mutation)
+    }
     func testSlowJournalDoesNotBlockAdmissionAndEraseCannotPublishStrokeBeforeDurability() async throws {
         let probe = DiskProbe(); probe.blockFinal = true
         let f = try await Fixture(queueFactory: { root in

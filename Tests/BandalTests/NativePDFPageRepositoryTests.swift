@@ -72,6 +72,24 @@ final class NativePDFPageRepositoryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent("root/PDFOriginals/\(f.revision).pdf")), f.original)
         let view = try f.context.query("SELECT * FROM pdf_view_state").first; XCTAssertEqual(view?["page"] as? Int, 1); XCTAssertEqual(view?["zoom"] as? Double, 1.7)
     }
+    func testInsertedPageCopiesTemplateWithoutInkAndUndoRestoresOriginal() throws {
+        let f = try Fixture()
+        let result = try f.call("pdf:restructure", f.request(["pages": [1, 0, 2, 3]]))
+        XCTAssertEqual(result["pageMap"] as? [[Int]], [[1], [3], [4]]); XCTAssertEqual(result["pageCount"] as? Int, 4)
+        let document = try XCTUnwrap(PDFDocument(url: f.url)); XCTAssertEqual(document.pageCount, 4)
+        let template = try XCTUnwrap(document.page(at: 0)), inserted = try XCTUnwrap(document.page(at: 1))
+        XCTAssertTrue(try NativePDFPageDocument.matches(NativePDFPageDocument.fingerprint(template, annotations: false), NativePDFPageDocument.fingerprint(inserted)))
+        XCTAssertTrue(inserted.annotations.isEmpty)
+        XCTAssertTrue(document.page(at: 2)?.string?.contains("Original Page 2") == true)
+        let rows = try f.context.query("SELECT id,page FROM pdf_drawings WHERE deleted_at IS NULL ORDER BY id")
+        XCTAssertEqual(rows.map { $0["page"] as? Int }, [1, 3, 4])
+        let lineage = try f.context.query("SELECT pages_json FROM native_pdf_revision_lineage").first?["pages_json"] as? String
+        XCTAssertTrue(lineage?.contains("null") == true, "the desktop recipe marks a new page as source: null")
+        let token = result["historyToken"]!
+        _ = try f.call("pdf:restorePages", f.request(["documentRevision": result["documentRevision"]!, "historyToken": token, "direction": "undo"]))
+        XCTAssertEqual(try Data(contentsOf: f.url), f.original)
+        XCTAssertEqual(try f.context.query("SELECT page FROM pdf_drawings WHERE deleted_at IS NULL ORDER BY id").map { $0["page"] as? Int }, [1, 2, 3])
+    }
     func testValidationIdempotencyAndStaleRevisionNeverRewrite() throws {
         let f = try Fixture()
         for pages in [[], [1, 1], [0], [4]] as [[Int]] { XCTAssertThrowsError(try f.call("pdf:restructure", f.request(["pages": pages]))) }
@@ -120,6 +138,15 @@ final class NativePDFPageRepositoryTests: XCTestCase {
         XCTAssertTrue(rewritten.contains("<!-- bandal:page 1 -->\n\n마지막쪽")); XCTAssertTrue(rewritten.contains("<!-- bandal:page 2 -->\n\n첫쪽")); XCTAssertTrue(rewritten.contains("<!-- bandal:appendix -->\n\n## 연결 제외된 페이지\n\n### 기존 PDF 2쪽\n\n삭제되어도 보존"))
         _ = try f.call("pdf:restorePages", f.request(["documentRevision": changed["documentRevision"]!, "historyToken": changed["historyToken"]!, "direction": "undo"]))
         XCTAssertEqual(try String(contentsOf: noteURL, encoding: .utf8), note)
+    }
+    func testStaleLinkToDeletedPageNoteDoesNotBlockPageEdits() throws {
+        let f = try Fixture()
+        let source: [String: Any] = ["kind": "pdf", "payload": ["courseId": f.course, "relPath": f.path]], target: [String: Any] = ["kind": "note", "payload": ["courseId": f.course, "relPath": "지워진 페이지 필기.md"]]
+        try f.context.run("INSERT INTO material_links(id,course_id,source_json,target_json,kind,metadata_json,created_at) VALUES(?,?,?,?,?,?,?)", [UUID().uuidString, f.course, try NativeSyncFormat.canonical(source), try NativeSyncFormat.canonical(target), "pdf-page-note", "{\"version\":1}", "today"])
+        let result = try f.call("pdf:restructure", f.request(["pages": [1, 2, 3, 0]]))
+        XCTAssertEqual(result["pageCount"] as? Int, 4)
+        XCTAssertEqual(try PDFDocument(url: f.url)?.pageCount, 4)
+        XCTAssertEqual(try f.context.query("SELECT * FROM material_links").count, 1, "the stale link survives with its remapped pages")
     }
     func testPageReorderDeleteAndHistoryPreserveExactUserWhitespaceInLinkedNote() throws {
         let f = try Fixture(), notePath = "공백 보존.md"

@@ -367,6 +367,11 @@ final class NativePDFEditorSceneTests: XCTestCase {
             "An editor cancellation cannot delete an unacknowledged measured checkpoint")
         stroke.points[0].p = 0.87
         try XCTUnwrap(f.surface.onCheckpoint)(stroke)
+        // A corrected checkpoint reaches the journal synchronously; its display update is coalesced (60 ms).
+        let deadline = CACurrentMediaTime() + 1
+        while (f.surface.objects.last?["_nativeInk"] as? NativePDFPreparedInk) === pendingPath, CACurrentMediaTime() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         XCTAssertFalse((f.surface.objects.last?["_nativeInk"] as? NativePDFPreparedInk) === pendingPath)
         let journal = try NativePDFJournal(root: f.root)
         try await f.journalQueue.barrier() // Disk-only: keep this measured checkpoint provisional.

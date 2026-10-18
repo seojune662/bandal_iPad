@@ -123,6 +123,17 @@ final class NativePDFWorkspaceModel: ObservableObject {
     @Published var opacity = NativePDFPenPreset.pen.opacity
     @Published var pageDeleteConfirmation: Int?
     @Published private(set) var thumbnailSource: NativePDFPageThumbnailSource?
+    @Published private(set) var thumbnailInkRevision = 0
+    private var thumbnailRefreshTask: Task<Void, Never>?
+    func thumbnailRows(_ page: Int) -> [[String: Any]] { (try? rows(on: page).map(legacyPrepared)) ?? [] }
+    private func scheduleThumbnailRefresh() {
+        guard showPages, thumbnailRefreshTask == nil else { return }
+        thumbnailRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard let self else { return }
+            self.thumbnailRefreshTask = nil; self.thumbnailInkRevision += 1
+        }
+    }
     @Published private(set) var pageCanRestructure = true
     @Published private(set) var pageHistoryCanUndo = false
     @Published private(set) var pageHistoryCanRedo = false
@@ -220,6 +231,11 @@ final class NativePDFWorkspaceModel: ObservableObject {
     private var displayRows: [[String: Any]] = []
     private var selectedIDs = Set<String>(), selectionPage: Int?
     private var sceneEpoch = 1, sceneRevisions: [Int: Int] = [:], scenePages = Set<Int>(), dirtyScenes = Set<Int>()
+    // Patch chains with the host: fingerprints of what it holds, revisions never rewind.
+    private var drawingFingerprints: NativePDFScenePatch.Fingerprints?, drawingPatchRevision = 0
+    private var sceneFingerprints: [Int: NativePDFScenePatch.Fingerprints] = [:], sceneTask: Task<Void, Never>?
+    /// Eraser engaged by the Pencil double-tap; it lasts one contact.
+    private var pencilEraser = false
     private struct Gesture {
         let page: Int, tool: String, start: CGPoint, id: String
         var points: [CGPoint], rows: [[String: Any]], preview: [[String: Any]]
@@ -385,11 +401,18 @@ final class NativePDFWorkspaceModel: ObservableObject {
                 self.snapshotRequested = false
                 let drawingRevision = self.drawingRevision
                 var payload: [String: Any] = [:]
+                var drawingPrints: NativePDFScenePatch.Fingerprints?
                 if self.publishedDrawingRevision != drawingRevision {
-                    let enriched = try await self.store.invokePrivate("nativePDF:renderDrawings", [
-                        "courseId": self.document.courseID, "relPath": self.document.relativePath, "pageAspects": self.pageAspects])
-                    guard let drawings = enriched as? [[String: Any]] else { throw NativePDFError.invalid("PDF 필기 화면을 준비하지 못했습니다.") }
-                    payload["drawings"] = drawings; self.displayRows = drawings
+                    // Persistence reloads its rows before every revision bump. Only the
+                    // changed rows travel; re-sending the whole document made each
+                    // stroke cost as much as all the ink already on the page.
+                    let drawings = self.persistence?.rows ?? []
+                    let patch = NativePDFScenePatch.patch(rows: drawings, previous: self.drawingFingerprints,
+                        baseRevision: self.drawingPatchRevision, revision: self.drawingPatchRevision + 1)
+                    var drawingPatch = patch.patch
+                    drawingPatch["upserts"] = try (drawingPatch["upserts"] as? [[String: Any]] ?? []).map(self.legacyPrepared)
+                    payload["drawingPatch"] = drawingPatch; drawingPrints = patch.fingerprints
+                    self.displayRows = drawings
                     self.dirtyScenes.formUnion(self.scenePages)
                     self.pruneSelection()
                 }
@@ -397,7 +420,12 @@ final class NativePDFWorkspaceModel: ObservableObject {
                 let epoch = self.sceneEpoch
                 payload.merge(["nativeInkErase": true, "loading": false, "active": true,
                     "annotations": self.annotations, "tool": ["name": self.tool == "ballpoint" ? "pen" : self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled, "lassoMode": self.lassoMode], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
-                _ = try await self.call("snapshot", payload)
+                do { _ = try await self.call("snapshot", payload) }
+                catch where drawingPrints != nil && self.drawingFingerprints != nil {
+                    // The host lost the patch chain; resend the whole document once.
+                    self.drawingFingerprints = nil; self.publishedDrawingRevision = -1; self.snapshotRequested = true; continue
+                }
+                if let drawingPrints { self.drawingFingerprints = drawingPrints; self.drawingPatchRevision += 1; self.scheduleThumbnailRefresh() }
                 self.publishedDrawingRevision = drawingRevision
                 guard self.sceneEpoch == epoch else { self.snapshotRequested = true; continue }
                 if !self.isInkTool {
@@ -406,7 +434,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
                         self.dirtyScenes.remove(page)
                         try await self.publishScene(page)
                     }
-                } else { self.scenePages.removeAll(); self.dirtyScenes.removeAll() }
+                } else { self.scenePages.removeAll(); self.dirtyScenes.removeAll(); self.sceneFingerprints.removeAll() }
             }
             self.refreshHistory()
         }
@@ -469,14 +497,22 @@ final class NativePDFWorkspaceModel: ObservableObject {
             }
         case "pending": pendingCount = max(persistence?.pendingCount ?? 0, payload["count"] as? Int ?? 0)
         case "error": fail(NativePDFError.invalid(payload["message"] as? String ?? "PDF 저장 중 문제가 발생했습니다."))
+        case "pullToAddPage":
+            guard errorMessage == nil, !isBusy else { return }
+            addPage(after: pageCount)
         case "pencilTap":
             guard errorMessage == nil, !isBusy else { return }
             switch payload["action"] as? String {
-            case "switchEraser": chooseTool(tool == "eraser" ? previousTool : "eraser")
+            case "switchEraser": chooseTool(tool == "eraser" ? previousTool : "eraser"); pencilEraser = tool == "eraser"
             case "switchPrevious": chooseTool(previousTool)
             case "showColorPalette": showStyle = true
             default: break
             }
+        case "deactivate":
+            // A double-tap eraser lasts one contact: the Pencil returns to the previous tool on lift.
+            guard pencilEraser, tool == "eraser" else { return }
+            pencilEraser = false
+            Task { @MainActor [weak self] in guard let self else { return }; self.chooseTool(self.previousTool) }
         case "activate":
             showStyle = false
             // A contact that begins after this editor was flushed must extend
@@ -492,8 +528,8 @@ final class NativePDFWorkspaceModel: ObservableObject {
         guard !isBusy, errorMessage == nil else { return }
         if textEditorDraft != nil { finishText() }
         rememberActiveStyle()
-        gesture = nil; clearSelection(); clearSourceSelection(); sceneEpoch += 1; sceneRevisions.removeAll(); dirtyScenes.formUnion(scenePages)
-        previousTool = tool; tool = next
+        gesture = nil; clearSelection(); clearSourceSelection(); sceneEpoch += 1; sceneRevisions.removeAll(); sceneFingerprints.removeAll(); dirtyScenes.formUnion(scenePages)
+        previousTool = tool; tool = next; pencilEraser = false
         if next != "select" { toolsExpanded = true }
         canPaste = UIPasteboard.general.contains(pasteboardTypes: [Self.pasteboardType])
         if next == "pen" { applyStyle(savedPenStyle) }
@@ -602,22 +638,47 @@ final class NativePDFWorkspaceModel: ObservableObject {
         var values = displayRows.filter { ($0["page"] as? NSNumber)?.intValue == page }
         if textEditorPage == page, let editing = textObject?["id"] as? String { values.removeAll { $0["id"] as? String == editing } }
         var selection = selectionPage == page ? NativePDFEditingGeometry.union(selectedRows, aspect: aspect(page)) : nil
-        if let gesture, gesture.page == page {
-            if !gesture.preview.isEmpty {
-                let ids = Set(gesture.preview.compactMap { $0["id"] as? String })
-                values.removeAll { ids.contains($0["id"] as? String ?? "") }; values += gesture.preview
-                if ["select", "lasso"].contains(gesture.tool), !gesture.rows.isEmpty { selection = NativePDFEditingGeometry.union(gesture.preview, aspect: aspect(page)) }
+        var volatile = Set<String>()
+        if let gesture, gesture.page == page, !gesture.preview.isEmpty {
+            volatile = Set(gesture.preview.compactMap { $0["id"] as? String })
+            values.removeAll { volatile.contains($0["id"] as? String ?? "") }; values += gesture.preview
+            if ["select", "lasso"].contains(gesture.tool), !gesture.rows.isEmpty { selection = NativePDFEditingGeometry.union(gesture.preview, aspect: aspect(page)) }
+        }
+        // Claim the revision before awaiting: a concurrent publish of this page must not reuse it.
+        let revision = (sceneRevisions[page] ?? 0) + 1
+        sceneRevisions[page] = revision
+        let patch = NativePDFScenePatch.patch(rows: values, previous: sceneFingerprints[page], baseRevision: revision - 1, revision: revision, volatile: volatile)
+        var objectPatch = patch.patch
+        objectPatch["upserts"] = try (objectPatch["upserts"] as? [[String: Any]] ?? []).map(legacyPrepared)
+        var payload: [String: Any] = ["page": page, "objectSceneEpoch": sceneEpoch, "objectSceneRevision": revision, "objectPatch": objectPatch, "resizable": selection != nil, "textHandles": selectedText]
+        if let selection { payload["selection"] = NativePDFEditingGeometry.dictionary(selection) }
+        do { _ = try await call("objectScene", payload) }
+        catch where sceneFingerprints[page] != nil {
+            // The host lost this page's patch chain; resend the page once.
+            sceneFingerprints[page] = nil; try await publishScene(page); return
+        }
+        sceneFingerprints[page] = patch.fingerprints; scenePages.insert(page)
+    }
+    /// Pre-inkVersion strokes render from a path string the host does not derive itself.
+    private func legacyPrepared(_ row: [String: Any]) throws -> [String: Any] {
+        guard ["ink", "highlighter"].contains(row["kind"] as? String ?? ""), let data = row["data"] as? [String: Any], data["inkVersion"] == nil,
+              row["nativePath"] == nil, let page = (row["page"] as? NSNumber)?.intValue else { return row }
+        var row = row; row["nativePath"] = try NativePDFLegacyInk.path(row, aspect: aspect(page)); return row
+    }
+    /// Scene-only refresh for an in-flight gesture: no preference save, no document
+    /// snapshot. A snapshot in progress drains the dirty pages itself.
+    private func publishDirtyScenes() {
+        guard sceneTask == nil else { return }
+        sceneTask = Task { @MainActor in
+            defer { self.sceneTask = nil }
+            if let snapshotTask = self.snapshotTask { _ = try? await snapshotTask.value }
+            while self.snapshotTask == nil, !self.retired, !self.isInkTool, let page = self.dirtyScenes.min() {
+                self.dirtyScenes.remove(page)
+                do { try await self.publishScene(page) } catch { self.fail(error); return }
             }
         }
-        values = try values.map { row in
-            guard ["ink", "highlighter"].contains(row["kind"] as? String ?? ""), let data = row["data"] as? [String: Any], data["inkVersion"] == nil, row["nativePath"] == nil else { return row }
-            var row = row; row["nativePath"] = try NativePDFLegacyInk.path(row, aspect: aspect(page)); return row
-        }
-        let revision = (sceneRevisions[page] ?? 0) + 1
-        var payload: [String: Any] = ["page": page, "objectSceneEpoch": sceneEpoch, "objectSceneRevision": revision, "objects": values, "resizable": selection != nil, "textHandles": selectedText]
-        if let selection { payload["selection"] = NativePDFEditingGeometry.dictionary(selection) }
-        _ = try await call("objectScene", payload); sceneRevisions[page] = revision; scenePages.insert(page)
     }
+    private func clearGesture() { if let gesture { dirtyScenes.insert(gesture.page) }; gesture = nil }
     private func receivePointer(_ payload: [String: Any]) {
         guard !isLoading, !retired, errorMessage == nil, let number = payload["page"] as? Int,
               let phase = payload["phase"] as? String, let raw = payload["points"] as? [[String: Any]],
@@ -657,8 +718,12 @@ final class NativePDFWorkspaceModel: ObservableObject {
         gesture = contact
         // The surface draws the dashed lasso itself; nothing changes in the scene until release.
         if phase == "move", contact.tool == "lasso", contact.rows.isEmpty { return }
+        // Mid-gesture frames republish only this page's scene.
+        if phase == "move" { if !contact.preview.isEmpty { dirtyScenes.insert(number); publishDirtyScenes() }; return }
         if phase == "up" {
-            gesture = nil
+            // A preview stays in the scene until the persisted rows replace it (performObjectEdit
+            // clears the gesture). Dropping it first drew the old position for a few frames.
+            if contact.preview.isEmpty { gesture = nil }
             if !contact.preview.isEmpty {
                 // A moved or resized selection stays selected until the user taps outside or ✕.
                 performObjectEdit(contact.rows.isEmpty ? "create" : "update", values: contact.preview, expected: contact.rows, keepSelection: !contact.rows.isEmpty)
@@ -680,7 +745,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         return ["id": id, "page": page, "kind": tool, "data": data, "style": ["color": color, "width": width, "opacity": opacity]]
     }
     private func performObjectEdit(_ action: String, values: [[String: Any]], expected original: [[String: Any]]? = nil, keepSelection: Bool = false) {
-        guard editorTask == nil, let persistence, !values.isEmpty else { return }
+        guard editorTask == nil, let persistence, !values.isEmpty else { clearGesture(); return }
         let ids = Set(values.compactMap { $0["id"] as? String })
         let expected = original ?? persistence.rows.filter { ids.contains($0["id"] as? String ?? "") }
         store.markDocumentChanged(); isBusy = true
@@ -695,13 +760,14 @@ final class NativePDFWorkspaceModel: ObservableObject {
             case "delete": try await persistence.deleteObjects(ids: Set(values.compactMap { $0["id"] as? String }))
             default: throw NativePDFError.invalid("지원하지 않는 개체 편집입니다.")
             }
+            self.clearGesture()
             if !keepSelection { self.clearSelection() }
             try await self.publishSnapshot(); self.refreshHistory()
         }
         editorTask = task
         Task { @MainActor in
             do { try await task.value; self.isBusy = self.materialMutating; self.restoreInput() }
-            catch { self.isBusy = self.materialMutating; self.fail(error) }
+            catch { self.clearGesture(); self.isBusy = self.materialMutating; self.fail(error) }
         }
     }
     private func restoreInput() {
@@ -1108,10 +1174,15 @@ final class NativePDFWorkspaceModel: ObservableObject {
         guard let recipe = NativePDFPageEditing.moved(count: pageCount, from: number, insertionSlot: slot) else { return }
         restructure(recipe)
     }
-    private func restructure(_ pages: [Int]) {
+    /// GoodNotes-style: a new page copies the preceding page's paper template.
+    func addPage(after number: Int) {
+        guard let recipe = NativePDFPageEditing.inserted(count: pageCount, after: number) else { return }
+        restructure(recipe, goTo: number + 1)
+    }
+    private func restructure(_ pages: [Int], goTo: Int? = nil) {
         guard !isBusy, !isLoading, pageCanRestructure, !pageRevision.isEmpty else { return }
         performPageOperation("pdf:restructure", request: ["courseId": document.courseID, "relPath": document.relativePath,
-            "documentRevision": pageRevision, "clientMutationId": UUID().uuidString, "pages": pages])
+            "documentRevision": pageRevision, "clientMutationId": UUID().uuidString, "pages": pages], goTo: goTo)
     }
     func restorePageChange(undo: Bool) {
         guard !isBusy, !isLoading, let token = undo ? pageUndoToken : pageRedoToken else { return }
@@ -1134,7 +1205,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         pageRecoverToken = result["recoverToken"] as? String ?? pageUndoToken ?? pageRedoToken
         pageHistoryCanRecover = pageRecoverToken != nil
     }
-    private func performPageOperation(_ channel: String, request: [String: Any]) {
+    private func performPageOperation(_ channel: String, request: [String: Any], goTo: Int? = nil) {
         guard pageOperation == nil, !retired else { return }
         pendingPageOperation = (channel, request); isBusy = true; errorMessage = nil; blockedForError = false
         host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
@@ -1145,6 +1216,12 @@ final class NativePDFWorkspaceModel: ObservableObject {
             do {
                 let result = try await self.store.withExternalMutation { [store = self.store] in try await store.invoke(channel, request) }
                 self.pendingPageOperation = nil
+                if let goTo, let count = (result as? [String: Any])?["pageCount"] as? Int {
+                    // The tab reopens at the new revision and restores this saved position.
+                    var saved = self.viewport
+                    saved["courseId"] = self.document.courseID; saved["relPath"] = self.document.relativePath; saved["page"] = min(goTo, count)
+                    _ = try await self.store.invoke("pdf:setViewState", saved)
+                }
                 if channel == "pdf:recoverPagesCopy", let value = result as? [String: Any], let courseID = value["courseId"] as? String,
                    let relativePath = value["relPath"] as? String, let title = value["title"] as? String {
                     self.onOpenDocument?(.init(courseID: courseID, relativePath: relativePath, title: title, kind: "pdf"))

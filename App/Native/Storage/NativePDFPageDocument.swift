@@ -30,19 +30,29 @@ enum NativePDFPageDocument {
         return document
     }
     static func recipe(_ value: Any?, count: Int) throws -> [Int] {
-        guard let raw = value as? [Any], !raw.isEmpty, raw.count <= count else { throw C.validation("하나 이상의 기존 페이지를 남겨 주세요.") }
+        guard let raw = value as? [Any], !raw.isEmpty, raw.count <= count + 200 else { throw C.validation("하나 이상의 기존 페이지를 남겨 주세요.") }
+        // 0 (desktop: `source: null`) inserts a new page: a copy of the preceding
+        // entry's page template without any drawings.
         let pages = try raw.map { value -> Int in
             let object = value as? [String: Any]
             if let rotate = object?["rotate"] { guard let n = rotate as? NSNumber, n.intValue == 0, n.doubleValue == 0 else { throw C.validation("현재 페이지 편집은 재배열과 삭제를 지원합니다.") } }
             let source = object?["source"] ?? value
-            guard let n = source as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue == Double(n.intValue), (1...count).contains(n.intValue) else { throw C.validation("PDF 페이지 번호가 올바르지 않습니다.") }
+            if source is NSNull { return 0 }
+            guard let n = source as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue == Double(n.intValue), (0...count).contains(n.intValue) else { throw C.validation("PDF 페이지 번호가 올바르지 않습니다.") }
             return n.intValue
         }
-        guard Set(pages).count == pages.count else { throw C.validation("같은 페이지를 두 번 넣을 수 없습니다.") }
+        let kept = pages.filter { $0 != 0 }
+        guard !kept.isEmpty, kept.count <= count else { throw C.validation("하나 이상의 기존 페이지를 남겨 주세요.") }
+        guard Set(kept).count == kept.count else { throw C.validation("같은 페이지를 두 번 넣을 수 없습니다.") }
         return pages
     }
     static func map(_ pages: [Int], count: Int) -> [[Int]] { (1...count).map { old in pages.firstIndex(of: old).map { [$0 + 1] } ?? [] } }
-    static func rewrite(_ bytes: Data, pages: [Int]) throws -> Data {
+    /// The page whose template a `0` entry copies: the nearest earlier source, else the first one.
+    static func template(_ pages: [Int], at index: Int) -> Int {
+        pages[...index].last { $0 != 0 } ?? pages.first { $0 != 0 } ?? 1
+    }
+    static func rewrite(_ bytes: Data, pages recipe: [Int]) throws -> Data {
+        let pages = recipe.filter { $0 != 0 }
         let document = try open(bytes), keep = Set(pages)
         let originalPages = (0..<document.pageCount).map { document.page(at: $0)! }
         // PDFKit otherwise silently retargets destinations to a removed page.
@@ -65,25 +75,54 @@ enum NativePDFPageDocument {
             if destination != index { document.exchangePage(at: destination, withPageAt: index) }
         }
         while document.pageCount > pages.count { document.removePage(at: document.pageCount - 1) }
+        for (index, entry) in recipe.enumerated() where entry == 0 {
+            guard let copy = originalPages[template(recipe, at: index) - 1].copy() as? PDFPage else { throw C.validation("새 페이지를 만들지 못했습니다.") }
+            for annotation in copy.annotations { copy.removeAnnotation(annotation) }
+            document.insert(copy, at: index)
+        }
         guard let output = document.dataRepresentation(), !output.isEmpty else { throw C.validation("변경한 PDF를 저장하지 못했습니다.") }
-        try validate(source: bytes, target: output, pages: pages)
+        try validate(source: bytes, target: output, pages: recipe)
         return output
     }
     /// Verify actual target pages rather than trusting a remotely supplied
     /// revision/recipe. Form values, geometry, searchable text, and pixels must
     /// match; this also rejects accidental flattening or rotated ink surfaces.
-    static func validate(source: Data, target: Data, pages: [Int]) throws {
-        let before = try open(source), after = try open(target)
-        guard after.pageCount == pages.count, Set(pages).count == pages.count, pages.allSatisfy({ (1...before.pageCount).contains($0) }) else { throw C.conflict("PDF 페이지 변경 이력이 원본과 다릅니다.") }
-        for (index, old) in pages.enumerated() {
-            guard let a = before.page(at: old - 1), let b = after.page(at: index), try signature(a) == signature(b), try links(before, page: a, pages: pages) == links(after, page: b, pages: Array(1...after.pageCount)) else { throw C.conflict("PDF 내용·양식 또는 페이지 크기를 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
+    static func validate(source: Data, target: Data, pages recipe: [Int]) throws {
+        let before = try open(source), after = try open(target), pages = recipe.filter { $0 != 0 }
+        guard after.pageCount == recipe.count, Set(pages).count == pages.count, pages.allSatisfy({ (1...before.pageCount).contains($0) }) else { throw C.conflict("PDF 페이지 변경 이력이 원본과 다릅니다.") }
+        for (index, old) in recipe.enumerated() {
+            guard let b = after.page(at: index) else { throw C.conflict("PDF 페이지 변경 이력이 원본과 다릅니다.") }
+            if old == 0 {
+                // A new page is a template copy: same geometry and pixels as its source, no annotations.
+                guard let a = before.page(at: template(recipe, at: index) - 1), try matches(fingerprint(a, annotations: false), fingerprint(b)), b.annotations.isEmpty else { throw C.conflict("새 페이지를 원본 양식대로 만들지 못했습니다. 원본은 변경하지 않았습니다.") }
+                continue
+            }
+            // Destinations map through the full recipe: inserted pages shift later numbers.
+            guard let a = before.page(at: old - 1), try matches(fingerprint(a), fingerprint(b)), try links(before, page: a, pages: recipe) == links(after, page: b, pages: Array(1...after.pageCount)) else { throw C.conflict("PDF 내용·양식 또는 페이지 크기를 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
         }
-        guard try outlines(before, pages: pages) == outlines(after, pages: Array(1...after.pageCount)) else { throw C.conflict("PDF 책갈피의 대상을 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
+        guard try outlines(before, pages: recipe) == outlines(after, pages: Array(1...after.pageCount)) else { throw C.conflict("PDF 책갈피의 대상을 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
         for key in [PDFDocumentAttribute.titleAttribute, .authorAttribute, .subjectAttribute, .keywordsAttribute, .creatorAttribute] {
             if let expected = before.documentAttributes?[key] as? NSObject, (after.documentAttributes?[key] as? NSObject).map({ expected.isEqual($0) }) != true { throw C.conflict("PDF 문서 정보를 그대로 보존하지 못했습니다.") }
         }
     }
-    static func signature(_ page: PDFPage) throws -> String {
+    struct Fingerprint { let meta: String; let pixels: [UInt8] }
+    static func signature(_ page: PDFPage, annotations includeAnnotations: Bool = true) throws -> String {
+        let value = try fingerprint(page, annotations: includeAnnotations)
+        return try F.digest(["meta": value.meta, "pixels": F.hash(Data(value.pixels))])
+    }
+    /// PDFKit re-serialises content streams on every save, which moves thin
+    /// paper lines by a hair of anti-aliasing (a few bytes, ±2/255). Tolerate
+    /// that; real content, rotation or flattening changes far more.
+    static func matches(_ a: Fingerprint, _ b: Fingerprint) -> Bool {
+        guard a.meta == b.meta, a.pixels.count == b.pixels.count else { return false }
+        var differing = 0
+        for (x, y) in zip(a.pixels, b.pixels) where x != y {
+            if abs(Int(x) - Int(y)) > 8 { return false }
+            differing += 1
+        }
+        return differing * 500 <= a.pixels.count
+    }
+    static func fingerprint(_ page: PDFPage, annotations includeAnnotations: Bool = true) throws -> Fingerprint {
         func rect(_ box: CGRect) -> [Double] { [box.origin.x, box.origin.y, box.width, box.height].map(Double.init) }
         let crop = page.bounds(for: .cropBox)
         guard crop.width.isFinite, crop.height.isFinite, crop.width > 0, crop.height > 0 else { throw C.validation("Invalid PDF page geometry") }
@@ -94,10 +133,10 @@ enum NativePDFPageDocument {
         // The CG page excludes link hit areas, which are intentionally detached
         // when their destination is removed. Fields are compared separately.
         if let reference = page.pageRef { bitmap.drawPDFPage(reference) }
-        let annotations: [[String: Any]] = page.annotations.filter { $0.type != "Link" }.map { annotation in
+        let annotations: [[String: Any]] = (includeAnnotations ? page.annotations : []).filter { $0.type != "Link" }.map { annotation in
             ["type": annotation.type ?? "", "bounds": rect(annotation.bounds), "contents": annotation.contents ?? "", "field": annotation.fieldName ?? "", "value": annotation.widgetStringValue ?? "", "state": annotation.buttonWidgetState.rawValue]
         }
-        return try F.digest(["media": rect(page.bounds(for: .mediaBox)), "crop": rect(crop), "rotation": page.rotation, "text": page.string ?? "", "annotations": annotations, "pixels": F.hash(Data(pixels))])
+        return Fingerprint(meta: try F.digest(["media": rect(page.bounds(for: .mediaBox)), "crop": rect(crop), "rotation": page.rotation, "text": page.string ?? "", "annotations": annotations]), pixels: pixels)
     }
     private static func outlines(_ document: PDFDocument, pages: [Int]) throws -> String {
         func children(_ parent: PDFOutline) -> [[String: Any]] {

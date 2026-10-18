@@ -136,7 +136,7 @@ final class NativePDFPageRepository {
         let actual = NativeSyncPlan(files: files, courseID: course, apply: {
             try self.applyState(after, course: course, path: path); try self.invalidate(course: course, path: path, revision: to, material: material, size: output.count)
             try self.context.run("INSERT INTO native_pdf_page_history(id,material_id,course_id,rel_path,before_sha,after_sha,before_json,after_json,files_json,recipe_json,parent_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", [token, material, course, path, from, to, F.canonical(before), F.canonical(after), F.canonical(links.files), F.canonical(pages), head.0 ?? NSNull() as Any, C.nowISO])
-            try self.lineage(material: material, from: from, to: to, pages: pages.map { ["source": $0] }); try self.setCursor(material, undo: token, redo: [])
+            try self.lineage(material: material, from: from, to: to, pages: pages.map { ["source": $0 == 0 ? NSNull() as Any : $0] }); try self.setCursor(material, undo: token, redo: [])
         })
         try publish(actual, courses: courses) { try self.saveReceipt(operation, canonical, result) }; return result
     }
@@ -193,12 +193,12 @@ final class NativePDFPageRepository {
         guard try eligible(record, course: course, path: path, revision: current, variant: fromVariant) else { throw C.conflict("페이지 변경 이후 수정된 필기·노트가 있습니다. 변경 전 사본으로 복구해 주세요.") }
         let target = record[toVariant + "_sha"] as! String, output = try original(target), state = try F.object(record[toVariant + "_json"]), fileHistory = try historyFiles(record)
         let pages = try DesktopJSON.decode(Data((record["recipe_json"] as! String).utf8)) as! [Int], beforeCount = try D.open(original(record["before_sha"] as! String)).pageCount
-        let map: [[Int]] = direction == "undo" ? pages.map { [$0] } : D.map(pages, count: beforeCount)
+        let map: [[Int]] = direction == "undo" ? pages.map { $0 == 0 ? [] : [$0] } : D.map(pages, count: beforeCount)
         let url = try context.materialURL(courseID: course, relativePath: path), files = [NativeSyncFileChange(target: url, data: output, expectedHash: current)] + (try noteChanges(fileHistory, variant: toVariant)), courses = Set([course] + fileHistory.compactMap { $0["courseId"] as? String })
         let result: [String: Any] = ["documentRevision": target, "fingerprint": D.fingerprint(output), "pageCount": try D.open(output).pageCount, "pageMap": map, "historyToken": token, "changedCourseIDs": courses.sorted()]
         // Undo is a desktop recipe whose restored pages have no source in the
         // rewritten revision (null, like the desktop's blank-page insertion).
-        let recipe: [[String: Any]] = direction == "undo" ? (1...beforeCount).map { ["source": pages.firstIndex(of: $0).map { $0 + 1 } ?? NSNull() as Any] } : pages.map { ["source": $0] }
+        let recipe: [[String: Any]] = direction == "undo" ? (1...beforeCount).map { ["source": pages.firstIndex(of: $0).map { $0 + 1 } ?? NSNull() as Any] } : pages.map { ["source": $0 == 0 ? NSNull() as Any : $0] }
         let plan = NativeSyncPlan(files: files, courseID: course, apply: {
             try self.applyState(state, course: course, path: path); try self.invalidate(course: course, path: path, revision: target, material: material, size: output.count)
             try self.lineage(material: material, from: current, to: target, pages: recipe)

@@ -272,7 +272,12 @@ final class NativePDFObjectScenePatchTests: XCTestCase {
         let before = try Self.identities(f.surface)
         stroke.points[0].p = 0.87
         try XCTUnwrap(f.surface.onCheckpoint)(stroke)
-        let after = try Self.identities(f.surface)
+        // A corrected checkpoint reaches the journal synchronously; its display update is coalesced (60 ms).
+        var after = try Self.identities(f.surface)
+        let deadline = CACurrentMediaTime() + 1
+        while after[Data(stroke.mutationID.utf8)]?.path == before[Data(stroke.mutationID.utf8)]?.path, CACurrentMediaTime() < deadline {
+            try await Task.sleep(for: .milliseconds(10)); after = try Self.identities(f.surface)
+        }
         XCTAssertEqual(after[Data("b".utf8)], before[Data("b".utf8)])
         XCTAssertNotEqual(after[Data(stroke.mutationID.utf8)]?.path, before[Data(stroke.mutationID.utf8)]?.path)
         try await f.journalQueue.barrier() // Disk-only: keep this measured checkpoint provisional.
