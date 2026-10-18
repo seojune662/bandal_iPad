@@ -102,6 +102,20 @@ final class NativePDFOperationLedgerTests: XCTestCase {
         XCTAssertTrue(ledger.pendingOperations.isEmpty)
     }
 
+    func testMutationOnlyEraseHidesTheAcknowledgedDrawingBeforeTheEraseResult() throws {
+        let ledger = NativePDFOperationLedger(documentRevision: revision)
+        let stroke = input(); _ = try ledger.recordStroke(stroke)
+        let erase = try ledger.recordErase(operationID: UUID().uuidString, originToolEpoch: 4, page: 1,
+            targets: [.init(mutationID: stroke.clientMutationId)])
+        XCTAssertEqual(ledger.excludedIdentifiers(page: 1), [stroke.clientMutationId])
+        // The stroke's own save lands first: its canonical row carries only the drawing id.
+        try ledger.acknowledgeStroke(mutationID: stroke.clientMutationId, drawingID: "saved")
+        XCTAssertEqual(Set(ledger.excludedIdentifiers(page: 1)), ["saved", stroke.clientMutationId],
+            "the erased stroke must not reappear between its ACK and the erase result")
+        try ledger.acceptEraseResult(response(erase, targets: [.init(drawingID: "saved", mutationID: stroke.clientMutationId)]))
+        XCTAssertEqual(Set(ledger.excludedIdentifiers(page: 1)), ["saved", stroke.clientMutationId])
+    }
+
     func testResultEnvelopeAndOrderedTargetsAreValidatedAtomically() throws {
         let ledger = NativePDFOperationLedger(documentRevision: revision)
         let targets: [NativePDFEraseTarget] = [.init(drawingID: "a"), .init(drawingID: "b")]

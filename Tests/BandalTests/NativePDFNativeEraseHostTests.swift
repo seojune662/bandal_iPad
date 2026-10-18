@@ -120,6 +120,29 @@ final class NativePDFNativeEraseHostTests: XCTestCase {
         XCTAssertEqual(targets[0]["drawingId"] as? String, "canonical-new")
         XCTAssertEqual(targets[0]["clientMutationId"] as? String, mutation)
     }
+    func testErasedPendingStrokeStaysHiddenWhenItsOwnAckAndCanonicalRowLandFirst() async throws {
+        let f = try await Fixture(); defer { f.close() }
+        try await f.snapshot([], epoch: 1, tool: "pen")
+        let mutation = UUID().uuidString
+        let stroke = NativePDFCompletedStroke(mutationID: mutation, kind: "ink",
+            points: [NativePDFPoint(x: 0.2, y: 0.3, p: 0.5, t: 0), NativePDFPoint(x: 0.4, y: 0.35, p: 0.5, t: 11)],
+            style: NativePDFInkStyle(color: "blue", width: 0.01, opacity: 0.45))
+        try XCTUnwrap(f.surface.onStroke)(stroke)
+        _ = try await f.call("pdfNative:flush", [:])
+        try await f.snapshot([], epoch: 2, tool: "eraser")
+        f.surface.onEraseBegin?()
+        try XCTUnwrap(f.surface.onErase)([.init(drawingID: mutation, mutationID: mutation)])
+        let erase = try XCTUnwrap(f.events.last { $0.type == "eraseCommit" }?.payload)
+        XCTAssertTrue(f.surface.objects.isEmpty)
+        // The ordered drain saves the stroke before the erase: ACK, then the canonical row arrives.
+        _ = try await f.call("pdfNative:ack", ["clientMutationId": mutation, "drawingId": "canonical-new"])
+        try await f.snapshot([Self.ink("canonical-new")], epoch: 2, tool: "eraser")
+        XCTAssertTrue(f.surface.objects.isEmpty, "an erased stroke must not reappear between its ACK and the erase result")
+        _ = try await f.call("pdfNative:eraseResult", Self.result(erase, targets: [.init(drawingID: "canonical-new", mutationID: mutation)]))
+        try await f.snapshot([], epoch: 2, tool: "eraser")
+        XCTAssertTrue(f.surface.objects.isEmpty)
+    }
+
     func testSlowJournalDoesNotBlockAdmissionAndEraseCannotPublishStrokeBeforeDurability() async throws {
         let probe = DiskProbe(); probe.blockFinal = true
         let f = try await Fixture(queueFactory: { root in

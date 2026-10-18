@@ -72,8 +72,15 @@ final class NativePDFOperationLedger {
     func excludedIdentifiers(page: Int) -> [String] {
         var seen = Set<Data>()
         return erases.values.filter { $0.page == page }.sorted { $0.sequence < $1.sequence }
-            .flatMap { ($0.resolved ?? $0.targets).flatMap(\.identifiers) }
+            .flatMap { ($0.resolved ?? $0.targets).flatMap(identifiers) }
             .filter { seen.insert(Data($0.utf8)).inserted }
+    }
+    /// An erase recorded before the stroke's ACK names only the mutation; once
+    /// the ACK assigns the drawing id, the canonical row (which carries no
+    /// mutation id) must stay hidden until the erase result resolves both.
+    private func identifiers(_ target: NativePDFEraseTarget) -> [String] {
+        guard target.drawingID == nil, let mutation = target.mutationID, let saved = drawingID(for: mutation) else { return target.identifiers }
+        return [saved, mutation]
     }
 
     struct StrokeReservation { let sequence: Int; let admitted: Bool }

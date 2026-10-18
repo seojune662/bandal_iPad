@@ -1183,7 +1183,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             try? await Task.sleep(for: .milliseconds(60))
             guard let self else { return }
             self.deferredPendingTask = nil
-            let inputs = self.deferredPendingInputs.values; self.deferredPendingInputs = [:]
+            let inputs = self.deferredPendingInputs.values.filter { self.pending[$0.clientMutationId] != nil }
+            self.deferredPendingInputs = [:]
             for input in inputs { self.addPending(input, notify: false) }
             for page in Set(inputs.map(\.page)) { self.refreshOverlays(page: page) }
             self.publishPendingCount()
