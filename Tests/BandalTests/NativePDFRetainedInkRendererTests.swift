@@ -29,6 +29,78 @@ final class NativePDFRetainedInkRendererTests: XCTestCase {
         XCTAssertEqual(f.renderer.lastItemCount, 1)
     }
 
+    func testCommittedCacheMatchesDirectEncodeAndRebuildsOnlyWhenInputsChange() throws {
+        let f = try Fixture()
+        let a = try XCTUnwrap(f.renderer.makeMesh(convexPolygons: [rectangle(8, 8, 24, 24)]))
+        let b = try XCTUnwrap(f.renderer.makeMesh(convexPolygons: [rectangle(20, 20, 32, 32)]))
+        let paper = try f.solidTexture(rgba: [60, 120, 180, 255])
+        let committed: [Renderer.Item] = [.init(mesh: a, color: SIMD4(0.5, 0, 0, 0.5)),
+                                          .init(mesh: b, color: SIMD4(0, 0.4, 0.4, 0.4), multiply: true)]
+        let live = Renderer.Item(mesh: a, color: SIMD4(0, 0, 0.5, 0.5), transform: CGAffineTransform(translationX: 8, y: 16))
+        let highlighter = Renderer.Item(mesh: b, color: SIMD4(0.4, 0.4, 0, 0.4), transform: CGAffineTransform(translationX: -8, y: 0), multiply: true)
+        // First frame with a new key renders direct; the repeated key builds the cache once;
+        // later frames reuse it, including when only the live stroke changes.
+        XCTAssertEqual(f.renderer.committedCacheRenderCount, 0)
+        for liveItem in [live, highlighter] {
+            let direct = try f.render(committed + [liveItem], backdrop: paper, logicalSize: size)
+            for _ in 0..<3 { XCTAssertEqual(try f.renderCached(committed: committed, live: [liveItem], backdrop: paper), direct) }
+            XCTAssertEqual(f.renderer.committedCacheRenderCount, 1)
+            XCTAssertTrue(f.renderer.lastFrameUsedCommittedCache)
+        }
+        // Without paper the cache must keep premultiplied alpha for compositing over the PDF view.
+        let pen = committed.prefix(1).map { $0 }
+        let directPen = try f.render(pen + [live], backdrop: nil, logicalSize: size)
+        _ = try f.renderCached(committed: pen, live: [live], backdrop: nil)
+        let cachedPen = try f.renderCached(committed: pen, live: [live], backdrop: nil)
+        XCTAssertEqual(cachedPen, directPen)
+        assertPixel(cachedPen, x: 60, y: 60, rgba: [0, 0, 0, 0], tolerance: 0)
+    }
+
+    func testCommittedCacheInvalidatesOnEveryKeyChangeAndNeverBuildsWhileScrolling() throws {
+        let f = try Fixture()
+        let a = try XCTUnwrap(f.renderer.makeMesh(convexPolygons: [rectangle(8, 8, 24, 24)]))
+        let b = try XCTUnwrap(f.renderer.makeMesh(convexPolygons: [rectangle(20, 20, 32, 32)]))
+        let paper = try f.solidTexture(rgba: [60, 120, 180, 255])
+        let live = Renderer.Item(mesh: a, color: SIMD4(0, 0, 0.5, 0.5), transform: CGAffineTransform(translationX: 8, y: 16))
+        func settle(_ committed: [Renderer.Item], backdrop: MTLTexture?, logicalSize: CGSize = CGSize(width: 64, height: 64)) throws -> [UInt8] {
+            _ = try f.renderCached(committed: committed, live: [live], backdrop: backdrop, logicalSize: logicalSize)
+            return try f.renderCached(committed: committed, live: [live], backdrop: backdrop, logicalSize: logicalSize)
+        }
+        let both: [Renderer.Item] = [.init(mesh: a, color: SIMD4(0.5, 0, 0, 0.5)), .init(mesh: b, color: SIMD4(0, 0, 0.5, 0.5))]
+        XCTAssertEqual(try settle(both, backdrop: paper), try f.render(both + [live], backdrop: paper, logicalSize: size))
+        XCTAssertEqual(f.renderer.committedCacheRenderCount, 1)
+        // Erase: one item dropped.
+        XCTAssertEqual(try settle([both[0]], backdrop: paper), try f.render([both[0], live], backdrop: paper, logicalSize: size))
+        XCTAssertEqual(f.renderer.committedCacheRenderCount, 2)
+        // Scroll: a transformed committed item.
+        let moved = [Renderer.Item(mesh: a, color: SIMD4(0.5, 0, 0, 0.5), transform: CGAffineTransform(translationX: 4, y: 4))]
+        XCTAssertEqual(try settle(moved, backdrop: paper), try f.render(moved + [live], backdrop: paper, logicalSize: size))
+        XCTAssertEqual(f.renderer.committedCacheRenderCount, 3)
+        // A new paper texture with identical bytes is a new identity.
+        let paper2 = try f.solidTexture(rgba: [60, 120, 180, 255])
+        XCTAssertEqual(try settle(moved, backdrop: paper2), try f.render(moved + [live], backdrop: paper2, logicalSize: size))
+        XCTAssertEqual(f.renderer.committedCacheRenderCount, 4)
+        // Zoom: logical size.
+        let zoomed = CGSize(width: 48, height: 48)
+        XCTAssertEqual(try settle(moved, backdrop: paper2, logicalSize: zoomed), try f.render(moved + [live], backdrop: paper2, logicalSize: zoomed))
+        XCTAssertEqual(f.renderer.committedCacheRenderCount, 5)
+        // Same inputs again: no rebuild.
+        _ = try settle(moved, backdrop: paper2, logicalSize: zoomed)
+        XCTAssertEqual(f.renderer.committedCacheRenderCount, 5)
+        // Scrolling: the key changes every frame, so the cache is never built and every frame equals a direct render.
+        for step in 0..<6 {
+            let items = [Renderer.Item(mesh: a, color: SIMD4(0.5, 0, 0, 0.5), transform: CGAffineTransform(translationX: CGFloat(step), y: 0))]
+            XCTAssertEqual(try f.renderCached(committed: items, live: [live], backdrop: paper2), try f.render(items + [live], backdrop: paper2, logicalSize: size))
+            XCTAssertFalse(f.renderer.lastFrameUsedCommittedCache)
+        }
+        XCTAssertEqual(f.renderer.committedCacheRenderCount, 5)
+        // A failure after the cache pass must not leave a stale cache marked valid.
+        let invalid = Renderer.Item(mesh: a, color: SIMD4(0.9, 0, 0, 0.5))
+        _ = try f.renderCached(committed: moved, live: [live], backdrop: paper2)
+        XCTAssertFalse(f.encodeCached(committed: moved, live: [invalid], backdrop: paper2, logicalSize: size))
+        XCTAssertEqual(try f.renderCached(committed: moved, live: [live], backdrop: paper2), try f.render(moved + [live], backdrop: paper2, logicalSize: size))
+    }
+
     func testOrderedSourceOverAndHighlighterMultiplyAgainstNonwhitePaper() throws {
         let f = try Fixture()
         let mesh = try XCTUnwrap(f.renderer.makeMesh(convexPolygons: [rectangle(8, 8, 48, 48)]))
@@ -192,6 +264,24 @@ final class NativePDFRetainedInkRendererTests: XCTestCase {
                                 withBytes: buffer.baseAddress!, bytesPerRow: 64 * 4)
             }
             return texture
+        }
+        func encodeCached(committed: [Renderer.Item], live: [Renderer.Item], backdrop: MTLTexture?, logicalSize: CGSize) -> Bool {
+            guard let command = queue.makeCommandBuffer() else { return false }
+            return renderer.encode(committed: committed, live: live, backdrop: backdrop, backdropTransform: nil,
+                                   into: target, command: command, logicalSize: logicalSize)
+        }
+        func renderCached(committed: [Renderer.Item], live: [Renderer.Item], backdrop: MTLTexture?,
+                          logicalSize: CGSize = CGSize(width: 64, height: 64)) throws -> [UInt8] {
+            let command = try XCTUnwrap(queue.makeCommandBuffer())
+            XCTAssertTrue(renderer.encode(committed: committed, live: live, backdrop: backdrop, backdropTransform: nil,
+                                          into: target, command: command, logicalSize: logicalSize))
+            command.commit(); command.waitUntilCompleted()
+            XCTAssertEqual(command.status, .completed, "GPU command failed: \(String(describing: command.error))")
+            var bytes = [UInt8](repeating: 0, count: 64 * 64 * 4)
+            bytes.withUnsafeMutableBytes { buffer in
+                target.getBytes(buffer.baseAddress!, bytesPerRow: 64 * 4, from: MTLRegionMake2D(0, 0, 64, 64), mipmapLevel: 0)
+            }
+            return bytes
         }
         func render(_ items: [Renderer.Item], backdrop: MTLTexture? = nil, logicalSize: CGSize) throws -> [UInt8] {
             let command = try XCTUnwrap(queue.makeCommandBuffer())

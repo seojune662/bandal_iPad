@@ -42,7 +42,8 @@ final class NativePDFInkPathCache {
     private(set) var buildCount = 0
     var retainedCount: Int { entries.count }
 
-    init(byteLimit: Int = 32 * 1024 * 1024, countLimit: Int = 64) {
+    // ponytail: a page scrolled back into view re-parses every stroke the cache dropped; 1024 keeps a few dense pages.
+    init(byteLimit: Int = 32 * 1024 * 1024, countLimit: Int = 1024) {
         self.byteLimit = max(0, byteLimit); self.countLimit = max(0, countLimit)
     }
     func removeAll() { entries.removeAll(); retainedCost = 0 }

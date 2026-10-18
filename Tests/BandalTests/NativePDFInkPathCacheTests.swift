@@ -115,7 +115,7 @@ final class NativePDFInkPathCacheTests: XCTestCase {
         cache.removeAll(); XCTAssertEqual(cache.retainedCount, 0); XCTAssertEqual(cache.retainedCost, 0)
     }
     func testVisibleOverlayReusesSixtyFivePathsWithoutLRUThrashOrStaleSameIDGeometry() throws {
-        let cache = NativePDFInkPathCache(), points = samples(3)
+        let cache = NativePDFInkPathCache(countLimit: 64), points = samples(3)
         let objects: [[String: Any]] = (0..<65).map { index in
             ["id": "stroke-\(index)", "kind": "ink", "style": ["width": 0.004, "color": "blue", "opacity": 1],
              "data": ["inkVersion": 3, "points": points.map { ["x": $0.x, "y": $0.y, "p": $0.p, "t": $0.t!] }]]

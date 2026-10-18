@@ -330,7 +330,7 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
         case "pdfNative:eraseResult":
             guard item.nativeInkEraseEnabled else { throw NativePDFError.invalid("네이티브 지우기가 활성화되지 않았습니다.") }
             try item.operationLedger.acceptEraseResult(request)
-            item.refreshOverlays()
+            item.refreshOverlays(pages: (request["page"] as? NSNumber).map { [$0.intValue] })
             return ["operationId": request["operationId"]!, "operationSequence": request["operationSequence"]!, "outcome": request["outcome"]!]
         case "pdfNative:mutationStatus":
             guard let input = request["input"] as? [String: Any], input["courseId"] as? String == item.courseID,
@@ -339,7 +339,8 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             }
             let result = try await invoke("nativePDF:mutationStatus", input)
             if let receipt = result as? [String: Any], receipt["status"] as? String == "deleted", let mutation = input["clientMutationId"] as? String {
-                item.pending.removeValue(forKey: mutation); item.refreshOverlays()
+                let page = item.pending[mutation]?.page
+                item.pending.removeValue(forKey: mutation); item.refreshOverlays(pages: page.map { [$0] })
             }
             return result
         case "pdfNative:diagnostics":
@@ -414,7 +415,7 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
         // and revalidating the page scene per batch was a third of the main
         // thread. The first checkpoint still installs the row synchronously so
         // the live stroke hands off without a gap.
-        if final || item.pending[input.clientMutationId] == nil { item.addPending(input); item.refreshOverlays(page: input.page) }
+        if final || item.pending[input.clientMutationId] == nil { item.addPending(input); item.refreshOverlays(pages: [input.page]) }
         else { item.deferPendingDisplay(input) }
     }
     private func reconcileJournal() throws {
@@ -752,14 +753,16 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     }
     private var lastViewport = ""
     private var emission: Task<Void, Never>?
+    /// Page geometry is fixed for a document revision; `state` goes out on every scroll emission.
+    private lazy var pageSizes: [[String: Any]] = (0..<document.pageCount).compactMap { index -> [String: Any]? in
+        guard let page = document.page(at: index) else { return nil }
+        let crop = page.bounds(for: .cropBox), rotated = abs(page.rotation) % 180 != 0
+        return ["page": index + 1, "width": rotated ? crop.height : crop.width, "height": rotated ? crop.width : crop.height]
+    }
     var state: [String: Any] {
         let page = pdfView.currentPage.map { document.index(for: $0) + 1 } ?? 1
         return ["page": page, "numPages": document.pageCount, "zoom": pdfView.scaleFactor / max(fit, 0.001), "revision": revision, "documentRevision": revision,
-                "pageSizes": (0..<document.pageCount).compactMap { index -> [String: Any]? in
-                    guard let page = document.page(at: index) else { return nil }
-                    let crop = page.bounds(for: .cropBox), rotated = abs(page.rotation) % 180 != 0
-                    return ["page": index + 1, "width": rotated ? crop.height : crop.width, "height": rotated ? crop.width : crop.height]
-                }]
+                "pageSizes": pageSizes]
     }
     /// Captured synchronously for flush/close, independent of throttled UI events.
     var viewportState: [String: Any] {
@@ -1046,7 +1049,13 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             epoch = nil
         }
         // Reject an invalid delta before changing either drawings or UI state.
-        try drawingSnapshots.apply(request, pageCount: document.pageCount)
+        let changedPages = try drawingSnapshots.apply(request, pageCount: document.pageCount)
+        let nextHighlights = request["annotations"] as? [[String: Any]] ?? []
+        let nextLoading = request["loading"] as? Bool ?? true
+        // Anything that changes every overlay's inputs refreshes all of them;
+        // a plain ink delta only touches the pages whose rows changed.
+        let refreshAll = request["drawings"] != nil || nativeInkEraseEnabled != nextNativeErase || epoch != objectSceneEpoch
+            || (nextTool != nil && nextTool != tool) || loading != nextLoading || !(nextHighlights as NSArray).isEqual(to: highlights)
         nativeInkEraseEnabled = nextNativeErase
         if nativeInkEraseEnabled, request["drawings"] != nil || request["drawingPatch"] != nil {
             operationLedger.observeCanonical(objects)
@@ -1058,8 +1067,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             objectSceneRevisions.removeAll(); objectScenePatchPages.removeAll()
             objectSceneEpoch = epoch
         }
-        highlights = request["annotations"] as? [[String: Any]] ?? []
-        loading = request["loading"] as? Bool ?? true
+        highlights = nextHighlights
+        loading = nextLoading
         workspaceActive = request["active"] as? Bool ?? false
         if let nextTool {
             tool = nextTool
@@ -1077,7 +1086,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             pdfView.isInMarkupMode = markup
             onDiagnostic("nativePDF.mode", "\(tool.name).markup.\(markup ? "on" : "off")")
         }
-        refreshOverlays()
+        refreshOverlays(pages: refreshAll ? nil : changedPages)
         pageActions.isHidden = usesNativeChrome || loading
         updateAccessibilityState()
         return epoch.map { ["objectSceneEpoch": $0, "tool": tool.name] } ?? [:]
@@ -1112,7 +1121,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             objectScenes[page] = next; objectSceneRevisions[page] = revision
             if nativeInkEraseEnabled { operationLedger.observeEditor(page: page, objects: next.identityObjects) }
             if isPatch { objectScenePatchPages.insert(page) } else { objectScenePatchPages.remove(page) }
-            refreshOverlays()
+            refreshOverlays(pages: [page])
             return ["page": page, "objectSceneEpoch": epoch, "objectSceneRevision": revision]
         }
         guard objectSceneEpoch == nil else { throw NativePDFEditorScene.invalid() }
@@ -1123,7 +1132,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         if nativeInkEraseEnabled, let scene = objectScenes[page] {
             operationLedger.observeEditor(page: page, objects: scene.identityObjects)
         }
-        refreshOverlays()
+        refreshOverlays(pages: [page])
         return [:]
     }
     private func beginErase(page: Int) {
@@ -1162,7 +1171,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         // Preserve the same operation UUID/epoch when this callback throws.
         // Only a successfully recorded operation transfers gesture ownership.
         eraseContexts.removeValue(forKey: page)
-        refreshOverlays()
+        refreshOverlays(pages: [page])
         onEvent("eraseCommit", payload)
     }
     func acknowledgePreview(mutationID: String, drawingID: String) {
@@ -1170,7 +1179,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             overlays[input.page]?.rememberNativeMutationAlias(mutationID: mutationID, drawingID: drawingID)
         }
         acknowledgedRows[mutationID] = drawingID
-        refreshOverlays(page: pending[mutationID]?.page)
+        refreshOverlays(pages: (pending[mutationID]?.page).map { [$0] })
         publishPendingCount()
     }
     private var deferredPendingInputs: [String: NativePDFStrokeInput] = [:]
@@ -1186,7 +1195,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             let inputs = self.deferredPendingInputs.values.filter { self.pending[$0.clientMutationId] != nil }
             self.deferredPendingInputs = [:]
             for input in inputs { self.addPending(input, notify: false) }
-            for page in Set(inputs.map(\.page)) { self.refreshOverlays(page: page) }
+            if !inputs.isEmpty { self.refreshOverlays(pages: Set(inputs.map(\.page))) }
             self.publishPendingCount()
         }
     }
@@ -1204,6 +1213,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                 let fit = input.kind == "highlighter" ? shape.inkPayload : shape.payload
                 object["kind"] = input.kind == "highlighter" ? "highlighter" : fit["kind"]
                 object["data"] = fit["data"]
+                if input.kind != "highlighter" { object["style"] = shape.shapeStyle(object["style"] as? [String: Any] ?? [:]) }
             }
             pendingRows[input.clientMutationId] = try? drawingSnapshots.makeRow(object, pageCount: document.pageCount,
                 previous: pendingRows[input.clientMutationId])
@@ -1213,29 +1223,33 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private func publishPendingCount() {
         onEvent("pending", ["count": pending.keys.filter { acknowledgedRows[$0] == nil }.count])
     }
-    /// `page` limits the row rebuild and retained-scene revalidation to one
-    /// overlay; a pending stroke only changes its own page.
-    func refreshOverlays(page only: Int? = nil) {
+    /// `pages` limits the row rebuild and retained-scene revalidation to the
+    /// overlays whose content changed; nil refreshes every overlay.
+    func refreshOverlays(pages only: Set<Int>? = nil) {
         let started = CACurrentMediaTime(); defer { recordLatency("refreshOverlays", startedAt: started) }
+        var pages = only
         // Only already-ACKed previews can be retired by the two-stream erase
         // barrier. Their original journal was removed by the normal stroke ACK.
         for target in operationLedger.takeRetiredTargets() {
             if let mutation = target.mutationID, let drawing = target.drawingID,
                acknowledgedRows[mutation]?.utf8.elementsEqual(drawing.utf8) == true {
+                if let page = pending[mutation]?.page { pages?.insert(page) }
                 pending.removeValue(forKey: mutation); acknowledgedRows.removeValue(forKey: mutation)
             }
         }
+        pages?.formUnion(operationLedger.takeRetiredPages())
         for (number, overlay) in overlays {
-            if let only, number != only { continue }
+            if let pages, !pages.contains(number) { continue }
             overlay.retainedInkEnabled = nativeInkEraseEnabled
             overlay.nativeErasingEnabled = nativeInkEraseEnabled
-            overlay.erasedIdentifiers = operationLedger.excludedIdentifiers(page: number)
+            let excluded = operationLedger.excludedIdentifiers(page: number)
+            overlay.erasedIdentifiers = excluded
             overlay.tool = tool; overlay.isLoading = loading
             overlay.textEditor = textEditor?.page == number ? textEditor?.view : nil
             overlay.highlights = highlights.filter { $0["page"] as? Int == number }
             overlay.selectedTextRects = selectedTextRects[number] ?? []
             let scene = objectScenes[number]
-            let rows = drawingSnapshots.orderedRows.filter { $0.page == number }
+            let rows = drawingSnapshots.rows(page: number)
             let coordinates = document.page(at: number - 1).map { NativePDFPageCoordinates(page: $0) }
             let aspect = coordinates.map { $0.height / $0.width } ?? sqrt(2)
             var drawings = scene?.prepared(aspect: aspect) ?? rows.map { $0.prepared(aspect: aspect) }
@@ -1243,23 +1257,27 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             overlay.selectionBox = scene?.selection
             overlay.selectionResizable = scene?.resizable ?? false
             overlay.selectionTextHandles = scene?.textHandles ?? false
-            for input in pendingOrder.compactMap({ pending[$0] }) where input.page == number {
-                let acknowledged = acknowledgedRows[input.clientMutationId]
-                if drawings.contains(where: { $0["clientMutationId"] as? String == input.clientMutationId || (acknowledged != nil && $0["id"] as? String == acknowledged) }) {
-                    if acknowledgedRows[input.clientMutationId] != nil { pending.removeValue(forKey: input.clientMutationId); acknowledgedRows.removeValue(forKey: input.clientMutationId) }
-                    continue
+            let pendingInputs = pendingOrder.compactMap { pending[$0] }.filter { $0.page == number }
+            if !pendingInputs.isEmpty {
+                let present = Set(drawings.flatMap { [$0["id"] as? String, $0["clientMutationId"] as? String].compactMap { $0 } })
+                for input in pendingInputs {
+                    let acknowledged = acknowledgedRows[input.clientMutationId]
+                    if present.contains(input.clientMutationId) || acknowledged.map(present.contains) == true {
+                        if acknowledged != nil { pending.removeValue(forKey: input.clientMutationId); acknowledgedRows.removeValue(forKey: input.clientMutationId) }
+                        continue
+                    }
+                    guard let row = pendingRows[input.clientMutationId] else { continue }
+                    drawings.append(row.prepared(aspect: aspect)); tokens.append(row.visualToken)
                 }
-                guard let row = pendingRows[input.clientMutationId] else { continue }
-                drawings.append(row.prepared(aspect: aspect)); tokens.append(row.visualToken)
             }
             // Tombstones affect presentation only. Keep canonical snapshots,
             // editor revision bases and durable native checkpoints untouched.
             // Filter paired rows/tokens for both retained GPU and CG fallback.
-            let excluded = Set(operationLedger.excludedIdentifiers(page: number).map { Data($0.utf8) })
-            if !excluded.isEmpty {
+            let excludedKeys = Set(excluded.map { Data($0.utf8) })
+            if !excludedKeys.isEmpty {
                 let visible = zip(drawings, tokens).filter { object, _ in
                     ![object["id"] as? String, object["clientMutationId"] as? String]
-                        .compactMap { $0 }.contains { excluded.contains(Data($0.utf8)) }
+                        .compactMap { $0 }.contains { excludedKeys.contains(Data($0.utf8)) }
                 }
                 drawings = visible.map(\.0); tokens = visible.map(\.1)
             }

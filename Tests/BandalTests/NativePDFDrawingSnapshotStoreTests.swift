@@ -18,6 +18,20 @@ final class NativePDFDrawingSnapshotStoreTests: XCTestCase {
                           "revision": revision, "order": order, "upserts": upserts]]
     }
 
+    func testApplyReportsOnlyPagesWhoseRowIdentitiesChanged() throws {
+        let store = NativePDFDrawingSnapshotStore()
+        var b = drawing("b"); b["page"] = 2
+        XCTAssertEqual(try store.apply(patch(1, order: ["a", "b"], upserts: [drawing("a"), b], reset: true), pageCount: 3), [1, 2])
+        XCTAssertEqual(store.rows(page: 1).map(\.id), ["a"]); XCTAssertEqual(store.rows(page: 2).map(\.id), ["b"])
+        var c = drawing("c"); c["page"] = 2
+        XCTAssertEqual(try store.apply(patch(2, order: ["a", "b", "c"], upserts: [c]), pageCount: 3), [2])
+        XCTAssertEqual(try store.apply(patch(3, order: ["a", "b", "c"], upserts: [drawing("a")]), pageCount: 3), [], "an unchanged upsert reuses the row and touches no page")
+        XCTAssertEqual(try store.apply(patch(4, order: ["a", "c", "b"]), pageCount: 3), [2], "a reorder within a page changes that page only")
+        XCTAssertEqual(try store.apply(patch(5, order: ["c", "b"]), pageCount: 3), [1])
+        XCTAssertTrue(store.rows(page: 1).isEmpty)
+        XCTAssertEqual(store.rows(page: 2).map(\.id), store.orderedRows.filter { $0.page == 2 }.map(\.id))
+    }
+
     func testTwoHundredDeltaRowsReuseEveryUnchangedTokenAndPreparedPath() throws {
         let store = NativePDFDrawingSnapshotStore()
         var ids: [String] = [], visible: [[String: Any]] = []

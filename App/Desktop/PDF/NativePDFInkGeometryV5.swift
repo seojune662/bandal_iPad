@@ -84,7 +84,7 @@ enum NativePDFInkGeometryV5 {
         /// Returns the first possibly changed render anchor. A stationary
         /// append updates one anchor without walking its previous raw run.
         mutating func update(raw: [NativePDFPoint], unchangedPrefix: Int, width: Double,
-                             aspect: Double, highlighter: Bool) -> Int? {
+                             aspect: Double, highlighter: Bool, taper: Bool = true) -> Int? {
             let previousCount = points.count
             var firstRaw = unchangedPrefix
             while let last = rawLast.last, last >= unchangedPrefix {
@@ -118,7 +118,7 @@ enum NativePDFInkGeometryV5 {
             if factors.count > factorStart { factors.removeSubrange(factorStart...) }
             for index in factorStart..<points.count {
                 factors.append(highlighter ? 1 : bases[index] * NativePDFInkGeometryV5.startGain(travel: travel[index], width: width)
-                    * NativePDFInkGeometryV5.endGain(index: index, travel: travel, width: width))
+                    * (taper ? NativePDFInkGeometryV5.endGain(index: index, travel: travel, width: width) : 1))
             }
             return changed
         }
@@ -177,7 +177,7 @@ enum NativePDFInkGeometryV5 {
     /// its accepted chords, so sparse straight lines retain a full-width body
     /// without densifying that body. At most 16 extra endpoints per segment.
     static func forEachSegmentSample(profile: Profile, index: Int, width: Double, aspect: Double,
-                                     highlighter: Bool, _ emit: (Sample) -> Void) {
+                                     highlighter: Bool, taper: Bool = true, _ emit: (Sample) -> Void) {
         guard index >= 0, index + 1 < profile.points.count else { return }
         let first = profile.points[index]
         var curve: [(t: Double, point: CGPoint)] = [(0, CGPoint(x: first.x, y: first.y))]
@@ -193,9 +193,9 @@ enum NativePDFInkGeometryV5 {
                 if t > 0, t < 1, !times.contains(t) { times.append(t) }
             }
             for step in 1...8 { include((1.2 * width) * Double(step) / 8) }
-            let taper = taperLength(travel: profile.travel, width: width)
-            if taper > 0, let total = profile.travel.last {
-                for step in 0..<8 { include(total - taper + taper * Double(step) / 8) }
+            let taperSpan = taper ? taperLength(travel: profile.travel, width: width) : 0
+            if taperSpan > 0, let total = profile.travel.last {
+                for step in 0..<8 { include(total - taperSpan + taperSpan * Double(step) / 8) }
             }
             times.sort()
         }
@@ -216,17 +216,17 @@ enum NativePDFInkGeometryV5 {
             else {
                 let base = profile.bases[index] + (profile.bases[index + 1] - profile.bases[index]) * t
                 let distance = start + length * t
-                factor = base * startGain(travel: distance, width: width) * endGain(at: distance, travel: profile.travel, width: width)
+                factor = base * startGain(travel: distance, width: width) * (taper ? endGain(at: distance, travel: profile.travel, width: width) : 1)
             }
             emit(Sample(x: position.x, y: position.y, factor: factor))
         }
     }
 
     static func forEachSegmentPolygon(profile: Profile, index: Int, width: Double,
-                                      aspect: Double, highlighter: Bool, _ emit: ([CGPoint]) -> Void) {
+                                      aspect: Double, highlighter: Bool, taper: Bool = true, _ emit: ([CGPoint]) -> Void) {
         guard profile.points.indices.contains(index) else { return }
         var previous = Sample(x: profile.points[index].x, y: profile.points[index].y, factor: profile.factors[index])
-        forEachSegmentSample(profile: profile, index: index, width: width, aspect: aspect, highlighter: highlighter) { sample in
+        forEachSegmentSample(profile: profile, index: index, width: width, aspect: aspect, highlighter: highlighter, taper: taper) { sample in
             forEachConnection(previous, sample, width: width, aspect: aspect, emit)
             previous = sample
         }

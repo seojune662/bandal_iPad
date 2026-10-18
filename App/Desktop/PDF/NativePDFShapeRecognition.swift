@@ -27,9 +27,18 @@ struct NativePDFHeldShape: Codable, Equatable {
     var inkPayload: [String: Any] {
         ["kind": "ink", "data": ["points": points.map { ["x": $0.x, "y": $0.y, "p": $0.p] }, "inkVersion": 5]]
     }
+    /// ponytail: a snapped shape is stroked at the full style width, while
+    /// freehand ink at ordinary pressure renders near 0.6 of it. The same factor
+    /// scales the live outline and the persisted style, so saved and live match.
+    static let widthFactor = 0.6
+    func shapeStyle(_ style: [String: Any]) -> [String: Any] {
+        guard kind != "ink", let width = (style["width"] as? NSNumber)?.doubleValue else { return style }
+        var scaled = style; scaled["width"] = width * Self.widthFactor; return scaled
+    }
     /// Match saved SVG shape widths, caps and joins instead of running a
     /// geometric line through the fountain-pen pressure/taper profile.
-    func outlinePolygons(width: Double) -> [[CGPoint]] {
+    func outlinePolygons(width styleWidth: Double) -> [[CGPoint]] {
+        let width = styleWidth * Self.widthFactor
         guard width.isFinite, width > 0 else { return [] }
         let radius = width / 2
         func rect(_ x: Double, _ y: Double, _ w: Double, _ h: Double) -> [CGPoint] {

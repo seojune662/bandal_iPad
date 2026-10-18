@@ -231,7 +231,10 @@ final class NativePDFOperationLedger {
     /// Returns retired identities for the Host to release already-ACKed native
     /// previews. No journal mutation is performed here.
     private(set) var retiredTargets: [NativePDFEraseTarget] = []
+    private var retiredPages: Set<Int> = []
     func takeRetiredTargets() -> [NativePDFEraseTarget] { defer { retiredTargets.removeAll() }; return retiredTargets }
+    /// Pages whose tombstones retired since the last call; their overlays need a refresh.
+    func takeRetiredPages() -> Set<Int> { defer { retiredPages.removeAll() }; return retiredPages }
     private func reconcile() {
         var retired: [Data] = []
         for (key, value) in erases where value.committed {
@@ -253,7 +256,7 @@ final class NativePDFOperationLedger {
                 // authority was explicitly retired by a later ink-tool switch.
                 guard value.editorBarrier == 0 || editorRetirementObservation > value.editorBarrier else { continue }
             }
-            retired.append(key); retiredTargets += targets
+            retired.append(key); retiredTargets += targets; retiredPages.insert(value.page)
             if let proof = value.resultFingerprint { completedEraseResults[key] = proof }
         }
         for key in retired { erases.removeValue(forKey: key) }

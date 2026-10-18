@@ -9,6 +9,17 @@ import MetalKit
 /// host. Neither fixture substitutes for physical Apple Pencil acceptance.
 @MainActor
 final class NativePDFPencilGestureTests: XCTestCase {
+    func testPencilPressureCalibrationLiftsOrdinaryWritingAndKeepsLightTapsVisible() {
+        // Under XCTest the knobs default to identity so fixture pressures round-trip; this test uses the product values.
+        let saved = (NativePDFInkSurface.pressureGain, NativePDFInkSurface.pressureFloor)
+        defer { (NativePDFInkSurface.pressureGain, NativePDFInkSurface.pressureFloor) = saved }
+        NativePDFInkSurface.pressureGain = 2.5; NativePDFInkSurface.pressureFloor = 0.25
+        XCTAssertEqual(NativePDFInkSurface.calibratedPressure(0), 0, "a zero estimate stays zero until UIKit corrects it")
+        XCTAssertEqual(NativePDFInkSurface.calibratedPressure(0.05), 0.25, accuracy: 1e-9)
+        XCTAssertEqual(NativePDFInkSurface.calibratedPressure(0.2), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(NativePDFInkSurface.calibratedPressure(0.35), 0.875, accuracy: 1e-9)
+        XCTAssertEqual(NativePDFInkSurface.calibratedPressure(0.6), 1)
+    }
     private func activeWindowScene() async throws -> UIWindowScene {
         let deadline = CACurrentMediaTime() + 1
         repeat {

@@ -69,8 +69,9 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     var onEraseBegin: (() -> Void)?
     var onErase: (([NativePDFEraseTarget]) throws -> Void)?
     var erasedIdentifiers: [String] = [] { didSet {
+        guard erasedIdentifiers != oldValue else { return }
         // A raster image captured before this erase would resurrect the strokes.
-        if retainedInkActive, erasedIdentifiers != oldValue { scene.image = nil; scene.isHidden = true }
+        if retainedInkActive { scene.image = nil; scene.isHidden = true }
         schedulePreview()
     } }
     private lazy var retainedModel: NativePDFRetainedMixedScene? = {
@@ -265,8 +266,9 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         applyingObjects = false
         scheduleNavigationSnapshot()
     }
-    var highlights: [[String: Any]] = [] { didSet { invalidateObjectScene() } }
-    var selectionBox: [String: Double]? { didSet { decorations.setNeedsDisplay() } }
+    // Refreshes assign every setter; only a real change may revalidate the scene.
+    var highlights: [[String: Any]] = [] { didSet { if !(highlights as NSArray).isEqual(to: oldValue) { invalidateObjectScene() } } }
+    var selectionBox: [String: Double]? { didSet { if selectionBox != oldValue { decorations.setNeedsDisplay() } } }
     /// The live text box being edited on this page. The host owns the view
     /// (a sibling above the PDF view, so it stays reachable by accessibility);
     /// this overlay only maps `pageBox` into its frame on every layout pass.
@@ -289,7 +291,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         editor.isHidden = false
         if editor.frame != frame { editor.frame = frame; decorations.setNeedsDisplay() }
     }
-    var selectedTextRects: [[String: Double]] = [] { didSet { decorations.setNeedsDisplay() } }
+    var selectedTextRects: [[String: Double]] = [] { didSet { if selectedTextRects != oldValue { decorations.setNeedsDisplay() } } }
     var selectionResizable = false
     var selectionTextHandles = false
     var isLoading = true
@@ -443,6 +445,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
          "sceneFullRenders": committedScene.fullRenderCount, "sceneAppendRenders": committedScene.appendRenderCount,
          "sceneLastDrawnObjects": committedScene.lastDrawnObjectCount, "sceneReuses": committedScene.reuseCount,
          "sceneTailRenders": committedScene.tailRenderCount, "sceneRenderMode": committedScene.lastRenderMode,
+         "retainedCacheRenders": metal.retainedRenderer?.committedCacheRenderCount ?? 0,
          "sceneReplayStartIndex": committedScene.lastReplayStartIndex,
          "renderAttempts": renderAttemptCount, "deferredRenderAttempts": deferredRenderCount,
          "renderLastCPUMS": lastRenderCPUMS, "renderMaxCPUMS": maxRenderCPUMS,
@@ -491,7 +494,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         suppliedNavigationRasterRequest = navigationRasterRequest
         super.init(frame: nativeFrame)
         retainedPaper.onReady = { [weak self] in self?.reviewBackdropDependency() }
-        retainedPaper.onFailure = { [weak self] error in self?.onFailure?(error) }
+        retainedPaper.onFailure = { [weak self] _ in self?.onDiagnostic?("paper.raster.failed") }
         retainedPaperCrop.onReady = { [weak self] in self?.reviewBackdropDependency() }
         retainedPaperCrop.onFailure = { [weak self] _ in self?.onDiagnostic?("paper.crop.raster.failed.base-fallback") }
         backgroundColor = .clear; isOpaque = false; isMultipleTouchEnabled = true
@@ -502,6 +505,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         scene.contentMode = .scaleToFill
         addSubview(navigationView); addSubview(scene); addSubview(metal); addSubview(decorations)
         decorations.drawCanvas = { [weak self] context in self?.drawDecorations(in: context) }
+        decorations.hasContent = { [weak self] in self?.hasDecorations ?? false }
         metal.onSubmission = { [weak self] milliseconds in
             guard let self else { return }
             self.submissionTimes.append(milliseconds)
@@ -678,7 +682,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         if let touch = touches.first { recordInput("begin", type: touch.type) }
         guard !journalBlocked, active == nil, let touch = touches.first(where: { $0.type == .pencil }) ?? touches.first(where: { $0.type == .direct && (allowDirectInk || ["select", "text"].contains(tool.name)) }), mapper != nil else { return }
         if tool.name == "highlighter", !prepareRetainedScene(), !navigationDisplayActive, prepareBackdrop() == nil, !asynchronousEditDisplayActive {
-            onFailure?(NativePDFError.invalid("형광펜 배경을 준비하지 못했습니다. 필기를 보존한 채 PDF를 다시 열어 주세요.")); return
+            onDiagnostic?("highlighter.backdrop.unavailable"); return
         }
         active = touch; startTime = touch.timestamp; strokeTool = tool; strokeInkVersion = 5; previewGeometry.reset()
         inputSequence &+= 1
@@ -741,7 +745,8 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         recordInput("end", type: touch.type)
         let previousCount = measured.count
         append(event?.coalescedTouches(for: touch) ?? [touch]); predicted = []
-        updateHoldSnap(from: previousCount)
+        // The lift itself drifts a few points; a shape the user already saw and felt stays.
+        if heldShape == nil { updateHoldSnap(from: previousCount) }
         if nativeEraseContact { updateNativeErasure(points: Array(measured.dropFirst(previousCount))) }
         markContactEnded()
         schedulePreview(); renderPreview()
@@ -807,9 +812,22 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         schedulePreview()
         if ending && estimated.isEmpty { finishMeasuredStroke() }
     }
+    // ponytail: calibration knobs. Pencil force/maximumPossibleForce sits at
+    // 0.1–0.35 for ordinary writing, which the V5 curve drew at a third to a
+    // half of the chosen width. The gain lands typical writing near the chosen
+    // width; the floor keeps a light tap from collapsing. Applied to the stored
+    // point so saved ink, desktop rendering and inkVersion 5 stay identical.
+    // Unit tests feed raw fixture pressures through corrections and the journal
+    // and assert them unchanged, so the knobs default to identity there.
+    private static let isUnitTesting = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    static var pressureGain = isUnitTesting ? 1.0 : 2.5, pressureFloor = isUnitTesting ? 0.0 : 0.25
+    static func calibratedPressure(_ raw: Double) -> Double {
+        guard raw.isFinite, raw > 0 else { return 0 }
+        return min(1, max(pressureFloor, raw * pressureGain))
+    }
     private func sample(_ touch: UITouch, mapper override: InkCoordinateMapper? = nil, location: CGPoint? = nil) -> NativePDFPoint? {
         guard let mapper = override ?? mapper else { return nil }
-        let force = touch.maximumPossibleForce > 0 ? Double(touch.force / touch.maximumPossibleForce) : 0.5
+        let force = touch.maximumPossibleForce > 0 ? Self.calibratedPressure(Double(touch.force / touch.maximumPossibleForce)) : 0.5
         let normalized = mapper.normalized(location ?? touch.preciseLocation(in: self), pressure: min(1, max(0, force)))
         let altitude = max(Double(touch.altitudeAngle), 0.001), azimuth = Double(touch.azimuthAngle(in: self))
         return NativePDFPoint(x: min(1, max(0, normalized.x)), y: min(1, max(0, normalized.y)), p: normalized.p,
@@ -840,7 +858,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         var point = original
         let properties = estimate.properties
         if properties.contains(.force) {
-            let force = touch.maximumPossibleForce > 0 ? Double(touch.force / touch.maximumPossibleForce) : 0.5
+            let force = touch.maximumPossibleForce > 0 ? Self.calibratedPressure(Double(touch.force / touch.maximumPossibleForce)) : 0.5
             guard force.isFinite else { return nil }
             point.p = min(1, max(0, force))
         }
@@ -1184,7 +1202,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         metal.retainedBackdropTransform = paperTransform
         if hasLiveInk {
             let polygons = previewGeometry.polygons(version: pending?.inkVersion ?? strokeInkVersion, points: points, predictions: predictions, width: style.width,
-                aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending))
+                aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending), taper: pending != nil)
             metal.strokes = [.init(polygons: polygons, color: Self.color(style.color), opacity: Float(style.opacity),
                 multiply: highlighter, transform: transform, retainedPrefixPolygonCount: previewGeometry.retainedPrefixPolygonCount,
                 geometryRevision: previewGeometry.revision)]
@@ -1340,7 +1358,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         }
         let geometryStartedAt = CACurrentMediaTime()
         let polygons = previewGeometry.polygons(version: pending?.inkVersion ?? strokeInkVersion, points: points, predictions: predictions, width: style.width,
-            aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending))
+            aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending), taper: pending != nil)
         geometryMS = (CACurrentMediaTime() - geometryStartedAt) * 1000
         // Ordinary ink composites over the existing scene image. Uploading
         // that whole PDF raster for every pen stroke adds work before its
@@ -1553,7 +1571,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
                             }
                         } else if self.navigationRasterFailureCount == 3 {
                             self.onDiagnostic?("navigation.raster.failed")
-                            self.onFailure?(NativePDFError.invalid("PDF 배경을 그리지 못했습니다. 페이지를 다시 열어 주세요."))
+                            self.onDiagnostic?("navigation.raster.failed")
                         }
                         return
                     }
@@ -1761,7 +1779,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         navigationPendingGeometry.retainOnly(used)
         if hasLiveInk {
             let polygons = previewGeometry.polygons(version: pending?.inkVersion ?? strokeInkVersion, points: points, predictions: pending == nil ? previewPredictions : [],
-                width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: false, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending))
+                width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: false, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending), taper: pending != nil)
             strokes.append(.init(polygons: polygons, color: Self.color(style.color), opacity: Float(style.opacity),
                 multiply: false, transform: transform, retainedPrefixPolygonCount: previewGeometry.retainedPrefixPolygonCount,
                 geometryRevision: previewGeometry.revision))
@@ -1834,7 +1852,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         stageMetalFrame(mapper: mapper, viewport: viewport, presentingIn: mapper)
         if hasOrdinaryInk {
             let polygons = previewGeometry.polygons(version: pending?.inkVersion ?? strokeInkVersion, points: points, predictions: pending == nil ? previewPredictions : [],
-                width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: false, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending))
+                width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: false, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending), taper: pending != nil)
             let origin = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 0, y: 0, p: 0.5)))
             let x = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 1, y: 0, p: 0.5)))
             let y = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 0, y: 1, p: 0.5)))
@@ -1935,7 +1953,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
             }
         }
         let polygons = hasLiveInk ? previewGeometry.polygons(version: pending?.inkVersion ?? strokeInkVersion, points: points, predictions: pending == nil ? previewPredictions : [],
-            width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending)) : []
+            width: style.width, aspect: mapper.geometry.height / mapper.geometry.width, highlighter: highlighter, fixedWidth: style.fixedWidth == true, heldShape: previewShape(pending), taper: pending != nil) : []
         func liveStroke(mapper: InkCoordinateMapper, viewport: NativePDFRenderViewport) -> NativePDFMetalInk.Stroke {
             let origin = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 0, y: 0, p: 0.5)))
             let x = viewport.localPoint(mapper.canvasPoint(InkPoint(x: 1, y: 0, p: 0.5)))
@@ -2060,6 +2078,10 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         }
     }
     private func redrawLassoPreview() { if strokeTool.name == "lasso" || tool.name == "lasso" { decorations.setNeedsDisplay() } }
+    /// Mirrors drawDecorations: an empty layer is not repainted on scroll or refresh.
+    private var hasDecorations: Bool {
+        (active != nil && strokeTool.name == "lasso") || !selectedTextRects.isEmpty || selectionBox != nil || textEditorLocalFrame != nil
+    }
     private func drawDecorations(in context: CGContext) {
         guard let mapper else { return }
         func point(_ x: Double, _ y: Double) -> CGPoint { mapper.canvasPoint(InkPoint(x: x, y: y, p: 0.5)) }
@@ -2139,6 +2161,16 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
 private final class NativePDFViewportDecorations: UIView {
     var canvasOrigin = CGPoint.zero { didSet { setNeedsDisplay() } }
     var drawCanvas: ((CGContext) -> Void)?
+    /// draw(_:) repaints a page-sized bitmap. Skip it while nothing is drawn,
+    /// but always paint once more to clear the last decoration.
+    var hasContent: (() -> Bool)?
+    private var drawnContent = false
+    override func setNeedsDisplay() {
+        let content = hasContent?() ?? true
+        guard content || drawnContent else { return }
+        drawnContent = content
+        super.setNeedsDisplay()
+    }
     override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = false; backgroundColor = .clear

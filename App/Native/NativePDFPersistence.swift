@@ -73,7 +73,11 @@ final class NativePDFPersistence {
 
     // Only a fully committed in-process editing session is transferable. The
     // current canonical rows must still match before undo can act on them.
+    static let historyLimit = 200
     func checkpointHistory(root: URL) {
+        // ponytail: the oldest undo steps leave once the stack exceeds the limit; raise if users miss them.
+        if undoStack.count > Self.historyLimit { undoStack.removeFirst(undoStack.count - Self.historyLimit) }
+        if redoStack.count > Self.historyLimit { redoStack.removeFirst(redoStack.count - Self.historyLimit) }
         let protectedIDs = Set((undoStack + redoStack).flatMap { $0.rows.compactMap { $0["id"] as? String }.map(resolve) })
         guard pendingCount == 0, pendingHistory == nil, historyFlight == nil,
               let bytes = try? historyContent(ids: protectedIDs),
@@ -321,6 +325,19 @@ final class NativePDFPersistence {
         while let next = aliases[value], visited.insert(value).inserted { value = next }
         return value
     }
+    /// Splices a receipt row into `rows` in listDrawings order (page ASC,
+    /// created_at ASC; equal keys append). False when the row cannot be placed,
+    /// so the caller re-reads the document instead.
+    private func upsertRow(_ row: [String: Any]) -> Bool {
+        guard let id = row["id"] as? String, let page = (row["page"] as? NSNumber)?.intValue, let created = row["createdAt"] as? String else { return false }
+        rows.removeAll { $0["id"] as? String == id }
+        // ponytail: O(document) scan over two keys with no I/O; bisect if rows exceed ~10k.
+        let index = rows.firstIndex { other in
+            let otherPage = (other["page"] as? NSNumber)?.intValue ?? Int.max
+            return otherPage > page || (otherPage == page && (other["createdAt"] as? String ?? "") > created)
+        } ?? rows.endIndex
+        rows.insert(row, at: index); return true
+    }
     private func commitStroke(_ raw: [String: Any]) async throws {
         try await serial { try await self.commitStrokeUnlocked(raw) }
     }
@@ -336,8 +353,10 @@ final class NativePDFPersistence {
               let mutation = input["clientMutationId"] as? String, UUID(uuidString: mutation) != nil else {
             throw NativePDFError.invalid("다른 문서의 필기를 저장할 수 없습니다.")
         }
+        var needsReload = true
         if !completedMutations.contains(mutation) {
             uncertainStroke = true
+            let peerVersion = peerDrawingVersion
             let result = try await host("mutationStatus", ["input": input]) as? [String: Any]
             let id: String
             var undoRow: [String: Any]?
@@ -348,6 +367,9 @@ final class NativePDFPersistence {
                       let createdID = created["id"] as? String else { throw NativePDFError.invalid("필기가 저장되지 않았습니다.") }
                 id = createdID
                 undoRow = created
+                // The receipt is the canonical row: splice it in instead of
+                // re-reading and re-parsing every stroke of the document.
+                needsReload = !(peerVersion == peerDrawingVersion && upsertRow(created))
             } else if ["live", "deleted"].contains(result?["status"] as? String ?? ""), let saved = result?["drawingId"] as? String {
                 id = saved
                 isLive = result?["status"] as? String == "live"
@@ -363,7 +385,7 @@ final class NativePDFPersistence {
                 let fit = input["kind"] as? String == "highlighter" ? heldShape.inkPayload : heldShape.payload
                 replacement.merge(["id": id, "operationId": mutation, "documentRevision": documentRevision,
                     "expected": input, "kind": input["kind"] as? String == "highlighter" ? "highlighter" : fit["kind"]!,
-                    "data": fit["data"]!, "style": input["style"]!]) { _, new in new }
+                    "data": fit["data"]!, "style": heldShape.shapeStyle(input["style"] as? [String: Any] ?? [:])]) { _, new in new }
                 guard let result = try await backend("drawings:replace", replacement) as? [String: Any],
                       let before = result["before"] as? [String: Any], let after = result["after"] as? [String: Any] else {
                     throw NativePDFError.invalid("도형 보정의 저장 영수증을 확인하지 못했습니다.")
@@ -371,15 +393,21 @@ final class NativePDFPersistence {
                 // Receipt replay proves that the correction committed, not
                 // that this old edit still owns the current canonical row.
                 // Sync can update a closed document before its journal opens.
-                try await reload()
-                if let current = rows.first(where: { $0["id"] as? String == id }), (current as NSDictionary).isEqual(to: after) {
+                if !needsReload, let created = undoRow, (before as NSDictionary).isEqual(to: created), upsertRow(after) {
+                    // The replace receipt proves it acted on the row just inserted.
                     undoRow = before; shapeUndoRow = before
                 } else {
-                    undoRow = nil; shapeUndoRow = nil
-                    func touchesCurrent(_ action: HistoryAction) -> Bool {
-                        !action.kind.hasPrefix("annotation") && action.rows.contains { ($0["id"] as? String).map(resolve) == id }
+                    needsReload = true
+                    try await reload()
+                    if let current = rows.first(where: { $0["id"] as? String == id }), (current as NSDictionary).isEqual(to: after) {
+                        undoRow = before; shapeUndoRow = before
+                    } else {
+                        undoRow = nil; shapeUndoRow = nil
+                        func touchesCurrent(_ action: HistoryAction) -> Bool {
+                            !action.kind.hasPrefix("annotation") && action.rows.contains { ($0["id"] as? String).map(resolve) == id }
+                        }
+                        undoStack.removeAll(where: touchesCurrent); redoStack.removeAll(where: touchesCurrent)
                     }
-                    undoStack.removeAll(where: touchesCurrent); redoStack.removeAll(where: touchesCurrent)
                 }
             }
             if let undoRow, recordedMutations.insert(mutation).inserted {
@@ -391,7 +419,8 @@ final class NativePDFPersistence {
             _ = try await host("ack", ["clientMutationId": mutation, "drawingId": id])
             completedMutations.insert(mutation)
         }
-        try await reload(); uncertainStroke = false
+        if needsReload { try await reload() }
+        uncertainStroke = false
         coordinator?.publish(from: self, drawings: rows); try await onRowsChanged?()
     }
     private func commitErase(_ input: [String: Any]) async throws {

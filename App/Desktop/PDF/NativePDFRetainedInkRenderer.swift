@@ -44,12 +44,43 @@ final class NativePDFRetainedInkRenderer {
             self.transform = transform; self.multiply = multiply
         }
     }
+    /// Meshes and textures are immutable and replaced, never mutated, so
+    /// identity is a sound content key for the committed cache.
+    struct ItemKey: Equatable {
+        let content: ObjectIdentifier, color: SIMD4<Float>, transform: CGAffineTransform, multiply: Bool
+        init(_ item: Item) {
+            switch item.content {
+            case let .mesh(mesh): content = ObjectIdentifier(mesh)
+            case let .texture(texture): content = ObjectIdentifier(texture)
+            }
+            color = item.color; transform = item.transform; multiply = item.multiply
+        }
+    }
+    /// What the committed texture was rendered from. Holding the items and the
+    /// paper keeps their identities alive, so an ObjectIdentifier cannot be reused.
+    private struct CommittedKey: Equatable {
+        let items: [Item], keys: [ItemKey], backdrop: MTLTexture?, backdropTransform: CGAffineTransform?
+        let width: Int, height: Int, logicalSize: CGSize
+        init(items: [Item], backdrop: MTLTexture?, backdropTransform: CGAffineTransform?, width: Int, height: Int, logicalSize: CGSize) {
+            self.items = items; keys = items.map(ItemKey.init); self.backdrop = backdrop; self.backdropTransform = backdropTransform
+            self.width = width; self.height = height; self.logicalSize = logicalSize
+        }
+        static func == (a: Self, b: Self) -> Bool {
+            a.keys == b.keys && a.backdrop === b.backdrop && a.backdropTransform == b.backdropTransform
+                && a.width == b.width && a.height == b.height && a.logicalSize == b.logicalSize
+        }
+    }
+    private var committed: (texture: MTLTexture, key: CommittedKey)?
+    private var lastCommittedKey: CommittedKey?
+    private(set) var committedCacheRenderCount = 0
+    private(set) var lastFrameUsedCommittedCache = false
     private struct Projection { var x: SIMD4<Float>; var y: SIMD4<Float> }
     private struct Pipelines {
         let mask: MTLRenderPipelineState
         let color: MTLRenderPipelineState
         let multiply: MTLRenderPipelineState
         let paper: MTLRenderPipelineState
+        let cache: MTLRenderPipelineState
         let texture: MTLRenderPipelineState
         let textureMultiply: MTLRenderPipelineState
     }
@@ -100,6 +131,10 @@ final class NativePDFRetainedInkRenderer {
             constexpr sampler s(coord::normalized,filter::linear,address::clamp_to_edge);
             return paper.sample(s,in.uv);
         }
+        // The committed cache is target-sized: copy the texel under this pixel, no filtering.
+        fragment float4 cacheColor(Out in [[stage_in]], texture2d<float> cache [[texture(0)]]) {
+            return cache.read(uint2(in.position.xy));
+        }
         """#
         do {
             let library = try device.makeLibrary(source: source, options: nil)
@@ -123,9 +158,10 @@ final class NativePDFRetainedInkRenderer {
                    let color = try? pipeline(vertex: "boundsVertex", fragment: "inkColor", blend: true),
                    let multiply = try? pipeline(vertex: "boundsVertex", fragment: "inkColor", blend: true, multiply: true),
                    let paper = try? pipeline(vertex: "paperVertex", fragment: "paperColor"),
+                   let cache = try? pipeline(vertex: "paperVertex", fragment: "cacheColor"),
                    let texture = try? pipeline(vertex: "paperVertex", fragment: "paperColor", blend: true),
                    let textureMultiply = try? pipeline(vertex: "paperVertex", fragment: "paperColor", blend: true, multiply: true) {
-                    values[count] = Pipelines(mask: mask, color: color, multiply: multiply, paper: paper,
+                    values[count] = Pipelines(mask: mask, color: color, multiply: multiply, paper: paper, cache: cache,
                         texture: texture, textureMultiply: textureMultiply)
                 }
             }
@@ -228,6 +264,53 @@ final class NativePDFRetainedInkRenderer {
     func encode(items: [Item], backdrop: MTLTexture?, into target: MTLTexture,
                 command: MTLCommandBuffer, logicalSize: CGSize,
                 backdropTransform: CGAffineTransform? = nil) -> Bool {
+        encodePass(items: items, backdrop: backdrop, backdropIsCache: false, into: target,
+                   command: command, logicalSize: logicalSize, backdropTransform: backdropTransform)
+    }
+
+    /// Frame = committed scene + live items. The committed scene (paper and
+    /// every finished stroke) is rendered into a target-sized texture only
+    /// when its inputs change and that key repeats, so a frame while writing
+    /// costs one quad plus the live stroke instead of every stroke on the
+    /// page; a scrolling frame (key changes every time) renders direct at the
+    /// old cost. Both passes share this command buffer, so GPU order holds.
+    func encode(committed: [Item], live: [Item], backdrop: MTLTexture?, backdropTransform: CGAffineTransform?,
+                into target: MTLTexture, command: MTLCommandBuffer, logicalSize: CGSize) -> Bool {
+        guard !committed.isEmpty, !live.contains(where: \.multiply) || backdrop != nil else {
+            lastCommittedKey = nil; lastFrameUsedCommittedCache = false
+            return encodePass(items: committed + live, backdrop: backdrop, backdropIsCache: false, into: target,
+                              command: command, logicalSize: logicalSize, backdropTransform: backdropTransform)
+        }
+        let key = CommittedKey(items: committed, backdrop: backdrop, backdropTransform: backdropTransform,
+                               width: target.width, height: target.height, logicalSize: logicalSize)
+        defer { lastCommittedKey = key }
+        if committed.isEmpty || self.committed?.key != key {
+            guard lastCommittedKey == key, let cache = committedTexture(width: target.width, height: target.height) else {
+                lastFrameUsedCommittedCache = false
+                return encodePass(items: committed + live, backdrop: backdrop, backdropIsCache: false, into: target,
+                                  command: command, logicalSize: logicalSize, backdropTransform: backdropTransform)
+            }
+            self.committed = nil // a failure below must not leave a half-encoded cache marked valid
+            guard encodePass(items: committed, backdrop: backdrop, backdropIsCache: false, into: cache,
+                             command: command, logicalSize: logicalSize, backdropTransform: backdropTransform) else { return false }
+            self.committed = (cache, key); committedCacheRenderCount += 1
+        }
+        guard let cache = self.committed?.texture else { return false }
+        lastFrameUsedCommittedCache = true
+        guard encodePass(items: live, backdrop: cache, backdropIsCache: true, into: target,
+                         command: command, logicalSize: logicalSize, backdropTransform: nil) else { self.committed = nil; return false }
+        return true
+    }
+    func releaseCommittedCache() { committed = nil; lastCommittedKey = nil }
+    private func committedTexture(width: Int, height: Int) -> MTLTexture? {
+        if let committed, committed.texture.width == width, committed.texture.height == height { return committed.texture }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+        d.usage = [.renderTarget, .shaderRead]; d.storageMode = .private
+        return device.makeTexture(descriptor: d)
+    }
+
+    private func encodePass(items: [Item], backdrop: MTLTexture?, backdropIsCache: Bool, into target: MTLTexture,
+                            command: MTLCommandBuffer, logicalSize: CGSize, backdropTransform: CGAffineTransform?) -> Bool {
         guard target.pixelFormat == .bgra8Unorm, target.sampleCount == 1,
               target.device === device, command.device === device,
               backdrop == nil || (backdrop?.device === device && !sameStorage(backdrop!, target)),
@@ -295,7 +378,7 @@ final class NativePDFRetainedInkRenderer {
         encoder.setCullMode(.none); encoder.setStencilReferenceValue(1)
         if let backdrop, var projection = paperProjection {
             encoder.setVertexBytes(&projection, length: MemoryLayout<Projection>.stride, index: 1)
-            encoder.setDepthStencilState(ignoreMask); encoder.setRenderPipelineState(pipeline.paper)
+            encoder.setDepthStencilState(ignoreMask); encoder.setRenderPipelineState(backdropIsCache ? pipeline.cache : pipeline.paper)
             encoder.setFragmentTexture(backdrop, index: 0)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
         }

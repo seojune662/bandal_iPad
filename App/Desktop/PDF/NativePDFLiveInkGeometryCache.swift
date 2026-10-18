@@ -18,8 +18,11 @@ final class NativePDFLiveInkGeometryCache {
         shape = nil; shapeWidth = nil; shapePolygons = []
     }
 
+    /// `taper` false draws the live tail at full measured width; the stroke's
+    /// end taper applies once the contact is complete.
     func polygons(version nextVersion: Int, points: [NativePDFPoint], predictions: [NativePDFPoint] = [],
-                  width: Double, aspect: Double, highlighter: Bool, fixedWidth: Bool = false, heldShape: NativePDFHeldShape? = nil) -> [[CGPoint]] {
+                  width: Double, aspect: Double, highlighter: Bool, fixedWidth: Bool = false, heldShape: NativePDFHeldShape? = nil,
+                  taper: Bool = true) -> [[CGPoint]] {
         revision &+= 1
         // A held ballpoint shape keeps its outline; only the stroke width is constant.
         let constantWidth = highlighter || fixedWidth
@@ -43,7 +46,7 @@ final class NativePDFLiveInkGeometryCache {
             retainedPrefixPolygonCount = changedVersion ? 0 : legacy.retainedPrefixPolygonCount
         case 5:
             output = natural.polygons(points: points, predictions: predictions, width: width,
-                                      aspect: aspect, highlighter: constantWidth)
+                                      aspect: aspect, highlighter: constantWidth, taper: taper)
             retainedPrefixPolygonCount = changedVersion ? 0 : natural.retainedPrefixPolygonCount
         default:
             reset(); return []

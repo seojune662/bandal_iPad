@@ -123,15 +123,25 @@ final class NativePDFWorkspaceModel: ObservableObject {
     @Published var opacity = NativePDFPenPreset.pen.opacity
     @Published var pageDeleteConfirmation: Int?
     @Published private(set) var thumbnailSource: NativePDFPageThumbnailSource?
-    @Published private(set) var thumbnailInkRevision = 0
-    private var thumbnailRefreshTask: Task<Void, Never>?
-    func thumbnailRows(_ page: Int) -> [[String: Any]] { (try? rows(on: page).map(legacyPrepared)) ?? [] }
-    private func scheduleThumbnailRefresh() {
+    /// Per page, so a stroke on one page restarts only that thumbnail's render.
+    @Published private(set) var thumbnailRevisions: [Int: Int] = [:]
+    private var thumbnailDirtyPages = Set<Int>(), thumbnailRefreshTask: Task<Void, Never>?, thumbnailPageCounts: [Int: Int] = [:]
+    private var thumbnailRowCache: [Int: (revision: Int, rows: [[String: Any]])] = [:]
+    func thumbnailRows(_ page: Int) -> [[String: Any]] {
+        let revision = thumbnailRevisions[page] ?? 0
+        if let cached = thumbnailRowCache[page], cached.revision == revision { return cached.rows }
+        let rows = (try? rows(on: page).map(legacyPrepared)) ?? []
+        thumbnailRowCache[page] = (revision, rows); return rows
+    }
+    private func scheduleThumbnailRefresh(pages: Set<Int>) {
+        thumbnailDirtyPages.formUnion(pages)
         guard showPages, thumbnailRefreshTask == nil else { return }
         thumbnailRefreshTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
             guard let self else { return }
-            self.thumbnailRefreshTask = nil; self.thumbnailInkRevision += 1
+            self.thumbnailRefreshTask = nil
+            for page in self.thumbnailDirtyPages { self.thumbnailRevisions[page, default: 0] += 1 }
+            self.thumbnailDirtyPages = []
         }
     }
     @Published private(set) var pageCanRestructure = true
@@ -158,7 +168,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
     @Published var tool = "pen"
     @Published var color = "ink"
     @Published var width = NativePDFPenPreset.pen.width
-    @Published var showStyle = false { didSet { restoreInput() } }
+    @Published var showStyle = false { didSet { if showStyle != oldValue { restoreInput() } } }
     @Published private(set) var favorites = NativePDFPalettePreferences().favorites
     @Published private(set) var shapeRecognitionEnabled = true
     var isInkTool: Bool { ["pen", "ballpoint", "highlighter"].contains(tool) }
@@ -425,7 +435,16 @@ final class NativePDFWorkspaceModel: ObservableObject {
                     // The host lost the patch chain; resend the whole document once.
                     self.drawingFingerprints = nil; self.publishedDrawingRevision = -1; self.snapshotRequested = true; continue
                 }
-                if let drawingPrints { self.drawingFingerprints = drawingPrints; self.drawingPatchRevision += 1; self.scheduleThumbnailRefresh() }
+                if let drawingPrints {
+                    self.drawingFingerprints = drawingPrints; self.drawingPatchRevision += 1
+                    // Pages with upserted rows plus pages whose row count changed (removals carry no page).
+                    var counts: [Int: Int] = [:]
+                    for row in self.displayRows { if let page = (row["page"] as? NSNumber)?.intValue { counts[page, default: 0] += 1 } }
+                    var touched = Set((payload["drawingPatch"] as? [String: Any]).flatMap { $0["upserts"] as? [[String: Any]] }?.compactMap { ($0["page"] as? NSNumber)?.intValue } ?? [])
+                    for page in Set(counts.keys).union(self.thumbnailPageCounts.keys) where counts[page] != self.thumbnailPageCounts[page] { touched.insert(page) }
+                    self.thumbnailPageCounts = counts
+                    self.scheduleThumbnailRefresh(pages: touched)
+                }
                 self.publishedDrawingRevision = drawingRevision
                 guard self.sceneEpoch == epoch else { self.snapshotRequested = true; continue }
                 if !self.isInkTool {
@@ -441,9 +460,11 @@ final class NativePDFWorkspaceModel: ObservableObject {
         snapshotTask = task
         try await task.value
     }
+    private var inputSinceFlush = true
     private func receive(_ event: [String: Any]) {
         guard event["surfaceId"] as? String == surfaceID, event["generation"] as? String == generation,
               let type = event["type"] as? String, let payload = event["payload"] as? [String: Any] else { return }
+        inputSinceFlush = true
         switch type {
         case "selection":
             guard tool == "select", !isBusy else { return }
@@ -488,14 +509,17 @@ final class NativePDFWorkspaceModel: ObservableObject {
             Task { do { try await persistence.drain(); refreshHistory() } catch { fail(error) } }
         case "viewport":
             viewport = payload
-            zoom = (payload["zoom"] as? NSNumber)?.doubleValue ?? zoom
+            let nextZoom = (payload["zoom"] as? NSNumber)?.doubleValue ?? zoom
+            if nextZoom != zoom { zoom = nextZoom }
             let next = payload["page"] as? Int ?? page
             if next != page {
                 if gesture == nil { clearSelection() }
                 page = next
                 store.events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:pdfPageChanged", payload: ["courseId": document.courseID, "relPath": document.relativePath, "tabID": document.id, "page": next]))
             }
-        case "pending": pendingCount = max(persistence?.pendingCount ?? 0, payload["count"] as? Int ?? 0)
+        case "pending":
+            let next = max(persistence?.pendingCount ?? 0, payload["count"] as? Int ?? 0)
+            if next != pendingCount { pendingCount = next }
         case "error": fail(NativePDFError.invalid(payload["message"] as? String ?? "PDF 저장 중 문제가 발생했습니다."))
         case "pullToAddPage":
             guard errorMessage == nil, !isBusy else { return }
@@ -514,7 +538,8 @@ final class NativePDFWorkspaceModel: ObservableObject {
             pencilEraser = false
             Task { @MainActor [weak self] in guard let self else { return }; self.chooseTool(self.previousTool) }
         case "activate":
-            showStyle = false
+            // Pen-down must not trigger a SwiftUI pass or a host layout; assign only on change.
+            if showStyle { showStyle = false }
             // A contact that begins after this editor was flushed must extend
             // a store-wide transition barrier even before its completion event.
             if tool != "select" || selectionCount > 0 { store.markDocumentChanged() }
@@ -1046,6 +1071,10 @@ final class NativePDFWorkspaceModel: ObservableObject {
         }
         guard opened, !retired else { return }
         if let flushing { try await flushing.value; return }
+        // The 15 s sync tick flushes every open document. Nothing to flush when
+        // no event reached this editor since the last barrier.
+        guard inputSinceFlush else { return }
+        inputSinceFlush = false
         let task = Task { @MainActor in
             defer { self.flushing = nil }
             guard let persistence = self.persistence,
@@ -1111,10 +1140,15 @@ final class NativePDFWorkspaceModel: ObservableObject {
         }
     }
     private func refreshHistory() {
-        canUndo = persistence?.canUndo == true || (persistence?.pendingCount ?? 0) > 0
-        canRedo = persistence?.canRedo == true
-        drawingCount = persistence?.rows.count ?? 0
-        pendingCount = persistence?.pendingCount ?? 0
+        // @Published fires on every assignment; several refreshes land per stroke.
+        let undo = persistence?.canUndo == true || (persistence?.pendingCount ?? 0) > 0
+        if undo != canUndo { canUndo = undo }
+        let redo = persistence?.canRedo == true
+        if redo != canRedo { canRedo = redo }
+        let count = persistence?.rows.count ?? 0
+        if count != drawingCount { drawingCount = count }
+        let pending = persistence?.pendingCount ?? 0
+        if pending != pendingCount { pendingCount = pending }
     }
     private func fail(_ error: Error) {
         errorMessage = error.localizedDescription

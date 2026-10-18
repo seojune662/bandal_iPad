@@ -47,10 +47,14 @@ final class NativePDFDrawingSnapshotStore {
     private(set) var fullPreparationCount = 0
     var orderedRows: [Row] { order.compactMap { rows[$0] } }
     func row(id: String) -> Row? { rows[id] }
+    private(set) var rowsByPage: [Int: [Row]] = [:]
+    func rows(page: Int) -> [Row] { rowsByPage[page] ?? [] }
 
     /// A failed patch never changes rows, order, revision, or retained tokens.
-    /// Legacy full snapshots remain accepted for older renderers.
-    func apply(_ request: [String: Any], pageCount: Int) throws {
+    /// Legacy full snapshots remain accepted for older renderers. Returns the
+    /// pages whose row identities changed (upsert, removal or reorder).
+    @discardableResult
+    func apply(_ request: [String: Any], pageCount: Int) throws -> Set<Int> {
         guard request["drawingPatch"] == nil || request["drawings"] == nil else { throw invalid() }
         let nextRevision: Int, nextOrder: [String], upserts: [[String: Any]], reset: Bool
         if let rawPatch = request["drawingPatch"] {
@@ -67,7 +71,7 @@ final class NativePDFDrawingSnapshotStore {
             let ids = values.compactMap { $0["id"] as? String }
             guard ids.count == values.count else { throw invalid() }
             nextRevision = 0; nextOrder = ids; upserts = values; reset = true
-        } else { return }
+        } else { return [] }
         guard nextOrder.count <= 100_000, nextOrder.allSatisfy({ !$0.isEmpty }),
               Set(nextOrder).count == nextOrder.count else { throw invalid() }
         let retained = Set(nextOrder)
@@ -84,6 +88,14 @@ final class NativePDFDrawingSnapshotStore {
         // Build first, then publish the whole scene in one synchronous step.
         rows = nextRows.filter { retained.contains($0.key) }
         order = nextOrder; revision = nextRevision; replacementCount += replacements
+        var next: [Int: [Row]] = [:]
+        for id in order { if let row = rows[id] { next[row.page, default: []].append(row) } }
+        let changed = Set(rowsByPage.keys).union(next.keys).filter { page in
+            let before = rowsByPage[page] ?? [], after = next[page] ?? []
+            return before.count != after.count || !zip(before, after).allSatisfy { $0 === $1 }
+        }
+        rowsByPage = next
+        return changed
     }
 
     /// Also used by measured pending strokes; the caller assigns their local

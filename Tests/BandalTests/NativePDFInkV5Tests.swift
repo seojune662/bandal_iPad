@@ -12,6 +12,18 @@ final class NativePDFInkV5Tests: XCTestCase {
         }
     }
 
+    func testLiveStrokeSkipsTheEndTaperUntilComplete() {
+        let points = (0..<40).map { NativePDFPoint(x: 0.1 + Double($0) * 0.02, y: 0.3, p: 0.6, t: Double($0) * 8) }
+        let cache = NativePDFInkGeometryV5Cache()
+        let live = cache.polygons(points: points, width: 0.01, aspect: 1.4, highlighter: false, taper: false)
+        let complete = cache.polygons(points: points, width: 0.01, aspect: 1.4, highlighter: false, taper: true)
+        func tailHeight(_ polygons: [[CGPoint]]) -> Double {
+            let tail = polygons.suffix(4).flatMap { $0 }.map { Double($0.y) }
+            return (tail.max() ?? 0) - (tail.min() ?? 0)
+        }
+        XCTAssertGreaterThan(tailHeight(live), tailHeight(complete) * 1.3, "the live tail keeps its measured width; the taper arrives at the lift")
+        XCTAssertEqual(live.first, complete.first, "the start of the stroke is identical in both modes")
+    }
     func testPressureResponseIsMonotonicAndFiniteWithoutRewritingRawSamples() {
         var previous = 0.0
         for pressure in stride(from: 0.0, through: 1.0, by: 0.05) {

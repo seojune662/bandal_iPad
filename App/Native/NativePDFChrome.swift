@@ -179,7 +179,7 @@ struct NativePDFPagesPanel: View {
     private func thumbnail(_ number: Int) -> some View {
         VStack(spacing: 0) {
             Button { model.go(to: number) } label: {
-                NativePDFPageThumbnail(source: model.thumbnailSource, page: number, rows: model.thumbnailRows(number), inkRevision: model.thumbnailInkRevision)
+                NativePDFPageThumbnail(source: model.thumbnailSource, page: number, rows: model.thumbnailRows(number), inkRevision: model.thumbnailRevisions[number] ?? 0)
                     .padding(3).overlay(RoundedRectangle(cornerRadius: 5).stroke(model.page == number ? NativeDesktopTheme.accent : .clear, lineWidth: 2))
             }.accessibilityLabel("\(number)페이지").accessibilityIdentifier("native-pdf-thumbnail-\(number)")
                 .accessibilityAddTraits(model.page == number ? .isSelected : [])

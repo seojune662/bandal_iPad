@@ -21,7 +21,8 @@ final class NativePDFShapeRecognitionTests: XCTestCase {
         for raw in [edge((0.1, 0.2), (0.7, 0.4)), rect, ellipse] {
             let shape = try XCTUnwrap(NativePDFShapeRecognition.recognize(raw, aspect: 1.5))
             var object = shape.payload
-            object["style"] = ["color": "ink", "width": width, "opacity": 1] as [String: Any]
+            // Persistence stores the snapped shape with the same scaled width the live outline uses.
+            object["style"] = shape.shapeStyle(["color": "ink", "width": width, "opacity": 1] as [String: Any])
             let stored = try XCTUnwrap(NativePDFObjectRenderer.hitBounds(object, mapper: mapper))
             let cache = NativePDFLiveInkGeometryCache()
             let polygons = cache.polygons(version: 5, points: shape.points, width: width, aspect: 1.5, highlighter: false, heldShape: shape)

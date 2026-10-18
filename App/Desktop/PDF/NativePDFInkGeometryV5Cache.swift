@@ -9,6 +9,7 @@ final class NativePDFInkGeometryV5Cache {
         let width: Double
         let aspect: Double
         let highlighter: Bool
+        let taper: Bool
     }
     private var configuration: Configuration?
     private var raw: [NativePDFPoint] = []
@@ -32,11 +33,13 @@ final class NativePDFInkGeometryV5Cache {
         retainedPrefixPolygonCount = 0
     }
 
+    /// `taper` false skips the end taper (a live stroke still being drawn);
+    /// flipping it resets the cache once, at the lift.
     func polygons(points: [NativePDFPoint], predictions: [NativePDFPoint] = [], width: Double,
-                  aspect: Double, highlighter: Bool) -> [[CGPoint]] {
+                  aspect: Double, highlighter: Bool, taper: Bool = true) -> [[CGPoint]] {
         revision &+= 1
         guard width.isFinite, width > 0, aspect.isFinite, aspect > 0, !points.isEmpty else { reset(); return [] }
-        let next = Configuration(width: width, aspect: aspect, highlighter: highlighter)
+        let next = Configuration(width: width, aspect: aspect, highlighter: highlighter, taper: taper)
         if configuration != next { reset(); configuration = next }
         var prefix = 0
         while prefix < min(raw.count, points.count), raw[prefix] == points[prefix] { prefix += 1 }
@@ -49,7 +52,7 @@ final class NativePDFInkGeometryV5Cache {
         if prefix != raw.count || prefix != points.count {
             let oldCount = profile.points.count
             guard let changedAnchor = profile.update(raw: points, unchangedPrefix: prefix, width: width,
-                                                       aspect: aspect, highlighter: highlighter) else { reset(); return [] }
+                                                       aspect: aspect, highlighter: highlighter, taper: taper) else { reset(); return [] }
             let oldTail = max(0, oldCount - 1 - NativePDFInkGeometryV5.tailSegmentCount)
             let newTail = max(0, profile.points.count - 1 - NativePDFInkGeometryV5.tailSegmentCount)
             let factorStart = highlighter ? changedAnchor : min(changedAnchor, oldTail, newTail)
@@ -66,7 +69,7 @@ final class NativePDFInkGeometryV5Cache {
             }
             for index in firstSegment..<max(firstSegment, profile.points.count - 1) {
                 NativePDFInkGeometryV5.forEachSegmentPolygon(profile: profile, index: index,
-                    width: width, aspect: aspect, highlighter: highlighter) { output.append($0) }
+                    width: width, aspect: aspect, highlighter: highlighter, taper: taper) { output.append($0) }
                 segmentEnds.append(output.count); recomputedSegmentCount += 1
             }
             measuredPolygonCount = output.count

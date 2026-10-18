@@ -72,7 +72,7 @@ final class DesktopRuntime: @unchecked Sendable {
             try self.recordings?.recover(); try self.chat?.recover()
             self.context = context
             let timer = DispatchSource.makeTimerSource(queue:self.queue)
-            timer.schedule(deadline:.now()+2,repeating:2)
+            timer.schedule(deadline:.now()+2,repeating:5) // ponytail: a folder walk per tick; 2 s was constant background heat
             timer.setEventHandler { [weak self] in self?.poll() }; self.watcher = timer; timer.resume()
         }
         log.record("runtime.swift.started")

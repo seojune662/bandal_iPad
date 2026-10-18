@@ -168,6 +168,7 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
             // frame; requestDrawableIfPossible sets only CAMetalLayer's size.
             drawableMailbox.invalidate()
             scratch = nil; multisampleScratch = nil
+            if retainedItems != nil { retainedRenderer?.releaseCommittedCache() }
         }
         _ = reprojectRetainedFrame(to: destination)
         isHidden = false
@@ -198,6 +199,7 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
         drawableMailbox.invalidate()
         (layer as? CAMetalLayer)?.drawableSize = CGSize(width: 1, height: 1)
         scratch = nil; multisampleScratch = nil
+        if retainedItems != nil { retainedRenderer?.releaseCommittedCache() }
     }
 
     private func framePlacement(_ geometry: FrameGeometry, presentingIn destination: CGAffineTransform) -> (CGPoint, CGAffineTransform)? {
@@ -234,7 +236,10 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
     var strokes: [Stroke] = [] { didSet { setNeedsDisplay() } }
     /// nil selects the legacy raster handoff; an empty array is a valid
     /// retained scene, including erasing the last completed stroke.
-    var retainedItems: [NativePDFRetainedInkRenderer.Item]? { didSet { setNeedsDisplay() } }
+    var retainedItems: [NativePDFRetainedInkRenderer.Item]? { didSet {
+        if retainedItems == nil, oldValue != nil { retainedRenderer?.releaseCommittedCache() }
+        setNeedsDisplay()
+    } }
     var retainedBackdropTransform: CGAffineTransform?
     lazy var retainedRenderer: NativePDFRetainedInkRenderer? = device.flatMap { NativePDFRetainedInkRenderer(device: $0) }
     private let retainedLiveVertices = NativePDFInkVertexCache()
@@ -650,6 +655,7 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
     }
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         scratch = nil; multisampleScratch = nil
+        if retainedItems != nil { retainedRenderer?.releaseCommittedCache() }
         drawableMailbox.invalidate()
     }
     func draw(in view: MTKView) {
@@ -763,7 +769,7 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
         rebuiltVertexCount = 0; uploadedVertexCount = 0
         if let retainedItems {
             guard let retainedRenderer else { return nil }
-            var items = retainedItems
+            var live: [NativePDFRetainedInkRenderer.Item] = []
             var liveLease: NativePDFInkVertexBufferPool.Lease?
             defer { if let liveLease { retainedLiveBuffers?.release(liveLease) } }
             // The live stroke shares the completed strokes' stencil/MSAA pass.
@@ -781,16 +787,16 @@ final class NativePDFMetalInk: MTKView, MTKViewDelegate {
                 var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
                 guard stroke.color.getRed(&r, green: &g, blue: &b, alpha: &a), !bounds.isNull else { return nil }
                 let alpha = Float(a) * stroke.opacity
-                items.append(.init(mesh: .init(buffer: lease.buffer, vertexCount: retainedLiveVertices.vertices.count, bounds: bounds),
+                live.append(.init(mesh: .init(buffer: lease.buffer, vertexCount: retainedLiveVertices.vertices.count, bounds: bounds),
                     color: SIMD4(Float(r)*alpha, Float(g)*alpha, Float(b)*alpha, alpha), transform: stroke.transform, multiply: stroke.multiply))
             }
-            guard retainedRenderer.encode(items: items, backdrop: backdropTexture, into: target,
-                command: command, logicalSize: logicalSize, backdropTransform: retainedBackdropTransform) else { return nil }
+            guard retainedRenderer.encode(committed: retainedItems, live: live, backdrop: backdropTexture,
+                backdropTransform: retainedBackdropTransform, into: target, command: command, logicalSize: logicalSize) else { return nil }
             if let lease = liveLease, let pool = retainedLiveBuffers {
                 command.addCompletedHandler { _ in pool.release(lease) }
                 liveLease = nil
             }
-            return !items.isEmpty
+            return !(retainedItems.isEmpty && live.isEmpty)
         }
         var leases: [(NativePDFInkVertexBufferPool, NativePDFInkVertexBufferPool.Lease)] = []
         var completedEncoding = false

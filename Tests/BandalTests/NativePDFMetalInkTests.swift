@@ -503,6 +503,26 @@ final class NativePDFMetalInkTests: XCTestCase {
         XCTAssertTrue(cleared.allSatisfy { $0 == 0 }, "Finished live ink must release its backdrop frame")
     }
 
+    func testRetainedLiveStrokeOverCachedSceneMatchesAnUncachedRenderer() throws {
+        let cached = try XCTUnwrap(NativePDFMetalInk()), reference = try XCTUnwrap(NativePDFMetalInk())
+        for renderer in [cached, reference] { renderer.frame = CGRect(x: 0, y: 0, width: 32, height: 32) }
+        let committedPolygon = [CGPoint(x: 4, y: 4), CGPoint(x: 20, y: 4), CGPoint(x: 20, y: 20), CGPoint(x: 4, y: 20)]
+        let livePolygon = [CGPoint(x: 12, y: 12), CGPoint(x: 28, y: 12), CGPoint(x: 28, y: 28), CGPoint(x: 12, y: 28)]
+        let committedColor = SIMD4<Float>(0.5, 0, 0, 0.5)
+        cached.retainedItems = [.init(mesh: try XCTUnwrap(cached.retainedRenderer?.makeMesh(convexPolygons: [committedPolygon])), color: committedColor)]
+        cached.strokes = [.init(polygons: [livePolygon], color: .blue, opacity: 0.5)]
+        let referenceRenderer = try XCTUnwrap(reference.retainedRenderer)
+        reference.retainedItems = [.init(mesh: try XCTUnwrap(referenceRenderer.makeMesh(convexPolygons: [committedPolygon])), color: committedColor),
+                                   .init(mesh: try XCTUnwrap(referenceRenderer.makeMesh(convexPolygons: [livePolygon])), color: SIMD4<Float>(0, 0, 0.5, 0.5))]
+        let expected = try XCTUnwrap(reference.renderedPixels(width: 32, height: 32))
+        let first = try XCTUnwrap(cached.renderedPixels(width: 32, height: 32))
+        let second = try XCTUnwrap(cached.renderedPixels(width: 32, height: 32))
+        XCTAssertEqual(first, expected); XCTAssertEqual(second, expected)
+        XCTAssertEqual(cached.retainedRenderer?.committedCacheRenderCount, 1, "the repeated key builds the committed cache once")
+        XCTAssertEqual(try XCTUnwrap(cached.renderedPixels(width: 32, height: 32)), expected)
+        XCTAssertEqual(cached.retainedRenderer?.committedCacheRenderCount, 1)
+    }
+
     func testGrayPaperStaysNeutralInLiveAndRetainedHighlighterFramesAndAfterErasure() throws {
         let renderer = try XCTUnwrap(NativePDFMetalInk())
         renderer.frame = CGRect(x: 0, y: 0, width: 32, height: 32)

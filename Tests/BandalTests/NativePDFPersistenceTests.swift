@@ -265,6 +265,26 @@ final class NativePDFPersistenceTests: XCTestCase {
         try await reopened.undo(); XCTAssertEqual(backend.rows.count, 1, "An unrelated peer stroke preserves this pane's checkpoint and survives its undo")
     }
 
+    func testCommittedStrokesSpliceIntoRowsInListingOrderWithoutRereadingTheDocument() async throws {
+        let backend = Repository(), bridge = Bridge()
+        let writer = makeWriter(backend, bridge)
+        try await writer.recoverEdits()
+        let listsBefore = backend.listCalls
+        for (index, page) in [2, 1, 3, 1, 2].enumerated() {
+            var input = stroke(sequence: index + 1); input["page"] = page
+            try writer.accept(input, type: "stroke")
+            try await writer.drain()
+            let listedRaw = try await backend.invoke("drawings:listForFile", [:])
+            let listed = try XCTUnwrap(listedRaw as? [[String: Any]])
+            XCTAssertEqual(writer.rows.map { $0["id"] as? String }, listed.map { $0["id"] as? String }, "rows must mirror listDrawings order after each stroke")
+            XCTAssertEqual(writer.rows.map { ($0["page"] as? NSNumber)?.intValue }, listed.map { ($0["page"] as? NSNumber)?.intValue })
+        }
+        XCTAssertEqual(backend.listCalls, listsBefore + 5, "the equality probes above are the only listings; the commits must not re-read the document")
+        XCTAssertEqual(writer.rows.count, 5); XCTAssertTrue(writer.canUndo)
+        try await writer.undo()
+        XCTAssertEqual(writer.rows.count, 4, "undo still reloads the canonical list")
+    }
+
     private func makeWriter(_ backend: Repository, _ bridge: Bridge, recovery: NativePDFEditRecovery? = nil,
                             coordinator: NativePDFFileCoordinator? = nil, instanceID: String = "") -> NativePDFPersistence {
         bridge.repository = backend
@@ -286,7 +306,13 @@ final class NativePDFPersistenceTests: XCTestCase {
     @MainActor private final class Repository {
         var annotationRows: [[String: Any]] = []
         var rows: [[String: Any]] = [], receipts: [String: [String: Any]] = [:]
-        var createCalls = 0, deleteCalls = 0, updateCalls = 0
+        var createCalls = 0, deleteCalls = 0, updateCalls = 0, listCalls = 0, clock = 0
+        /// Real rows carry ISO8601 stamps; strictly increasing so listing order is deterministic.
+        private func stamp() -> String {
+            clock += 1
+            let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter.string(from: Date(timeIntervalSince1970: 1_700_000_000 + Double(clock) * 0.001))
+        }
         var failUpdateNumber: Int?
         var failAfterNextCreate = false, failDelete = false
         func invoke(_ channel: String, _ input: [String: Any]) async throws -> Any {
@@ -300,13 +326,19 @@ final class NativePDFPersistenceTests: XCTestCase {
                 annotationRows[index]["color"] = input["color"]; annotationRows[index]["comment"] = input["comment"]; return annotationRows[index]
             case "annotations:delete":
                 annotationRows.removeAll { $0["id"] as? String == input["id"] as? String }; return [:]
-            case "drawings:listForFile": return rows
+            case "drawings:listForFile":
+                listCalls += 1
+                return rows.sorted { a, b in
+                    let pa = (a["page"] as? NSNumber)?.intValue ?? 0, pb = (b["page"] as? NSNumber)?.intValue ?? 0
+                    return pa != pb ? pa < pb : (a["createdAt"] as? String ?? "") < (b["createdAt"] as? String ?? "")
+                }
             case "drawings:create":
                 createCalls += 1
                 let mutation = input["clientMutationId"] as? String
                 if let mutation, let receipt = receipts[mutation] { return receipt }
                 var row = input; row["id"] = UUID().uuidString
                 row.removeValue(forKey: "clientMutationId"); row.removeValue(forKey: "documentRevision")
+                let created = stamp(); row["createdAt"] = created; row["updatedAt"] = created
                 rows.append(row)
                 if let mutation { receipts[mutation] = row }
                 if failAfterNextCreate { failAfterNextCreate = false; throw NativePDFError.invalid("Lost reply") }
