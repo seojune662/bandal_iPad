@@ -147,7 +147,7 @@ struct NativeSettingsSections: View {
                 }
                 Text("투두와 학업 보드는 기존 일정을 사용합니다. 메일함은 선택한 학교 메일 또는 아래 웹 주소를 엽니다.").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary)
             }
-            NativeSettingsCard(title: "메일 위젯 연결", description: "웹 메일의 전체 메일함을 표시합니다. Gmail API 계정 연결은 이 버전에서 제공되지 않습니다.") {
+            NativeSettingsCard(title: "메일 위젯 연결", description: "웹 메일의 전체 메일함을 표시합니다.") {
                 TextField("https://mail.example.edu", text: $mailURL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().nativeToolField()
                 Button("메일 주소 저장") {
                     do { if !mailURL.isEmpty { _ = try NativeSettingsValidation.webURL(mailURL) }; persist(["widgets": ["mailUrl": mailURL]]) }
@@ -167,7 +167,7 @@ struct NativeSettingsSections: View {
     private var extensions: some View {
         NativeSettingsCard(title: section == "packs" ? "플러그인과 외부 서비스" : "확장 런타임", description: "데스크톱의 외부 명령·MCP 프로세스·Chromium 확장은 iPadOS 앱에서 실행할 수 없습니다.") {
             Label("데스크톱 확장 실행 · 지원되지 않음", systemImage: "shippingbox").foregroundStyle(NativeDesktopTheme.secondary)
-            Text("동기화된 확장 설정은 보존됩니다. 이 기기에서 사용할 수 있는 연결은 AI API, 학교 웹사이트, Apple 캘린더입니다.")
+            Text("저장된 확장 설정은 보존됩니다. 이 기기에서 사용할 수 있는 연결은 AI API, 학교 웹사이트, Apple 캘린더입니다.")
             HStack { Button("AI 연결") { navigate("ai") }; Button("학교") { navigate("university") }; Button("달력") { navigate("calendar") } }
     }
     }
@@ -216,7 +216,8 @@ private struct NativeSettingsGuide: View {
                 Section("2 · 필기와 노트") { Text("PDF를 열고 Apple Pencil로 필기하세요. 새 노트(PDF 필기)와 마크다운을 만들 수 있습니다.") }
                 Section("3 · 여러 창 배치") { Text("탭 메뉴에서 이동·분할을 선택하거나 탭을 끌어 원하는 영역에 놓으세요. 영역의 경계를 끌면 비율을 바꿀 수 있습니다.") }
                 Section("4 · AI와 녹음") { Text("AI 엔진에서 API 키를 연결하면 선택한 과목의 자료로 대화할 수 있습니다. 녹음은 모델을 설치한 뒤 기기에서 자막을 만듭니다.") }
-                Section("5 · 저장과 동기화") { Text("편집 내용은 기기에 자동 저장됩니다. 계정에 로그인하면 다른 기기와 자료를 동기화할 수 있고, 충돌 사본은 계정 설정에서 확인할 수 있습니다.") }
+                if NativeReleaseFlags.isLocalOnly { Section("5 · 저장") { Text("편집 내용은 기기에 자동 저장됩니다. 저장에 실패한 편집은 복구 사본으로 보관됩니다.") } }
+                else { Section("5 · 저장과 동기화") { Text("편집 내용은 기기에 자동 저장됩니다. 계정에 로그인하면 다른 기기와 자료를 동기화할 수 있고, 충돌 사본은 계정 설정에서 확인할 수 있습니다.") } }
             }.navigationTitle("반달 둘러보기").toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { dismiss() } } }
         }
     }

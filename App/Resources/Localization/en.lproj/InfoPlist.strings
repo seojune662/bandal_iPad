@@ -1,0 +1,4 @@
+"CFBundleDisplayName" = "Bandal";
+"NSMicrophoneUsageDescription" = "Bandal uses the microphone to record lectures and create transcripts on your device.";
+"NSCameraUsageDescription" = "Bandal uses the camera for photo capture and video features requested by websites in the built-in browser.";
+"NSCalendarsFullAccessUsageDescription" = "Bandal connects assignments and class schedules to your calendar.";

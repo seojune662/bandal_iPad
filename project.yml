@@ -37,6 +37,8 @@ targets:
         buildPhase: resources
       - path: App/Resources/PrivacyInfo.xcprivacy
         buildPhase: resources
+      - path: App/Resources/Localization
+        buildPhase: resources
       - path: App/Resources/Brand
         type: folder
       - path: App/Resources/DesktopNative

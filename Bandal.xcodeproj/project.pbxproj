@@ -246,6 +246,7 @@
 		92524A36943A3D30356541AC /* PublicArticleClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91DF33124CAE499B20CA61DA /* PublicArticleClient.swift */; };
 		9395813720D822FC78AA6DD9 /* DesktopBrowserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F941AE2A392043A8862AECBE /* DesktopBrowserTests.swift */; };
 		940480596640EA1AF32C8B5B /* NativePDFLegacyInkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED28B873ACC71FBB67C1F469 /* NativePDFLegacyInkTests.swift */; };
+		94C4F640D6E887C37A982987 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 6C3CBEDC2FC409197D933A01 /* InfoPlist.strings */; };
 		95125033C5E9C03466761DA5 /* NativeRichTextTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4EC148DF69A115844C28784 /* NativeRichTextTable.swift */; };
 		952098FB35ADBAB209985C02 /* NativeStudyMarketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 939C1B5D60FC505EC49C4303 /* NativeStudyMarketClient.swift */; };
 		95800DAEAF9967CCDF9E0924 /* sherpa-onnx in Frameworks */ = {isa = PBXBuildFile; productRef = 0FD6F2575B119A4B89E51E83 /* sherpa-onnx */; };
@@ -652,6 +653,7 @@
 		797A656EB85B700422170346 /* NativeLibraryIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLibraryIndexTests.swift; sourceTree = "<group>"; };
 		79B0EAD83D938B8E94F40792 /* DesktopDictionaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDictionaryTests.swift; sourceTree = "<group>"; };
 		79E377F95FB4E1FD439BE367 /* NativePDFJournalQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFJournalQueueTests.swift; sourceTree = "<group>"; };
+		7AA66EDE22484101EDE7EF6D /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		7ADF8907B382BF8DB91BCD0C /* DesktopRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopRuntimeTests.swift; sourceTree = "<group>"; };
 		7B6F8F05766C88694E5B8F14 /* NativeWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceStore.swift; sourceTree = "<group>"; };
 		7B70D4019C673343FE2B8696 /* NativeToolsWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeToolsWorkspace.swift; sourceTree = "<group>"; };
@@ -797,6 +799,7 @@
 		D0A20C00F81A88859450BCD3 /* NativePDFInkGeometryV3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkGeometryV3.swift; sourceTree = "<group>"; };
 		D103D07F0469B501D9737DDF /* BandalTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = BandalTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D2712096E90C658841D1718E /* NativePDFExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFExport.swift; sourceTree = "<group>"; };
+		D28B6E76FE660EC53539EE9D /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		D2AFC2C3FDBB15D52D96975B /* NativePDFInkGeometryV5Cache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkGeometryV5Cache.swift; sourceTree = "<group>"; };
 		D2C459B3D104174D1E0E62BD /* NativePDFInkPathCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkPathCache.swift; sourceTree = "<group>"; };
 		D3521EDB74B68CA592BA27EB /* DesktopFileStagingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopFileStagingTests.swift; sourceTree = "<group>"; };
@@ -1142,6 +1145,15 @@
 			path = PDF;
 			sourceTree = "<group>";
 		};
+		5DD8F65577AD1AB57403164D /* Localization */ = {
+			isa = PBXGroup;
+			children = (
+				6C3CBEDC2FC409197D933A01 /* InfoPlist.strings */,
+			);
+			name = Localization;
+			path = App/Resources/Localization;
+			sourceTree = "<group>";
+		};
 		7C05D900B3932F12AE25969F /* Recording */ = {
 			isa = PBXGroup;
 			children = (
@@ -1368,6 +1380,7 @@
 				97B7362BCD222BBEAF1105A3 /* App */,
 				8EA3F735BADED14FA62436BA /* BandalTests */,
 				D9D6523F31150F3E81DD32D5 /* BandalUITests */,
+				5DD8F65577AD1AB57403164D /* Localization */,
 				C56778D1B495CE25D16997A1 /* Packages */,
 				DE479E3DD45309ECFA9269BC /* Resources */,
 				E11EE181A019B1B13BA60BCD /* Products */,
@@ -1546,6 +1559,7 @@
 			knownRegions = (
 				Base,
 				en,
+				ko,
 			);
 			mainGroup = 9B5CD4091BF5AC799A264A0F;
 			minimizedProjectReferenceProxies = 1;
@@ -1576,6 +1590,7 @@
 				D54D3FA4ACAC34E028013EA6 /* Configuration.plist in Resources */,
 				71548CA616DC20C4217C2F94 /* DesktopNative in Resources */,
 				E1367F12E42845E00542D970 /* Dictionary in Resources */,
+				94C4F640D6E887C37A982987 /* InfoPlist.strings in Resources */,
 				9AABFFB713371E5EAF4254E7 /* NativePDFLegacyInk-LICENSE.txt in Resources */,
 				B7362CADE850EA9168A0E572 /* PrivacyInfo.xcprivacy in Resources */,
 			);
@@ -2036,6 +2051,18 @@
 			targetProxy = 81A60D266E0981D2CE909F15 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		6C3CBEDC2FC409197D933A01 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				7AA66EDE22484101EDE7EF6D /* en */,
+				D28B6E76FE660EC53539EE9D /* ko */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		070FF162171114CC6CC9769F /* Debug */ = {

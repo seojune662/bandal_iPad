@@ -131,7 +131,7 @@ struct NativeSettingsSystemPanels: View {
     private var privacyPanel: some View {
         VStack(spacing: 24) {
             NativeSettingsCard(title: "데이터 처리") {
-                Text("자료 원본, 필기, 녹음과 대화 기록은 기기에 저장됩니다. 계정 동기화를 사용하면 연결한 동기화 서버에도 저장됩니다.")
+                Text(NativeReleaseFlags.isLocalOnly ? "자료 원본, 필기, 녹음과 대화 기록은 기기에 저장됩니다." : "자료 원본, 필기, 녹음과 대화 기록은 기기에 저장됩니다. 계정 동기화를 사용하면 연결한 동기화 서버에도 저장됩니다.")
                 Text("AI에게 질문할 때는 질문과 AI가 읽은 자료가 선택한 제공자에게 전송됩니다. API 키는 이 기기의 Keychain에 저장됩니다.")
                 Text("음성 전사는 다운로드한 모델로 기기에서 처리합니다. 학교 웹사이트와 브라우저는 방문한 서비스의 정책을 따릅니다.")
             }

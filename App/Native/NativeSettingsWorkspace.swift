@@ -167,7 +167,7 @@ struct NativeSettingsWorkspace: View {
         }
       }
     }
-    .confirmationDialog("계정을 삭제할까요? 서버의 동기화 자료와 구독 연결이 삭제됩니다. 이 기기의 파일은 남습니다.", isPresented: $deleteAccountConfirmation, titleVisibility: .visible) {
+    .confirmationDialog(NativeReleaseFlags.isLocalOnly ? "계정을 삭제할까요? 서버의 계정 정보가 삭제됩니다. 이 기기의 파일은 남습니다." : "계정을 삭제할까요? 서버의 동기화 자료와 구독 연결이 삭제됩니다. 이 기기의 파일은 남습니다.", isPresented: $deleteAccountConfirmation, titleVisibility: .visible) {
       Button("계정 삭제", role: .destructive) {
         run {
           _ = try await store.invoke("auth:deleteAccount")
@@ -581,7 +581,7 @@ struct NativeSettingsWorkspace: View {
     case "unconfigured": "동기화 서버 설정이 필요합니다."
     case "signing-in": "로그인하는 중…"
     case "error": "로그인을 완료하지 못했습니다. 다시 시도하세요."
-    default: "로그인하면 다른 기기와 자료를 동기화할 수 있어요."
+    default: NativeReleaseFlags.isLocalOnly ? "로그인은 선택 사항이에요. 계정 프로필을 쓰고 싶을 때만 로그인하세요." : "로그인하면 다른 기기와 자료를 동기화할 수 있어요."
     }
   }
   private var syncPhase: String {
