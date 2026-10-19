@@ -18,6 +18,15 @@ xcodebuild -project Bandal.xcodeproj -scheme Bandal -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$archive" \
   -derivedDataPath .build/DerivedData-release -clonedSourcePackagesDirPath .build/SourcePackages \
   "${auth[@]}" DEVELOPMENT_TEAM=VUZ7Z98BW3 CODE_SIGN_STYLE=Automatic archive
+# sherpa-onnx/onnxruntime are static; Xcode leaves 51 KB stub frameworks in
+# Frameworks/ and gives one of them a minos equal to our deployment target while
+# copying the vendor Info.plist (13.0) unchanged. ITMS-90208 rejects the mismatch,
+# so align the plists before export re-signs the bundles.
+app="$archive/Products/Applications/Bandal.app"
+minos=$(plutil -extract MinimumOSVersion raw "$app/Info.plist")
+for plist in "$app"/Frameworks/*.framework/Info.plist; do
+  plutil -replace MinimumOSVersion -string "$minos" "$plist"
+done
 # Export signs manually with the profile from `fastlane profile`; the App Manager
 # key cannot use Xcode cloud signing. The archive step still uses automatic signing.
 xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist Scripts/ExportOptions.plist \
