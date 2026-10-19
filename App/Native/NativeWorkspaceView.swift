@@ -255,9 +255,11 @@ struct NativeWorkspaceView: View {
             }
             NativeChromeButton(title: "도움말", symbol: "questionmark.circle", selected: auxiliary == .help) { transition { section = .library; auxiliary = .help; learningHome = false } }.accessibilityIdentifier("native-section-help")
             Spacer(minLength: 8)
-            NativeAccountRailButton(store: store, selected: auxiliary == .account,
-                openAccount: { transition { section = .library; auxiliary = .account; learningHome = false } },
-                openSettings: { openSettings("appearance") })
+            if !NativeReleaseFlags.isLocalOnly {
+                NativeAccountRailButton(store: store, selected: auxiliary == .account,
+                    openAccount: { transition { section = .library; auxiliary = .account; learningHome = false } },
+                    openSettings: { openSettings("appearance") })
+            }
             NativeChromeButton(title: "설정", symbol: "gearshape", selected: section == .settings) { openSettings("appearance") }.accessibilityIdentifier("native-section-settings")
         }.padding(.top, 12).padding(.bottom, 12).frame(width: NativeDesktopTheme.navigationWidth)
             .background(NativeDesktopTheme.surface).overlay(alignment: .trailing) { railDivider }

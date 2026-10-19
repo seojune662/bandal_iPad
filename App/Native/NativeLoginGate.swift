@@ -9,7 +9,8 @@ struct NativeLoginGate: View {
     @State private var message: String?
 
     static func requiresLogin(_ state: [String: Any]) -> Bool {
-        guard state["phase"] as? String != "unconfigured" else { return false }
+        // 1.0 ships without accounts: never gate local files behind a login.
+        guard !NativeReleaseFlags.isLocalOnly, state["phase"] as? String != "unconfigured" else { return false }
         return (state["localAccess"] as? [String: Any])?["requiresLogin"] as? Bool == true
     }
     private var access: [String: Any] { account["localAccess"] as? [String: Any] ?? [:] }

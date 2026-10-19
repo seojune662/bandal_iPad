@@ -19,7 +19,8 @@ final class AppStoreScreenshotTests: XCTestCase {
         let create = app.buttons["native-library-create"]
         waitEnabled(create, app: app)
 
-        // 1. Handwriting note on grid paper
+        // 1. Handwriting note on grid paper: a highlighted heading, "Av = λv" with
+        // a 2×2 matrix, and an axes diagram showing v and Av (lines approximate ink).
         create.tap(); app.buttons["새 노트"].tap()
         let noteTitle = app.textFields["native-new-note-title"]
         XCTAssertTrue(noteTitle.waitForExistence(timeout: 5)); paste("3주차 고유값과 고유벡터", into: noteTitle, app: app)
@@ -27,13 +28,37 @@ final class AppStoreScreenshotTests: XCTestCase {
         let pdf = app.otherElements["native-pdf-workspace"]
         XCTAssertTrue(pdf.waitForExistence(timeout: 20), app.debugDescription)
         waitEnabled(app.buttons["native-pdf-tool-pen"], app: app)
-        tool("highlighter", app: app)
-        stroke(pdf, from: (0.30, 0.22), to: (0.62, 0.22))
-        tool("pen", app: app)
-        for line in [((0.30, 0.32), (0.58, 0.31)), ((0.30, 0.40), (0.50, 0.42)), ((0.32, 0.50), (0.60, 0.48)), ((0.30, 0.60), (0.55, 0.62))] {
-            stroke(pdf, from: line.0, to: line.1)
+        var inkCount = 0
+        func ink(_ segments: [((Double, Double), (Double, Double))]) {
+            for segment in segments { stroke(pdf, from: segment.0, to: segment.1); inkCount += 1 }
         }
-        expectInk(5, app: app)
+        tool("highlighter", app: app)
+        ink([((0.12, 0.12), (0.46, 0.12))])
+        tool("pen", app: app)
+        // Heading underline + "Av = λv": A (two legs + bar), v, =, λ, v
+        ink([((0.12, 0.15), (0.46, 0.15))])
+        ink([((0.14, 0.30), (0.17, 0.22)), ((0.17, 0.22), (0.20, 0.30)), ((0.155, 0.27), (0.185, 0.27))])   // A
+        ink([((0.22, 0.25), (0.24, 0.30)), ((0.24, 0.30), (0.26, 0.25))])                                   // v
+        ink([((0.29, 0.255), (0.33, 0.255)), ((0.29, 0.275), (0.33, 0.275))])                               // =
+        ink([((0.36, 0.22), (0.41, 0.30)), ((0.385, 0.26), (0.355, 0.30))])                                 // λ
+        ink([((0.43, 0.25), (0.45, 0.30)), ((0.45, 0.30), (0.47, 0.25))])                                   // v
+        // 2×2 matrix with brackets and a fraction-style eigenvalue note
+        ink([((0.14, 0.38), (0.14, 0.52)), ((0.14, 0.38), (0.16, 0.38)), ((0.14, 0.52), (0.16, 0.52))])    // [
+        ink([((0.30, 0.38), (0.30, 0.52)), ((0.28, 0.38), (0.30, 0.38)), ((0.28, 0.52), (0.30, 0.52))])    // ]
+        ink([((0.18, 0.41), (0.21, 0.41)), ((0.21, 0.41), (0.18, 0.45)), ((0.18, 0.45), (0.21, 0.45))])    // 2
+        ink([((0.245, 0.41), (0.265, 0.41)), ((0.265, 0.41), (0.245, 0.45)), ((0.245, 0.45), (0.265, 0.45)), ((0.245, 0.43), (0.26, 0.43))]) // 3-ish
+        ink([((0.18, 0.47), (0.19, 0.51)), ((0.19, 0.51), (0.21, 0.47))])                                   // v entry
+        ink([((0.245, 0.47), (0.265, 0.47)), ((0.265, 0.47), (0.245, 0.51))])                               // 7-ish
+        ink([((0.34, 0.44), (0.40, 0.44)), ((0.36, 0.40), (0.38, 0.40)), ((0.37, 0.46), (0.37, 0.50))])    // fraction bar, numerator, denominator
+        // Axes diagram on the right: x/y axes with arrowheads, v, Av and a dashed-looking projection
+        ink([((0.56, 0.52), (0.90, 0.52)), ((0.90, 0.52), (0.87, 0.50)), ((0.90, 0.52), (0.87, 0.54))])    // x axis
+        ink([((0.60, 0.56), (0.60, 0.18)), ((0.60, 0.18), (0.58, 0.21)), ((0.60, 0.18), (0.62, 0.21))])    // y axis
+        ink([((0.60, 0.52), (0.72, 0.42)), ((0.72, 0.42), (0.69, 0.42)), ((0.72, 0.42), (0.72, 0.45))])    // v
+        ink([((0.60, 0.52), (0.86, 0.30)), ((0.86, 0.30), (0.82, 0.31)), ((0.86, 0.30), (0.85, 0.34))])    // Av
+        ink([((0.72, 0.42), (0.72, 0.52)), ((0.86, 0.30), (0.86, 0.52))])                                   // projections
+        ink([((0.74, 0.40), (0.76, 0.36)), ((0.76, 0.36), (0.78, 0.40))])                                   // label tick near v
+        ink([((0.64, 0.60), (0.88, 0.60)), ((0.64, 0.64), (0.80, 0.64))])                                   // caption lines
+        expectInk(inkCount, app: app)
         capture("01-pdf-handwriting", app: app)
 
         // 2. Markdown note with a table and a formula

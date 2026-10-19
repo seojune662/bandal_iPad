@@ -9,7 +9,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
         let add = app.buttons["native-course-add-menu"]
         XCTAssertTrue(add.waitForExistence(timeout: 25), app.debugDescription)
-        let rail = ["library", "learning", "planner", "assistant", "tools", "help", "account", "settings"]
+        let rail = ["library", "learning", "planner", "assistant", "tools", "help", "settings"]  // account rail is hidden in the local-only 1.0 build
         for section in rail { XCTAssertTrue(app.buttons["native-section-" + section].exists, section) }
         for section in ["browser", "recordings", "marketplace"] { XCTAssertFalse(app.buttons["native-section-" + section].exists, section) }
         XCTAssertTrue(app.buttons["native-university-choose"].exists)

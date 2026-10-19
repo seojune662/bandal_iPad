@@ -22,7 +22,7 @@ final class NativeSettingsParityTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "native.appearance"), "dark", "A partial update must not reset the current theme")
     }
     func testDesktopCategoryOrderAndSearchRetainThePortableDestinations() {
-        XCTAssertEqual(NativeSettingsCatalog.categories.map(\.id), ["ai", "assistant", "account", "general", "university", "packs", "calendar", "browser", "appearance", "tabs", "widgets", "notifications", "shortcuts", "usage", "permissions", "privacy", "advanced", "experimental", "courses", "about"])
+        XCTAssertEqual(NativeSettingsCatalog.categories.map(\.id), ["ai", "assistant"] + (NativeReleaseFlags.isLocalOnly ? [] : ["account"]) + ["general", "university", "packs", "calendar", "browser", "appearance", "tabs", "widgets", "notifications", "shortcuts", "usage", "permissions", "privacy", "advanced", "experimental", "courses", "about"])
         XCTAssertEqual(NativeSettingsCatalog.matching("마이크 자막").map(\.id), ["tabs"])
         XCTAssertEqual(NativeSettingsCatalog.matching("privacy diagnostics", locale: "en-US").map(\.id), ["privacy"])
         XCTAssertEqual(NativeSettingsCatalog.localized("en-US").first { $0.id == "appearance" }?.title, "Appearance")
