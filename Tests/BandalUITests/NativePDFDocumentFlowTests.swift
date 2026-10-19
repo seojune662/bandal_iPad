@@ -62,6 +62,11 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         let markdown = app.textViews["native-markdown-editor"]
         XCTAssertTrue(markdown.waitForExistence(timeout: 15), app.debugDescription)
         let aTab = tab("Lecture A", app: app)
+        // KNOWN ISSUE (cross-pane drag instability) — see docs/known-issues.md.
+        // Once the PDF restores a non-top scroll (page 2), re-render churn from the
+        // restore aborts this tab-drag's lift, so the merge never happens and the
+        // `merged` wait below times out. Flaky; a settle wait before the drag helped
+        // in one run but not reliably. Disabling the PDF body's gestures had no effect.
         aTab.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).press(forDuration: 1,
             thenDragTo: markdown.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.4)),
             withVelocity: .slow, thenHoldForDuration: 0.5)
@@ -74,6 +79,11 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         XCTAssertEqual(app.webViews.count, 0)
 
         app.terminate(); app.launchArguments = arguments(reset: false); app.launch()
+        // KNOWN ISSUE (merged-pane viewport restore) — see docs/known-issues.md.
+        // The save-side page-restore bug is fixed (standalone tabs restore the page),
+        // but once Lecture A is docked into the markdown pane's group above, its page
+        // position is still not restored after relaunch (ink/tools/zoom are). This
+        // expectPage(2) is the point that fails; it is a separate, open bug.
         expectInk(2, app: app, timeout: 25); expectPage(2, app: app)
         XCTAssertTrue(app.buttons["native-pdf-tool-highlighter"].isSelected); expectZoom(1.1, app: app)
         switchTab("Lecture B", app: app); expectInk(1, app: app)
