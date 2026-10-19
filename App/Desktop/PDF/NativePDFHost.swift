@@ -368,7 +368,7 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
                 .filter { !item.nativeInkEraseEnabled || !item.operationLedger.containsLiveStroke($0.input.clientMutationId) }
             try reconcileJournal()
             guard documents[identifier] === item, openGenerations[identifier] == generation else { throw CancellationError() }
-            var response: [String: Any] = ["pending": try recovered.map { try Self.json($0.input) }, "viewport": item.viewportState]
+            var response: [String: Any] = ["pending": try recovered.map { try Self.json($0.input) }, "viewport": item.persistedViewport]
             if item.nativeInkEraseEnabled {
                 response["pendingOperations"] = item.operationLedger.pendingOperations.filter {
                     ($0["operationSequence"] as? Int ?? Int.max) <= through
@@ -772,6 +772,26 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         }
         return result
     }
+    /// The viewport to persist. `viewportState` samples the page at the exact view
+    /// centre, which after navigate() centres a page's top sits on a page boundary:
+    /// `page(for: midpoint)` then reports the previous page, and once saved it would
+    /// restore that page after a relaunch (zoom/ink restore, the scroll does not).
+    /// Sampling a little below centre breaks the tie toward the page navigate
+    /// anchored. page(for:) (not currentPage, which forces a layout that interrupts
+    /// an in-flight tab drag) keeps this safe at the flush/suspend barrier.
+    var persistedViewport: [String: Any] {
+        if suspended, let suspendedViewport { return suspendedViewport }
+        var result = viewportState
+        let probe = CGPoint(x: pdfView.bounds.midX, y: pdfView.bounds.midY + pdfView.bounds.height * 0.08)
+        if let page = pdfView.page(for: probe, nearest: true) {
+            result["page"] = document.index(for: page) + 1
+            let midpoint = CGPoint(x: pdfView.bounds.midX, y: pdfView.bounds.midY)
+            let position = NativePDFPageCoordinates(page: page).displayNormalized(pdfView.convert(midpoint, to: page))
+            result["progress"] = Double(min(1, max(0, position.y)))
+            result["horizontalProgress"] = Double(min(1, max(0, position.x)))
+        }
+        return result
+    }
     init(id: String, generation: String, courseID: String, relativePath: String, revision: String, document: PDFDocument, testingDirectPencil: Bool = false) {
         self.id = id; self.generation = generation; self.courseID = courseID; self.relativePath = relativePath; self.revision = revision; self.document = document
         operationLedger = NativePDFOperationLedger(documentRevision: revision)
@@ -992,7 +1012,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             pdfView.isHidden = true
             if !suspended {
                 try flush()
-                suspendedViewport = viewportState; suspended = true
+                suspendedViewport = persistedViewport; suspended = true
                 viewportObservation = nil; nativePinch = nil; nativePan = nil
                 pdfView.document = nil; overlays.removeAll(); releaseCaches()
             }
