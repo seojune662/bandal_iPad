@@ -10,7 +10,10 @@ enum NativePDFObjectRenderer {
     static func prepareInk(_ input: NativePDFStrokeInput, aspect: Double, reusing: NativePDFPreparedInk? = nil) -> NativePDFPreparedInk? { inkPaths.prepare(input, aspect: aspect, reusing: reusing) }
     static func prepareInk(_ object: [String: Any], aspect: Double, reusing: NativePDFPreparedInk? = nil) -> NativePDFPreparedInk? { inkPaths.prepare(object, aspect: aspect, reusing: reusing) }
     static func releaseInkPaths() { inkPaths.removeAll() }
-    static func draw(_ object: [String: Any], in context: CGContext, mapper: InkCoordinateMapper, image: UIImage?, overrideBlend: Bool = false) {
+    /// `compact` strokes constant-width ink as its centerline and drops the
+    /// transparency group of opaque objects: the same picture with ~20x less
+    /// path data. On-screen callers keep the pixel-exact polygon fill.
+    static func draw(_ object: [String: Any], in context: CGContext, mapper: InkCoordinateMapper, image: UIImage?, overrideBlend: Bool = false, compact: Bool = false) {
         guard let data = object["data"] as? [String: Any], let style = object["style"] as? [String: Any],
               let transform = pageTransform(mapper) else { return }
         let width = mapper.geometry.width, height = mapper.geometry.height
@@ -21,13 +24,22 @@ enum NativePDFObjectRenderer {
         context.concatenate(transform)
         // A retained transparent object texture carries multiply in its GPU
         // item. All existing callers retain the destination-aware CG behavior.
-        if !overrideBlend, object["kind"] as? String == "highlighter" { context.setBlendMode(.multiply) }
+        let multiply = !overrideBlend && object["kind"] as? String == "highlighter"
+        if multiply { context.setBlendMode(.multiply) }
         context.setAlpha(opacity)
-        context.beginTransparencyLayer(auxiliaryInfo: nil)
-        defer { context.endTransparencyLayer() }
+        // Overlapping polygons must not double-darken; an opaque normal fill
+        // needs no group (one Form XObject per stroke in an exported PDF).
+        let layered = !compact || opacity < 1 || multiply
+        if layered { context.beginTransparencyLayer(auxiliaryInfo: nil) }
+        defer { if layered { context.endTransparencyLayer() } }
         context.setFillColor(ink.cgColor); context.setStrokeColor(ink.cgColor)
         context.setLineWidth(strokeWidth); context.setLineCap(.round); context.setLineJoin(.round)
         if let prepared = prepareInk(object, aspect: height / width) {
+            // ponytail: pressure ink still exports ~20 vertices per sample; stroke a variable-width outline if it ever matters.
+            var scale = CGAffineTransform(scaleX: width, y: height)
+            if compact, let centerline = prepared.centerline, let physical = centerline.copy(using: &scale) {
+                context.addPath(physical); context.strokePath(); return
+            }
             context.scaleBy(x: width, y: height)
             context.addPath(prepared.path); context.fillPath(); return
         }

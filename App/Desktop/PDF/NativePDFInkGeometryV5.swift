@@ -256,6 +256,21 @@ enum NativePDFInkGeometryV5 {
                                  predictions: predictions, width: width, aspect: aspect, emit)
     }
 
+    /// Constant-width ink is the round-capped stroke of its sample polyline:
+    /// the quad+disk union only matters while the factor varies. One vertex
+    /// per sample instead of ~20 keeps exported PDFs and thumbnails small.
+    static func centerline(points: [NativePDFPoint], width: Double, aspect: Double) -> [CGPoint] {
+        guard let profile = renderProfile(points: points, width: width, aspect: aspect, highlighter: true),
+              let first = profile.points.first else { return [] }
+        var output = [CGPoint(x: first.x, y: first.y)]
+        for index in 0..<max(0, profile.points.count - 1) {
+            forEachSegmentSample(profile: profile, index: index, width: width, aspect: aspect, highlighter: true) {
+                output.append(CGPoint(x: $0.x, y: $0.y))
+            }
+        }
+        return output
+    }
+
     static func polygons(points: [NativePDFPoint], predictions: [NativePDFPoint] = [], width: Double,
                          aspect: Double, highlighter: Bool) -> [[CGPoint]] {
         var output: [[CGPoint]] = []

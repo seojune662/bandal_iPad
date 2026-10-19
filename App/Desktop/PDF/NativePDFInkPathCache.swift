@@ -13,6 +13,9 @@ fileprivate struct NativePDFInkPathInput: Equatable {
 /// The path uses the same normalized polygons as the versioned desktop ink.
 final class NativePDFPreparedInk: NSObject {
     let path: CGPath
+    /// Normalized sample polyline of constant-width V5 ink; stroking it with
+    /// the style width equals filling `path`. Nil for pressure ink.
+    let centerline: CGPath?
     /// Immutable broad-phase bounds. Eraser input must not ask CoreGraphics to
     /// walk every completed path again for each coalesced Pencil event.
     let bounds: CGRect
@@ -20,8 +23,8 @@ final class NativePDFPreparedInk: NSObject {
     var aspect: Double { input.aspect }
     var pointCount: Int { input.points.count }
     let vertexCount: Int
-    fileprivate init(path: CGPath, input: NativePDFInkPathInput, vertexCount: Int) {
-        self.path = path; self.bounds = path.boundingBoxOfPath
+    fileprivate init(path: CGPath, centerline: CGPath?, input: NativePDFInkPathInput, vertexCount: Int) {
+        self.path = path; self.centerline = centerline; self.bounds = path.boundingBoxOfPath
         self.input = input; self.vertexCount = vertexCount
     }
 }
@@ -120,7 +123,15 @@ final class NativePDFInkPathCache {
             start = end
         }
         guard !path.isEmpty, let immutable = path.copy() else { return nil }
-        let ink = NativePDFPreparedInk(path: immutable, input: input, vertexCount: vertices)
+        var centerline: CGPath?
+        if version == 5, highlighter {
+            let samples = NativePDFInkGeometryV5.centerline(points: points, width: width, aspect: aspect)
+            let line = CGMutablePath()
+            // A single sample is a dot: a zero-length round-capped segment.
+            line.addLines(between: samples.count == 1 ? samples + samples : samples)
+            centerline = samples.isEmpty ? nil : line.copy()
+        }
+        let ink = NativePDFPreparedInk(path: immutable, centerline: centerline, input: input, vertexCount: vertices)
         buildCount += 1
         // Conservative retained payload accounting (raw samples + path
         // vertices/commands). Oversized paths render but are never cached.

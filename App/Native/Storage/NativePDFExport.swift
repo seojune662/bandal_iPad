@@ -83,7 +83,7 @@ enum NativePDFExport {
                 }
                 let image = resolved[row["id"] as? String ?? ""]
                 if kind == "image", image == nil { throw v.error("PDF 이미지 자료를 찾지 못해 내보내기를 중단했습니다.") }
-                NativePDFObjectRenderer.draw(row, in: context, mapper: mapper, image: image)
+                NativePDFObjectRenderer.draw(row, in: context, mapper: mapper, image: image, compact: true)
             }
             context.restoreGState(); context.endPDFPage()
         }
