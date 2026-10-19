@@ -4,6 +4,8 @@ import SQLite3
 /// Swift repositories retain the existing SQL schema and transaction boundaries.
 final class DesktopSQLite {
     private let db: OpaquePointer
+    /// Rows changed on this connection since it opened; an unchanged value means no write happened.
+    var totalChanges: Int64 { Int64(sqlite3_total_changes64(db)) }
 
     init(url: URL, readOnly: Bool = false) throws {
         if !readOnly { try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true) }

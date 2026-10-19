@@ -50,9 +50,7 @@ enum NativeSyncFormat {
         guard let payload = record["payload"] as? [String: Any], let text = payload["data"] as? String, let data = Data(base64Encoded: text), data.count <= 4 * 1024 * 1024, let page = try DesktopJSON.decode(data) as? [String: Any] else { throw NativeRepositoryContext.validation("Invalid ink page") }; return page
     }
     static func encodePage(_ page: [String: Any]) throws -> [String: Any] { ["materialID": page["materialID"] ?? NSNull(), "documentRevision": page["documentRevision"] ?? NSNull(), "page": page["page"] ?? NSNull(), "data": Data(try canonical(page).utf8).base64EncodedString()] }
-    static func asset(materialID: String, url: URL) throws -> [String: Any] {
-        let before = try NativeRepositoryContext.identity(url), hash = try hash(url), after = try NativeRepositoryContext.identity(url)
-        guard NativeRepositoryContext.sameIdentity(before, after) else { throw NativeRepositoryContext.conflict("Sync source changed while reading") }
+    static func asset(materialID: String, url: URL, hash: String) throws -> [String: Any] {
         let ext = url.pathExtension.lowercased(), type = ["pdf": "application/pdf", "wav": "audio/wav", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"][ext] ?? "application/octet-stream"
         return ["materialID": materialID, "sha256": hash, "path": url.path, "originalName": url.lastPathComponent, "contentType": type, "byteCount": (try url.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0]
     }

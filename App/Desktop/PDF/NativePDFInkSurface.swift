@@ -260,6 +260,15 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     /// Called only with rows and tokens maintained together by the native
     /// store. Ordinary dictionary assignments invalidate that trusted link.
     func applyObjects(objects: [[String: Any]], visualTokens: [NativePDFCommittedVisualToken]) {
+        // Tool/colour changes refresh every overlay with the same rows; identical
+        // tokens mean identical content, so nothing needs revalidating — but only
+        // when the backdrop is healthy. A waiting/exhausted/missing backdrop must
+        // review its dependency on every refresh (it never settles otherwise).
+        let backdropHealthy = backdropAvailability == .notRequired || backdropAvailability == .ready
+        if backdropHealthy, !backdropDependencyNeedsReview,
+           let current = objectVisualTokens, current.count == visualTokens.count, visualTokens.count == objects.count,
+           zip(current, visualTokens).allSatisfy({ $0 === $1 }),
+           zip(self.objects, objects).allSatisfy({ ($0["_nativeInk"] as AnyObject?) === ($1["_nativeInk"] as AnyObject?) }) { return }
         applyingObjects = true
         self.objects = objects
         objectVisualTokens = visualTokens.count == objects.count ? visualTokens : nil

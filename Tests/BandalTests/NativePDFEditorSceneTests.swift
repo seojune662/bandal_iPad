@@ -577,8 +577,9 @@ final class NativePDFEditorSceneTests: XCTestCase {
             window.rootViewController = controller; window.makeKeyAndVisible(); window.layoutIfNeeded()
             let shell = WKWebView(frame: controller.view.bounds); controller.view.addSubview(shell)
             journalQueue = NativePDFJournalQueue(root: root)
+            let originalsRoot = root
             host = try NativePDFHost(root: root, journalQueue: journalQueue) { channel, request in
-                if channel == "nativePDF:binding" { return ["materialID": "editor-scene", "documentRevision": request["documentRevision"]!] }
+                if channel == "nativePDF:binding" { return try NativePDFTestBinding.respond(root: originalsRoot, file: url, materialID: "editor-scene") }
                 XCTAssertEqual(channel, "nativeMaterial:path"); return url.path
             }
             host.attach(to: controller.view, shell: shell)

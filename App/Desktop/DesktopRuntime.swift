@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// A serial Swift storage engine. SQLite transactions, file publication and
 /// recovery are ordered here; presentation and network operations run outside
@@ -56,7 +57,7 @@ final class DesktopRuntime: @unchecked Sendable {
             self.search = try NativeSearchRepository(context:context)
             let learning = NativeLearningRepository(context:context)
             self.learning = learning
-            try learning.recoverInterruptedRuns()
+            // Interrupted-run recovery walks every course folder; it runs after the UI is ready.
             context.planMaterialRenameFiles = { [weak learning] course,from,to,directory,operation in
                 try learning?.planPathChanges(courseID:course,from:from,to:to,isDirectory:directory,operationID:operation) ?? []
             }
@@ -110,6 +111,7 @@ final class DesktopRuntime: @unchecked Sendable {
         case "nativeBrowser:shortcuts": return NativeBrowserShortcuts.resolve(try preferences?.settings() ?? [:])
         case "nativeRuntime:workspaceReady": workspaceSession = try NativeValue.string(request["workspaceSessionId"],"작업 공간"); watches.removeAll(); snapshots.removeAll(); return NativeValue.ok
         case "nativeRuntime:workspaceReset": watches.removeAll(); snapshots.removeAll(); return NativeValue.ok
+        case "nativeRuntime:recoverDeferred": try learning?.recoverInterruptedRuns(); return NativeValue.ok
         case "nativeRuntime:active": active = request["active"] as? Bool == true; if active { poll() }; return NativeValue.ok
         case "pdf:openPageNote":
             guard let context, let pdf else { throw DesktopRuntimeError("PDF 저장소가 준비되지 않았습니다.") }
@@ -149,14 +151,24 @@ final class DesktopRuntime: @unchecked Sendable {
         }
         return nil
     }
-    private func schedulePDFSearch(_ course: String) {
+    /// Opens in flight. Background indexing and sync yield while this is non-zero.
+    private let foregroundWork = OSAllocatedUnfairLock(initialState: 0)
+    func beginForegroundWork() { foregroundWork.withLock { $0 += 1 } }
+    func endForegroundWork() { foregroundWork.withLock { $0 = max(0, $0 - 1) } }
+    var isForegroundBusy: Bool { foregroundWork.withLock { $0 > 0 } }
+    private func schedulePDFSearch(_ course: String, delay: TimeInterval = 3) {
         guard !indexingCourses.contains(course) else { return }
+        // Text extraction of every PDF in the course is background work: never
+        // during launch or while a document is opening.
+        guard delay <= 0 else { queue.asyncAfter(deadline: .now() + delay) { [weak self] in self?.schedulePDFSearch(course, delay: 0) }; return }
+        guard !isForegroundBusy else { queue.asyncAfter(deadline: .now() + 3) { [weak self] in self?.schedulePDFSearch(course, delay: 0) }; return }
         do {
             let jobs = try search?.preparePDFJobs(courseID:course) ?? []
             guard !jobs.isEmpty else { return }; indexingCourses.insert(course)
             Task.detached(priority:.utility) { [weak self] in
                 for job in jobs {
                     guard let self, !Task.isCancelled else { return }
+                    while self.isForegroundBusy { try? await Task.sleep(for: .seconds(1)) }
                     do {
                         let text = try NativeSearchRepository.extract(job)
                         try await self.onQueue { try self.search?.commit(text) }

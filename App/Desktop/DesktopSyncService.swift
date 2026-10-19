@@ -67,7 +67,9 @@ final class DesktopSyncService {
         foreground = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.requestSync() }
         }
-        requestSync()
+        // The first export walks and hashes every course; let the first screen
+        // and any restored document open first.
+        Task { @MainActor [weak self] in try? await Task.sleep(for: .seconds(5)); self?.requestSync() }
     }
 
     func stop() async {
@@ -87,7 +89,7 @@ final class DesktopSyncService {
     }
 
     func requestSync(force: Bool = false) {
-        guard active == nil, !restoring, !suspended else { return }
+        guard active == nil, !restoring, !suspended, force || !runtime.isForegroundBusy else { return }
         Task { [weak self] in try? await self?.synchronizeNow(force: force) }
     }
 
@@ -338,7 +340,11 @@ final class DesktopSyncService {
         }
         try check(expected)
         try await environment.checkpoint("afterExchange")
-        try await materialize(transport: transport, expected: expected)
+        // Nothing pulled, merged or conflicting: every open editor stays untouched
+        // (materialize freezes and reloads them all). The marker set above is cleared.
+        if report.pulled > 0 || report.merged > 0 || report.conflicts > 0 {
+            try await materialize(transport: transport, expected: expected)
+        } else { try await store.completeProjectionRecovery() }
         let conflictCount = try await self.conflicts().count
         failures = 0
         let retry = environment.now().addingTimeInterval(blocked == nil ? 0 : 300)

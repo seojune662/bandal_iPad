@@ -121,7 +121,7 @@ final class NativePDFPageRepository {
         guard F.hash(bytes) == from else { throw C.conflict("PDF가 다른 작업에서 변경되었습니다.") }
         let document = try D.open(bytes), pages = try D.recipe(request["pages"], count: document.pageCount), map = D.map(pages, count: document.pageCount)
         if pages == Array(1...document.pageCount) {
-            let result: [String: Any] = ["documentRevision": from, "fingerprint": D.fingerprint(bytes), "pageCount": pages.count, "pageMap": map, "changedCourseIDs": [String]()]
+            let result: [String: Any] = ["documentRevision": from, "fingerprint": D.fingerprint(bytes), "pageCount": pages.count, "pageMap": map, "changedCourseIDs": [String](), "changedDocuments": [[String: Any]]()]
             try context.transaction { try saveReceipt(operation, canonical, result) }; return result
         }
         let output = try D.rewrite(bytes, pages: pages), to = try retain(output), _ = try retain(bytes)
@@ -132,7 +132,11 @@ final class NativePDFPageRepository {
         var files = [NativeSyncFileChange(target: url, data: output, expectedHash: from)]
         files += try noteChanges(links.files, variant: "after")
         let courses = Set([course] + links.files.compactMap { $0["courseId"] as? String })
-        let result: [String: Any] = ["documentRevision": to, "fingerprint": fingerprint, "pageCount": pages.count, "pageMap": map, "historyToken": token, "changedCourseIDs": courses.sorted()]
+        let changedDocuments: [[String: Any]] = [["courseId": course, "relPath": path]] + links.files.compactMap { file in
+            guard let owner = file["courseId"] as? String, let notePath = file["relPath"] as? String else { return nil }
+            return ["courseId": owner, "relPath": notePath]
+        }
+        let result: [String: Any] = ["documentRevision": to, "fingerprint": fingerprint, "pageCount": pages.count, "pageMap": map, "historyToken": token, "changedCourseIDs": courses.sorted(), "changedDocuments": changedDocuments]
         let actual = NativeSyncPlan(files: files, courseID: course, apply: {
             try self.applyState(after, course: course, path: path); try self.invalidate(course: course, path: path, revision: to, material: material, size: output.count)
             try self.context.run("INSERT INTO native_pdf_page_history(id,material_id,course_id,rel_path,before_sha,after_sha,before_json,after_json,files_json,recipe_json,parent_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", [token, material, course, path, from, to, F.canonical(before), F.canonical(after), F.canonical(links.files), F.canonical(pages), head.0 ?? NSNull() as Any, C.nowISO])
@@ -169,17 +173,28 @@ final class NativePDFPageRepository {
             }
         }
         for file in try historyFiles(row) {
-            guard let course = file["courseId"] as? String, let path = file["relPath"] as? String, let expected = file[variant] as? String, let url = try? context.materialURL(courseID: course, relativePath: path), (try? F.hash(url)) == F.hash(Data(expected.utf8)) else { return false }
+            guard let course = file["courseId"] as? String, let path = file["relPath"] as? String, let expected = file[variant] as? String, let url = try? context.materialURL(courseID: course, relativePath: path), (try? context.contentHash(url)) == F.hash(Data(expected.utf8)) else { return false }
         }
         return true
     }
     private func historyFiles(_ row: [String: Any]) throws -> [[String: Any]] { guard let raw = row["files_json"] as? String, let files = try DesktopJSON.decode(Data(raw.utf8)) as? [[String: Any]] else { throw C.validation("Invalid PDF history files") }; return files }
+    /// Page count and restructure eligibility are fixed per revision; parse the file once.
+    private var restructureInfo: [String: (pageCount: Int, reason: String?)] = [:]
     private func history(_ request: [String: Any]) throws -> [String: Any] {
         let (course, path, binding) = try identity(request, requireRevision: false), material = binding["materialID"] as! String, revision = binding["documentRevision"] as! String, head = try cursor(material)
-        let url = try context.materialURL(courseID: course, relativePath: path), data = try Data(contentsOf: url)
-        guard let document = PDFDocument(data: data) else { throw C.validation("PDF를 읽지 못했습니다.") }
-        var result: [String: Any] = ["documentRevision": revision, "pageCount": document.pageCount, "canUndo": false, "canRedo": false, "canRestructure": true]
-        do { _ = try D.open(data) } catch { result["canRestructure"] = false; result["restructureReason"] = error.localizedDescription }
+        let info: (pageCount: Int, reason: String?)
+        if let cached = restructureInfo[revision] { info = cached } else {
+            let url = try context.materialURL(courseID: course, relativePath: path), data = try Data(contentsOf: url)
+            do { info = (try D.open(data).pageCount, nil) }
+            catch {
+                guard let document = PDFDocument(data: data) else { throw C.validation("PDF를 읽지 못했습니다.") }
+                info = (document.pageCount, error.localizedDescription)
+            }
+            if restructureInfo.count >= 64 { restructureInfo.removeAll() }
+            restructureInfo[revision] = info
+        }
+        var result: [String: Any] = ["documentRevision": revision, "pageCount": info.pageCount, "canUndo": false, "canRedo": false, "canRestructure": info.reason == nil]
+        if let reason = info.reason { result["restructureReason"] = reason }
         if let token = head.0 { let row = try row(token, material: material); result["undoToken"] = token; result["canUndo"] = try eligible(row, course: course, path: path, revision: revision, variant: "after"); result["recoverToken"] = token }
         if let token = head.1.last { let row = try row(token, material: material); result["redoToken"] = token; result["canRedo"] = try eligible(row, course: course, path: path, revision: revision, variant: "before"); if result["recoverToken"] == nil { result["recoverToken"] = token } }
         if result["recoverToken"] == nil { result["recoverToken"] = try context.query("SELECT id FROM native_pdf_page_history WHERE material_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1", [material]).first?["id"] }
@@ -195,7 +210,11 @@ final class NativePDFPageRepository {
         let pages = try DesktopJSON.decode(Data((record["recipe_json"] as! String).utf8)) as! [Int], beforeCount = try D.open(original(record["before_sha"] as! String)).pageCount
         let map: [[Int]] = direction == "undo" ? pages.map { $0 == 0 ? [] : [$0] } : D.map(pages, count: beforeCount)
         let url = try context.materialURL(courseID: course, relativePath: path), files = [NativeSyncFileChange(target: url, data: output, expectedHash: current)] + (try noteChanges(fileHistory, variant: toVariant)), courses = Set([course] + fileHistory.compactMap { $0["courseId"] as? String })
-        let result: [String: Any] = ["documentRevision": target, "fingerprint": D.fingerprint(output), "pageCount": try D.open(output).pageCount, "pageMap": map, "historyToken": token, "changedCourseIDs": courses.sorted()]
+        let changedDocuments: [[String: Any]] = [["courseId": course, "relPath": path]] + fileHistory.compactMap { file in
+            guard let owner = file["courseId"] as? String, let notePath = file["relPath"] as? String else { return nil }
+            return ["courseId": owner, "relPath": notePath]
+        }
+        let result: [String: Any] = ["documentRevision": target, "fingerprint": D.fingerprint(output), "pageCount": try D.open(output).pageCount, "pageMap": map, "historyToken": token, "changedCourseIDs": courses.sorted(), "changedDocuments": changedDocuments]
         // Undo is a desktop recipe whose restored pages have no source in the
         // rewritten revision (null, like the desktop's blank-page insertion).
         let recipe: [[String: Any]] = direction == "undo" ? (1...beforeCount).map { ["source": pages.firstIndex(of: $0).map { $0 + 1 } ?? NSNull() as Any] } : pages.map { ["source": $0 == 0 ? NSNull() as Any : $0] }
@@ -215,7 +234,8 @@ final class NativePDFPageRepository {
         var path = folder.isEmpty ? title + ".pdf" : folder + "/" + title + ".pdf", suffix = 2
         while context.files.fileExists(atPath: try context.materialURL(courseID: course, relativePath: path, allowMissing: true).path) { path = (folder.isEmpty ? "" : folder + "/") + title + " \(suffix).pdf"; suffix += 1 }
         let url = try context.materialURL(courseID: course, relativePath: path, allowMissing: true), id = UUID().uuidString.lowercased(), now = C.nowISO
-        let result: [String: Any] = ["courseId": course, "relPath": path, "title": title, "kind": "pdf", "documentRevision": digest, "changedCourseIDs": [course]]
+        // A recovery copy only adds a file: lists reload, no open editor is invalidated.
+        let result: [String: Any] = ["courseId": course, "relPath": path, "title": title, "kind": "pdf", "documentRevision": digest, "changedCourseIDs": [course], "changedDocuments": [[String: Any]]()]
         let plan = NativeSyncPlan(files: [.init(target: url, data: output, expectedMissing: true)], courseID: course, apply: {
             try self.context.run("INSERT INTO materials_index(id,course_id,rel_path,kind,size,mtime,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)", [id, course, path, "pdf", output.count, Date().timeIntervalSince1970 * 1000, now, now])
             try self.context.run("INSERT INTO pdf_document_bindings VALUES(?,?,?,0,?)", [id, digest, "page-recovery-copy", now]); try self.context.run("INSERT INTO pdf_document_aliases VALUES(?,?,?)", [course, path, id])

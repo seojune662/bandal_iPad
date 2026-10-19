@@ -11,7 +11,6 @@ final class NativePDFRepository {
     static let channels = ["drawings:listForFile", "drawings:create", "drawings:mutationStatus", "drawings:update", "drawings:replace", "drawings:delete", "annotations:listForFile", "annotations:create", "annotations:update", "annotations:delete", "nativePDF:binding", "nativePDF:mutationStatus", "nativePDF:renderDrawings", "nativePDF:exportBytes", "pdf:getViewState", "pdf:setViewState", "pdfNotes:create"]
     private typealias V = NativePDFRepositoryValidation
     let context: NativeRepositoryContext
-    private var revisions: [String: (identity: String, digest: String)] = [:]
     private var verifiedOriginals = Set<String>()
 
     init(context: NativeRepositoryContext) throws {
@@ -162,32 +161,8 @@ final class NativePDFRepository {
         }
     }
 
-    /// Hash an open descriptor, validating inode, size, and nanosecond mtime /
-    /// ctime before trusting a cached revision or accepting concurrently saved bytes.
-    func revision(at url: URL) throws -> String {
-        let fd = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW)
-        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-        defer { Darwin.close(fd) }
-        var before = stat(); guard fstat(fd, &before) == 0 else { throw POSIXError(.EIO) }
-        guard before.st_mode & S_IFMT == S_IFREG else { throw V.error("PDF source is not a regular file") }
-        let signature = Self.fileIdentity(before)
-        if let cached = revisions[url.path], cached.identity == signature { return cached.digest }
-        var hash = SHA256(), bytes = [UInt8](repeating: 0, count: 256 * 1024)
-        while true {
-            let count = bytes.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress!, $0.count) }
-            if count < 0 { if errno == EINTR { continue }; throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-            if count == 0 { break }; hash.update(data: Data(bytes.prefix(count)))
-        }
-        var after = stat(), current = stat()
-        guard fstat(fd, &after) == 0, lstat(url.path, &current) == 0,
-              Self.fileIdentity(after) == signature, Self.fileIdentity(current) == signature else { throw V.error("PDF changed while checking its revision; retry after saving finishes") }
-        let digest = hash.finalize().map { String(format: "%02x", $0) }.joined()
-        if revisions.count >= 256 { revisions.removeAll(keepingCapacity: true) }
-        revisions[url.path] = (signature, digest); return digest
-    }
-    private static func fileIdentity(_ value: stat) -> String {
-        "\(value.st_dev):\(value.st_ino):\(value.st_size):\(value.st_mtimespec.tv_sec):\(value.st_mtimespec.tv_nsec):\(value.st_ctimespec.tv_sec):\(value.st_ctimespec.tv_nsec)"
-    }
+    /// One hash per file version, shared with sync and page history (identity-keyed, persisted).
+    func revision(at url: URL) throws -> String { try context.contentHash(url) }
     private func preserveOriginal(source: URL, digest: String) throws {
         guard !verifiedOriginals.contains(digest) else { return }
         let directory = context.root.appendingPathComponent("PDFOriginals", isDirectory: true), target = directory.appendingPathComponent(digest + ".pdf")

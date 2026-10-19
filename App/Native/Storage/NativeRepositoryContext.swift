@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import CryptoKit
 
 /// All repositories are called on DesktopRuntime's serial storage queue.
 /// SQLite, file publication and recovery share this one lifetime and root.
@@ -20,6 +21,7 @@ final class NativeRepositoryContext {
         try files.createDirectory(at: root, withIntermediateDirectories: true)
         db = try DesktopSQLite(url: root.appendingPathComponent("bandal.db"))
         try NativeDatabaseMigrations.apply(to: db)
+        try db.exec("CREATE TABLE IF NOT EXISTS native_file_hashes(path TEXT PRIMARY KEY, identity TEXT NOT NULL, sha256 TEXT NOT NULL)")
         #if canImport(UIKit)
         // Loading the registry resumes persisted security-scoped folder access.
         _ = DesktopFileAccess.shared(root: root).allows(root)
@@ -27,6 +29,40 @@ final class NativeRepositoryContext {
         try relocateManagedStorage()
     }
 
+    private var hashes: [String: (identity: String, digest: String)] = [:]
+    /// SHA-256 of a file, cached by `dev:ino:size:mtime_ns:ctime_ns` in memory and
+    /// in SQLite. Any write changes that identity, so no writer has to invalidate;
+    /// a file is hashed once per version and stat-checked afterwards.
+    func contentHash(_ url: URL) throws -> String {
+        let fd = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { Darwin.close(fd) }
+        var before = stat(); guard fstat(fd, &before) == 0 else { throw POSIXError(.EIO) }
+        guard before.st_mode & S_IFMT == S_IFREG else { throw Self.validation("Source is not a regular file") }
+        let signature = Self.fileIdentity(before)
+        if let cached = hashes[url.path], cached.identity == signature { return cached.digest }
+        if let row = try? query("SELECT sha256 FROM native_file_hashes WHERE path=? AND identity=?", [url.path, signature]).first,
+           let digest = row["sha256"] as? String, digest.count == 64 {
+            hashes[url.path] = (signature, digest); return digest
+        }
+        var hash = SHA256(), bytes = [UInt8](repeating: 0, count: 256 * 1024)
+        while true {
+            let count = bytes.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress!, $0.count) }
+            if count < 0 { if errno == EINTR { continue }; throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            if count == 0 { break }; hash.update(data: Data(bytes.prefix(count)))
+        }
+        var after = stat(), current = stat()
+        guard fstat(fd, &after) == 0, lstat(url.path, &current) == 0,
+              Self.fileIdentity(after) == signature, Self.fileIdentity(current) == signature else { throw Self.validation("File changed while hashing; retry after saving finishes") }
+        let digest = hash.finalize().map { String(format: "%02x", $0) }.joined()
+        if hashes.count >= 512 { hashes.removeAll(keepingCapacity: true) }
+        hashes[url.path] = (signature, digest)
+        try? run("INSERT OR REPLACE INTO native_file_hashes(path,identity,sha256) VALUES(?,?,?)", [url.path, signature, digest])
+        return digest
+    }
+    static func fileIdentity(_ value: stat) -> String {
+        "\(value.st_dev):\(value.st_ino):\(value.st_size):\(value.st_mtimespec.tv_sec):\(value.st_mtimespec.tv_nsec):\(value.st_ctimespec.tv_sec):\(value.st_ctimespec.tv_nsec)"
+    }
     @discardableResult func run(_ sql: String, _ values: [Any] = []) throws -> [String: Any] { try db.run(sql, params: values) }
     func query(_ sql: String, _ values: [Any] = []) throws -> [[String: Any]] { try db.query(sql, params: values) }
     func tableExists(_ name: String) throws -> Bool { try !query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [name]).isEmpty }
@@ -192,6 +228,10 @@ final class NativeRepositoryContext {
             if let match = path.range(of: pattern, options: .regularExpression) { let found = String(path[match]); previous.insert(found.hasSuffix("/") ? String(found.dropLast()) : found) }
         }
         for path in Array(previous) where path.range(of: pattern, options: .regularExpression) != nil { previous.insert(path.hasPrefix("/private/") ? String(path.dropFirst(8)) : "/private" + path) }
+        // Every launch re-encoded every sync row. Once this root and every known
+        // old root are recorded, nothing can have moved since the last relocation.
+        let recorded = Set(try query("SELECT root FROM ipad_storage_locations").compactMap { $0["root"] as? String })
+        if recorded.contains(root.path), previous.subtracting([root.path]).isSubset(of: recorded) { return }
         previous.remove(root.path)
         func replacement(_ path: String) -> String? { guard clean(path) else { return nil }; for old in previous.sorted(by: { $0.count > $1.count }) where Self.contains(old, path) { return root.path + path.dropFirst(old.count) }; return nil }
         func preservedDirectory(_ path: String) -> Bool {

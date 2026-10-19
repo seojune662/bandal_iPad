@@ -131,7 +131,7 @@ final class NativePDFDrawingSnapshotStoreTests: XCTestCase {
         let file = root.appendingPathComponent("fixture.pdf")
         try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 400, height: 600)).pdfData { $0.beginPage() }.write(to: file)
         let host = try NativePDFHost(root: root) { channel, request in
-            if channel == "nativePDF:binding" { return ["materialID": "fixture", "documentRevision": request["documentRevision"]!] }
+            if channel == "nativePDF:binding" { return try NativePDFTestBinding.respond(root: root, file: file, materialID: "fixture") }
             return file.path
         }
         defer { host.closeAll() }

@@ -108,7 +108,7 @@ final class NativeSyncArtifacts {
         for row in try context.query("SELECT * FROM recording_sessions ORDER BY id") {
             let session = try F.object(row["payload"]), id = try F.identity(session["id"]), courseID = try F.identity(session["courseId"])
             guard let course = try context.query("SELECT * FROM courses WHERE id=?", [courseID]).first, !isDeleted(course), !["recording", "paused", "processing"].contains(session["status"] as? String ?? "") else { continue }
-            let path = try context.materialURL(courseID: courseID, relativePath: string(session["audioRelPath"], "recording path")), asset = try F.asset(materialID: "recording:" + id, url: path)
+            let path = try context.materialURL(courseID: courseID, relativePath: string(session["audioRelPath"], "recording path")), asset = try F.asset(materialID: "recording:" + id, url: path, hash: context.contentHash(path))
             let previous = try prior("recording:" + id)?["segments"] as? [[String: Any]] ?? []
             let segments = try context.query("SELECT * FROM recording_segments WHERE session_id=? ORDER BY start_sample,id", [id]).map { row -> [String: Any] in
                 let start = try integer(row["start_sample"]), end = try integer(row["end_sample"], min: start), text = try string(row["text"], "transcript", allowEmpty: true)
@@ -287,7 +287,7 @@ private extension NativeSyncArtifacts {
                 var files: [[String: Any]] = []
                 for path in paths.sorted() {
                     let url = try context.resolve(in: learning, relativePath: path)
-                    var asset = try F.asset(materialID: "artifact:learning-file:\(projectID):\(F.digest(path))", url: url)
+                    var asset = try F.asset(materialID: "artifact:learning-file:\(projectID):\(F.digest(path))", url: url, hash: context.contentHash(url))
                     guard try integer(asset["byteCount"]) <= Self.maximumLearningFileBytes else { throw C.validation("Learning source exceeds original supported size") }
                     let recordID = asset["materialID"] as! String
                     asset["contentType"] = "application/json"

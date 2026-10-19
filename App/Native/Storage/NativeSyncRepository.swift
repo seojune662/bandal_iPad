@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// A batch commits records individually. A later failure must not reactivate
 /// editors whose canonical data was already replaced or could not be restored.
@@ -52,17 +53,25 @@ final class NativeSyncRepository {
             switch channel {
             case "nativeSync:export":
                 let scope = request["scope"] as? String
-                try refresh(); let snapshot = try snapshot()
+                let trees = try refresh()
+                // Every 15 s tick re-exported the whole library. Nothing in the DB or
+                // on disk changed since the last export: the previous result stands.
+                if let last = lastExport, last.scope == scope, last.trees == trees, last.changes == context.db.totalChanges { return last.result }
+                let snapshot = try snapshot()
                 let blocked = Set(try context.query("SELECT DISTINCT record_id FROM ipad_sync_conflicts WHERE resolved_at IS NULL").compactMap { $0["record_id"] as? String })
                 let records = snapshot.records.filter { !blocked.contains($0["id"] as? String ?? "") && Self.inScope($0, scope) }
                 try context.transaction { for record in records { try F.validate(record); try save(record, source: snapshot.sources[record["id"] as! String] ?? [:]) } }
-                guard scope == Self.personalScope else { return ["records": records, "assets": snapshot.assets] }
-                let materials = Set(records.filter { $0["kind"] as? String == "material" }.compactMap { ($0["payload"] as? [String: Any])?["id"] as? String })
-                let assets = snapshot.assets.filter { asset in
-                    guard let owner = asset["materialID"] as? String else { return false }
-                    return materials.contains(owner) || owner.hasPrefix("clip:")
-                }
-                return ["records": records, "assets": assets]
+                let result: [String: Any]
+                if scope == Self.personalScope {
+                    let materials = Set(records.filter { $0["kind"] as? String == "material" }.compactMap { ($0["payload"] as? [String: Any])?["id"] as? String })
+                    let assets = snapshot.assets.filter { asset in
+                        guard let owner = asset["materialID"] as? String else { return false }
+                        return materials.contains(owner) || owner.hasPrefix("clip:")
+                    }
+                    result = ["records": records, "assets": assets]
+                } else { result = ["records": records, "assets": snapshot.assets] }
+                lastExport = (scope, trees, context.db.totalChanges, result)
+                return result
             case "nativeSync:import": return try importRecords(request)
             case "nativeSync:restoreConflict":
                 guard let id = request["conflictID"] as? String, let variant = request["variant"] as? String, ["local", "remote"].contains(variant), let row = try context.query("SELECT * FROM ipad_sync_conflicts WHERE id=? AND resolved_at IS NULL", [id]).first, let selected = row[variant + "_json"] as? String else { throw C.validation("Conflict or selected variant is unavailable") }
@@ -101,8 +110,14 @@ final class NativeSyncRepository {
             }
         }
     }
-    private func refresh() throws {
-        for row in try context.query("SELECT id FROM courses WHERE deleted_at IS NULL") { _ = try library.handle("materials:tree", ["courseId": row["id"]!]) }
+    private var lastExport: (scope: String?, trees: String, changes: Int64, result: [String: Any])?
+    /// Returns a fingerprint of every course tree, so an unchanged library can skip the export.
+    private func refresh() throws -> String {
+        var digest = SHA256()
+        for row in try context.query("SELECT id FROM courses WHERE deleted_at IS NULL") {
+            if let tree = try library.handle("materials:tree", ["courseId": row["id"]!]) { digest.update(data: Data(try F.canonical(tree).utf8)) }
+        }
+        let trees = digest.finalize().map { String(format: "%02x", $0) }.joined()
         // Restore canonical IDs after a rebuildable filesystem index was lost.
         try context.transaction {
             for row in try context.query("SELECT id,source_json FROM ipad_sync_projection WHERE kind='material'") {
@@ -112,6 +127,7 @@ final class NativeSyncRepository {
                 if current != canonical, try context.query("SELECT id FROM materials_index WHERE id=?", [canonical]).isEmpty { try context.run("UPDATE materials_index SET id=? WHERE id=?", [canonical, current]) }
             }
         }
+        return trees
     }
     private func snapshot() throws -> NativeSyncSnapshot {
         var result = try materials.snapshot()
@@ -135,13 +151,19 @@ final class NativeSyncRepository {
         // Unknown future envelope kinds retain their verified binary references.
         var hashes = Set(result.assets.compactMap { $0["sha256"] as? String })
         for row in try context.query("SELECT * FROM ipad_sync_asset_cache") {
-            guard let hash = row["sha256"] as? String, let path = row["path"] as? String, hashes.insert(hash).inserted, context.files.fileExists(atPath: path), try F.hash(URL(fileURLWithPath: path)) == hash else { continue }
+            guard let hash = row["sha256"] as? String, let path = row["path"] as? String, hashes.insert(hash).inserted, context.files.fileExists(atPath: path), try context.contentHash(URL(fileURLWithPath: path)) == hash else { continue }
             result.assets.append(["sha256": hash, "path": path, "materialID": "preserved:\(hash)", "originalName": hash, "contentType": "application/octet-stream", "byteCount": (try context.files.attributesOfItem(atPath: path)[.size]) ?? 0])
         }
         return result
     }
     private func save(_ record: [String: Any], source: [String: Any], accepted: [String: Any]? = nil) throws {
-        try context.run("INSERT INTO ipad_sync_projection(id,kind,payload_json,deleted,source_json,baseline_json) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,payload_json=excluded.payload_json,deleted=excluded.deleted,source_json=excluded.source_json,baseline_json=excluded.baseline_json", [record["id"]!, record["kind"]!, F.canonical(record["payload"]!), record["deleted"] as? Bool == true ? 1 : 0, F.canonical(source), F.comparable(accepted ?? record)])
+        let values: [Any] = [record["id"]!, record["kind"]!, try F.canonical(record["payload"]!), record["deleted"] as? Bool == true ? 1 : 0, try F.canonical(source), try F.comparable(accepted ?? record)]
+        // An identical row costs a point read instead of a journaled write.
+        if let row = try context.query("SELECT kind,payload_json,deleted,source_json,baseline_json FROM ipad_sync_projection WHERE id=?", [values[0]]).first,
+           row["kind"] as? String == values[1] as? String, row["payload_json"] as? String == values[2] as? String,
+           (row["deleted"] as? NSNumber)?.intValue == values[3] as? Int, row["source_json"] as? String == values[4] as? String,
+           row["baseline_json"] as? String == values[5] as? String { return }
+        try context.run("INSERT INTO ipad_sync_projection(id,kind,payload_json,deleted,source_json,baseline_json) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,payload_json=excluded.payload_json,deleted=excluded.deleted,source_json=excluded.source_json,baseline_json=excluded.baseline_json", values)
     }
     private func importRecords(_ request: [String: Any], force: Bool = false, reviewed: [[String: Any]] = []) throws -> [String: Any] {
         var changed = Set<String>()

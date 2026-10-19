@@ -163,20 +163,27 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
                     }
                 }
             }
-            guard let source = try await invoke("nativeMaterial:path", ["courseId": course, "relPath": path]) as? String else { throw NativePDFError.invalid("PDF 자료를 찾지 못했습니다.") }
-            let root = root
-            let snapshot = try await Task.detached(priority: .userInitiated) { try Self.snapshot(path: source, root: root) }.value
+            // The repository hashes the current bytes (stat-cached after the first
+            // time), binds them to the canonical ink, and keeps an immutable copy
+            // in PDFOriginals. PDFKit reads that copy, so a later rewrite of the
+            // material file cannot corrupt a lazily-read document. Canonical
+            // drawings stay bound to the first verified revision across reopen,
+            // rename and sync; a replacement file at the same path is rejected.
+            let bound = try await invoke("nativePDF:binding", ["courseId": course, "relPath": path])
+            // A close during the round trip wins over whatever the binding returned.
             guard openingGenerations[identifier] == generation else { throw CancellationError() }
-            // Canonical drawings remain bound to the first verified PDF
-            // revision across close/reopen, rename and sync. Never relabel old
-            // ink with the hash of a replacement file at the same path.
-            guard let binding = try await invoke("nativePDF:binding", ["courseId": course, "relPath": path, "documentRevision": snapshot.revision]) as? [String: Any],
-                  binding["documentRevision"] as? String == snapshot.revision,
+            guard let binding = bound as? [String: Any],
+                  let revision = binding["documentRevision"] as? String, revision.count == 64,
                   let materialID = binding["materialID"] as? String, !materialID.isEmpty else {
                 throw NativePDFError.invalid("PDF 원본과 필기 연결을 확인하지 못했습니다. 자료를 보존한 채 다시 열어 주세요.")
             }
+            let originalURL = root.appendingPathComponent("PDFOriginals", isDirectory: true).appendingPathComponent(revision + ".pdf")
+            let loaded = try await Task.detached(priority: .userInitiated) { () -> NativePDFDocumentBox? in
+                guard let document = PDFDocument(url: originalURL), !document.isLocked, document.pageCount > 0 else { return nil }
+                return NativePDFDocumentBox(document)
+            }.value
             guard openingGenerations[identifier] == generation else { throw CancellationError() }
-            guard let pdf = PDFDocument(url: snapshot.url), !pdf.isLocked, pdf.pageCount > 0 else { throw NativePDFError.invalid("PDF를 열지 못했습니다. 잠금 또는 파일 형식을 확인해 주세요.") }
+            guard let pdf = loaded?.document else { throw NativePDFError.invalid("PDF를 열지 못했습니다. 잠금 또는 파일 형식을 확인해 주세요.") }
             // Freeze only the surface being replaced before taking its disk
             // snapshot. Otherwise an await could admit a final point after the
             // pending list was captured and then close its last visible owner.
@@ -195,7 +202,7 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             }
             try reconcileJournal()
             guard openingGenerations[identifier] == generation else { throw CancellationError() }
-            guard pending.allSatisfy({ $0.documentRevision == snapshot.revision }) else {
+            guard pending.allSatisfy({ $0.documentRevision == revision }) else {
                 throw NativePDFError.invalid("PDF 원본이 바뀌어 이전 문서의 미전송 필기를 보존했습니다. 원본 복구 후 다시 열어 주세요.")
             }
             // A process ending during estimated-property correction recovers
@@ -218,7 +225,7 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             testingDirectPencil = (isolatedLegacy || isolatedNative) && arguments.contains("--native-pencil-dispatch-fixture")
             #endif
             let item = NativePDFDocument(id: identifier, generation: generation, courseID: course, relativePath: path,
-                                         revision: snapshot.revision, document: pdf, testingDirectPencil: testingDirectPencil)
+                                         revision: revision, document: pdf, testingDirectPencil: testingDirectPencil)
             item.usesNativeChrome = directEnabled
             item.onDiagnostic = { [weak self] event, code in self?.onDiagnostic(event, code) }
             item.onEvent = { [weak self, weak item] type, body in
@@ -468,6 +475,7 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             let hidden = hostOccluded || replacingGenerations[identifier] != nil || occludedSurfaces.contains(identifier) || !visibleSurfaces.contains(identifier)
             item.pdfView.isHidden = hidden
             item.pdfView.accessibilityElementsHidden = hidden
+            item.pdfView.accessibilityIdentifier = hidden ? nil : "bandal-native-pdf-body"
             item.pdfView.isUserInteractionEnabled = !hidden && !hostInputBlocked
             #if DEBUG
             item.presentationDiagnostics = "hostBlocked=\(hostOccluded ? 1 : 0) hostInputBlocked=\(hostInputBlocked ? 1 : 0) layoutRevision=\(layoutRevisions[identifier] ?? 0)"
@@ -551,12 +559,12 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
         let source = data[kind == "clip" ? "clip" : "image"] as? [String: Any] ?? [:]
         guard let path = source["relPath"] as? String,
               let resolved = try await invoke("nativeMaterial:path", ["courseId": courseID, "relPath": path]) as? String else { throw NativePDFError.invalid("PDF에 포함된 이미지를 찾지 못했습니다.") }
-        let root = root
-        let copy = try await Task.detached(priority: .utility) { try Self.snapshot(path: resolved, root: root) }.value
+        // Images and clip sources are read in place (no cache copy); a concurrent rewrite fails this one load and the next refresh retries.
+        let url = URL(fileURLWithPath: resolved)
         if kind != "clip" {
-            guard let image = UIImage(contentsOfFile: copy.url.path) else { throw NativePDFError.invalid("이미지 자료를 해석하지 못했습니다.") }; return image
+            guard let image = UIImage(contentsOfFile: url.path) else { throw NativePDFError.invalid("이미지 자료를 해석하지 못했습니다.") }; return image
         }
-        guard let document = PDFDocument(url: copy.url), let number = source["page"] as? Int, let page = document.page(at: number-1) else { throw NativePDFError.invalid("자료 조각의 PDF 페이지를 찾지 못했습니다.") }
+        guard let document = PDFDocument(url: url), let number = source["page"] as? Int, let page = document.page(at: number-1) else { throw NativePDFError.invalid("자료 조각의 PDF 페이지를 찾지 못했습니다.") }
         let geometry = NativePDFPageCoordinates(page: page)
         let crop = source["crop"] as? [String: Double] ?? ["x": 0, "y": 0, "width": 1, "height": 1]
         let scale = min(2, 2048 / max(geometry.width, geometry.height))
@@ -592,27 +600,12 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
         guard JSONSerialization.isValidJSONObject(result) else { throw NativePDFError.invalid("PDF 입력을 변환하지 못했습니다.") }
         return result
     }
-    nonisolated private static func snapshot(path: String, root: URL) throws -> (url: URL, revision: String) {
-        let file = try DesktopMaterialFile(path: path, root: root)
-        let cache = root.appendingPathComponent("NativePDFCache", isDirectory: true)
-        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-        let temporary = cache.appendingPathComponent(UUID().uuidString + ".part")
-        guard FileManager.default.createFile(atPath: temporary.path, contents: nil) else { throw NativePDFError.invalid("PDF 임시 파일을 만들지 못했습니다.") }
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        let target = try FileHandle(forWritingTo: temporary)
-        defer { try? target.close() }
-        var hash = SHA256(), offset: UInt64 = 0
-        while offset < UInt64(file.size) {
-            let data = try file.read(offset: offset, count: Int(min(256 * 1024, UInt64(file.size) - offset)))
-            guard !data.isEmpty else { throw NativePDFError.invalid("PDF 복사 도중 파일이 바뀌었습니다.") }
-            hash.update(data: data); try target.write(contentsOf: data); offset += UInt64(data.count)
-        }
-        try target.synchronize()
-        let revision = hash.finalize().map { String(format: "%02x", $0) }.joined()
-        let output = cache.appendingPathComponent(revision + ".pdf")
-        if !FileManager.default.fileExists(atPath: output.path) { try FileManager.default.moveItem(at: temporary, to: output) }
-        return (output, revision)
-    }
+}
+
+/// PDFDocument is created off the main thread and handed over once.
+private final class NativePDFDocumentBox: @unchecked Sendable {
+    let document: PDFDocument
+    init(_ document: PDFDocument) { self.document = document }
 }
 
 @MainActor
@@ -1521,7 +1514,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             overlay.mapper = InkCoordinateMapper(canvasToPDF: transform, geometry: coordinates.geometry)
             self.publishSelectionFrame()
         }
-        overlays[number] = overlay; refreshOverlays(); return overlay
+        overlays[number] = overlay; refreshOverlays(pages: [number]); return overlay
     }
     func pdfView(_ pdfView: PDFView, willDisplayOverlayView overlayView: UIView, for page: PDFPage) { overlayView.setNeedsLayout() }
     func pdfView(_ pdfView: PDFView, willEndDisplayingOverlayView overlayView: UIView, for page: PDFPage) {

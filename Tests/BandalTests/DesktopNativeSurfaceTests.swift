@@ -91,7 +91,7 @@ final class DesktopNativeSurfaceTests: XCTestCase {
         let container = UIView(frame: CGRect(x: 0, y: 0, width: 700, height: 900))
         let shell = WKWebView(frame: container.bounds); container.addSubview(shell)
         let host = try NativePDFHost(root: root) { channel, request in
-            if channel == "nativePDF:binding" { return ["materialID": "fixture", "documentRevision": request["documentRevision"]!] }
+            if channel == "nativePDF:binding" { return try NativePDFTestBinding.respond(root: root, file: file, materialID: "fixture") }
             return file.path
         }
         host.attach(to: container, shell: shell)
@@ -162,7 +162,7 @@ final class DesktopNativeSurfaceTests: XCTestCase {
         try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 200)).pdfData { $0.beginPage() }.write(to: file)
         var continuation: CheckedContinuation<String, Never>?
         let host = try NativePDFHost(root: root) { channel, _ in
-            XCTAssertEqual(channel, "nativeMaterial:path", "Canceled opening must stop before reading the canonical binding")
+            XCTAssertEqual(channel, "nativePDF:binding", "Canceled opening must stop before reading the canonical binding")
             return await withCheckedContinuation { continuation = $0 }
         }
         let container = UIView(frame: CGRect(x: 0, y: 0, width: 700, height: 900))

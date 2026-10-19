@@ -22,7 +22,7 @@ final class NativeSyncMaterials {
                 if !context.files.fileExists(atPath: url.path) { continue }
                 let ext = url.pathExtension.lowercased(), kind = ext == "pdf" ? "pdf" : ["md", "markdown"].contains(ext) ? "note" : ["png", "jpg", "jpeg", "webp", "gif", "heic"].contains(ext) ? "image" : "file"
                 let binding = kind == "pdf" ? try checkBinding(["courseId": id, "relPath": relative]) : nil
-                let asset = try F.asset(materialID: mid, url: url), hash = asset["sha256"] as! String
+                let asset = try F.asset(materialID: mid, url: url, hash: context.contentHash(url)), hash = asset["sha256"] as! String
                 if let binding { guard binding["materialID"] as? String == mid, binding["documentRevision"] as? String == hash else { throw C.conflict("PDF identity changed during sync; original ink was preserved") } }
                 result.assets.append(asset)
                 let source: [String: Any] = ["courseID": id, "relPath": relative, "path": url.path, "hash": hash]

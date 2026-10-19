@@ -97,7 +97,7 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         let duplicate = app.buttons["native-duplicate-right"].firstMatch
         XCTAssertTrue(duplicate.waitForExistence(timeout: 5)); duplicate.tap()
         let copyTab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-instance:")).firstMatch
-        XCTAssertTrue(copyTab.waitForExistence(timeout: 15)); let copyID = copyTab.identifier
+        XCTAssertTrue(copyTab.waitForExistence(timeout: 15), app.debugDescription); let copyID = copyTab.identifier
         let a = app.otherElements["native-pdf-pane-" + String(originalID.dropFirst("native-document-tab-".count))]
         let b = app.otherElements["native-pdf-pane-" + String(copyID.dropFirst("native-document-tab-".count))]
         XCTAssertTrue(a.waitForExistence(timeout: 15)); XCTAssertTrue(b.waitForExistence(timeout: 15))

@@ -34,7 +34,7 @@ final class DesktopShellStabilityTests: XCTestCase {
         defer { window.isHidden = true; previousWindow?.makeKeyAndVisible() }
         let shell = WKWebView(frame: controller.view.bounds); controller.view.addSubview(shell)
         let host = try NativePDFHost(root: root) { channel, request in
-            if channel == "nativePDF:binding" { return ["materialID": "fixture", "documentRevision": request["documentRevision"]!] }
+            if channel == "nativePDF:binding" { return try NativePDFTestBinding.respond(root: root, file: file, materialID: "fixture") }
             return root.appendingPathComponent(request["relPath"] as? String ?? "fixture.pdf").path
         }
         host.attach(to: controller.view, shell: shell)
@@ -186,7 +186,7 @@ final class DesktopShellStabilityTests: XCTestCase {
         try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 400, height: 600)).pdfData { $0.beginPage() }.write(to: file)
         var continuation: CheckedContinuation<String, Never>?
         let host = try NativePDFHost(root: root) { channel, _ in
-            XCTAssertEqual(channel, "nativeMaterial:path", "A canceled open must not proceed to canonical binding")
+            XCTAssertEqual(channel, "nativePDF:binding", "A canceled open must not proceed to canonical binding")
             return await withCheckedContinuation { continuation = $0 }
         }
         let container = UIView(frame: CGRect(x: 0, y: 0, width: 900, height: 700)), shell = WKWebView()

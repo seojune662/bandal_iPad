@@ -26,7 +26,7 @@ final class NativePDFHostTests: XCTestCase {
         defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
         let shell = WKWebView(frame: controller.view.bounds); controller.view.addSubview(shell)
         let host = try NativePDFHost(root: root) { channel, request in
-            if channel == "nativePDF:binding" { return ["materialID": "replay", "documentRevision": request["documentRevision"]!] }
+            if channel == "nativePDF:binding" { return try NativePDFTestBinding.respond(root: root, file: source, materialID: "replay") }
             return source.path
         }
         host.onDiagnostic = { event, code in
@@ -122,7 +122,7 @@ final class NativePDFHostTests: XCTestCase {
         defer { window.isHidden = true; previous?.makeKeyAndVisible() }
         let shell = WKWebView(frame: controller.view.bounds); controller.view.addSubview(shell)
         let host = try NativePDFHost(root: root) { channel, request in
-            if channel == "nativePDF:binding" { return ["materialID": "fixture", "documentRevision": request["documentRevision"]!] }
+            if channel == "nativePDF:binding" { return try NativePDFTestBinding.respond(root: root, file: source, materialID: "fixture") }
             return source.path
         }
         host.attach(to: controller.view, shell: shell); defer { host.closeAll() }
@@ -252,7 +252,7 @@ final class NativePDFHostTests: XCTestCase {
         let controller = UIViewController(); window.rootViewController = controller; window.makeKeyAndVisible(); window.layoutIfNeeded()
         defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
         let host = try NativePDFHost(root: root, directEnabled: true) { channel, request in
-            if channel == "nativePDF:binding" { return ["materialID": "viewport", "documentRevision": request["documentRevision"]!] }
+            if channel == "nativePDF:binding" { return try NativePDFTestBinding.respond(root: root, file: url, materialID: "viewport") }
             return url.path
         }
         host.attach(to: controller.view); defer { host.closeAll() }
@@ -306,7 +306,7 @@ final class NativePDFHostTests: XCTestCase {
             let value = try NativePDFHost(root: root) { channel, request in
                 XCTAssertEqual(request["relPath"] as? String, "fixture.pdf")
                 if channel == "nativePDF:binding" {
-                    return ["materialID": "fixture-material", "documentRevision": request["documentRevision"]!, "evidence": "first-observed", "legacyUnverified": false]
+                    return try NativePDFTestBinding.respond(root: root, file: url, materialID: "fixture-material").merging(["evidence": "first-observed", "legacyUnverified": false]) { _, new in new }
                 }
                 XCTAssertEqual(channel, "nativeMaterial:path")
                 return url.path

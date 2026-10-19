@@ -125,6 +125,37 @@ final class NativeWorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(retained.first)), bytes)
     }
 
+    func testDocumentScopedMutationRetiresOnlyTheChangedTabAndResumesTheInitiator() async throws {
+        let store = NativeWorkspaceStore(storageRoot: directory)
+        let edited = NativeDocumentReference(courseID: "a", relativePath: "notes/x.pdf", title: "x", kind: "pdf")
+        let duplicate = edited.duplicated() // a second pane of the same file has its own tab id
+        let other = NativeDocumentReference(courseID: "a", relativePath: "notes/y.pdf", title: "y", kind: "pdf")
+        let browser = NativeDocumentReference(courseID: "a", relativePath: "", title: "web", kind: "browser")
+        var retired: [String] = [], resumed: [String] = []
+        func register(_ document: NativeDocumentReference, _ name: String) -> UUID {
+            store.registerDocumentFlush(id: document.id, document: document, resume: { resumed.append(name) }, retire: { retired.append(name) }) {}
+        }
+        let initiator = register(edited, "initiator"), twin = register(duplicate, "twin"), bystander = register(other, "bystander")
+        defer { [initiator, twin, bystander].forEach(store.unregisterDocumentFlush) }
+        let identities = [edited, duplicate, other, browser].map(store.reloadIdentity)
+        _ = try await store.withExternalMutation({ ["changedCourseIDs": ["a"], "changedDocuments": [["courseId": "a", "relPath": "notes/x.pdf"]]] }, reopening: initiator)
+        XCTAssertEqual(Set(retired), ["twin"], "only another editor of the changed file is retired")
+        XCTAssertEqual(Set(resumed), ["initiator", "bystander"])
+        XCTAssertEqual(store.reloadIdentity(for: edited), identities[0], "the initiator reopens in place")
+        XCTAssertNotEqual(store.reloadIdentity(for: duplicate), identities[1], "a duplicate pane rebuilds")
+        XCTAssertEqual(store.reloadIdentity(for: other), identities[2], "an untouched file in the same course keeps its editor")
+        XCTAssertEqual(store.reloadIdentity(for: browser), identities[3])
+        // A directory scope matches contained paths; the old course scope still matches by course.
+        XCTAssertTrue(NativeWorkspaceStore.affects(changedDocuments: [["courseId": "a", "relPath": "notes", "isDirectory": true]], changedCourseIDs: nil, ["courseId": "a", "relPath": "notes/y.pdf"]))
+        XCTAssertFalse(NativeWorkspaceStore.affects(changedDocuments: [["courseId": "a", "relPath": "notes/x.pdf"]], changedCourseIDs: ["a"], ["courseId": "a", "relPath": "notes/y.pdf"]))
+        XCTAssertTrue(NativeWorkspaceStore.affects(changedDocuments: nil, changedCourseIDs: ["a"], ["courseId": "a", "relPath": "notes/y.pdf"]))
+        XCTAssertTrue(NativeWorkspaceStore.affects(changedDocuments: nil, changedCourseIDs: nil, ["courseId": "b", "relPath": "z.pdf"]))
+        // A universal mutation still never rebuilds a tool tab.
+        _ = try await store.withExternalMutation { [:] as [String: Any] }
+        XCTAssertEqual(store.reloadIdentity(for: browser), identities[3])
+        XCTAssertNotEqual(store.reloadIdentity(for: other), identities[2])
+    }
+
     func testFlushBarrierJoinsConcurrentCallsAndStillFlushesAfterOneFailure() async throws {
         let store = NativeWorkspaceStore(storageRoot: directory)
         var firstCalls = 0, secondCalls = 0

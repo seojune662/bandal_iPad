@@ -76,6 +76,7 @@ final class NativePDFPageRepositoryTests: XCTestCase {
         let f = try Fixture()
         let result = try f.call("pdf:restructure", f.request(["pages": [1, 0, 2, 3]]))
         XCTAssertEqual(result["pageMap"] as? [[Int]], [[1], [3], [4]]); XCTAssertEqual(result["pageCount"] as? Int, 4)
+        XCTAssertEqual((result["changedDocuments"] as? [[String: Any]])?.map { $0["relPath"] as? String }, [f.path], "only this PDF's editors are invalidated")
         let document = try XCTUnwrap(PDFDocument(url: f.url)); XCTAssertEqual(document.pageCount, 4)
         let template = try XCTUnwrap(document.page(at: 0)), inserted = try XCTUnwrap(document.page(at: 1))
         XCTAssertTrue(try NativePDFPageDocument.matches(NativePDFPageDocument.fingerprint(template, annotations: false), NativePDFPageDocument.fingerprint(inserted)))
@@ -112,6 +113,7 @@ final class NativePDFPageRepositoryTests: XCTestCase {
         let history = try f.call("pdf:pageHistory", f.request()); XCTAssertEqual(history["canUndo"] as? Bool, false); XCTAssertEqual(history["recoverToken"] as? String, token as? String)
         XCTAssertThrowsError(try f.call("pdf:restorePages", f.request(["documentRevision": changed["documentRevision"]!, "historyToken": token, "direction": "undo"])))
         let copy = try f.call("pdf:recoverPagesCopy", f.request(["historyToken": token, "variant": "before"])), copyPath = copy["relPath"] as! String
+        XCTAssertEqual((copy["changedDocuments"] as? [[String: Any]])?.count, 0, "a recovery copy invalidates no open editor")
         XCTAssertEqual(try Data(contentsOf: f.context.materialURL(courseID: f.course, relativePath: copyPath)), f.original)
         XCTAssertEqual(try f.context.query("SELECT * FROM pdf_drawings WHERE rel_path=? AND deleted_at IS NULL", [copyPath]).count, 3)
         XCTAssertEqual(try f.context.query("SELECT data_json FROM pdf_drawings WHERE id='ink-3'").first?["data_json"] as? String, "{}")

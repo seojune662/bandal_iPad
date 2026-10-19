@@ -15,8 +15,8 @@ enum NativePDFPageSync {
         var steps: [[String: Any]] = [], assets: [[String: Any]] = [], hashes = Set<String>()
         func original(_ hash: String) throws -> URL {
             let url = context.root.appendingPathComponent("PDFOriginals/\(hash).pdf")
-            guard try F.hash(url) == hash else { throw C.conflict("PDF 페이지 변경의 원본 백업이 손상되었습니다.") }
-            if hashes.insert(hash).inserted { assets.append(try F.asset(materialID: material, url: url)) }
+            guard try context.contentHash(url) == hash else { throw C.conflict("PDF 페이지 변경의 원본 백업이 손상되었습니다.") }
+            if hashes.insert(hash).inserted { assets.append(try F.asset(materialID: material, url: url, hash: hash)) }
             return url
         }
         for row in try context.query("SELECT * FROM native_pdf_revision_lineage WHERE material_id=? ORDER BY rowid", [material]) {

@@ -45,6 +45,9 @@ final class NativeWorkspaceStore: ObservableObject {
     @Published private(set) var documentReloadEpoch: UInt64 = 0
     private var universalReloadEpoch: UInt64 = 0
     private var courseReloadEpochs: [String:UInt64] = [:]
+    /// Keyed by the editor registration id (one per tab), so a page edit
+    /// rebuilds only the tabs whose file changed.
+    private var documentReloadEpochs: [String: UInt64] = [:]
     let events = PassthroughSubject<NativeWorkspaceEvent, Never>()
 
     /// Installed by the native scene's presenter for sharing, exporting and
@@ -151,15 +154,17 @@ final class NativeWorkspaceStore: ObservableObject {
             self.loadingCount += 1
             defer { self.loadingCount -= 1 }
             do {
-                try await self.runtime.start()
+                try await DesktopSignpost.measure(DesktopSignpost.launch, "runtime") { try await self.runtime.start() }
                 _ = try await self.runtime.invokePrivate("nativeRuntime:workspaceReady", request: ["workspaceSessionId": self.sessionID])
                 if let data = try? Data(contentsOf: self.selectionURL), let saved = try? JSONDecoder().decode(Selection.self, from: data) {
                     self.selectedCourseID = saved.courseID
                 }
-                try await self.loadCourses()
-                try await self.loadMaterials()
+                try await DesktopSignpost.measure(DesktopSignpost.launch, "courses") { try await self.loadCourses() }
+                try await DesktopSignpost.measure(DesktopSignpost.launch, "materials") { try await self.loadMaterials() }
                 self.isReady = true
                 self.errorMessage = nil
+                // Folder-walking recovery runs after the first screen is interactive.
+                Task { _ = try? await self.runtime.invokePrivate("nativeRuntime:recoverDeferred", request: [:]) }
             } catch {
                 self.startupError = error
                 throw error
@@ -280,7 +285,10 @@ final class NativeWorkspaceStore: ObservableObject {
                 self.events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:materialRenamed", payload: ["courseId": courseID, "fromRelPath": material.relPath, "toRelPath": renamed.relativePath, "isDirectory": material.isDirectory]))
                 // Navigation consumes the rename before the barrier rebuilds
                 // editors. An unchanged path does not invalidate their state.
-                let result: [String: Any] = renamed.relativePath == material.relPath ? ["changedCourseIDs": [String]()] : [:]
+                // Only the renamed file (and notes whose links were rewritten) change; other tabs stay.
+                let rewritten = (value as? [String: Any])?["changedDocuments"] as? [[String: Any]] ?? []
+                let result: [String: Any] = renamed.relativePath == material.relPath ? ["changedCourseIDs": [String](), "changedDocuments": [[String: Any]]()]
+                    : ["changedCourseIDs": [courseID], "changedDocuments": [["courseId": courseID, "relPath": material.relPath, "isDirectory": material.isDirectory]] + rewritten]
                 return result
             }
             return
@@ -309,7 +317,9 @@ final class NativeWorkspaceStore: ObservableObject {
                 guard let result = try await self.invoke("materials:move", ["courseId": courseID, "fromRelPath": material.relPath, "toDirRelPath": parentPath]) as? [String: Any],
                       let path = result["relPath"] as? String else { throw DesktopRuntimeError("자료 이동 결과를 확인하지 못했습니다.") }
                 self.events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:materialRenamed", payload: ["courseId": courseID, "fromRelPath": material.relPath, "toRelPath": path, "isDirectory": material.isDirectory]))
-                let changes: [String: Any] = path == material.relPath ? ["changedCourseIDs": [String]()] : [:]
+                let rewritten = result["changedDocuments"] as? [[String: Any]] ?? []
+                let changes: [String: Any] = path == material.relPath ? ["changedCourseIDs": [String](), "changedDocuments": [[String: Any]]()]
+                    : ["changedCourseIDs": [courseID], "changedDocuments": [["courseId": courseID, "relPath": material.relPath, "isDirectory": material.isDirectory]] + rewritten]
                 return changes
             }
             return
@@ -376,7 +386,25 @@ final class NativeWorkspaceStore: ObservableObject {
     }
 
     func reloadIdentity(for document: NativeDocumentReference) -> String {
-        document.id + ":" + document.storageID + ":\(universalReloadEpoch):\(courseReloadEpochs[document.courseID] ?? 0)"
+        // Browser/assistant/recordings/planner tabs hold no file; nothing on disk can invalidate them.
+        guard !document.isWorkspaceTool else { return document.id }
+        return document.id + ":" + document.storageID + ":\(universalReloadEpoch):\(courseReloadEpochs[document.courseID] ?? 0):\(documentReloadEpochs[document.id] ?? 0)"
+    }
+    /// Which registered editors a finished mutation invalidates. `changedDocuments`
+    /// (course + path, directories by prefix) is the narrow scope; `changedCourseIDs`
+    /// the old course scope; neither means everything.
+    static func affects(changedDocuments: [[String: Any]]?, changedCourseIDs: Set<String>?, _ mutation: [String: Any]?) -> Bool {
+        guard let mutation, let course = mutation["courseId"] as? String else { return changedDocuments == nil && changedCourseIDs == nil }
+        if let changedDocuments {
+            let path = mutation["relPath"] as? String ?? "", directory = mutation["isDirectory"] as? Bool == true
+            return changedDocuments.contains { changed in
+                guard changed["courseId"] as? String == course, let changedPath = changed["relPath"] as? String else { return false }
+                return changedPath == path || (changed["isDirectory"] as? Bool == true && path.hasPrefix(changedPath + "/"))
+                    || (directory && changedPath.hasPrefix(path + "/"))
+            }
+        }
+        if let changedCourseIDs { return changedCourseIDs.contains(course) }
+        return true
     }
 
     private func joinExternalMutation(_ token: UUID, entry: DocumentFlush) {
@@ -411,26 +439,35 @@ final class NativeWorkspaceStore: ObservableObject {
 
     /// A sync import or folder reattachment must hold input stopped from the
     /// last local flush until old editor instances have been retired.
-    func withExternalMutation(_ action: @escaping @MainActor () async throws -> Any) async throws -> Any {
+    /// `reopening` is the registration of the editor that started the mutation
+    /// (a page edit of its own file); it is resumed, not retired, and reopens itself.
+    func withExternalMutation(_ action: @escaping @MainActor () async throws -> Any, reopening: UUID? = nil) async throws -> Any {
         try await ensureStarted()
-        return try await withMaterialMutationLease { try await performExternalMutation(action) }
+        return try await withMaterialMutationLease { try await performExternalMutation(action, reopening: reopening) }
     }
 
-    private func performExternalMutation(_ action: @MainActor () async throws -> Any) async throws -> Any {
+    private func performExternalMutation(_ action: @MainActor () async throws -> Any, reopening: UUID? = nil) async throws -> Any {
         externalMutationActive = true
         isApplyingExternalChanges = true
         var succeeded = false
         var changedCourseIDs: Set<String>?
+        var changedDocuments: [[String: Any]]?
         defer {
             // Retain even unregistered participants until completion: a view
             // disappearing during an await still owns its old file identity.
             var finalized = Set<UUID>(), notified = Set<String>()
-            var didApply = succeeded && changedCourseIDs == nil
+            var didApply = succeeded && changedCourseIDs == nil && changedDocuments == nil
             while let (token, entry) = externalParticipants.first(where: { !finalized.contains($0.key) }) {
                 finalized.insert(token)
-                let courseID = entry.mutation?["courseId"] as? String
-                let affected = succeeded && (changedCourseIDs == nil || courseID.map { changedCourseIDs!.contains($0) } == true)
-                if affected { entry.retire?(); didApply = true } else { entry.resume?() }
+                let affected = succeeded && Self.affects(changedDocuments: changedDocuments, changedCourseIDs: changedCourseIDs, entry.mutation)
+                if affected {
+                    didApply = true
+                    if token == reopening { entry.resume?() }
+                    else {
+                        entry.retire?()
+                        if changedDocuments != nil { documentReloadEpochs[entry.id, default: 0] &+= 1 }
+                    }
+                } else { entry.resume?() }
                 if notified.insert(entry.storageID).inserted, let mutation = entry.mutation {
                     events.send(NativeWorkspaceEvent(channel: affected ? "nativeWorkspace:materialReplaced" : "nativeWorkspace:materialMutationCancelled", payload: mutation))
                 }
@@ -440,7 +477,9 @@ final class NativeWorkspaceStore: ObservableObject {
             externalMutationActive = false
             isApplyingExternalChanges = false
             if didApply {
-                if let changedCourseIDs {
+                if changedDocuments != nil {
+                    // Per-tab epochs were bumped above; the course keeps its identity.
+                } else if let changedCourseIDs {
                     for courseID in changedCourseIDs { courseReloadEpochs[courseID,default:0] &+= 1 }
                 } else { universalReloadEpoch &+= 1 }
                 documentReloadEpoch &+= 1
@@ -465,8 +504,11 @@ final class NativeWorkspaceStore: ObservableObject {
             throw failure
         }
         succeeded = true
-        changedCourseIDs = ((result as? [String: Any])?["changedCourseIDs"] as? [String]).map(Set.init)
-        try await loadCourses(); try await loadMaterials()
+        let payload = result as? [String: Any]
+        changedCourseIDs = (payload?["changedCourseIDs"] as? [String]).map(Set.init)
+        changedDocuments = payload?["changedDocuments"] as? [[String: Any]]
+        // An explicitly empty course scope changed nothing the lists show.
+        if changedCourseIDs?.isEmpty != true { try await loadCourses(); try await loadMaterials() }
         return result
     }
 

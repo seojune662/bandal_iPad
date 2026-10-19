@@ -29,6 +29,7 @@ struct NativeWorkspaceView: View {
     @State private var showingCourseManager = false
     @State private var courseName = ""
     @State private var busy = false
+    @State private var showBusy = false
     @State private var restored = false
     @State private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     @State private var loginRequired = false
@@ -53,7 +54,16 @@ struct NativeWorkspaceView: View {
                     courseSidebar.frame(width: railWidths.left)
                     railDivider
                 }
-                VStack(spacing: 0) {
+                // The dock is always mounted: section screens cover it instead of
+                // replacing it, so open editors survive a trip to Settings or Learning.
+                let covered = section != .library || auxiliary != nil || learningHome
+                ZStack {
+                    NativeDockWorkspace(navigation: navigation, store: store, content: { workspace($0) }, empty: { emptyWorkspace },
+                        perform: transition, persist: saveNavigation, closeDocuments: closeDocuments,
+                        materialsOpen: geometry.size.width < 900 ? compactMaterialsRail : materialsRailOpen,
+                        toggleMaterials: { toggleMaterialsRail(width: geometry.size.width) },
+                        openNewTab: openNewTab, covered: covered, select: selectTab)
+                        .opacity(covered ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered)
                     if section == .settings {
                         NativeSettingsWorkspace(store: store, initialCategory: settingsCategory)
                     } else if let auxiliary {
@@ -65,14 +75,10 @@ struct NativeWorkspaceView: View {
                     } else if learningHome {
                         NativeLearningHome(store: store, onOpen: openLearning)
                     } else if section != .library {
-                        toolTabs
-                        NativeToolsWorkspace(section: section, store: store, services: services)
-                    } else {
-                        NativeDockWorkspace(navigation: navigation, store: store, content: { workspace($0) }, empty: { emptyWorkspace },
-                            perform: transition, persist: saveNavigation, closeDocuments: closeDocuments,
-                            materialsOpen: geometry.size.width < 900 ? compactMaterialsRail : materialsRailOpen,
-                            toggleMaterials: { toggleMaterialsRail(width: geometry.size.width) },
-                            openNewTab: openNewTab)
+                        VStack(spacing: 0) {
+                            toolTabs
+                            NativeToolsWorkspace(section: section, store: store, services: services)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -116,7 +122,14 @@ struct NativeWorkspaceView: View {
                 if boardOverlayOpen { academicBoardOverlay(size: geometry.size) }
             }
             .overlay(alignment: .top) {
-                if busy { ProgressView().padding(10).background(.regularMaterial, in: Capsule()).padding(.top, 48) }
+                if showBusy { ProgressView().padding(10).background(.regularMaterial, in: Capsule()).padding(.top, 48) }
+            }
+            .task(id: busy) {
+                // Only a transition that actually takes time shows the capsule.
+                showBusy = false
+                guard busy else { return }
+                try? await Task.sleep(for: .milliseconds(300))
+                if busy { showBusy = true }
             }
         }
         .font(NativeDesktopTheme.font(14))
@@ -141,9 +154,12 @@ struct NativeWorkspaceView: View {
         } message: { Text(store.errorMessage ?? "") }
         .task {
             await store.start()
-            await services.start()
-            if store.isReady, let state = try? await store.invoke("auth:getState") as? [String: Any] { loginRequired = NativeLoginGate.requiresLogin(state) }
-            workspaceSettings = (try? await store.invoke("settings:get")) as? [String: Any] ?? [:]
+            // Sync, auth and settings can wait for the restored tabs; the first screen cannot.
+            defer { Task { @MainActor in
+                await services.start()
+                if store.isReady, let state = try? await store.invoke("auth:getState") as? [String: Any] { loginRequired = NativeLoginGate.requiresLogin(state) }
+                workspaceSettings = (try? await store.invoke("settings:get")) as? [String: Any] ?? [:]
+            } }
             guard store.isReady, !restored else { return }
             restored = true
             navigation.openAdjacentTab = openAdjacentTab
@@ -562,6 +578,14 @@ struct NativeWorkspaceView: View {
             } catch { store.errorMessage = error.localizedDescription }
         }
     }
+    /// Switching to a tab whose outgoing editor is retained needs no global
+    /// flush: nothing is torn down. Other kinds still take the flushing transition.
+    private func selectTab(_ id: String, in groupID: String) {
+        let outgoing = navigation.layout?.groups.first { $0.id == groupID }?.activeID.flatMap(navigation.document)
+        let retained = outgoing.map { $0.kind == "pdf" || $0.isWorkspaceTool || NativeDockWorkspace<EmptyView, EmptyView>.retainsEditor($0) } ?? true
+        guard retained else { transition { navigation.select(id, in: groupID) }; return }
+        navigation.select(id, in: groupID); compactCourseRail = false; compactMaterialsRail = false; saveNavigation()
+    }
     private func transition(_ action: @escaping @MainActor () -> Void) {
         guard !busy else { return }
         busy = true
@@ -654,14 +678,14 @@ struct NativeWorkspaceView: View {
                     let index = group.tabs.firstIndex(of: group.activeID ?? "") ?? 0
                     let offset = action == "next-tab" ? 1 : group.tabs.count - 1
                     let target = group.tabs[(index + offset) % group.tabs.count]
-                    transition { navigation.select(target, in: group.id) }
+                    selectTab(target, in: group.id)
                 }
             case "activate-last-tab":
-                if let group = navigation.layout?.focused, let target = group.tabs.last { transition { navigation.select(target, in: group.id) } }
+                if let group = navigation.layout?.focused, let target = group.tabs.last { selectTab(target, in: group.id) }
             default:
                 if action.hasPrefix("activate-tab-"), let number = Int(action.dropFirst("activate-tab-".count)),
                    let group = navigation.layout?.focused, number > 0, number <= group.tabs.count {
-                    transition { navigation.select(group.tabs[number - 1], in: group.id) }
+                    selectTab(group.tabs[number - 1], in: group.id)
                 }
             }
             return

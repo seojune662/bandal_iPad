@@ -52,7 +52,7 @@ final class NativePDFCanonicalHandoffTests: XCTestCase {
         }
         let host = try NativePDFHost(root: root) { channel, request in
             if let runtime { return try await runtime.invokePrivate(channel, request: request) }
-            if channel == "nativePDF:binding" { return ["materialID": "fixture", "documentRevision": request["documentRevision"]!] }
+            if channel == "nativePDF:binding" { return try NativePDFTestBinding.respond(root: root, file: source, materialID: "fixture") }
             return source.path
         }
         host.attach(to: controller.view, shell: shell); defer { host.closeAll() }

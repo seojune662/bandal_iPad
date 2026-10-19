@@ -274,6 +274,10 @@ final class NativeLibraryRepository {
             return result
         }
         var nodes = try walk(folder, "", 0)
+        // The 5 s watcher and every sync refresh call this. When the walk matches
+        // the stored snapshot nothing on disk changed, so skip the fsync'd rewrite.
+        if !initialized, !truncated, let stored = try context.query("SELECT tree FROM material_tree_snapshots WHERE course_id=? AND folder=?", [course, folder.path]).first?["tree"] as? String,
+           stored == (try C.json(nodes)) { return nodes }
         let now = C.nowISO, found = Set(flat.compactMap { $0["relPath"] as? String })
         try context.transaction {
             for file in flat {
@@ -339,8 +343,8 @@ final class NativeLibraryRepository {
                 guard !isDirectory || !C.contains(source.path, folder.path) else { throw C.validation("폴더를 자기 안으로 옮길 수 없습니다.") }
                 destination = path(target, try freeName(in: folder, requested: source.lastPathComponent))
             }
-            try rename(course: course, from: relative, to: destination, directory: isDirectory)
-            return ["relPath": destination]
+            let rewritten = try rename(course: course, from: relative, to: destination, directory: isDirectory)
+            return ["relPath": destination, "changedDocuments": rewritten]
         case "delete":
             return try context.withMaterialLock {
                 let relative = try string(request, "relPath"), source = try context.materialURL(courseID: course, relativePath: relative)
@@ -421,7 +425,7 @@ final class NativeLibraryRepository {
         let folder = url.deletingLastPathComponent(), desired = newTitle + ".md"
         let name = desired == url.lastPathComponent || !context.files.fileExists(atPath: folder.appendingPathComponent(desired).path) ? desired : try freeName(in: folder, requested: desired, duplicate: true)
         let next = path(parent(relative), name), before = try String(contentsOf: url, encoding: .utf8), after = Self.replaceNoteTitle(before, title: (name as NSString).deletingPathExtension)
-        try rename(course: course, from: relative, to: next, directory: false, heading: (before, after))
+        _ = try rename(course: course, from: relative, to: next, directory: false, heading: (before, after))
         let final = try context.materialURL(courseID: course, relativePath: next)
         return ["relPath": next, "title": (name as NSString).deletingPathExtension, "markdown": try String(contentsOf: final, encoding: .utf8), "mtime": try C.mtimeToken(final)]
     }
@@ -438,11 +442,15 @@ final class NativeLibraryRepository {
         try walk(folder, "", 0)
         if truncated { throw C.validation("Folder is too large to preserve a rename safely") }; return result
     }
-    private func rename(course: String, from: String, to: String, directory: Bool, heading: (String, String)? = nil) throws {
+    /// Returns the notes whose links were rewritten (course + path before the
+    /// rename), so only their open editors are invalidated.
+    @discardableResult
+    private func rename(course: String, from: String, to: String, directory: Bool, heading: (String, String)? = nil) throws -> [[String: Any]] {
         try context.withMaterialLock {
             try context.assertPathAvailable(courseID: course)
             let folder = try context.courseFolder(course), source = try context.resolve(in: folder, relativePath: from), target = try context.resolve(in: folder, relativePath: to)
-            if from == to && heading == nil { return }
+            if from == to && heading == nil { return [] }
+            var rewritten: [[String: Any]] = []
             guard from == to || !context.files.fileExists(atPath: target.path) else { throw C.conflict("동일한 이름의 자료가 있습니다.") }
             if directory && C.contains(source.path, target.path) { throw C.validation("폴더를 자기 안으로 옮길 수 없습니다.") }
             try context.beforeMaterialRename?(course, from, to, directory)
@@ -467,6 +475,7 @@ final class NativeLibraryRepository {
                     total += before.utf8.count + after.utf8.count
                     guard total <= 32 * 1024 * 1024 else { throw C.validation("Rename note recovery plan exceeds 32 MiB") }
                     notes.append(["relPath": next, "before": before, "after": after, "mode": mode])
+                    if relative != from { rewritten.append(["courseId": course, "relPath": relative]) }
                 }
             }
             let key = UUID().uuidString.lowercased()
@@ -485,6 +494,7 @@ final class NativeLibraryRepository {
                 total += before.utf8.count + after.utf8.count
                 guard total <= 32 * 1024 * 1024 else { throw C.validation("Rename recovery plan exceeds 32 MiB") }
                 notes.append(["courseId": owner, "relPath": next, "before": before, "after": after, "mode": mode, "folderIdentity": try C.identity(ownerFolder)])
+                rewritten.append(["courseId": owner, "relPath": old])
             }
             guard C.sameIdentity(original, try C.identity(source)) else { throw C.conflict("이름 변경 준비 중 자료가 변경되었습니다.") }
             try context.run("INSERT INTO material_path_intents(id,course_id,folder_path,folder_identity,from_rel_path,to_rel_path,original_identity,created_at,note_writes) VALUES(?,?,?,?,?,?,?,?,?)", [key, course, folder.path, C.json(C.identity(folder)), from, to, C.json(original), C.nowISO, C.json(notes)])
@@ -507,6 +517,7 @@ final class NativeLibraryRepository {
                 catch { throw DesktopRuntimeError("이름 변경 복구가 필요합니다. 원본·변경본·복구 기록을 보존했습니다. \(operationError.localizedDescription) / \(error.localizedDescription)", code: "RECOVERY_REQUIRED") }
                 throw operationError
             }
+            return rewritten
         }
     }
     /// A page note may be stored in another course. Its link proves which PDF

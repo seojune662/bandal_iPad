@@ -458,10 +458,11 @@ final class NativePDFNativeEraseHostTests: XCTestCase {
             window.rootViewController = controller; window.makeKeyAndVisible(); window.layoutIfNeeded()
             let shell = WKWebView(frame: controller.view.bounds); controller.view.addSubview(shell)
             journalQueue = queueFactory?(root) ?? NativePDFJournalQueue(root: root)
+            let originalsRoot = root
             host = try NativePDFHost(root: root, journalQueue: journalQueue) { channel, request in
                 if channel == "nativePDF:binding" {
                     await binding?.waitIfHeld()
-                    return ["materialID": "native-erase", "documentRevision": request["documentRevision"]!]
+                    return try NativePDFTestBinding.respond(root: originalsRoot, file: url, materialID: "native-erase")
                 }
                 XCTAssertEqual(channel, "nativeMaterial:path"); return url.path
             }

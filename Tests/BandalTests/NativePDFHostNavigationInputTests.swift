@@ -288,7 +288,7 @@ final class NativePDFHostNavigationInputTests: XCTestCase {
         let host = try NativePDFHost(root: root, journalQueue: journalQueue) { channel, request in
             if channel == "nativeMaterial:path" { return source.path }
             if channel == "nativePDF:binding" {
-                return ["materialID": "navigation-fixture", "documentRevision": try XCTUnwrap(request["documentRevision"] as? String)]
+                return try NativePDFTestBinding.respond(root: root, file: source, materialID: "navigation-fixture")
             }
             XCTFail("Unexpected private backend call: \(channel)")
             throw NSError(domain: "HostNavigationFixture", code: 1)

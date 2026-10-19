@@ -33,7 +33,7 @@ final class NativePDFDisplayStateTests: XCTestCase {
         let shell = WKWebView(frame: controller.view.bounds); controller.view.addSubview(shell)
         let host = try NativePDFHost(root: root) { channel, request in
             if channel == "nativePDF:binding" {
-                return ["materialID": "display-state", "documentRevision": request["documentRevision"]!]
+                return try NativePDFTestBinding.respond(root: root, file: url, materialID: "display-state")
             }
             XCTAssertEqual(channel, "nativeMaterial:path")
             return url.path

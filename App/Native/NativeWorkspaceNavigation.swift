@@ -194,11 +194,19 @@ final class NativeWorkspaceNavigation: ObservableObject {
     func remove(courseID: String, path: String, isDirectory: Bool) {
         documents.filter { !$0.isWorkspaceTool && $0.courseID == courseID && ($0.relativePath == path || (isDirectory && $0.relativePath.hasPrefix(path + "/"))) }.map(\.id).forEach(close)
     }
-    func restore(from url: URL, exists: (NativeDocumentReference) async -> Bool) async {
+    func restore(from url: URL, exists: @escaping @Sendable (NativeDocumentReference) async -> Bool) async {
         let initialRevision = revision
         guard let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
-        var restored: [NativeDocumentReference] = []
-        for item in saved.documents where !restored.contains(where: { $0.id == item.id }) { if await exists(item) { restored.append(item) } }
+        // One storage call per saved tab, in parallel instead of one after another.
+        var unique: [NativeDocumentReference] = []
+        for item in saved.documents where !unique.contains(where: { $0.id == item.id }) { unique.append(item) }
+        let present = await withTaskGroup(of: (Int, Bool).self, returning: Set<Int>.self) { group in
+            for (index, item) in unique.enumerated() { group.addTask { (index, await exists(item)) } }
+            var result = Set<Int>()
+            for await (index, ok) in group where ok { result.insert(index) }
+            return result
+        }
+        let restored = unique.enumerated().filter { present.contains($0.offset) }.map(\.element)
         guard revision == initialRevision else { return }
         documents = restored
         let valid = Set(restored.map(\.id))

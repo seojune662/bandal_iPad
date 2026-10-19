@@ -29,15 +29,17 @@ final class NativePDFPageThumbnailSource {
     }
     func image(page: Int) async -> UIImage? {
         if let image = cache.object(forKey: NSNumber(value: page)) { return image }
-        guard !Task.isCancelled, let data = await worker.image(page: page), !Task.isCancelled, let image = UIImage(data: data) else { return nil }
+        guard !Task.isCancelled, let image = await worker.image(page: page)?.image, !Task.isCancelled else { return nil }
         cache.setObject(image, forKey: NSNumber(value: page)); return image
     }
+    /// The rendered thumbnail crosses from the worker once; no PNG encode/decode.
+    private final class ImageBox: @unchecked Sendable { let image: UIImage; init(_ image: UIImage) { self.image = image } }
     private final class Worker: @unchecked Sendable {
         let url: URL
         let queue = DispatchQueue(label: "bandal.pdf.page-thumbnails", qos: .utility)
         private var document: PDFDocument?
         init(url: URL) { self.url = url }
-        func image(page: Int) async -> Data? {
+        func image(page: Int) async -> ImageBox? {
             await withCheckedContinuation { completion in
                 queue.async { [self] in
                     if document == nil { document = PDFDocument(url: url) }
@@ -46,7 +48,7 @@ final class NativePDFPageThumbnailSource {
                     let size = CGSize(width: coordinates.width, height: coordinates.height)
                     let width: CGFloat = 260
                     let height = min(520, max(64, width * size.height / max(size.width, 1)))
-                    completion.resume(returning: page.thumbnail(of: CGSize(width: width, height: height), for: .cropBox).pngData())
+                    completion.resume(returning: ImageBox(page.thumbnail(of: CGSize(width: width, height: height), for: .cropBox)))
                 }
             }
         }

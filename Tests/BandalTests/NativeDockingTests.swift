@@ -35,6 +35,23 @@ final class NativeDockingTests: XCTestCase {
         XCTAssertEqual(focusProjection.filter(\.visible).count, 1)
         XCTAssertTrue(focusProjection.filter { !$0.visible }.allSatisfy { !focusBounds.intersects($0.frame) })
     }
+    func testInactiveMarkdownStaysMountedOffscreenWhilePDFIsNotRetained() throws {
+        typealias Dock = NativeDockWorkspace<EmptyView, EmptyView>
+        let navigation = NativeWorkspaceNavigation()
+        let note = NativeDocumentReference(courseID: "a", relativePath: "notes.md", title: "notes", kind: "note")
+        let pdf = NativeDocumentReference(courseID: "a", relativePath: "two.pdf", title: "two", kind: "pdf")
+        navigation.open(note); navigation.open(pdf)
+        let layout = try XCTUnwrap(navigation.layout), bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let geometry = layout.geometry(in: bounds)
+        let projection = Dock.projectDocuments([note, pdf], geometry: geometry, layout: layout, bounds: bounds)
+        // Markdown keeps live retention: mounted offscreen while the PDF tab is active.
+        let hidden = try XCTUnwrap(projection.first { $0.id == note.id }, "an inactive markdown editor stays mounted")
+        XCTAssertFalse(hidden.visible); XCTAssertLessThan(hidden.frame.maxX, 0, "a retained tab is parked offscreen")
+        XCTAssertTrue(try XCTUnwrap(projection.first { $0.id == pdf.id }).visible)
+        // PDF warm-retention is deferred: only the active PDF tab is mounted.
+        XCTAssertFalse(projection.contains { $0.id == pdf.id && !$0.visible })
+    }
+
     func testNestedDirectionsKeepIndependentActiveTabsAndStableGroups() throws {
         let nav = NativeWorkspaceNavigation(), a = document("a"), b = document("b"), c = document("c")
         nav.open(a); nav.open(b); nav.open(c)

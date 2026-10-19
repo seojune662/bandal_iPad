@@ -30,6 +30,13 @@ private final class NativeDockDragSession: ObservableObject {
 
 /// Frames are projected from the recursive tree, but editor views live in a flat
 /// stable-ID layer. Splitting or moving a tab therefore never reparents its editor.
+private struct NativeEditorVisibleKey: EnvironmentKey { static let defaultValue = true }
+extension EnvironmentValues {
+    /// False while a retained editor is hidden (another tab is active, or a
+    /// section screen covers the dock). Editors suspend rendering, not state.
+    var nativeEditorVisible: Bool { get { self[NativeEditorVisibleKey.self] } set { self[NativeEditorVisibleKey.self] = newValue } }
+}
+
 struct NativeDockWorkspace<Content: View, Empty: View>: View {
     @ObservedObject var navigation: NativeWorkspaceNavigation
     @ObservedObject var store: NativeWorkspaceStore
@@ -41,6 +48,10 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     let materialsOpen: Bool
     let toggleMaterials: () -> Void
     let openNewTab: (NativeNewTabAction, String) -> Void
+    /// The dock stays mounted behind Settings/Help/Learning; editors are hidden, not rebuilt.
+    var covered = false
+    /// Tab taps that need no global flush (retained editors). nil falls back to `perform`.
+    var select: ((String, String) -> Void)? = nil
     @StateObject private var drag = NativeDockDragSession()
     @State private var maximizedGroupID: String?
     @State private var newTabGroupID: String?
@@ -70,10 +81,11 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     // when the same document moves to another group or the tree changes.
                     ForEach(visibleDocuments(geometry, layout: layout, bounds: bounds)) { entry in
                         content(entry.document)
+                            .environment(\.nativeEditorVisible, entry.visible && !covered)
                             .frame(width: entry.frame.width, height: entry.frame.height)
                             .background {
                                 if Self.retainsEditor(entry.document) {
-                                    NativeDockEditorVisibility(isVisible: entry.visible)
+                                    NativeDockEditorVisibility(isVisible: entry.visible && !covered)
                                 }
                             }
                             .clipped()
@@ -128,7 +140,11 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         Self.projectDocuments(navigation.documents, geometry: geometry, layout: layout, bounds: bounds, headerHeight: headerHeight)
     }
     static func retainsEditor(_ document: NativeDocumentReference) -> Bool {
-        document.kind == "note" || ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased())
+        // PDF warm-retention is deferred: a resumed (offscreen-then-shown) PDFKit view
+        // swallows the UIKit tab drag-drop, so switching PDFs relies on the fast open()
+        // path (PDFOriginals + hash cache + deferred page history) instead. Markdown
+        // keeps live retention: UIKit owns its selection, composition and per-pane undo.
+        return document.kind == "note" || ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased())
     }
     static func projectDocuments(_ documents: [NativeDocumentReference], geometry: NativeDockGeometry, layout: NativeDockLayout,
                                  bounds: CGRect, headerHeight: CGFloat = 44) -> [VisibleDocument] {
@@ -155,6 +171,9 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                               height: max(220, (original?.frame.height ?? bounds.height) - inset)), visible: false))
         }
         return result
+    }
+    private func selectTab(_ id: String, in groupID: String) {
+        if let select { select(id, groupID) } else { perform { navigation.select(id, in: groupID) } }
     }
     private func paneChrome(_ pane: NativeDockPaneFrame, focused: Bool, corner: Bool) -> some View {
         VStack(spacing: 0) {
@@ -193,7 +212,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     .accessibilityIdentifier("native-dock-tabs-" + group.id)
                     .popover(isPresented: Binding(get: { tabListGroupID == group.id }, set: { if !$0 { tabListGroupID = nil } }), arrowEdge: .top) {
                         NativeDockTabList(documents: group.tabs.compactMap { navigation.document($0) }, activeID: group.activeID,
-                            select: { id in tabListGroupID = nil; perform { navigation.select(id, in: group.id) } },
+                            select: { id in tabListGroupID = nil; selectTab(id, in: group.id) },
                             close: { closeDocuments([$0]) })
                             .presentationCompactAdaptation(.popover)
                     }
@@ -219,7 +238,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             NativeDockDraggableTab(document: document, selected: group.activeID == document.id,
                 fontScale: fontScale, density: sizing.density, courseID: navigation.activeCourseID ?? document.courseID, drag: drag,
                 close: { closeDocuments([document.id]) }) {
-                perform { navigation.select(document.id, in: group.id) }
+                selectTab(document.id, in: group.id)
             }
             .frame(width: max(0, sizing.width - (sizing.showsClose ? 32 : 0)), height: 44).clipped()
             if sizing.showsClose {

@@ -6,6 +6,7 @@ import Combine
 /// compositor; neither this view nor its persistence owner instantiates WKWebView.
 struct NativePDFWorkspace: View {
     @StateObject private var model: NativePDFWorkspaceModel
+    @Environment(\.nativeEditorVisible) private var visible
     private let tabID: String
 
     init(document: NativeDocumentReference, store: NativeWorkspaceStore, onOpenDocument: ((NativeDocumentReference) -> Void)? = nil) {
@@ -14,8 +15,10 @@ struct NativePDFWorkspace: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            NativePDFToolbar(model: model)
-            if !model.sourceQuote.isEmpty {
+            // A hidden retained tab keeps its model and UIKit body but no chrome:
+            // its controls must not answer accessibility queries meant for the visible tab.
+            if visible { NativePDFToolbar(model: model) }
+            if !model.sourceQuote.isEmpty, visible {
                 HStack(spacing: 12) {
                     Text(model.sourceQuote).font(.callout).lineLimit(1)
                     Spacer(minLength: 0)
@@ -36,19 +39,19 @@ struct NativePDFWorkspace: View {
             Divider()
             GeometryReader { geometry in
                 HStack(spacing: 0) {
-                    if model.showPages {
+                    if model.showPages && visible {
                         NativePDFPagesPanel(model: model).frame(width: geometry.size.width < 700 ? 128 : 160)
                         Divider()
                     }
                     ZStack {
-                        NativePDFBody(model: model).accessibilityIdentifier("native-pdf-workspace").allowsHitTesting(!model.showStyle)
+                        NativePDFBody(model: model, visible: visible).accessibilityIdentifier(visible ? "native-pdf-workspace" : "").allowsHitTesting(!model.showStyle)
                         if model.isLoading {
                             ProgressView("문서 여는 중…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                         }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                         .overlay { if model.showStyle { NativePDFPaletteOverlay(model: model) } }
                         .overlay { if model.selectionCount > 0, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame) } }
-                    if model.showAnnotations {
+                    if model.showAnnotations && visible {
                         Divider()
                         NativePDFAnnotationRail(model: model).frame(width: geometry.size.width < 700 ? 220 : 280)
                     }
@@ -65,8 +68,9 @@ struct NativePDFWorkspace: View {
                 .padding(12).background(.bar)
             }
         }
+        .onChange(of: visible, initial: true) { _, value in model.setVisible(value) }
         .background(NativeDesktopTheme.bgApp)
-        .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-pane-" + tabID)
+        .accessibilityElement(children: .contain).accessibilityIdentifier(visible ? "native-pdf-pane-" + tabID : "")
         .sheet(isPresented: $model.showAnnotationEditor, onDismiss: { model.dismissAnnotation() }) {
             NavigationStack {
                 Form {
@@ -215,7 +219,10 @@ final class NativePDFWorkspaceModel: ObservableObject {
     private var preferences: NativePDFWorkspacePreferences
     private var host: NativePDFHost?
     private var persistence: NativePDFPersistence?
-    private let surfaceID = UUID().uuidString, generation = UUID().uuidString
+    private let surfaceID = UUID().uuidString
+    /// A page operation reopens the same surface under a new generation.
+    private var generation = UUID().uuidString
+    private var visible = true
     private var opening: Task<Void, Error>?
     private var flushing: Task<Void, Error>?
     private var historyTask: Task<Void, Error>?
@@ -320,8 +327,11 @@ final class NativePDFWorkspaceModel: ObservableObject {
     private func open() async throws {
         await store.waitForExternalMutation()
         guard !retired, !Task.isCancelled else { return }
-        guard let state = try await call("open") as? [String: Any],
-              let revision = state["documentRevision"] as? String else { throw NativePDFError.invalid("PDF를 열지 못했습니다.") }
+        store.runtime.beginForegroundWork(); defer { store.runtime.endForegroundWork() }
+        // The saved position needs no binding; it rides the storage queue alongside the host open.
+        async let savedViewState = store.invoke("pdf:getViewState", ["courseId": document.courseID, "relPath": document.relativePath])
+        guard let state = try await DesktopSignpost.measure(DesktopSignpost.open, "host.open", { try await call("open") }) as? [String: Any],
+              let revision = state["documentRevision"] as? String else { _ = try? await savedViewState; throw NativePDFError.invalid("PDF를 열지 못했습니다.") }
         opened = true; pageRevision = revision
         thumbnailSource = NativePDFPageThumbnailSource(root: store.root, revision: revision)
         pageCount = state["numPages"] as? Int ?? 1
@@ -348,31 +358,33 @@ final class NativePDFWorkspaceModel: ObservableObject {
             self.refreshHistory()
             Task { @MainActor [weak self] in
                 guard let self, !self.retired, self.setupComplete else { return }
-                do { try await self.refreshAnnotations(); try await self.publishSnapshot(); if self.showPages { try await self.refreshPageHistory() } }
+                do { try await self.refreshAnnotations(); try await self.publishSnapshot(); self.schedulePageHistoryRefresh() }
                 catch { self.fail(error) }
             }
         }
         writer.onAnnotationsChanged = { [weak self] in
-            guard let self else { return }; try await self.refreshAnnotations(); try await self.publishSnapshot(); if self.showPages { try await self.refreshPageHistory() }
+            guard let self else { return }; try await self.refreshAnnotations(); try await self.publishSnapshot(); self.schedulePageHistoryRefresh()
         }
-        try await writer.recoverEdits()
-        try await refreshAnnotations()
+        try await DesktopSignpost.measure(DesktopSignpost.open, "recoverEdits") { try await writer.recoverEdits() }
+        // Annotations only need the binding; load them while history and strokes recover.
+        async let annotationsLoaded: () = refreshAnnotations()
         writer.restoreHistory(root: store.root)
-        try await refreshPageHistory()
+        // Page history (a double PDF parse) is deferred to the pages panel.
         // Recover old journal payloads before enabling this generation's
         // ordered native eraser. No new contact is exposed during recovery.
         let recovered: [[String: Any]]
         if let pending = state["pending"] as? [[String: Any]] { recovered = pending }
         else { recovered = (try await call("flush") as? [String: Any])?["pending"] as? [[String: Any]] ?? [] }
         try await writer.recoverStrokes(recovered)
+        try await annotationsLoaded
         writer.onRowsChanged = { [weak self] in
             guard let self else { return }
             self.drawingRevision += 1
             try await self.publishSnapshot()
-            if self.showPages { try await self.refreshPageHistory() }
+            self.schedulePageHistoryRefresh()
         }
-        try await publishSnapshot()
-        if let saved = try await store.invoke("pdf:getViewState", ["courseId": document.courseID, "relPath": document.relativePath]) as? [String: Any] {
+        try await DesktopSignpost.measure(DesktopSignpost.open, "publishSnapshot") { try await publishSnapshot() }
+        if let saved = try await savedViewState as? [String: Any] {
             viewport = preferences.viewport?.restoring(saved, revision: revision, independent: true) ?? saved
             zoom = (viewport["zoom"] as? NSNumber)?.doubleValue ?? 1
             viewport["page"] = min(pageCount, max(1, viewport["page"] as? Int ?? 1))
@@ -381,21 +393,52 @@ final class NativePDFWorkspaceModel: ObservableObject {
         }
         isLoading = false; refreshHistory(); exposed = true; try await publishLayout(); setupComplete = true
         if bounds.width > 0, bounds.height > 0 { restoreInput() }
+        if showPages { schedulePageHistoryRefresh() }
+    }
+    private var pageHistoryTask: Task<Void, Never>?
+    /// `pdf:pageHistory` reads and parses the whole PDF; while the pages panel is
+    /// open it is refreshed once a second at most instead of after every stroke.
+    private func schedulePageHistoryRefresh() {
+        guard showPages else { return }
+        pageHistoryTask?.cancel()
+        pageHistoryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, !Task.isCancelled, self.showPages, !self.retired else { return }
+            do { try await self.refreshPageHistory() } catch { self.fail(error) }
+        }
     }
     func layout(_ rect: CGRect) {
         guard rect.width > 0, rect.height > 0, rect != bounds else { return }
         bounds = rect
         guard opened, !isLoading, !retired else { return }
-        Task { do { try await publishLayout() } catch { fail(error) } }
+        // Keyboard, pane and panel animations deliver a frame per tick; each one
+        // re-laid out PDFKit (prepareNavigation). Publish the settled frame only.
+        layoutTask?.cancel()
+        layoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(Self.layoutSettleDelayMs))
+            guard !Task.isCancelled, let self else { return }
+            do { try await self.publishLayout() } catch { self.fail(error) }
+        }
+    }
+    private static let layoutSettleDelayMs = 40
+    private var layoutTask: Task<Void, Never>?
+    /// A hidden (retained) tab keeps its model and host but the host suspends
+    /// the PDF view and releases GPU caches; edits are flushed on hide.
+    func setVisible(_ value: Bool) {
+        guard value != visible else { return }
+        visible = value
+        guard opened, !retired else { return }
+        Task { do { try await publishLayout(); if !value { try await flush() } } catch { fail(error) } }
     }
     private func publishLayout() async throws {
         guard bounds.width > 0, bounds.height > 0 else { return }
         layoutRevision += 1
-        _ = try await call("layout", ["revision": layoutRevision, "visible": true, "occluded": false, "holes": [],
+        _ = try await call("layout", ["revision": layoutRevision, "visible": visible, "occluded": false, "holes": [],
             "rect": ["x": Double(bounds.minX), "y": Double(bounds.minY), "width": Double(bounds.width), "height": Double(bounds.height)]])
         // PDFKit computes its fit scale only after the real container frame is
         // installed. Restoring earlier loses zoom/scroll on that first layout.
-        if let saved = pendingViewportRestore {
+        // A suspended (hidden) host has no document to navigate; keep the restore pending.
+        if visible, let saved = pendingViewportRestore {
             pendingViewportRestore = nil
             do { _ = try await call("navigate", saved) }
             catch { pendingViewportRestore = saved; throw error }
@@ -460,7 +503,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         snapshotTask = task
         try await task.value
     }
-    private var inputSinceFlush = true
+    private var inputSinceFlush = true, lastSavedViewport: [String: Any]?
     private func receive(_ event: [String: Any]) {
         guard event["surfaceId"] as? String == surfaceID, event["generation"] as? String == generation,
               let type = event["type"] as? String, let payload = event["payload"] as? [String: Any] else { return }
@@ -513,7 +556,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
             if nextZoom != zoom { zoom = nextZoom }
             let next = payload["page"] as? Int ?? page
             if next != page {
-                if gesture == nil { clearSelection() }
+                if gesture == nil, selectionCount > 0 || selectionPage != nil { clearSelection() }
                 page = next
                 store.events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:pdfPageChanged", payload: ["courseId": document.courseID, "relPath": document.relativePath, "tabID": document.id, "page": next]))
             }
@@ -1090,7 +1133,9 @@ final class NativePDFWorkspaceModel: ObservableObject {
             if let current = result["viewport"] as? [String: Any] { self.viewport = current }
             var saved = self.viewport
             saved["courseId"] = self.document.courseID; saved["relPath"] = self.document.relativePath
-            _ = try await self.store.invoke("pdf:setViewState", saved)
+            if !(saved as NSDictionary).isEqual(to: self.lastSavedViewport ?? [:]) {
+                _ = try await self.store.invoke("pdf:setViewState", saved); self.lastSavedViewport = saved
+            }
             self.preferences.viewport = .init(revision: self.pageRevision, values: saved)
             self.savePreferences()
             persistence.checkpointHistory(root: self.store.root)
@@ -1248,26 +1293,52 @@ final class NativePDFWorkspaceModel: ObservableObject {
         pageOperation = Task { @MainActor in
             defer { self.pageOperation = nil }
             do {
-                let result = try await self.store.withExternalMutation { [store = self.store] in try await store.invoke(channel, request) }
+                // This editor started the mutation: the store resumes it instead of
+                // retiring it, and it reopens its own surface at the new revision.
+                let result = try await self.store.withExternalMutation({ [store = self.store] in try await store.invoke(channel, request) }, reopening: self.registration)
                 self.pendingPageOperation = nil
-                if let goTo, let count = (result as? [String: Any])?["pageCount"] as? Int {
-                    // The tab reopens at the new revision and restores this saved position.
+                let value = result as? [String: Any]
+                if let goTo, let count = value?["pageCount"] as? Int {
+                    // The reopen restores this saved position.
                     var saved = self.viewport
                     saved["courseId"] = self.document.courseID; saved["relPath"] = self.document.relativePath; saved["page"] = min(goTo, count)
                     _ = try await self.store.invoke("pdf:setViewState", saved)
                 }
-                if channel == "pdf:recoverPagesCopy", let value = result as? [String: Any], let courseID = value["courseId"] as? String,
+                if channel == "pdf:recoverPagesCopy", let value, let courseID = value["courseId"] as? String,
                    let relativePath = value["relPath"] as? String, let title = value["title"] as? String {
                     self.onOpenDocument?(.init(courseID: courseID, relativePath: relativePath, title: title, kind: "pdf"))
-                }
+                } else if let revision = value?["documentRevision"] as? String, revision != self.pageRevision {
+                    try await self.reopen()
+                } else if self.showPages { try await self.refreshPageHistory() }
+                self.isBusy = self.materialMutating; self.restoreInput()
             } catch {
                 self.isBusy = self.materialMutating; self.fail(error)
             }
         }
     }
     private func setMaterialMutating(_ value: Bool) {
-        materialMutating = value; isBusy = value || editorTask != nil || historyTask != nil
+        materialMutating = value; isBusy = value || editorTask != nil || historyTask != nil || pageOperation != nil
         restoreInput()
+    }
+    /// After a page operation on this file: same host and surface, new generation
+    /// and revision. Stroke undo does not survive (rows were rewritten); page
+    /// history undo is the undo for the operation.
+    private func reopen() async throws {
+        guard host != nil, !retired else { return }
+        clearTextEditor(); gesture = nil; sourceQuote = ""; sourceSelection = nil
+        selectedIDs.removeAll(); selectionPage = nil; selectionCount = 0; selectedText = false; selectionFrame = nil
+        persistence?.invalidateHistory(root: store.root)
+        persistence?.onPeerChanged = nil; persistence?.onRowsChanged = nil; persistence?.onAnnotationsChanged = nil
+        persistence = nil
+        generation = UUID().uuidString // old-generation host events now fail receive()'s guard
+        opened = false; setupComplete = false; isLoading = true
+        drawingFingerprints = nil; publishedDrawingRevision = -1; displayRows = []
+        sceneEpoch += 1; sceneRevisions.removeAll(); sceneFingerprints.removeAll(); scenePages.removeAll(); dirtyScenes.removeAll()
+        thumbnailRevisions = [:]; thumbnailRowCache = [:]; thumbnailPageCounts = [:]; thumbnailDirtyPages = []
+        thumbnailRefreshTask?.cancel(); thumbnailRefreshTask = nil
+        let task = Task { @MainActor in try await self.open() }
+        opening = task
+        try await task.value
     }
     private func retire() {
         guard !retired else { return }
@@ -1293,6 +1364,8 @@ final class NativePDFWorkspaceModel: ObservableObject {
             setMaterialMutating(true)
         case "nativeWorkspace:materialMutationCancelled":
             writesSuspended = false; setMaterialMutating(false)
+        case "nativeWorkspace:materialReplaced" where pageOperation != nil:
+            break // this editor's own page operation; it reopens in place
         case "nativeWorkspace:materialRenamed", "nativeWorkspace:materialDeleted", "nativeWorkspace:materialReplaced":
             // The store's mutation barrier already finished all input. Do not
             // recreate pdf_view_state under the obsolete file path on teardown.
@@ -1304,8 +1377,14 @@ final class NativePDFWorkspaceModel: ObservableObject {
 
 private struct NativePDFBody: UIViewControllerRepresentable {
     let model: NativePDFWorkspaceModel
+    var visible = true
     func makeUIViewController(context: Context) -> NativePDFBodyController { NativePDFBodyController(model: model) }
-    func updateUIViewController(_ controller: NativePDFBodyController, context: Context) {}
+    func updateUIViewController(_ controller: NativePDFBodyController, context: Context) {
+        // UIKit hidden views leave the accessibility tree; SwiftUI's accessibilityHidden does not reach them.
+        // UIKit hidden views leave the accessibility tree; SwiftUI's accessibilityHidden does not reach them.
+        if controller.view.isHidden != !visible { controller.view.isHidden = !visible }
+        controller.view.accessibilityElementsHidden = !visible
+    }
     static func dismantleUIViewController(_ controller: NativePDFBodyController, coordinator: ()) { controller.model.close() }
 }
 private final class NativePDFBodyController: UIViewController {

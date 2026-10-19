@@ -1,4 +1,15 @@
 import Foundation
+import os
+
+/// Launch and PDF-open phases as os_signpost intervals (Instruments) plus a log line.
+enum DesktopSignpost {
+    static let launch = OSSignposter(subsystem: "app.bandal", category: "launch")
+    static let open = OSSignposter(subsystem: "app.bandal", category: "pdf-open")
+    static func measure<T>(_ poster: OSSignposter, _ name: StaticString, _ body: () async throws -> T) async rethrows -> T {
+        let state = poster.beginInterval(name); defer { poster.endInterval(name, state) }
+        return try await body()
+    }
+}
 
 /// Operational diagnostics only. Request bodies, URLs, file paths, messages
 /// and credentials never enter this log; desktop export adds its own redaction.
