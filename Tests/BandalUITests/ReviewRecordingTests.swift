@@ -177,7 +177,7 @@ final class ReviewRecordingTests: XCTestCase {
     @MainActor private func allowSystemAlert() {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let allow = springboard.alerts.buttons.matching(NSPredicate(format: "label IN %@", ["허용", "Allow", "확인", "OK"])).firstMatch
-        if allow.waitForExistence(timeout: 5) { pause(1.5); allow.tap(); pause(1) }
+        if allow.waitForExistence(timeout: 5) { pause(0.8); if allow.exists && allow.isHittable { allow.tap() }; pause(1) }
     }
     /// The visible page: at 100 % the A4 page fills the PDF body's width from its top edge.
     @MainActor private func pageFrame(_ pdf: XCUIElement) -> CGRect {
