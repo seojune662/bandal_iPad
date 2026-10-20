@@ -37,7 +37,12 @@ final class NativePlatformServices: ObservableObject {
         settingsService = NativeSettingsPlatformService(store:store,files:files)
         browser = DesktopBrowserHost(root:runtime.root)
         credentials = DesktopCredentialsService(namespace: runtime.root.lastPathComponent, environment: credentialEnvironment)
-        ai = DesktopAIService()
+        var aiEnvironment = DesktopAIEnvironment()
+        aiEnvironment.askConsent = { [weak store] provider in
+            let settings = (try? await store?.invoke("settings:get")) as? [String: Any]
+            return await AIConsent.ask(provider, english: settings?["locale"] as? String == "en-US")
+        }
+        ai = DesktopAIService(environment: aiEnvironment)
         assistant = NativeAssistantService(runtime:runtime,ai:ai)
         account = DesktopAccountService(root:runtime.root)
         profile = DesktopProfileService(documents:runtime.root.deletingLastPathComponent(),root:runtime.root)

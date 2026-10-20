@@ -5,6 +5,8 @@ struct DesktopAIEnvironment {
     var readKey: (AIProvider) -> String? = { KeychainStore.read("ai.\($0.rawValue)") }
     var writeKey: (AIProvider, String) throws -> Void = { try KeychainStore.write($1, account: "ai.\($0.rawValue)") }
     var session: URLSession = URLSession(configuration: .ephemeral, delegate: DesktopAIRedirectPolicy(), delegateQueue: nil)
+    var hasConsent: (AIProvider) -> Bool = { AIConsent.isGranted($0) }
+    var askConsent: (AIProvider) async -> Bool = { await AIConsent.ask($0, english: false) }
 }
 private final class DesktopAIRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
@@ -20,6 +22,7 @@ final class DesktopAIService {
     private var tasks: [String: (provider: AIProvider, task: Task<AIResult, Error>)] = [:]
     private var generations: [AIProvider: Int] = [:]
     private var catalogs: [AIProvider: [String: Any]] = [:]
+    private var consentPrompts: [AIProvider: Task<Bool, Never>] = [:]
     init(environment: DesktopAIEnvironment? = nil) { self.environment = environment ?? DesktopAIEnvironment() }
     func canHandle(_ channel: String) -> Bool { channel.hasPrefix("native:ai") }
     func handle(channel: String, request: [String: Any]) async throws -> Any {
@@ -85,12 +88,25 @@ final class DesktopAIService {
         } catch is CancellationError { throw CancellationError() }
         catch { var result = catalogs[provider] ?? fallback; result["status"] = "unverified"; result["error"] = "API 모델 목록 확인에 실패했습니다. 선택한 모델의 실제 접근 권한은 요청 때 확인됩니다."; if catalogs[provider] != nil { result["source"] = "cache" }; return result }
     }
+    /// One sheet per provider even when several requests start at once.
+    private func consent(_ provider: AIProvider) async -> Bool {
+        if environment.hasConsent(provider) { return true }
+        if let pending = consentPrompts[provider] { return await pending.value }
+        let ask = environment.askConsent
+        let prompt = Task { await ask(provider) }
+        consentPrompts[provider] = prompt
+        defer { consentPrompts[provider] = nil }
+        return await prompt.value
+    }
     private func run(_ provider: AIProvider, request: [String: Any]) async throws -> [String: Any] {
         guard let identifier = request["requestId"] as? String, UUID(uuidString: identifier) != nil, tasks[identifier] == nil,
               let raw = request["messages"] as? [[String: Any]], raw.count <= 300,
               let toolInputs = request["tools"] as? [[String: Any]], toolInputs.count <= 160,
               let event = onEvent, let execute = onTool else { throw DesktopRuntimeError("AI 요청 구성을 확인할 수 없습니다.") }
+        guard await consent(provider) else { throw DesktopRuntimeError("AI 제공자 전송에 동의하지 않아 요청을 보내지 않았습니다.") }
+        try Task.checkCancellation()
         let key = environment.readKey(provider) ?? ""
+        guard !key.isEmpty else { throw DesktopRuntimeError("\(provider.title) API 키를 설정 › AI 엔진에서 등록해 주세요.") }
         let generation = generations[provider, default: 0]
         let requestedModel = request["model"] as? String ?? ""
         let model = requestedModel.isEmpty || requestedModel == "default" ? provider.model : requestedModel

@@ -28,7 +28,7 @@ final class NativeAssistantServiceTests: XCTestCase {
         let course = try await runtime.invoke("courses:create",request:["name":"AI test","color":"blue"]) as! [String:Any]
         identity = ["courseId":course["id"]!,"sessionId":UUID().uuidString,"provider":"codex"]
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [NativeAssistantProtocol.self]
-        var environment = DesktopAIEnvironment(); environment.session = URLSession(configuration:config); environment.readKey = { _ in "fixture-not-a-real-key" }; environment.writeKey = { _,_ in }
+        var environment = DesktopAIEnvironment(); environment.session = URLSession(configuration:config); environment.readKey = { _ in "fixture-not-a-real-key" }; environment.writeKey = { _,_ in }; environment.hasConsent = { _ in true }
         NativeAssistantProtocol.hold = false; NativeAssistantProtocol.began = nil
         service = NativeAssistantService(runtime:runtime,ai:DesktopAIService(environment:environment))
         runtime.onNativeCall = { [weak service] channel,request in guard let service else { throw CancellationError() }; return try await service.handle(channel,request) }

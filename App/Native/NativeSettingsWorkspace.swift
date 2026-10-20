@@ -65,6 +65,7 @@ struct NativeSettingsWorkspace: View {
   @State private var error: String?
   @State private var notice: String?
   @State private var removingKey: NativeAIProvider?
+  @State private var consentRevision = 0
   @State private var signOutConfirmation = false
   @State private var pendingRestore: ConflictChoice?
   private struct ConflictChoice {
@@ -397,11 +398,29 @@ struct NativeSettingsWorkspace: View {
           if let models = modelCatalog[provider.rawValue] {
             Text(models.joined(separator: "\n")).font(.caption.monospaced()).textSelection(.enabled)
           }
+          consentRow(provider)
         }
       }
       Text("API 키는 이 기기의 Keychain에 저장됩니다. 질문과 첨부 자료는 선택한 제공자에게 전송되며 해당 API 요금이 적용됩니다.").font(
         NativeDesktopTheme.font( 12)
       ).foregroundStyle(NativeDesktopTheme.muted)
+    }
+  }
+  private func consentRow(_ provider: NativeAIProvider) -> some View {
+    let target: AIProvider = switch provider { case .openAI: .openai; case .anthropic: .claude; case .google: .gemini }
+    let english = locale == "en-US"
+    let granted = consentRevision >= 0 && AIConsent.isGranted(target)
+    return HStack {
+      Text(granted
+        ? (english ? "Consent to send to \(AIConsent.company(target)) given" : "\(AIConsent.company(target)) 전송에 동의함")
+        : (english ? "Consent will be asked before the first send" : "처음 보낼 때 동의를 묻습니다"))
+        .font(.caption).foregroundStyle(.secondary)
+      Spacer()
+      if granted {
+        Button(english ? "Withdraw consent" : "동의 철회", role: .destructive) {
+          AIConsent.set(target, granted: false); consentRevision += 1
+        }.accessibilityIdentifier("native-ai-consent-revoke-\(provider.rawValue)")
+      }
     }
   }
   private var accountPanel: some View {
