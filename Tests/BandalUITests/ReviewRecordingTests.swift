@@ -45,9 +45,17 @@ final class ReviewRecordingTests: XCTestCase {
         // System document picker. It reopens in the last folder (the app's own folder after a dry run);
         // otherwise search by name so no other files are ever listed on screen.
         let file = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", sample)).firstMatch
-        if !file.waitForExistence(timeout: 4) {
-            let search = app.searchFields.firstMatch
-            tap(search, wait: 10); search.typeText(sample); pause(2)
+        if !file.waitForExistence(timeout: 2) {
+            let search = app.buttons.matching(NSPredicate(format: "label IN %@", ["검색", "Search"])).firstMatch
+            if search.waitForExistence(timeout: 3) {
+                tap(search)
+                let field = app.searchFields.firstMatch
+                if field.waitForExistence(timeout: 3) { field.typeText(sample); pause(2) }
+            }
+        }
+        if !file.waitForExistence(timeout: 3) {
+            tap(app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["나의 iPad", "On My iPad"])).firstMatch, wait: 10)
+            tap(app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["반달", "Bandal"])).firstMatch, wait: 10)
         }
         tap(file, wait: 10)
         let open = app.buttons.matching(NSPredicate(format: "label IN %@", ["열기", "Open"])).firstMatch
