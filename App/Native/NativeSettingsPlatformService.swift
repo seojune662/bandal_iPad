@@ -164,7 +164,7 @@ final class NativeSettingsPlatformService: NSObject, UNUserNotificationCenterDel
         async let documentsSize = Self.bytes(store.root)
         async let cacheSize = Self.bytes(store.root.appendingPathComponent("NativePDFCache",isDirectory:true))
         return ["platform":"iPadOS","version":Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "","build":Bundle.main.object(forInfoDictionaryKey:"CFBundleVersion") as? String ?? "",
-                "permissions":[["id":"notifications","title":"알림","status":notificationStatus,"detail":"마감·다운로드·AI 응답 알림"],["id":"microphone","title":"마이크","status":microphone,"detail":"강의 녹음"],["id":"camera","title":"카메라","status":camera,"detail":"웹사이트의 사진·화상 기능"],["id":"calendar","title":"캘린더","status":calendar,"detail":"선택한 기기 캘린더의 일정 표시"]],
+                "permissions":[["id":"notifications","title":"알림","status":notificationStatus,"detail":"마감·다운로드·AI 응답 알림"],["id":"microphone","title":"마이크","status":microphone,"detail":NativeReleaseFlags.showsRecording ? "강의 녹음" : "웹사이트의 음성·화상 기능"],["id":"camera","title":"카메라","status":camera,"detail":"웹사이트의 사진·화상 기능"],["id":"calendar","title":"캘린더","status":calendar,"detail":"선택한 기기 캘린더의 일정 표시"]],
                 "storage":["documentsBytes":await documentsSize,"cacheBytes":await cacheSize,"rootPath":store.root.path],
                 "notifications":["authorization":notificationStatus,"pendingCount":pending.count],
                 "calendar":["authorization":calendar,"calendars":calendars,"enabled":!(calendarSettings["selectedCalendarIds"] as? [String] ?? []).isEmpty,"selectedCalendarIds":calendarSettings["selectedCalendarIds"] ?? [],"destinationCalendarId":calendarSettings["destinationCalendarId"] ?? NSNull()]]

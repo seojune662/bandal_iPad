@@ -2,8 +2,7 @@ import XCTest
 
 /// Drives the App Review walkthrough at a human pace for a screen recording.
 /// Runs only with TEST_RUNNER_BANDAL_REVIEW_RECORDING=1. Needs the sample lecture PDF
-/// in the app's Documents (Files › On My iPad › app) and the Zipformer model under
-/// Documents/Bandal-Native-UI-Tests/SpeechModels/zipformer-ko.
+/// in the app's Documents (Files › On My iPad › app).
 final class ReviewRecordingTests: XCTestCase {
     private let sample = "선형대수학_3주차_강의자료"
     private var app: XCUIApplication!
@@ -22,11 +21,9 @@ final class ReviewRecordingTests: XCTestCase {
         app.launch()
 
         createCourse(); snap("createCourse")
-        if ProcessInfo.processInfo.environment["BANDAL_REVIEW_ONLY"] == "recording" { recordLecture(); snap("recordLecture"); return }
         importAndOpenPDF(); snap("importAndOpenPDF")
         writeOnPDF(); snap("writeOnPDF")
         splitWithNote(); snap("splitWithNote")
-        recordLecture(); snap("recordLecture")
         openBrowser(); snap("openBrowser")
         showAIConsent(); snap("showAIConsent")
         showSettings(); snap("showSettings")
@@ -104,18 +101,6 @@ final class ReviewRecordingTests: XCTestCase {
         pause(2.5)
     }
 
-    @MainActor private func recordLecture() {
-        tap(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch)
-        tap(app.buttons["native-new-tab-recording"]); pause(2)
-        type("3주차 강의", into: app.textFields["native-recording-title"])
-        app.dismissNativeTestKeyboard()
-        tap(app.buttons["native-recording-start"])
-        allowSystemAlert()
-        // The Mac plays a short Korean lecture through its speaker; the on-device model transcribes it.
-        pause(18)
-        tap(app.buttons["native-recording-stop"]); pause(6)
-    }
-
     @MainActor private func openBrowser() {
         tap(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch)
         tap(app.buttons["native-new-tab-new-browser"]); pause(2)
@@ -176,11 +161,6 @@ final class ReviewRecordingTests: XCTestCase {
         let item = app.buttons["native-pdf-tool-" + name]
         XCTAssertTrue(item.waitForExistence(timeout: 15), app.debugDescription)
         if !item.isSelected { tap(item) }
-    }
-    @MainActor private func allowSystemAlert() {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let allow = springboard.alerts.buttons.matching(NSPredicate(format: "label IN %@", ["허용", "Allow", "확인", "OK"])).firstMatch
-        if allow.waitForExistence(timeout: 5) { pause(0.8); if allow.exists && allow.isHittable { allow.tap() }; pause(1) }
     }
     /// The visible page: at 100 % the A4 page fills the PDF body's width from its top edge.
     @MainActor private func pageFrame(_ pdf: XCUIElement) -> CGRect {

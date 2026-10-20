@@ -334,6 +334,7 @@ struct NativeWorkspaceView: View {
             else { open(.init(courseID: course, relativePath: "favorite-" + favorite.id, title: "학습 공간", kind: "learning-home")) }
             return
         }
+        if favorite.kind == "recording", !NativeReleaseFlags.showsRecording { return }
         if ["board", "chat", "recording"].contains(favorite.kind) {
             let kind = favorite.kind == "board" ? "planner" : favorite.kind == "chat" ? "assistant" : "recordings"
             guard let course else { openTool(kind == "planner" ? .planner : kind == "assistant" ? .assistant : .recordings); return }
@@ -667,7 +668,7 @@ struct NativeWorkspaceView: View {
             if payload["webContentsId"] != nil && browserLocal { return }
             switch action {
             case "new-ai-tab": openTool(.assistant, new: true)
-            case "new-recording-tab": openTool(.recordings, new: true)
+            case "new-recording-tab": if NativeReleaseFlags.showsRecording { openTool(.recordings, new: true) }
             case "open-study-board": toggleAcademicBoard()
             case "toggle-left-rail": courseRailOpen.toggle()
             case "toggle-right-rail": toggleMaterialsRail(width: UIScreen.main.bounds.width)

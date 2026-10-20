@@ -2,10 +2,12 @@ import XCTest
 @testable import Bandal
 
 final class NativeNewTabMenuTests: XCTestCase {
-    func testMenuOffersExactlyFiveTabKindsInOrderAndFiltersBySearch() {
+    func testMenuOffersTabKindsInOrderAndFiltersBySearch() {
         let initial = NativeNewTabCatalog.items(query: "", courseName: "Class")
-        XCTAssertEqual(initial.map(\.id), ["new-browser", "new-whiteboard", "new-note", "chat", "recording"])
-        XCTAssertEqual(initial.map(\.title), ["브라우저", "노트", "마크다운", "AI", "녹음"])
+        let recording = NativeReleaseFlags.showsRecording
+        XCTAssertEqual(initial.map(\.id), ["new-browser", "new-whiteboard", "new-note", "chat"] + (recording ? ["recording"] : []))
+        XCTAssertEqual(initial.map(\.title), ["브라우저", "노트", "마크다운", "AI"] + (recording ? ["녹음"] : []))
+        XCTAssertEqual(NativeNewTabCatalog.items(query: "녹음", courseName: "Class").isEmpty, !recording)
         XCTAssertEqual(NativeNewTabCatalog.items(query: "마크", courseName: "Class").map(\.id), ["new-note"])
         XCTAssertEqual(NativeNewTabCatalog.items(query: "필기", courseName: "Class").first?.action, .note)
         XCTAssertFalse(initial.contains { $0.title.contains("화이트보드") })

@@ -1,4 +1,4 @@
-Bandal is an iPad app that brings everything you need for university study onto one screen. Organize PDFs, notes, handwriting and recordings by course, and split the screen to view several materials side by side.
+Bandal is an iPad app that brings everything you need for university study onto one screen. Organize PDFs, notes and handwriting by course, and split the screen to view several materials side by side.
 
 PDF and handwriting
 - Open lecture PDFs and write on them with a pen, ballpoint or highlighter. Apple Pencil pressure and tilt are supported.
@@ -10,15 +10,13 @@ Notes
 - Write Markdown notes with headings, lists, checklists, tables and formulas.
 - Place PDF pages and notes side by side and link them.
 
-Lecture recording
-- Record lectures and create transcripts on the iPad. Audio and transcripts never leave the device.
-
 Workspace
 - Drag tabs to split the screen horizontally or vertically. Courses and your reading position are restored the next time you open the app.
 - A built-in browser for school sites and course materials, to-dos and schedules, and Apple Calendar integration.
 
 AI
 - Enter your own OpenAI, Anthropic or Google API key to ask questions with your materials attached. Keys are stored only in the iPad Keychain.
+- The app asks for consent before the first request to each provider; questions and attachments go from the iPad straight to the provider you chose.
 
 Storage
 - Everything is stored on your iPad. No account is needed.

@@ -29,11 +29,12 @@ final class NativeSidebarParityUITests: XCTestCase {
         capture("Course children are persisted favorites")
         let plus = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
         XCTAssertTrue(plus.exists); plus.tap()
-        for id in ["new-browser", "new-whiteboard", "new-note", "chat", "recording"] {
+        for id in ["new-browser", "new-whiteboard", "new-note", "chat"] {
             XCTAssertTrue(app.buttons["native-new-tab-" + id].waitForExistence(timeout: 5), id + app.debugDescription)
         }
         XCTAssertFalse(app.buttons["새 화이트보드"].exists)
-        for id in ["learning", "board", "add-link"] { XCTAssertFalse(app.buttons["native-new-tab-" + id].exists, id) }
+        // Lecture recording is hidden in the iPad 1.0 build (NativeReleaseFlags.showsRecording).
+        for id in ["learning", "board", "add-link", "recording"] { XCTAssertFalse(app.buttons["native-new-tab-" + id].exists, id) }
         capture("Tab plus source order and note naming")
         app.buttons["native-new-tab-new-note"].tap()
         let editor = app.textViews["native-markdown-editor"]

@@ -32,7 +32,7 @@ enum NativeSettingsCatalog {
         .init(id: "calendar", title: "달력", description: "Apple 캘린더와 반달 일정을 연결합니다.", keywords: "달력 애플 Apple iCloud 캘린더 일정 동기화 연결", icon: "calendar", group: "workflows"),
         .init(id: "browser", title: "브라우저", description: "홈페이지·검색·확대/축소와 링크 동작을 관리합니다.", keywords: "브라우저 웹뷰 홈페이지 검색 엔진 줌 확대 축소 링크 열기 브라우징 데이터 에이전트", icon: "globe", group: "workflows"),
         .init(id: "appearance", title: "화면", description: "반달이 보이는 방식을 선택합니다.", keywords: "외형 테마 라이트 다크 시스템 고대비 접근성 글자 크기 글꼴 밀도", icon: "paintpalette", group: "interface"),
-        .init(id: "tabs", title: "탭", description: "마크다운·브라우저·AI·녹음·노트·학업 보드의 기본 동작을 관리합니다.", keywords: "탭 마크다운 녹음 STT Whisper 음성 모델 마이크 자막 재생 노트 학업 보드 단축키", icon: "rectangle.on.rectangle", group: "interface"),
+        .init(id: "tabs", title: "탭", description: NativeReleaseFlags.showsRecording ? "마크다운·브라우저·AI·녹음·노트·학업 보드의 기본 동작을 관리합니다." : "마크다운·브라우저·AI·노트·학업 보드의 기본 동작을 관리합니다.", keywords: NativeReleaseFlags.showsRecording ? "탭 마크다운 녹음 STT Whisper 음성 모델 마이크 자막 재생 노트 학업 보드 단축키" : "탭 마크다운 브라우저 AI 노트 학업 보드 단축키", icon: "rectangle.on.rectangle", group: "interface"),
         .init(id: "widgets", title: "위젯", description: "우측 사이드바의 위젯을 선택하고 정렬합니다.", keywords: "위젯 투두 할 일 학업 보드 메일 사이드바", icon: "square.grid.2x2", group: "interface"),
         .init(id: "notifications", title: "알림", description: "마감·AI 응답·다운로드를 OS 알림으로 받습니다.", keywords: "알림 OS 마감 AI 응답 다운로드 소리 포커스 방해 금지", icon: "bell", group: "interface"),
         .init(id: "shortcuts", title: "단축키", description: "반달과 웹뷰에서 사용할 키 조합을 관리합니다.", keywords: "단축키 키보드 키 조합 웹뷰 우선권 변경 초기화 JSON", icon: "keyboard", group: "interface"),

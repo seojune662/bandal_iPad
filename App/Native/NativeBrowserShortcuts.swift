@@ -7,7 +7,8 @@ enum NativeBrowserShortcuts {
         let id: String, chord: String, action: String, label: String
         var lifetime: Bool = false
     }
-    static let specs: [Spec] = [
+    static var specs: [Spec] { allSpecs.filter { NativeReleaseFlags.showsRecording || $0.id != "new-recording-tab" } }
+    private static let allSpecs: [Spec] = [
         Spec(id:"new-tab",chord:"mod+t",action:"new-tab",label:"새 탭",lifetime:true),
         Spec(id:"new-markdown",chord:"mod+shift+m",action:"new-markdown",label:"새 마크다운",lifetime:true),
         Spec(id:"new-whiteboard",chord:"mod+alt+w",action:"new-whiteboard",label:"새 노트",lifetime:true),
