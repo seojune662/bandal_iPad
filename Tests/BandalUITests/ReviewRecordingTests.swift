@@ -42,14 +42,13 @@ final class ReviewRecordingTests: XCTestCase {
 
     @MainActor private func importAndOpenPDF() {
         tap(app.buttons["native-library-import"]); pause(2)
-        // System document picker: Browse › On My iPad › app folder › sample file › Open.
-        let browse = app.buttons.matching(NSPredicate(format: "label IN %@", ["탐색", "Browse"])).firstMatch
-        if browse.exists, browse.isHittable { tap(browse) }
-        let onDevice = app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["나의 iPad", "On My iPad"])).firstMatch
-        tap(onDevice, wait: 10)
-        let folder = app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["반달", "Bandal"])).firstMatch
-        tap(folder, wait: 10)
+        // System document picker. It reopens in the last folder (the app's own folder after a dry run);
+        // otherwise search by name so no other files are ever listed on screen.
         let file = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", sample)).firstMatch
+        if !file.waitForExistence(timeout: 4) {
+            let search = app.searchFields.firstMatch
+            tap(search, wait: 10); search.typeText(sample); pause(2)
+        }
         tap(file, wait: 10)
         let open = app.buttons.matching(NSPredicate(format: "label IN %@", ["열기", "Open"])).firstMatch
         if open.waitForExistence(timeout: 3), open.isEnabled { tap(open) }
