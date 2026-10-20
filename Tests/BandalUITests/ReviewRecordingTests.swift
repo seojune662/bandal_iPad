@@ -22,6 +22,7 @@ final class ReviewRecordingTests: XCTestCase {
         app.launch()
 
         createCourse(); snap("createCourse")
+        if ProcessInfo.processInfo.environment["BANDAL_REVIEW_ONLY"] == "recording" { recordLecture(); snap("recordLecture"); return }
         importAndOpenPDF(); snap("importAndOpenPDF")
         writeOnPDF(); snap("writeOnPDF")
         splitWithNote(); snap("splitWithNote")
