@@ -138,8 +138,10 @@ final class ReviewRecordingTests: XCTestCase {
     @MainActor private func showSettings() {
         tap(app.buttons["native-section-settings"]); pause(2.5)
         tap(app.buttons["native-settings-category-ai"]); pause(3)
-        tap(app.buttons["native-settings-category-privacy"]); pause(3.5)
-        tap(app.buttons["native-settings-category-tabs"]); pause(3)
+        // The category list is taller than an 11-inch screen; scroll it to reach the privacy section.
+        let privacy = app.buttons["native-settings-category-privacy"]
+        for _ in 0..<3 where !privacy.isHittable { app.buttons["native-settings-category-general"].swipeUp(velocity: .slow); pause(1) }
+        tap(privacy); pause(4)
     }
 
     // MARK: Helpers
