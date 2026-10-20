@@ -42,18 +42,10 @@ final class ReviewRecordingTests: XCTestCase {
 
     @MainActor private func importAndOpenPDF() {
         tap(app.buttons["native-library-import"]); pause(2)
-        // System document picker. It reopens in the last folder (the app's own folder after a dry run);
-        // otherwise search by name so no other files are ever listed on screen.
+        // System document picker: On My iPad › app folder. The picker opens on iCloud Drive, so the
+        // seconds before the app folder shows are blurred in the exported video (personal file names).
         let file = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", sample)).firstMatch
         if !file.waitForExistence(timeout: 2) {
-            let search = app.buttons.matching(NSPredicate(format: "label IN %@", ["검색", "Search"])).firstMatch
-            if search.waitForExistence(timeout: 3) {
-                tap(search)
-                let field = app.searchFields.firstMatch
-                if field.waitForExistence(timeout: 3) { field.typeText(sample); pause(2) }
-            }
-        }
-        if !file.waitForExistence(timeout: 3) {
             tap(app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["나의 iPad", "On My iPad"])).firstMatch, wait: 10)
             tap(app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["반달", "Bandal"])).firstMatch, wait: 10)
         }
