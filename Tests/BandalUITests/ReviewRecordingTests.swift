@@ -90,9 +90,6 @@ final class ReviewRecordingTests: XCTestCase {
         let editor = app.textViews["native-markdown-editor"].firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 15), app.debugDescription)
         pause(1)
-        tap(app.buttons["native-open-documents"])
-        // iPadOS 27 drops SwiftUI identifiers on menu items; match the title too.
-        tap(app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "native-dock-preset-columns", "좌우 2분할")).firstMatch); pause(2.5)
         editor.tap(); pause(1)
         for line in ["3주차 고유값 정리", "\n정의: Av = λv (v ≠ 0)", "\n특성방정식: det(A − λI) = 0", "\n예제 A = [2 1; 1 2]의 고유값은 1과 3"] {
             editor.typeText(line); pause(0.8)
@@ -100,6 +97,10 @@ final class ReviewRecordingTests: XCTestCase {
         app.dismissNativeTestKeyboard()
         let done = app.buttons["완료"].firstMatch
         if done.exists && done.isHittable { done.tap() }
+        pause(1.5)
+        tap(app.buttons["native-open-documents"])
+        // iPadOS 27 drops SwiftUI identifiers on menu items; match the title too.
+        tap(app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "native-dock-preset-columns", "좌우 2분할")).firstMatch)
         pause(2.5)
     }
 
