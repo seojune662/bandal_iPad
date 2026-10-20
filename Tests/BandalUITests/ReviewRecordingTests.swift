@@ -119,7 +119,7 @@ final class ReviewRecordingTests: XCTestCase {
         tap(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch)
         tap(app.buttons["native-new-tab-new-browser"]); pause(2)
         let address = app.textFields["native-browser-address"]
-        tap(address, wait: 10)
+        focus(address)
         address.typeText("ko.wikipedia.org/wiki/고윳값과_고유_벡터\n")
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 20), app.debugDescription)
         pause(5)
