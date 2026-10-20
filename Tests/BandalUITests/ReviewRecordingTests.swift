@@ -112,8 +112,8 @@ final class ReviewRecordingTests: XCTestCase {
         tap(app.buttons["native-recording-start"])
         allowSystemAlert()
         // The Mac plays a short Korean lecture through its speaker; the on-device model transcribes it.
-        pause(16)
-        tap(app.buttons["native-recording-stop"]); pause(3)
+        pause(18)
+        tap(app.buttons["native-recording-stop"]); pause(6)
     }
 
     @MainActor private func openBrowser() {
