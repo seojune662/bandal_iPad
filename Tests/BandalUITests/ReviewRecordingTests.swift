@@ -89,7 +89,7 @@ final class ReviewRecordingTests: XCTestCase {
         let editor = app.textViews["native-markdown-editor"].firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 15), app.debugDescription)
         pause(1)
-        editor.tap(); pause(1)
+        focus(editor, at: CGVector(dx: 0.5, dy: 0.15))
         for line in ["3주차 고유값 정리", "\n정의: Av = λv (v ≠ 0)", "\n특성방정식: det(A − λI) = 0", "\n예제 A = [2 1; 1 2]의 고유값은 1과 3"] {
             editor.typeText(line); pause(0.8)
         }
@@ -156,7 +156,18 @@ final class ReviewRecordingTests: XCTestCase {
         element.tap(); pause(1.2)
     }
     @MainActor private func type(_ text: String, into field: XCUIElement) {
-        tap(field); field.typeText(text); pause(1)
+        focus(field); field.typeText(text); pause(1)
+    }
+    /// Quiescence waits are off, so wait for the keyboard focus the tap gives before typing.
+    @MainActor private func focus(_ field: XCUIElement, at offset: CGVector = CGVector(dx: 0.5, dy: 0.5)) {
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, "\(field)")
+        let focused = NSPredicate(format: "hasKeyboardFocus == true")
+        for _ in 0..<3 {
+            field.coordinate(withNormalizedOffset: offset).tap()
+            if XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: focused, object: field)], timeout: 6) == .completed { break }
+        }
+        pause(0.8)
     }
     @MainActor private func tool(_ name: String) {
         let item = app.buttons["native-pdf-tool-" + name]
