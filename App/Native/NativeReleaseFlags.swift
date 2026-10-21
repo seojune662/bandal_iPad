@@ -4,7 +4,8 @@ import Foundation
 /// Flip to `false` to bring them back; their code stays intact behind this switch.
 enum NativeReleaseFlags {
     static let isLocalOnly = true
-    /// Lecture recording is left out of iPad 1.0: the default on-device model did not transcribe
-    /// lecture-hall (far-field) audio reliably. Its code stays; flip to bring the entry points back.
+    /// Lecture recording is left out of iPad 1.0 (App Review 2.5.4): the audio capture service,
+    /// microphone permission and background audio mode were removed, so flipping this alone
+    /// does not bring recording back. Restore DesktopRecordingService from git history first.
     static let showsRecording = false
 }

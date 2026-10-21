@@ -84,7 +84,6 @@ final class NativeSettingsPlatformService: NSObject, UNUserNotificationCenterDel
         case "nativeSettings:requestPermission":
             switch request["id"] as? String {
             case "notifications": _ = try await notifications.requestAuthorization(options:[.alert,.badge,.sound]); scheduleRefresh()
-            case "microphone": _ = await AVAudioApplication.requestRecordPermission()
             case "camera": _ = await AVCaptureDevice.requestAccess(for:.video)
             case "calendar": _ = try await calendarStore.requestFullAccessToEvents()
             default: throw DesktopRuntimeError("권한 종류를 확인해 주세요.")
@@ -154,8 +153,6 @@ final class NativeSettingsPlatformService: NSObject, UNUserNotificationCenterDel
         let pending = await notifications.pendingNotificationRequests()
         let notificationStatus: String
         switch notice.authorizationStatus { case .notDetermined:notificationStatus = "notDetermined"; case .denied:notificationStatus = "denied"; case .authorized:notificationStatus = "authorized"; default:notificationStatus = "provisional" }
-        let microphone: String
-        switch AVAudioApplication.shared.recordPermission { case .undetermined:microphone = "notDetermined"; case .granted:microphone = "authorized"; default:microphone = "denied" }
         let camera: String
         switch AVCaptureDevice.authorizationStatus(for:.video) { case .notDetermined:camera = "notDetermined"; case .authorized:camera = "authorized"; default:camera = "denied" }
         let calendar = Self.calendarAuthorized ? "authorized" : EKEventStore.authorizationStatus(for:.event) == .notDetermined ? "notDetermined" : "denied"
@@ -164,7 +161,7 @@ final class NativeSettingsPlatformService: NSObject, UNUserNotificationCenterDel
         async let documentsSize = Self.bytes(store.root)
         async let cacheSize = Self.bytes(store.root.appendingPathComponent("NativePDFCache",isDirectory:true))
         return ["platform":"iPadOS","version":Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "","build":Bundle.main.object(forInfoDictionaryKey:"CFBundleVersion") as? String ?? "",
-                "permissions":[["id":"notifications","title":"알림","status":notificationStatus,"detail":"마감·다운로드·AI 응답 알림"],["id":"microphone","title":"마이크","status":microphone,"detail":NativeReleaseFlags.showsRecording ? "강의 녹음" : "웹사이트의 음성·화상 기능"],["id":"camera","title":"카메라","status":camera,"detail":"웹사이트의 사진·화상 기능"],["id":"calendar","title":"캘린더","status":calendar,"detail":"선택한 기기 캘린더의 일정 표시"]],
+                "permissions":[["id":"notifications","title":"알림","status":notificationStatus,"detail":"마감·다운로드·AI 응답 알림"],["id":"camera","title":"카메라","status":camera,"detail":"웹사이트의 사진·화상 기능"],["id":"calendar","title":"캘린더","status":calendar,"detail":"선택한 기기 캘린더의 일정 표시"]],
                 "storage":["documentsBytes":await documentsSize,"cacheBytes":await cacheSize,"rootPath":store.root.path],
                 "notifications":["authorization":notificationStatus,"pendingCount":pending.count],
                 "calendar":["authorization":calendar,"calendars":calendars,"enabled":!(calendarSettings["selectedCalendarIds"] as? [String] ?? []).isEmpty,"selectedCalendarIds":calendarSettings["selectedCalendarIds"] ?? [],"destinationCalendarId":calendarSettings["destinationCalendarId"] ?? NSNull()]]

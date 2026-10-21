@@ -9,7 +9,6 @@ final class NativePlatformServices: ObservableObject {
     private let credentials: DesktopCredentialsService
     private let ai: DesktopAIService
     private let assistant: NativeAssistantService
-    private let recording: DesktopRecordingService
     private let settingsService: NativeSettingsPlatformService
     private let articles = DesktopArticleService()
     private lazy var cloud = DesktopCloudService(environment: DesktopCloudEnvironment(
@@ -46,7 +45,6 @@ final class NativePlatformServices: ObservableObject {
         assistant = NativeAssistantService(runtime:runtime,ai:ai)
         account = DesktopAccountService(root:runtime.root)
         profile = DesktopProfileService(documents:runtime.root.deletingLastPathComponent(),root:runtime.root)
-        recording = DesktopRecordingService(root:runtime.legacyRoot,invoke:{ channel,request in try await runtime.invokePrivate(channel,request:request) })
         connectAccount()
         profile.prepare = { [weak self, weak store] in
             await self?.sync?.suspendForProfileOperation()
@@ -55,7 +53,6 @@ final class NativePlatformServices: ObservableObject {
         profile.resume = { [weak self] in self?.sync?.resumeAfterProfileOperation() }
         profile.activate = { NotificationCenter.default.post(name:DesktopProfileService.didActivate,object:nil) }
         browser.emit = { [weak runtime] channel,payload in runtime?.onEmit?(channel,payload) }
-        recording.emit = { [weak runtime] channel,payload in runtime?.onEmit?(channel,payload) }
         browser.onCourseForURL = { [weak store] _ in store?.selectedCourseID }
         browser.onOpenMaterial = { [weak runtime] course, path in
             runtime?.onEmit?("nativeWorkspace:openDocument", ["courseId": course, "relPath": path,
@@ -146,7 +143,6 @@ final class NativePlatformServices: ObservableObject {
         if credentials.canHandle(channel) { return try await credentials.handle(channel:channel,request:request) }
         if browser.canHandle(channel) { return try await browser.handle(channel:channel,request:request) }
         if ai.canHandle(channel) { return try await ai.handle(channel:channel,request:request) }
-        if recording.canHandle(channel) { return try await recording.handle(channel:channel,request:request) }
         if account.canHandle(channel) { return try await account.handle(channel:channel,request:request) }
         if channel == "auth:deleteAccount" { let result = try await account.deleteAccount(); billing?.accountChanged(); return result }
         if let billing, billing.canHandle(channel) { return try await billing.handle(channel,request:request) }

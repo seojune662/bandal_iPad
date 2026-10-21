@@ -44,7 +44,9 @@ struct NativeToolsWorkspace: View {
                 }
             case .browser: NativeBrowserWorkspace(store: store, host: services.browser, workspaceID: workspaceID, courseID: courseID)
             case .assistant: NativeAssistantWorkspace(store: store, workspaceID: workspaceID, courseID: courseID)
-            case .recordings: NativeRecordingWorkspace(store: store, workspaceID: workspaceID, courseID: courseID)
+            case .recordings:
+                if NativeReleaseFlags.showsRecording { NativeRecordingWorkspace(store: store, workspaceID: workspaceID, courseID: courseID) }
+                else { NativeToolError(message: "이 버전에서는 사용할 수 없는 탭입니다.") }
             case .planner: NativePlannerWorkspace(store: store, courseID: courseID)
             case .settings: NativeSettingsWorkspace(store: store)
             }
