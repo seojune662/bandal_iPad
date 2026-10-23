@@ -27,10 +27,17 @@ final class NativeSyncArtifacts {
         }
         for session in try context.query("SELECT * FROM agent_sessions ORDER BY id") {
             let id = session["id"] as! String
-            add("chat:\(id)", "chat", ["recordType": "desktop-chat-session", "id": id, "courseID": session["course_id"]!, "title": session["title"] ?? null, "provider": session["provider"]!, "model": session["model"] ?? null, "surface": session["surface"] ?? "app", "reasoningEffort": session["effort"] ?? null, "createdAt": session["created_at"]!, "lastUsedAt": session["last_used_at"] ?? null], deleted: isDeleted(session))
+            add("chat:\(id)", "chat", ["recordType": "desktop-chat-session", "id": id, "courseID": session["course_id"]!, "title": session["title"] ?? null, "provider": session["provider"]!, "model": session["model"] ?? null, "surface": session["surface"] ?? "app", "reasoningEffort": session["effort"] ?? null, "createdAt": session["created_at"]!, "lastUsedAt": session["last_used_at"] ?? null, "workspace": ((try? NativeValue.decode(session["access_policy"])) as? [String: Any])?["workspace"] ?? null], deleted: isDeleted(session))
             for message in try context.query("SELECT * FROM messages WHERE session_id=? ORDER BY turn_seq,id", [id]) {
                 let blocks = try context.query("SELECT * FROM message_blocks WHERE message_id=? ORDER BY ord", [message["id"]!]).map { row -> [String: Any] in
-                    ["id": row["id"]!, "order": row["ord"]!, "kind": row["kind"]!, "payload": try NativeValue.decode(row["payload_json"]), "createdAt": row["created_at"]!, "updatedAt": row["updated_at"]!, "deletedAt": row["deleted_at"] ?? null]
+                    var payload = try NativeValue.decode(row["payload_json"])
+                    if row["kind"] as? String == "attachment", var capture = payload as? [String: Any], let asset = try NativeAssistantPayload.cacheImage(capture,context:context) {
+                        result.assets.append(asset)
+                        capture.removeValue(forKey:"imageDataURL")
+                        capture["imageAsset"] = ["sha256":asset["sha256"]!,"byteCount":asset["byteCount"]!,"contentType":asset["contentType"]!,"originalName":asset["originalName"]!]
+                        payload = capture
+                    }
+                    return ["id": row["id"]!, "order": row["ord"]!, "kind": row["kind"]!, "payload": payload, "createdAt": row["created_at"]!, "updatedAt": row["updated_at"]!, "deletedAt": row["deleted_at"] ?? null]
                 }
                 add("chat:message:\(message["id"]!)", "chat", ["recordType": "desktop-chat-message", "id": message["id"]!, "courseID": message["course_id"]!, "sessionID": id, "role": message["role"]!, "turnSequence": message["turn_seq"]!, "createdAt": message["created_at"]!, "updatedAt": message["updated_at"]!, "blocks": blocks], deleted: isDeleted(message))
             }
@@ -75,9 +82,17 @@ final class NativeSyncArtifacts {
                 guard old["course_id"] as? String == course else { throw C.conflict("Chat identity belongs to another course") }
                 guard old["status"] as? String != "running" else { throw C.conflict("The conversation is active on this device") }
             }
+            // Only workspace identity is portable; permission grants remain local.
+            var policy = (old.flatMap { try? NativeValue.decode($0["access_policy"]) } as? [String: Any]) ?? ["mode":"ask","scope":["course":true,"browser":false,"screen":false]]
+            if let workspace = p["workspace"] as? [String: Any] {
+                guard workspace["courseId"] as? String == course, let scope = workspace["id"] as? String,
+                      scope == "course:" + course || (workspace["kind"] as? String == "project" && scope == "project:" + (workspace["projectId"] as? String ?? "")) else { throw C.validation("Invalid chat workspace") }
+                if let existing = (policy["workspace"] as? [String: Any])?["id"] as? String, existing != scope { throw C.conflict("Chat workspace identity changed") }
+                policy["workspace"] = workspace
+            }
             // Device-specific grants, launch config, transcript paths and CLI
             // resume IDs are never accepted from another device.
-            return row("agent_sessions", ["id": session, "course_id": course, "title": p["title"] ?? null, "provider": provider, "model": p["model"] ?? null, "surface": surface, "effort": p["reasoningEffort"] ?? null, "status": old?["status"] ?? "idle", "last_used_at": p["lastUsedAt"] ?? null, "created_at": p["createdAt"] ?? now, "updated_at": now, "deleted_at": tombstone], courseID: course)
+            return row("agent_sessions", ["id": session, "course_id": course, "title": p["title"] ?? null, "provider": provider, "model": p["model"] ?? null, "access_policy": p["workspace"] is [String: Any] ? try F.canonical(policy) : old?["access_policy"] ?? null, "surface": surface, "effort": p["reasoningEffort"] ?? null, "status": old?["status"] ?? "idle", "last_used_at": p["lastUsedAt"] ?? null, "created_at": p["createdAt"] ?? now, "updated_at": now, "deleted_at": tombstone], courseID: course)
         case "chat" where p["recordType"] as? String == "desktop-chat-message":
             let message = try id("chat:message:"), course = try requiredCourse(p["courseID"], deleted: deleted), sessionID = try F.identity(p["sessionID"])
             guard let session = try context.query("SELECT * FROM agent_sessions WHERE id=?", [sessionID]).first, session["course_id"] as? String == course,
@@ -85,14 +100,28 @@ final class NativeSyncArtifacts {
             guard session["status"] as? String != "running" else { throw C.conflict("The conversation is active on this device") }
             if let old = try context.query("SELECT course_id,session_id FROM messages WHERE id=?", [message]).first, old["course_id"] as? String != course || old["session_id"] as? String != sessionID { throw C.conflict("Message identity belongs to another conversation") }
             let sequence = try integer(p["turnSequence"])
+            let imageAssets = blocks.compactMap { ($0["payload"] as? [String: Any])?["imageAsset"] as? [String: Any] }
+            guard imageAssets.count <= 6, try imageAssets.reduce(0, { try $0 + integer($1["byteCount"]) }) <= 21_000_000 else { throw C.validation("Chat attachment image budget exceeded") }
             var ids = Set<String>(), orders = Set<Int>(), values: [[String: Any]] = []
+            var attachmentFiles: [NativeSyncFileChange] = []
             for block in blocks {
                 let blockID = try F.identity(block["id"]), order = try integer(block["order"]), blockKind = try string(block["kind"], "chat block kind")
                 guard ids.insert(blockID).inserted, orders.insert(order).inserted else { throw C.validation("Duplicate chat block identity or order") }
                 if let existing = try context.query("SELECT message_id FROM message_blocks WHERE id=?", [blockID]).first, existing["message_id"] as? String != message { throw C.conflict("Chat block belongs to another message") }
-                values.append(["id": blockID, "message_id": message, "ord": order, "kind": blockKind, "payload_json": try F.canonical(block["payload"] ?? null), "created_at": block["createdAt"] ?? now, "updated_at": block["updatedAt"] ?? now, "deleted_at": block["deletedAt"] ?? null])
+                var payload = block["payload"] ?? null
+                if blockKind == "attachment", var capture = payload as? [String: Any], let asset = capture["imageAsset"] as? [String: Any] {
+                    guard let type = asset["contentType"] as? String, ["image/png","image/jpeg","image/webp","image/gif"].contains(type) else { throw C.validation("Invalid attachment image type") }
+                    let url = try verifiedAsset(asset["sha256"],byteCount:asset["byteCount"],assets:assets,limit:21_000_000)
+                    let bytes = try Data(contentsOf:url), hash = F.hash(bytes)
+                    guard hash == asset["sha256"] as? String else { throw C.validation("Attachment image changed during import") }
+                    capture.removeValue(forKey:"imageAsset"); capture["imageDataURL"] = "data:" + type + ";base64," + bytes.base64EncodedString()
+                    _ = try NativeAssistantPayload.validatedAttachments([capture])
+                    attachmentFiles.append(.init(target:NativeAssistantPayload.assetURL(root:context.root,hash:hash,mediaType:type),data:bytes))
+                    payload = capture
+                }
+                values.append(["id": blockID, "message_id": message, "ord": order, "kind": blockKind, "payload_json": try F.canonical(payload), "created_at": block["createdAt"] ?? now, "updated_at": block["updatedAt"] ?? now, "deleted_at": block["deletedAt"] ?? null])
             }
-            return NativeSyncPlan(courseID: course, apply: { [context] in
+            return NativeSyncPlan(files: attachmentFiles, courseID: course, apply: { [context] in
                 try F.upsert(context, table: "messages", values: ["id": message, "course_id": course, "session_id": sessionID, "role": role, "turn_seq": sequence, "created_at": p["createdAt"] ?? now, "updated_at": p["updatedAt"] ?? now, "deleted_at": tombstone])
                 try context.run("DELETE FROM message_blocks WHERE message_id=?", [message])
                 for value in values { try F.upsert(context, table: "message_blocks", values: value) }

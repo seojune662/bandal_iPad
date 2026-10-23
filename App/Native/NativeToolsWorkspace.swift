@@ -29,6 +29,7 @@ struct NativeToolsWorkspace: View {
     let section: NativeWorkspaceSection
     @ObservedObject var store: NativeWorkspaceStore
     @ObservedObject var services: NativePlatformServices
+    @StateObject private var librarySources = NativeLibrarySourceTrayModel()
     var workspaceID: String? = nil
     var courseID: String? = nil
 
@@ -36,7 +37,7 @@ struct NativeToolsWorkspace: View {
         Group {
             switch section {
             case .library:
-                NativeLibraryView(store: store) { document in
+                NativeLibraryView(store: store, sourceTrayModel: librarySources) { document in
                     Task {
                         do { _ = try await store.invoke("materials:preview", ["courseId": document.courseID, "relPath": document.relativePath]) }
                         catch { store.errorMessage = error.localizedDescription }

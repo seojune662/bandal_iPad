@@ -23,6 +23,24 @@ struct NativeBrowserSuggestion: Identifiable, Equatable {
 /// Desktop urlInput/browserSearch rules, with credentials and non-web schemes
 /// rejected before the value is used for either navigation or a suggestion.
 enum NativeBrowserAddress {
+    /// New tabs are real web pages. A private new tab stays local until the
+    /// user submits an address, including when a custom home page is saved.
+    static func newTabURL(preferences: [String: Any], isPrivate: Bool) -> String {
+        if isPrivate { return "about:blank" }
+        return homeURL(preferences: preferences)
+    }
+    static func homeURL(preferences: [String: Any]) -> String {
+        if let value = (preferences["browser"] as? [String: Any])?["homePage"] as? String {
+            let home = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !home.isEmpty, (try? NativeSettingsValidation.webURL(home)) != nil { return home }
+        }
+        switch preferences["browserSearchEngine"] as? String {
+        case "naver": return "https://www.naver.com/"
+        case "daum": return "https://www.daum.net/"
+        case "duckduckgo": return "https://duckduckgo.com/"
+        default: return "https://www.google.com/"
+        }
+    }
     static func isWebAddress(_ text: String) -> Bool {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, !value.contains(where: \.isWhitespace) else { return false }

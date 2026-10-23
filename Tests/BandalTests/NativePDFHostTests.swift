@@ -5,6 +5,139 @@ import WebKit
 
 @MainActor
 final class NativePDFHostTests: XCTestCase {
+    func testOffscreenPagesPrepareLatestInkOnlyWhenTheyEnterTheViewport() async throws {
+        try await verifyDeferredInk(initialPage: 1)
+    }
+    func testInitialViewportRestorePreparesDestinationWithoutPreparingFirstPage() async throws {
+        try await verifyDeferredInk(initialPage: 3)
+    }
+    private func verifyDeferredInk(initialPage: Int) async throws {
+        let hiddenPage = initialPage == 1 ? 3 : 1
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-visible-ink-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("paper.pdf")
+        try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 600, height: 1200)).pdfData { context in
+            for _ in 0..<3 { context.beginPage() }
+        }.write(to: source)
+        let sceneDeadline = CACurrentMediaTime() + 5
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }), CACurrentMediaTime() < sceneDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first { $0.isKeyWindow }, window = UIWindow(windowScene: scene)
+        let controller = UIViewController(); window.rootViewController = controller; window.makeKeyAndVisible(); window.layoutIfNeeded()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        let host = try NativePDFHost(root: root, directEnabled: true) { channel, _ in
+            if channel == "nativePDF:binding" { return try NativePDFTestBinding.respond(root: root, file: source, materialID: "visible-ink") }
+            return source.path
+        }
+        host.attach(to: controller.view); defer { host.closeAll() }
+        let identity: [String: Any] = ["surfaceId": "visible-ink", "generation": "one", "courseId": "course", "relPath": "paper.pdf"]
+        _ = try await host.handle("pdfNative:open", request: identity)
+        var rows: [[String: Any]] = []
+        for page in 1...3 {
+            for index in 0..<16 { rows.append(Self.visibilityTestInk(id: "p\(page)-\(index)", page: page)) }
+        }
+        let snapshot: [String: Any] = ["loading": false, "active": true, "nativeInkErase": true, "annotations": [],
+            "tool": ["name": "pen", "style": ["color": "ink", "width": 0.003, "opacity": 1.0]]]
+        _ = try await host.handle("pdfNative:snapshot", request: identity.merging(snapshot) { _, new in new }.merging(["drawings": rows]) { _, new in new })
+        var layout: [String: Any] = ["visible": true,
+            "rect": ["x": 0.0, "y": 0.0, "width": 600.0, "height": 600.0]]
+        if initialPage != 1 {
+            // A retained hidden tab must also fit and restore before preparing
+            // any of PDFKit's initial/default page overlays.
+            _ = try await host.handle("pdfNative:layout", request: identity.merging(["visible": false]) { _, new in new })
+            layout["restoreViewport"] = ["page": initialPage, "zoom": 1.6, "progress": 0.6, "horizontalProgress": 0.5]
+        }
+        _ = try await host.handle("pdfNative:layout", request: identity.merging(layout) { _, new in new })
+        func preparedCounts() async throws -> [Int: Int] {
+            let diagnostics = try await host.handle("pdfNative:diagnostics", request: identity) as? [String: Any]
+            return try XCTUnwrap(diagnostics?["preparedRowsByPage"] as? [Int: Int])
+        }
+        let firstDeadline = CACurrentMediaTime() + 5
+        while try await preparedCounts()[initialPage] != 16, CACurrentMediaTime() < firstDeadline {
+            controller.view.layoutIfNeeded(); host.layout(); try await Task.sleep(for: .milliseconds(20))
+        }
+        let initial = try await preparedCounts()
+        XCTAssertEqual(initial[initialPage], 16)
+        XCTAssertEqual(initial[hiddenPage], 0, "PDFKit's prefetched/default pages must not prepare invisible ink during initial layout")
+        if initialPage != 1 {
+            let result = try await host.handle("pdfNative:flush", request: identity) as? [String: Any]
+            let viewport = try XCTUnwrap(result?["viewport"] as? [String: Any])
+            XCTAssertEqual(viewport["page"] as? Int, initialPage)
+            XCTAssertEqual(try XCTUnwrap(viewport["zoom"] as? Double), 1.6, accuracy: 0.01)
+            XCTAssertEqual(try XCTUnwrap(viewport["progress"] as? Double), 0.6, accuracy: 0.025)
+        }
+
+        rows.append(Self.visibilityTestInk(id: "offscreen-update", page: hiddenPage))
+        _ = try await host.handle("pdfNative:snapshot", request: identity.merging(snapshot) { _, new in new }.merging(["drawings": rows]) { _, new in new })
+        let hidden = try await preparedCounts()
+        XCTAssertEqual(hidden[hiddenPage], 0, "An offscreen edit stays deferred until that page is shown")
+        _ = try await host.handle("pdfNative:navigate", request: identity.merging(["page": hiddenPage, "progress": 0.5, "zoom": 1.0]) { _, new in new })
+        let shownDeadline = CACurrentMediaTime() + 5
+        while try await preparedCounts()[hiddenPage] != 17, CACurrentMediaTime() < shownDeadline {
+            controller.view.layoutIfNeeded(); host.layout(); try await Task.sleep(for: .milliseconds(20))
+        }
+        let shown = try await preparedCounts()
+        XCTAssertEqual(shown[hiddenPage], 17, "Navigation must display the latest rows, including changes made while offscreen")
+    }
+
+    private static func visibilityTestInk(id: String, page: Int) -> [String: Any] {
+        let points: [[String: Double]] = (0..<40).map { ["x": 0.2 + Double($0) * 0.01, "y": 0.3, "p": 0.5] }
+        let data: [String: Any] = ["inkVersion": 5, "points": points]
+        let style: [String: Any] = ["color": "ink", "width": 0.003, "opacity": 1.0]
+        return ["id": id, "page": page, "kind": "ink", "data": data, "style": style]
+    }
+
+    func testTextEditorRemainsAbovePDFAndReceivesHitsAfterRepeatedHostLayout() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-text-hit-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("paper.pdf")
+        try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 600, height: 800)).pdfData { $0.beginPage() }.write(to: url)
+        let deadline = CACurrentMediaTime() + 2
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }), CACurrentMediaTime() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first { $0.isKeyWindow }, window = UIWindow(windowScene: scene)
+        let controller = UIViewController(); window.rootViewController = controller; window.makeKeyAndVisible(); window.layoutIfNeeded()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        let host = try NativePDFHost(root: root, directEnabled: true) { channel, _ in
+            if channel == "nativePDF:binding" { return try NativePDFTestBinding.respond(root: root, file: url, materialID: "text-hit") }
+            return url.path
+        }
+        host.attach(to: controller.view); defer { host.closeAll() }
+        let identity: [String: Any] = ["surfaceId": "text-hit", "generation": "one", "courseId": "course", "relPath": "paper.pdf"]
+        _ = try await host.handle("pdfNative:open", request: identity)
+        _ = try await host.handle("pdfNative:layout", request: identity.merging(["visible": true,
+            "rect": ["x": 0.0, "y": 0.0, "width": 600.0, "height": 700.0]]) { _, new in new })
+        _ = try await host.handle("pdfNative:snapshot", request: identity.merging([
+            "loading": false, "active": true, "drawings": [], "annotations": [],
+            "tool": ["name": "text", "style": ["color": "ink", "width": 0.003, "opacity": 1.0]]]) { _, new in new })
+        let editor = NativePDFTextInputView(usingTextLayoutManager: false)
+        editor.pageBox = CGRect(x: 0.2, y: 0.2, width: 0.35, height: 0.1)
+        host.setTextEditor(surfaceID: "text-hit", generation: "one", page: 1, view: editor)
+        let layoutDeadline = CACurrentMediaTime() + 5
+        repeat {
+            controller.view.setNeedsLayout(); controller.view.layoutIfNeeded(); host.layout()
+            if !editor.isHidden, editor.bounds.width > 0 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        } while CACurrentMediaTime() < layoutDeadline
+        XCTAssertFalse(editor.isHidden); XCTAssertGreaterThan(editor.bounds.width, 0)
+        let pdf = try XCTUnwrap(controller.view.subviews.compactMap { $0 as? PDFView }.first)
+        for _ in 0..<3 {
+            host.setPresentation(blocked: false, inputBlocked: false, overlays: [])
+            host.layout()
+            let editorIndex = try XCTUnwrap(controller.view.subviews.firstIndex(of: editor))
+            let pdfIndex = try XCTUnwrap(controller.view.subviews.firstIndex(of: pdf))
+            XCTAssertGreaterThan(editorIndex, pdfIndex)
+            let point = editor.convert(CGPoint(x: editor.bounds.midX, y: editor.bounds.midY), to: controller.view)
+            let hit = try XCTUnwrap(controller.view.hitTest(point, with: nil))
+            XCTAssertTrue(hit === editor || hit.isDescendant(of: editor), "A tap in the live box must reach its text view after host layout")
+        }
+    }
     func testLocalPrivateDocumentReplayInvestigatesRepeatedLayouts() async throws {
         // Opt-in local diagnostic. The directory contains paper.pdf and rows.json;
         // no private document contents or machine-specific path is stored in Git.

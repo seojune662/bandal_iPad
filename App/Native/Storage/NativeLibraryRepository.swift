@@ -6,12 +6,13 @@ final class NativeLibraryRepository {
     private typealias C = NativeRepositoryContext
     let context: NativeRepositoryContext
     private var recovered = false
-    static let channels = ["courses:list", "courses:create", "courses:addFromFolder", "courses:relink", "courses:rename", "courses:setColor", "courses:setWorkspaceKind", "courses:archive", "courses:organize", "courses:delete", "courses:restore", "courses:purge", "courseGroups:list", "courseGroups:create", "courseGroups:rename", "courseGroups:delete", "courseLinks:list", "courseLinks:create", "courseLinks:update", "courseLinks:delete", "materials:tree", "materials:snapshot", "materials:search", "materials:readFile", "materials:import", "materials:rename", "materials:move", "materials:delete", "materials:duplicate", "materials:createFolder", "materials:writeFile", "materials:adoptFile", "notes:read", "notes:write", "notes:create", "notes:rename", "nativeMaterial:path"]
+    static let channels = ["courses:list", "courses:create", "courses:addFromFolder", "courses:relink", "courses:rename", "courses:setColor", "courses:setWorkspaceKind", "courses:archive", "courses:organize", "courses:delete", "courses:restore", "courses:purge", "courseGroups:list", "courseGroups:create", "courseGroups:rename", "courseGroups:delete", "courseLinks:list", "courseLinks:create", "courseLinks:update", "courseLinks:delete", "materials:tree", "materials:snapshot", "materials:search", "materials:readFile", "materials:import", "materials:importShared", "materials:rename", "materials:move", "materials:delete", "materials:duplicate", "materials:createFolder", "materials:writeFile", "materials:adoptFile", "notes:read", "notes:write", "notes:create", "notes:rename", "nativeMaterial:path"]
     init(context: NativeRepositoryContext) { self.context = context }
 
     func handle(_ channel: String, _ request: [String: Any]) throws -> Any? {
-        guard Self.channels.contains(channel) else { return nil }
+        guard Self.channels.contains(channel) || channel == "nativeMaterial:folders" else { return nil }
         if !recovered { try recoverPathChanges(); recovered = true }
+        if channel == "nativeMaterial:folders" { return try folders(id(request)) }
         let result: Any
         if channel.hasPrefix("courses:") { result = try courses(String(channel.dropFirst(8)), request) }
         else if channel.hasPrefix("courseGroups:") { result = try groups(String(channel.dropFirst(13)), request) }
@@ -222,7 +223,7 @@ final class NativeLibraryRepository {
         if let old = try context.query("SELECT folder,completed FROM material_added_baselines WHERE course_id=?", [course]).first, old["folder"] as? String == folder { return (old["completed"] as? NSNumber)?.boolValue == true }
         try context.transaction { try context.run("DELETE FROM material_added_state WHERE course_id=?", [course]); try context.run("INSERT OR REPLACE INTO material_added_baselines(course_id,folder,completed) VALUES(?,?,0)", [course, folder]) }; return false
     }
-    private func readDirectory(_ url: URL, remaining: inout Int, truncated: inout Bool) throws -> [(String, Bool)] {
+    private func readDirectory(_ url: URL, remaining: inout Int, truncated: inout Bool, directoriesOnly: Bool = false) throws -> [(String, Bool)] {
         guard let directory = opendir(url.path) else { throw C.posix() }; defer { closedir(directory) }
         var output: [(String, Bool)] = []
         while let entry = readdir(directory) {
@@ -230,11 +231,30 @@ final class NativeLibraryRepository {
             if name == "." || name == ".." { continue }
             guard remaining > 0 else { truncated = true; break }; remaining -= 1
             if name.hasPrefix(".") { continue }
+            if directoriesOnly, entry.pointee.d_type != UInt8(DT_DIR), entry.pointee.d_type != UInt8(DT_UNKNOWN) { continue }
             var info = stat(); guard lstat(url.appendingPathComponent(name).path, &info) == 0 else { throw C.posix() }
             let mode = info.st_mode & S_IFMT
-            if mode == S_IFDIR || mode == S_IFREG { output.append((name, mode == S_IFDIR)) }
+            if mode == S_IFDIR || (!directoriesOnly && mode == S_IFREG) { output.append((name, mode == S_IFDIR)) }
         }
         return output.sorted { $0.1 != $1.1 ? $0.1 : $0.0.localizedStandardCompare($1.0) == .orderedAscending }
+    }
+    /// Share destinations need directory names, not file metadata or a rebuilt
+    /// material index. This read-only walk does not mutate sync/export state.
+    private func folders(_ course: String) throws -> [String] {
+        try context.assertPathAvailable(courseID: course)
+        let root = try context.courseFolder(course)
+        var remaining = 20_000, truncated = false, result: [String] = []
+        func walk(_ directory: URL, relative: String, depth: Int) throws {
+            for (name, _) in try readDirectory(directory, remaining: &remaining, truncated: &truncated, directoriesOnly: true) {
+                let relative = path(relative, name), url = try context.resolve(in: root, relativePath: relative)
+                result.append(relative)
+                if depth < 12 { try walk(url, relative: relative, depth: depth + 1) }
+                else { truncated = true }
+            }
+        }
+        try walk(root, relative: "", depth: 0)
+        guard !truncated else { throw C.validation("폴더가 너무 많거나 깊어 공유 위치를 모두 읽지 못했습니다.") }
+        return result
     }
     private func tree(_ course: String) throws -> [[String: Any]] {
         try context.assertPathAvailable(courseID: course)
@@ -276,7 +296,7 @@ final class NativeLibraryRepository {
         var nodes = try walk(folder, "", 0)
         // The 5 s watcher and every sync refresh call this. When the walk matches
         // the stored snapshot nothing on disk changed, so skip the fsync'd rewrite.
-        if !initialized, !truncated, let stored = try context.query("SELECT tree FROM material_tree_snapshots WHERE course_id=? AND folder=?", [course, folder.path]).first?["tree"] as? String,
+        if initialized, !truncated, let stored = try context.query("SELECT tree FROM material_tree_snapshots WHERE course_id=? AND folder=?", [course, folder.path]).first?["tree"] as? String,
            stored == (try C.json(nodes)) { return nodes }
         let now = C.nowISO, found = Set(flat.compactMap { $0["relPath"] as? String })
         try context.transaction {
@@ -317,6 +337,7 @@ final class NativeLibraryRepository {
             let bytes = try Data(contentsOf: url)
             if ["md", "markdown", "txt", "csv", "tsv", "json", "yml", "yaml", "xml", "html", "css", "js", "ts", "tex", "log", "srt", "vtt"].contains(url.pathExtension.lowercased()) { return ["encoding": "utf8", "data": String(decoding: bytes, as: UTF8.self)] }
             return ["encoding": "base64", "data": bytes.base64EncodedString()]
+        case "importShared": return try importShared(course: course, request: request)
         case "import":
             guard let sources = request["paths"] as? [String] else { throw C.validation("paths must be strings") }
             return try context.withMaterialLock {
@@ -382,6 +403,77 @@ final class NativeLibraryRepository {
                 let next = path(relative, name); try recordAdded(course: course, relative: next); return ["relPath": next]
             }
         default: throw C.validation("Unsupported material action")
+        }
+    }
+    /// A receipt is durable before publication. A relaunch after the file copy
+    /// resumes that same destination; completed receipts never recreate a file
+    /// the user subsequently moved or deleted.
+    private func importShared(course: String, request: [String: Any]) throws -> [String: Any] {
+        try context.withMaterialLock {
+            let shareID = try string(request, "shareID")
+            guard UUID(uuidString: shareID) != nil else { throw C.validation("Invalid share identifier") }
+            let relative = request["dirRelPath"] as? String ?? ""
+            let requested = try basename(string(request, "fileName"))
+            let sourcePath = try string(request, "sourcePath")
+            guard sourcePath.hasPrefix("/") else { throw C.validation("Share source must be absolute") }
+            let source = URL(fileURLWithPath: sourcePath), hash = try context.contentHash(source)
+            let receipts = context.root.appendingPathComponent("ShareReceipts", isDirectory: true)
+            try context.files.createDirectory(at: receipts, withIntermediateDirectories: true)
+            let receiptURL = receipts.appendingPathComponent(shareID + ".json")
+            var receipt: [String: Any]
+            if context.files.fileExists(atPath: receiptURL.path) {
+                guard let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: receiptURL)) as? [String: Any],
+                      saved["courseID"] as? String == course, saved["folderPath"] as? String == relative,
+                      saved["sourceHash"] as? String == hash, let savedPath = saved["relativePath"] as? String else {
+                    throw C.conflict("공유 가져오기 기록과 자료가 일치하지 않습니다. 원본을 보존했습니다.")
+                }
+                if saved["complete"] as? Bool == true { return ["relPath": savedPath, "alreadyImported": true] }
+                receipt = saved
+            } else {
+                let folder = try directory(course: course, relative: relative)
+                let name = try freeName(in: folder, requested: requested)
+                receipt = ["courseID": course, "folderPath": relative, "sourceHash": hash,
+                           "relativePath": path(relative, name), "complete": false]
+                try context.atomicWrite(try JSONSerialization.data(withJSONObject: receipt), to: receiptURL)
+            }
+            guard let destination = receipt["relativePath"] as? String else { throw C.validation("Missing share destination") }
+            let folder = try directory(course: course, relative: relative)
+            Self.removeStaleShareCopies(in: folder)
+            let target = try context.materialURL(courseID: course, relativePath: destination, allowMissing: true)
+            if context.files.fileExists(atPath: target.path) {
+                guard try context.contentHash(target) == hash else {
+                    throw C.conflict("공유 대상 파일이 변경되었습니다. 덮어쓰지 않고 공유 원본을 보존했습니다.")
+                }
+            } else {
+                let temporary = folder.appendingPathComponent(".bandal-share-" + UUID().uuidString)
+                defer { try? context.files.removeItem(at: temporary) }
+                try context.files.copyItem(at: source, to: temporary)
+                guard try context.contentHash(temporary) == hash else { throw C.conflict("공유 원본이 복사 중 변경되었습니다.") }
+                let handle = try FileHandle(forWritingTo: temporary)
+                do { try handle.synchronize(); try handle.close() } catch { try? handle.close(); throw error }
+                // RENAME_EXCL prevents replacing a file created by Files or a
+                // linked-folder provider between the availability check and move.
+                guard Darwin.renamex_np(temporary.path, target.path, UInt32(RENAME_EXCL)) == 0 else { throw C.posix() }
+                try context.syncDirectory(folder)
+            }
+            try recordAdded(course: course, relative: destination)
+            receipt["complete"] = true
+            try context.atomicWrite(try JSONSerialization.data(withJSONObject: receipt), to: receiptURL)
+            return ["relPath": destination, "alreadyImported": false]
+        }
+    }
+
+    /// Copying preserves the source's modification date, so expiry uses ctime
+    /// (last local inode change) instead. A newly copied old PDF remains live.
+    static func removeStaleShareCopies(in directory: URL, now: Date = Date()) {
+        guard let entries = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
+        for file in entries {
+            let name = file.lastPathComponent
+            guard name.hasPrefix(".bandal-share-"), UUID(uuidString: String(name.dropFirst(14))) != nil else { continue }
+            var attributes = stat()
+            guard lstat(file.path, &attributes) == 0, attributes.st_mode & S_IFMT == S_IFREG,
+                  now.timeIntervalSince1970 - Double(attributes.st_ctimespec.tv_sec) > 24 * 60 * 60 else { continue }
+            try? FileManager.default.removeItem(at: file)
         }
     }
     private func notes(_ action: String, _ request: [String: Any]) throws -> Any {

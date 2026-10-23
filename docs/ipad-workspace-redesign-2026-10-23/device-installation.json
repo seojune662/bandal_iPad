@@ -1,0 +1,19 @@
+{
+  "bundleID": "app.bandal.ipad",
+  "version": "1.0.0",
+  "build": "7",
+  "deviceModel": "iPad Pro 11-inch (3rd generation)",
+  "deviceOS": "27.0.1",
+  "releaseBuildSucceeded": true,
+  "installed": true,
+  "normalLaunchSucceeded": true,
+  "testArguments": [],
+  "runningAfterFinalLaunch": true,
+  "documentsBackupBeforeAndAfterSucceeded": true,
+  "preferencesBackupBeforeAndAfterSucceeded": true,
+  "shareInboxBackupBeforeAndAfterSucceeded": true,
+  "materialsPreserved": 104,
+  "inkAndReceiptRowsPreserved": 40234,
+  "contentRowsPreserved": 38,
+  "sqliteDatabasesIntegrityPassed": 6
+}

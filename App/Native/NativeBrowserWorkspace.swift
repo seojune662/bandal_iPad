@@ -161,12 +161,13 @@ final class NativeBrowserSession: ObservableObject {
                     guard !retired else { throw CancellationError() }
                     _ = try await host.handle(channel: "browser:createPage", request: ["tabId": tab.id, "profileId": tab.profileID, "courseId": effectiveCourseID as Any? ?? NSNull()])
                     guard !retired else { host.destroy(tab.id); throw CancellationError() }
-                    if tab.url != "about:blank" { _ = try await host.handle(channel: "browser:pageAction", request: ["tabId": tab.id, "action": "loadURL", "args": [tab.url]]) }
+                    let url = tab.url == "about:blank" && tab.title.isEmpty ? newTabURL(isPrivate: false) : tab.url
+                    if url != "about:blank" { _ = try await host.handle(channel: "browser:pageAction", request: ["tabId": tab.id, "action": "loadURL", "args": [url]]) }
                 }
                 tabs = host.pages.values.filter { owns($0.tabID) }.sorted { $0.id < $1.id }.map(Self.tab)
                 activeID = saved.activeID
             }
-            if tabs.isEmpty { try await add() }
+            if tabs.isEmpty { try await add(initialURL: store.pendingBrowserURLs[scopeKey] == nil ? nil : "about:blank") }
             if !tabs.contains(where: { $0.id == activeID }) { activeID = tabs.first?.id }
             guard !retired else { throw CancellationError() }
             ready = true
@@ -179,7 +180,7 @@ final class NativeBrowserSession: ObservableObject {
         } catch { self.error = error.localizedDescription }
     }
     @discardableResult
-    func add(profileID: String? = nil, isPrivate: Bool = false) async throws -> String {
+    func add(profileID: String? = nil, isPrivate: Bool = false, initialURL: String? = nil) async throws -> String {
         guard !retired else { throw CancellationError() }
         let id = Self.scopePrefix(workspaceID) + UUID().uuidString
         _ = try await host.handle(channel: "browser:createPage", request: ["tabId": id, "profileId": profileID ?? active?.profileID ?? "default", "isPrivate": isPrivate, "courseId": effectiveCourseID as Any? ?? NSNull()])
@@ -190,12 +191,20 @@ final class NativeBrowserSession: ObservableObject {
             let browser = preferences["browser"] as? [String: Any] ?? [:]
             let zoom = (browser["defaultZoomLevel"] as? NSNumber)?.doubleValue ?? 0
             if zoom != 0 { _ = try await host.handle(channel: "browser:pageAction", request: ["tabId": id, "action": "setZoomLevel", "args": [zoom]]) }
-            if let home = browser["homePage"] as? String, !home.isEmpty, (try? NativeSettingsValidation.webURL(home)) != nil {
-                _ = try await host.handle(channel: "browser:pageAction", request: ["tabId": id, "action": "loadURL", "args": [home]])
+            let target = initialURL ?? newTabURL(isPrivate: isPrivate)
+            if target != "about:blank" {
+                try await action("loadURL", args: [target], tabID: id)
             }
             try save()
         }
         return id
+    }
+    private func newTabURL(isPrivate: Bool) -> String {
+        #if DEBUG
+        // Local browser UI fixtures must never race an unrelated remote page.
+        if ProcessInfo.processInfo.arguments.contains("--native-browser-ui-fixture") { return "about:blank" }
+        #endif
+        return NativeBrowserAddress.newTabURL(preferences: preferences, isPrivate: isPrivate)
     }
     func select(_ id: String) {
         guard tabs.contains(where: { $0.id == id }) else { return }
@@ -215,7 +224,7 @@ final class NativeBrowserSession: ObservableObject {
     func navigate(_ address: String) async throws {
         guard !retired else { throw CancellationError() }
         let url = try Self.addressURL(address, searchEngine: preferences["browserSearchEngine"] as? String ?? "google")
-        if activeID == nil { try await add() }
+        if activeID == nil { try await add(initialURL: "about:blank") }
         try await action("loadURL", args: [url.absoluteString])
     }
     static func addressURL(_ text: String, searchEngine: String = "google") throws -> URL {
@@ -306,6 +315,10 @@ final class NativeBrowserSession: ObservableObject {
 }
 
 struct NativeBrowserWorkspace: View {
+    @ObservedObject private var annotation: NativeAnnotationCoordinator
+    @State private var annotationRegionMode = true
+    @State private var annotationBusy = false
+    @State private var annotationPageID: String?
     @ObservedObject var store: NativeWorkspaceStore
     @StateObject private var session: NativeBrowserSession
     @State private var address = ""
@@ -320,18 +333,21 @@ struct NativeBrowserWorkspace: View {
     @State private var credentialContext: NativeBrowserCredentialContext?
     @State private var pendingDownloadAction: (NativeBrowserDownloadItem, String)?
     init(store: NativeWorkspaceStore, host: DesktopBrowserHost, workspaceID: String? = nil, courseID: String? = nil) {
-        self.store = store; _session = StateObject(wrappedValue: NativeBrowserSession(store: store, host: host, workspaceID: workspaceID, courseID: courseID))
+        self.store = store; _annotation = ObservedObject(wrappedValue: store.annotation); _session = StateObject(wrappedValue: NativeBrowserSession(store: store, host: host, workspaceID: workspaceID, courseID: courseID))
     }
     var body: some View {
         VStack(spacing: 0) {
             if session.workspaceID == nil || session.tabs.count > 1 { tabs }
-            GeometryReader { geometry in toolbar(expanded: geometry.size.width >= 650) }.frame(height: 44).zIndex(3)
+            GeometryReader { geometry in toolbar(width: geometry.size.width) }.frame(height: 44).zIndex(3)
             if !session.favoriteLinks.isEmpty && !addressFocused { bookmarks }
             if let error = session.error {
                 HStack { NativeToolError(message: error); Button("닫기", systemImage: "xmark") { session.error = nil }.buttonStyle(NativeBrowserIconStyle()) }
             }
-            if session.active?.loading == true { ProgressView(value: session.active?.progress ?? 0).tint(NativeDesktopTheme.accent).frame(height: 2) }
             if session.findState.visible { NativeBrowserFindBar(session: session) }
+            if annotationRequest != nil {
+                NativeAnnotationToolbar(coordinator: annotation, regionMode: $annotationRegionMode,
+                    supportsElement: true, busy: annotationBusy, attachText: { captureAnnotation() })
+            }
             page
         }.background(NativeDesktopTheme.bgApp).foregroundStyle(NativeDesktopTheme.text)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { workspaceHeight = $0 }
@@ -360,7 +376,13 @@ struct NativeBrowserWorkspace: View {
             else { updateAddress() }
         }
         .onChange(of: address) { _, _ in suggestionSelection = .init() }
-        .onChange(of: session.activeID) { _, _ in addressFocused = false; updateAddress() }
+        .onReceive(annotation.$request) { request in
+            guard request?.documentID == annotationDocumentID else { annotationPageID = nil; return }
+            annotationPageID = session.activeID; annotationRegionMode = true; addressFocused = false
+        }
+        .onChange(of: session.activeID) { _, _ in
+            if annotationRequest != nil { annotation.cancel() }
+            addressFocused = false; updateAddress() }
         .onChange(of: session.active?.url) { _, _ in if !addressFocused { updateAddress() } }
         .onReceive(store.events) { event in
             guard event.channel == "shortcut:passthrough", let p = event.payload as? [String: Any],
@@ -369,29 +391,100 @@ struct NativeBrowserWorkspace: View {
             shortcut(action)
         }
     }
+    private var annotationDocumentID: String {
+        guard let workspaceID = session.workspaceID else { return "browser" }
+        return (session.courseID ?? "") + ":" + workspaceID
+    }
+    private var annotationRequest: NativeAnnotationCoordinator.Request? {
+        annotation.request?.documentID == annotationDocumentID ? annotation.request : nil
+    }
+    private func captureAnnotation(bounds: CGRect? = nil, element: CGPoint? = nil) {
+        guard let request = annotationRequest, !annotationBusy,
+              let id = annotationPageID ?? session.activeID, let page = session.host.pages[id],
+              let webView = page.liveWebView else { return }
+        annotationBusy = true
+        let documentID = page.state["authDocumentId"] as? String
+        let capturedURL = webView.url?.absoluteString
+        let sourceURL = capturedURL ?? session.active?.url
+        let title = webView.title ?? session.active?.title ?? "웹 자료"
+        Task { @MainActor in
+            defer { annotationBusy = false }
+            do {
+                let script: String
+                if let element {
+                    // DOM content is quoted data. Form field values (including passwords) are never read.
+                    script = """
+                    (() => {
+                      const e = document.elementFromPoint(\(element.x) * innerWidth, \(element.y) * innerHeight);
+                      if (!e) return null;
+                      const r = e.getBoundingClientRect();
+                      return {text: (e.innerText || e.textContent || '').slice(0, 16000), x:r.x/innerWidth, y:r.y/innerHeight, width:r.width/innerWidth, height:r.height/innerHeight};
+                    })()
+                    """
+                } else { script = bounds == nil ? "({text: String(window.getSelection() || '').slice(0, 16000)})" : "({text: ''})" }
+                let result = try await webView.evaluateJavaScript(script) as? [String: Any] ?? [:]
+                guard page.state["authDocumentId"] as? String == documentID, webView.url?.absoluteString == capturedURL else {
+                    throw DesktopRuntimeError("웹페이지가 바뀌었습니다. 새 페이지에서 다시 선택해 주세요.")
+                }
+                let text = (result["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                var region = bounds
+                if element != nil, let x = result["x"] as? Double, let y = result["y"] as? Double,
+                   let width = result["width"] as? Double, let height = result["height"] as? Double {
+                    region = CGRect(x: x, y: y, width: width, height: height).intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+                }
+                var dataURL: String?
+                if let region, !region.isNull, region.width > 0, region.height > 0 {
+                    let config = WKSnapshotConfiguration()
+                    config.rect = CGRect(x: region.minX * webView.bounds.width, y: region.minY * webView.bounds.height,
+                                         width: region.width * webView.bounds.width, height: region.height * webView.bounds.height)
+                    config.snapshotWidth = NSNumber(value: Double(min(1600, config.rect.width * 2)))
+                    dataURL = NativeAssistantAttachment.dataURL(try await webView.takeSnapshot(configuration: config))
+                }
+                guard !text.isEmpty || dataURL != nil else { throw DesktopRuntimeError("먼저 웹페이지의 텍스트나 영역을 선택해 주세요.") }
+                guard page.state["authDocumentId"] as? String == documentID, webView.url?.absoluteString == capturedURL else {
+                    throw DesktopRuntimeError("웹페이지가 바뀌었습니다. 새 페이지에서 다시 선택해 주세요.")
+                }
+                annotation.complete(.init(title: title, text: text.isEmpty ? nil : text, imageDataURL: dataURL,
+                    courseID: session.effectiveCourseID, url: sourceURL, revision: documentID), requestID: request.id)
+            } catch { annotation.fail(error.localizedDescription, requestID: request.id) }
+        }
+    }
     private var tabs: some View {
         NativeBrowserTabStrip(tabs: session.tabs, activeID: session.activeID, select: session.select,
             close: { id in perform { try await session.close(id) } }, add: { perform { try await session.add() } })
     }
-    private func toolbar(expanded: Bool) -> some View {
-        HStack(spacing: 0) {
-            Button("뒤로", systemImage: "chevron.left") { perform { try await session.action("goBack") } }.disabled(session.active?.canGoBack != true)
+    private func toolbar(width: CGFloat) -> some View {
+        let expanded = width >= 650
+        return HStack(spacing: 0) {
+            Button("뒤로", systemImage: "arrow.left") { perform { try await session.action("goBack") } }
+                .disabled(session.active?.canGoBack != true).accessibilityIdentifier("native-browser-back")
+            if width >= 400 {
+                Button("앞으로", systemImage: "arrow.right") { perform { try await session.action("goForward") } }
+                    .disabled(session.active?.canGoForward != true).accessibilityIdentifier("native-browser-forward")
+            }
+            reloadButton
             if expanded {
-                Button("앞으로", systemImage: "chevron.right") { perform { try await session.action("goForward") } }.disabled(session.active?.canGoForward != true)
-                reloadButton
                 Button("홈", systemImage: "house") { perform { try await session.home() } }.accessibilityIdentifier("native-browser-home")
             }
             addressBar
             if expanded {
                 Button(session.activeFavorite == nil ? "즐겨찾기 추가" : "즐겨찾기 해제", systemImage: session.activeFavorite == nil ? "star" : "star.fill") { perform { try await session.toggleFavorite() } }
                     .disabled(session.active?.isPrivate == true || session.active?.url == "about:blank").accessibilityIdentifier("native-browser-favorite")
-                if !session.visibleDownloads.isEmpty { downloadButton }
+                if !session.visibleDownloads.isEmpty { downloadButton() }
             }
             if addressFocused {
                 Button("주소 입력 닫기", systemImage: "xmark") { addressFocused = false }.accessibilityIdentifier("native-browser-address-cancel")
-            } else { profileMenu; browserMenu }
+            } else {
+                if width >= 400 { profileMenu(expanded: width >= 850) }
+                browserMenu
+            }
         }.buttonStyle(NativeBrowserIconStyle()).padding(.horizontal, 4).background(NativeDesktopTheme.surface)
             .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
+            .overlay(alignment: .bottom) {
+                if session.active?.loading == true {
+                    ProgressView(value: session.active?.progress ?? 0).tint(NativeDesktopTheme.accent).frame(height: 2)
+                }
+            }
             .disabled(session.sessionChanging)
     }
     private var addressBar: some View {
@@ -405,8 +498,8 @@ struct NativeBrowserWorkspace: View {
                     .font(.system(size: 11).monospacedDigit()).buttonStyle(.plain).frame(minHeight: 32).fixedSize(horizontal: true, vertical: false)
                     .accessibilityLabel("확대율 \(session.zoomPercent)퍼센트, 기본 크기로 복원").accessibilityIdentifier("native-browser-zoom-reset")
             }
-        }.padding(.horizontal, 9).frame(height: 32).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(NativeDesktopTheme.border))
+        }.padding(.horizontal, 12).frame(height: 32).background(NativeDesktopTheme.bgApp, in: Capsule())
+            .overlay(Capsule().strokeBorder(addressFocused ? NativeDesktopTheme.secondary : NativeDesktopTheme.border))
             .overlay(alignment: .topLeading) {
                 if addressFocused && !suggestions.isEmpty { suggestionList.offset(y: 38) }
             }
@@ -442,6 +535,7 @@ struct NativeBrowserWorkspace: View {
     private var bookmarks: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
+                if !session.schoolLinks.isEmpty { schoolLinksMenu }
                 ForEach(session.favoriteLinks) { link in
                     Button { navigate(link.url) } label: { Label(link.title, systemImage: "star").font(.system(size: 11)).lineLimit(1).frame(maxWidth: 170).padding(.horizontal, 8).frame(height: 32) }.buttonStyle(.plain)
                 }
@@ -451,6 +545,12 @@ struct NativeBrowserWorkspace: View {
     @ViewBuilder private var page: some View {
         if session.activeID != nil {
             NativeBrowserSurface(host: session.host, selectedID: session.activeID)
+                .overlay {
+                    if annotationRequest != nil, annotationRegionMode {
+                        NativeAnnotationRegionOverlay(selected: { captureAnnotation(bounds: $0) }, tapped: { captureAnnotation(element: $0) })
+                            .allowsHitTesting(!annotationBusy)
+                    }
+                }
                 .overlay { if session.active?.url == "about:blank", session.active?.title.isEmpty == true { NativeBrowserStartPage(session: session, navigate: navigate) } }
         } else {
             VStack(spacing: 16) {
@@ -462,12 +562,13 @@ struct NativeBrowserWorkspace: View {
     private var reloadButton: some View {
         Button(session.active?.loading == true ? "중지" : "새로고침", systemImage: session.active?.loading == true ? "xmark" : "arrow.clockwise") {
             perform { try await session.action(session.active?.loading == true ? "stop" : "reload") }
-        }
+        }.accessibilityIdentifier("native-browser-reload")
     }
-    private var downloadButton: some View {
-        Button("다운로드", systemImage: "arrow.down.circle") { showingDownloads = true }.accessibilityIdentifier("native-browser-downloads-button")
+    private func downloadButton(inMenu: Bool = false) -> some View {
+        Button("다운로드", systemImage: "arrow.down.circle") { showingDownloads = true }
+            .accessibilityIdentifier(inMenu ? "native-browser-downloads-menu-item" : "native-browser-downloads-button")
     }
-    private var profileMenu: some View {
+    private func profileMenu(expanded: Bool, inMenu: Bool = false) -> some View {
         Menu {
             Text("현재 프로필 · " + session.activeProfileName)
             ForEach(session.profiles, id: \.self) { profile in
@@ -480,9 +581,25 @@ struct NativeBrowserWorkspace: View {
             Button(session.active?.isPrivate == true ? "개인정보 보호 종료" : "개인정보 보호로 전환", systemImage: "hand.raised") {
                 perform { try await session.switchSession(profileID: session.active?.profileID ?? "default", isPrivate: session.active?.isPrivate != true) }
             }.accessibilityIdentifier("native-browser-private-toggle")
-        } label: { Image(systemName: session.active?.isPrivate == true ? "hand.raised.fill" : "person.crop.circle").frame(width: 44, height: 44) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: session.active?.isPrivate == true ? "hand.raised.fill" : "person.crop.circle.fill").font(.system(size: 17))
+                if expanded {
+                    Text(session.active?.isPrivate == true ? "시크릿" : session.activeProfileName).font(.system(size: 12)).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.system(size: 8))
+                }
+            }.padding(.horizontal, expanded ? 10 : 0).frame(minWidth: 44, maxWidth: expanded ? 116 : 44, minHeight: 44)
+        }.buttonStyle(.plain)
             .accessibilityLabel("브라우저 프로필, " + session.activeProfileName + (session.active?.isPrivate == true ? ", 개인정보 보호" : ""))
-            .accessibilityIdentifier("native-browser-profile")
+            .accessibilityIdentifier(inMenu ? "native-browser-profile-menu-item" : "native-browser-profile")
+    }
+    private var schoolLinksMenu: some View {
+        Menu {
+            ForEach(session.schoolLinks) { link in
+                Button(link.title) { navigate(link.url) }
+            }
+        } label: { Label("학교 사이트", systemImage: "folder").font(.system(size: 11)).frame(minHeight: 32) }
+            .accessibilityIdentifier("native-browser-school-links")
     }
     private var browserMenu: some View {
         Menu {
@@ -495,8 +612,10 @@ struct NativeBrowserWorkspace: View {
             Button(session.activeFavorite == nil ? "즐겨찾기 추가" : "즐겨찾기 해제", systemImage: "star") { perform { try await session.toggleFavorite() } }.disabled(session.active?.isPrivate == true || session.active?.url == "about:blank")
             Divider()
             Button("방문 기록", systemImage: "clock") { showingHistory = true }.disabled(session.active?.isPrivate == true)
+            if !session.schoolLinks.isEmpty { schoolLinksMenu }
+            profileMenu(expanded: true, inMenu: true)
             Button("페이지에서 찾기", systemImage: "magnifyingglass") { session.setFindVisible(true) }.accessibilityIdentifier("native-browser-show-find")
-            downloadButton
+            downloadButton(inMenu: true)
             Menu("확대/축소 · \(session.zoomPercent)%") {
                 Button("확대", systemImage: "plus.magnifyingglass") { perform { try await session.zoom(1) } }.accessibilityIdentifier("native-browser-zoom-in")
                 Button("축소", systemImage: "minus.magnifyingglass") { perform { try await session.zoom(-1) } }
@@ -519,7 +638,7 @@ struct NativeBrowserWorkspace: View {
                 guard let id = session.activeID else { return }
                 perform { _ = try await session.host.handle(channel: "browser:sharePage", request: ["tabId": id]) }
             }.disabled(session.active?.url == "about:blank" || session.active == nil)
-        } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+        } label: { Image(systemName: "ellipsis").rotationEffect(.degrees(90)).frame(width: 44, height: 44) }
             .accessibilityLabel("브라우저 메뉴").accessibilityIdentifier("native-browser-menu")
     }
     private var addressHistoryKey: String { "\(addressFocused):\(session.activeID ?? ""):\(session.active?.profileID ?? ""):\(address)" }

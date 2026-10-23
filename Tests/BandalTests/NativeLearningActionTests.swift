@@ -185,3 +185,51 @@ final class NativeLearningActionTests: XCTestCase {
     }
 
 }
+
+extension NativeLearningActionTests {
+    func testExpectedExamRetainsCapturedSourceAndSettingsAfterOriginalChanges() throws {
+        let attachment: [String: Any] = ["id": "selection", "title": "Handwritten vectors", "text": "Vectors retain this captured explanation.", "courseID": course, "relativePath": "source.md", "capturedAt": "2026-10-23T01:00:00Z"]
+        let ref: [String: Any] = ["kind": "annotation", "attachmentId": "selection", "quote": ""]
+        let draft: [String: Any] = ["id": "exam", "kind": "quiz", "title": "Practice exam", "generationMode": "expected-exam", "difficulty": "보통", "questionCount": 1, "scope": "Vectors", "attachments": [attachment], "sourceRefs": [ref], "questions": [["id": "q", "type": "cloze", "prompt": "A vector has…", "answer": "direction"]]]
+        _ = try call("nativeLearning:putArtifact", ["artifact": draft])
+        try Data("Completely changed original".utf8).write(to: context.courseFolder(course).appendingPathComponent("source.md"))
+        let saved = try call("learning:getArtifact", ["id": "exam"])
+        XCTAssertEqual(saved["generationMode"] as? String, "expected-exam")
+        XCTAssertEqual(saved["difficulty"] as? String, "보통")
+        XCTAssertEqual(saved["questionCount"] as? Int, 1)
+        XCTAssertEqual(saved["scope"] as? String, "Vectors")
+        XCTAssertEqual((saved["attachments"] as? [[String: Any]])?.first?["text"] as? String, attachment["text"] as? String)
+        XCTAssertEqual((saved["sourceRefs"] as? [[String: Any]])?.first?["quote"] as? String, attachment["text"] as? String)
+        _ = try call("learning:saveQuizAnswer", ["artifactId": "exam", "attemptId": "attempt", "questionId": "q", "answer": "direction"])
+        XCTAssertThrowsError(try call("learning:finishQuiz", ["artifactId": "exam", "attemptId": "attempt"]))
+        _ = try call("learning:submitQuiz", ["artifactId": "exam", "attemptId": "attempt"])
+        XCTAssertThrowsError(try call("learning:saveQuizAnswer", ["artifactId": "exam", "attemptId": "attempt", "questionId": "q", "answer": "changed"]))
+        _ = try call("learning:finishQuiz", ["artifactId": "exam", "attemptId": "attempt"])
+        XCTAssertThrowsError(try call("nativeLearning:putArtifact", ["artifact": draft]), "Regeneration must use a new result identity and preserve prior answers")
+    }
+    func testAnnotationRequiresStoredSnapshotAndCannotClaimOtherCourse() throws {
+        let ref: [String: Any] = ["kind": "annotation", "attachmentId": "capture", "quote": ""]
+        var draft: [String: Any] = ["kind": "summary", "title": "Summary", "markdown": "Explanation", "sourceRefs": [ref]]
+        XCTAssertThrowsError(try call("nativeLearning:putArtifact", ["artifact": draft]))
+        draft["attachments"] = [["id": "capture", "title": "Captured", "text": "Content", "courseID": "unrelated-course", "capturedAt": "2026-10-23T01:00:00Z"]]
+        XCTAssertThrowsError(try call("nativeLearning:putArtifact", ["artifact": draft]))
+        XCTAssertEqual((try call("learning:get")["artifacts"] as? [Any])?.count, 0)
+    }
+}
+
+extension NativeLearningActionTests {
+    func testExpectedExamSubmitsBeforeSelfReviewAndLocksSubmittedAnswers() throws {
+        _ = try call("nativeLearning:putArtifact", ["artifact": ["id": "self-review-exam", "kind": "quiz", "title": "Written exam", "generationMode": "expected-exam", "sourceRefs": [source], "questions": [["id": "written", "type": "short-answer", "prompt": "Explain a vector", "answer": "Magnitude and direction"]]]])
+        let base: [String: Any] = ["artifactId": "self-review-exam", "attemptId": "exam-attempt", "questionId": "written", "answer": "My answer"]
+        _ = try call("learning:saveQuizAnswer", base)
+        XCTAssertThrowsError(try call("learning:saveQuizAnswer", base.merging(["selfCheck": true]) { _, new in new }))
+        _ = try call("learning:submitQuiz", ["artifactId": "self-review-exam", "attemptId": "exam-attempt"])
+        learning = NativeLearningRepository(context: context)
+        let resumed = try call("learning:get")
+        XCTAssertNotNil((resumed["quizAttempts"] as? [[String: Any]])?.first?["submittedAt"] as? String)
+        XCTAssertThrowsError(try call("learning:saveQuizAnswer", base.merging(["answer": "Rewritten with answer visible", "selfCheck": true]) { _, new in new }))
+        _ = try call("learning:saveQuizAnswer", base.merging(["selfCheck": false]) { _, new in new })
+        let result = try call("learning:finishQuiz", ["artifactId": "self-review-exam", "attemptId": "exam-attempt"])
+        XCTAssertEqual((result["quizAttempts"] as? [[String: Any]])?.first?["selfCheckedCount"] as? Int, 1)
+    }
+}

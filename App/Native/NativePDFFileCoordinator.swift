@@ -35,11 +35,13 @@ final class NativePDFFileCoordinator {
             throw error
         }
     }
-    func publish(from owner: NativePDFPersistence, drawings: [[String: Any]]? = nil, annotations: [[String: Any]]? = nil) {
+    func publish(from owner: NativePDFPersistence, drawings: [[String: Any]]? = nil, annotations: [[String: Any]]? = nil,
+                 drawingIDs: Set<String>? = nil, annotationIDs: Set<String>? = nil) {
         peers.removeAll { $0.value == nil }
         for peer in peers {
             guard let value = peer.value, value !== owner else { continue }
-            value.receivePeerSnapshot(drawings: drawings, annotations: annotations)
+            value.receiveCoordinatedSnapshot(drawings: drawings, annotations: annotations,
+                                             drawingIDs: drawingIDs, annotationIDs: annotationIDs)
         }
     }
 }

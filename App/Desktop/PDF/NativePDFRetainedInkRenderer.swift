@@ -201,23 +201,37 @@ final class NativePDFRetainedInkRenderer {
             count = next
         }
         guard convexPolygons.allSatisfy({ $0.allSatisfy { Float($0.x).isFinite && Float($0.y).isFinite } }) else { return nil }
-        let cache = NativePDFInkVertexCache()
-        cache.update(convexPolygons)
-        guard !cache.vertices.isEmpty else { return nil }
-        let length = cache.vertices.count * MemoryLayout<SIMD2<Float>>.stride
+        guard count > 0 else { return nil }
+        let vertexCount = count * 3
+        let length = vertexCount * MemoryLayout<SIMD2<Float>>.stride
         guard let buffer = device.makeBuffer(length: length, options: .storageModeShared) else { return nil }
-        cache.vertices.withUnsafeBytes { bytes in
-            buffer.contents().copyMemory(from: bytes.baseAddress!, byteCount: length)
-        }
+        // These are immutable completed strokes. The live-input cache tracks
+        // polygon prefixes and cumulative CGRect bounds for prediction edits;
+        // building it here copied every vertex and recalculated those bounds
+        // only to discard them immediately. Write the identical fan directly.
+        let vertices = buffer.contents().bindMemory(to: SIMD2<Float>.self, capacity: vertexCount)
+        var offset = 0
         var low = SIMD2<Float>(repeating: .greatestFiniteMagnitude)
         var high = SIMD2<Float>(repeating: -.greatestFiniteMagnitude)
-        for p in cache.vertices {
-            low = SIMD2(min(low.x,p.x),min(low.y,p.y)); high = SIMD2(max(high.x,p.x),max(high.y,p.y))
+        for polygon in convexPolygons where polygon.count >= 3 {
+            let first = SIMD2(Float(polygon[0].x), Float(polygon[0].y))
+            low = SIMD2(min(low.x, first.x), min(low.y, first.y))
+            high = SIMD2(max(high.x, first.x), max(high.y, first.y))
+            var previous = SIMD2(Float(polygon[1].x), Float(polygon[1].y))
+            low = SIMD2(min(low.x, previous.x), min(low.y, previous.y))
+            high = SIMD2(max(high.x, previous.x), max(high.y, previous.y))
+            for point in polygon.dropFirst(2) {
+                let next = SIMD2(Float(point.x), Float(point.y))
+                vertices[offset] = first; vertices[offset + 1] = previous; vertices[offset + 2] = next
+                offset += 3; previous = next
+                low = SIMD2(min(low.x, next.x), min(low.y, next.y))
+                high = SIMD2(max(high.x, next.x), max(high.y, next.y))
+            }
         }
         let bounds = CGRect(x: CGFloat(low.x), y: CGFloat(low.y), width: CGFloat(high.x-low.x), height: CGFloat(high.y-low.y))
         guard !bounds.isEmpty, [bounds.minX,bounds.minY,bounds.width,bounds.height].allSatisfy(\.isFinite) else { return nil }
         meshUploadCount += 1
-        return Mesh(buffer: buffer, vertexCount: cache.vertices.count, bounds: bounds)
+        return Mesh(buffer: buffer, vertexCount: vertexCount, bounds: bounds)
     }
 
     /// Caller supplies already-premultiplied, top-to-bottom BGRA8 pixels in

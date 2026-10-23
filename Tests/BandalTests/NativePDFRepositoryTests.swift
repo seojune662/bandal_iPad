@@ -6,6 +6,46 @@ import CryptoKit
 
 @MainActor
 final class NativePDFRepositoryTests: XCTestCase {
+    func testReopenDecodeCacheSeesExternalSQLChangeWithUnchangedTimestampAndDeletion() throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let path = try fixture.paper(), identity = fixture.identity(path)
+        let binding = try fixture.call("nativePDF:binding", identity) as! [String: Any]
+        let original = try fixture.call("drawings:create", fixture.stroke(path, revision: binding["documentRevision"] as! String)) as! [String: Any]
+        _ = try fixture.call("drawings:listForFile", identity)
+        var data = try XCTUnwrap(original["data"] as? [String: Any])
+        var points = try XCTUnwrap(data["points"] as? [[String: Any]])
+        points[0]["x"] = 0.77; data["points"] = points
+        let json = String(decoding: try JSONSerialization.data(withJSONObject: data), as: UTF8.self)
+        _ = try fixture.context.db.run("UPDATE pdf_drawings SET data_json=? WHERE id=?", params: [json, original["id"]!])
+        let reread = try XCTUnwrap((try fixture.call("drawings:listForFile", identity) as? [[String: Any]])?.first)
+        XCTAssertEqual(reread["updatedAt"] as? String, original["updatedAt"] as? String)
+        XCTAssertEqual(((reread["data"] as? [String: Any])?["points"] as? [[String: Any]])?.first?["x"] as? Double, 0.77)
+        _ = try fixture.context.db.run("UPDATE pdf_drawings SET deleted_at='external' WHERE id=?", params: [original["id"]!])
+        XCTAssertTrue((try fixture.call("drawings:listForFile", identity) as! [[String: Any]]).isEmpty)
+    }
+    func testMovingDrawingToAnotherPagePersistsInSQLiteAndRestoresWithUndo() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let path = try fixture.paper(), url = try fixture.context.materialURL(courseID: fixture.course, relativePath: path)
+        let document = try XCTUnwrap(PDFDocument(url: url))
+        document.insert(try XCTUnwrap(document.page(at: 0)?.copy() as? PDFPage), at: 1)
+        XCTAssertTrue(document.write(to: url))
+        let binding = try fixture.call("nativePDF:binding", fixture.identity(path)) as! [String: Any]
+        let owner = NativePDFPersistence(courseID: fixture.course, relativePath: path,
+            documentRevision: binding["documentRevision"] as! String,
+            backend: { try fixture.call($0, $1) }, host: { _, _ in [:] })
+        try await owner.createObjects([["page": 1, "kind": "rect",
+            "data": ["box": ["x": 0.1, "y": 0.2, "width": 0.2, "height": 0.2]],
+            "style": ["color": "blue", "width": 0.003, "opacity": 1.0]]])
+        let original = try XCTUnwrap(owner.rows.first)
+        var moved = original; moved["page"] = 2
+        try await owner.updateObjects([moved], expected: [original])
+        let reopened = try NativePDFRepository(context: fixture.context)
+        let saved = try XCTUnwrap(try reopened.handle("drawings:listForFile", fixture.identity(path)) as? [[String: Any]])
+        XCTAssertEqual((saved.first?["page"] as? NSNumber)?.intValue, 2)
+        XCTAssertEqual(saved.first?["id"] as? String, original["id"] as? String)
+        try await owner.undo(); XCTAssertEqual((owner.rows.first?["page"] as? NSNumber)?.intValue, 1)
+        try await owner.redo(); XCTAssertEqual((owner.rows.first?["page"] as? NSNumber)?.intValue, 2)
+    }
     func testSwiftPaperAndMeasuredReceiptRoundTripAcrossRestartAndUndoTombstone() throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }
         let paper = try fixture.call("pdfNotes:create", ["courseId": fixture.course, "title": "원본 노트", "paper": "grid", "orientation": "landscape"]) as! [String: Any]

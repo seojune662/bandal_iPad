@@ -1,5 +1,18 @@
 import Foundation
 
+/// Can only be created by detaching and validating the complete JSON value.
+/// Native consumers share this immutable value instead of copying every point again.
+struct NativePDFValidatedDrawingJSON {
+    let value: [String: Any]
+    private init(_ value: [String: Any]) { self.value = value }
+    static func freeze(_ source: [String: Any]) throws -> Self {
+        guard let value = try DesktopJSON.immutableCopy(source) as? [String: Any] else {
+            throw NativePDFError.invalid("PDF 필기 데이터를 확인하지 못했습니다.")
+        }
+        return Self(value)
+    }
+}
+
 /// Owns immutable, validated JSON rows. Bridge payloads cannot manufacture the
 /// native visual identity used by the compositor's unchanged-row fast path.
 @MainActor
@@ -9,7 +22,7 @@ final class NativePDFDrawingSnapshotStore {
         let page: Int
         let object: [String: Any]
         let visualToken: NativePDFCommittedVisualToken
-        fileprivate let encoded: Data
+        private var encoded: Data?
         private var preparedAspect: Double?
         // Visible overlays and the bounded path LRU own geometry strongly.
         // A document's visited rows must never retain every prepared path.
@@ -17,10 +30,16 @@ final class NativePDFDrawingSnapshotStore {
         private var preparedWithoutInk = false
         private(set) var preparationCount = 0
 
-        fileprivate init(id: String, page: Int, object: [String: Any], encoded: Data, previous: Row?) {
-            self.id = id; self.page = page; self.object = object; self.encoded = encoded
-            visualToken = NativePDFCommittedVisualToken(object: object)
+        fileprivate init(id: String, page: Int, json: NativePDFValidatedDrawingJSON, encoded: Data?, previous: Row?) {
+            self.id = id; self.page = page; self.object = json.value; self.encoded = encoded
+            visualToken = NativePDFCommittedVisualToken(validatedJSON: json)
             preparedInk = previous?.preparedInk
+        }
+
+        fileprivate func canonicalBytes() throws -> Data {
+            if let encoded { return encoded }
+            let bytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            encoded = bytes; return bytes
         }
 
         /// Only a new/changed row or a changed physical aspect parses points.
@@ -114,13 +133,18 @@ final class NativePDFDrawingSnapshotStore {
             return previous
         }
         fullPreparationCount += 1
-        guard JSONSerialization.isValidJSONObject(clean) else { throw invalid() }
-        // Freeze first so the deduplication bytes and renderer consume the
-        // same numeric values. Parsing these bytes again can change doubles.
-        guard let frozen = try DesktopJSON.immutableCopy(clean) as? [String: Any] else { throw invalid() }
-        let encoded = try JSONSerialization.data(withJSONObject: frozen, options: [.sortedKeys])
-        if let previous, previous.encoded == encoded { return previous }
-        return Row(id: id, page: page, object: frozen, encoded: encoded, previous: previous)
+        // immutableCopy already rejects unsupported values, excessive nesting
+        // and non-finite numbers. A separate isValidJSONObject walk repeated it.
+        let json = try NativePDFValidatedDrawingJSON.freeze(clean)
+        // First ingestion needs no equality bytes. On a real changed-row
+        // comparison preserve the canonical JSON fallback used by older callers.
+        var encoded: Data?
+        if let previous {
+            let bytes = try JSONSerialization.data(withJSONObject: json.value, options: [.sortedKeys])
+            if try previous.canonicalBytes() == bytes { return previous }
+            encoded = bytes
+        }
+        return Row(id: id, page: page, json: json, encoded: encoded, previous: previous)
     }
 
     /// A conservative proof that freezing would produce the same values.

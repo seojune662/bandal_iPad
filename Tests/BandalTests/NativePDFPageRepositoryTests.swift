@@ -102,6 +102,22 @@ final class NativePDFPageRepositoryTests: XCTestCase {
         XCTAssertThrowsError(try f.call("pdf:restructure", reused)); XCTAssertThrowsError(try f.call("pdf:restructure", f.request(["pages": [1, 2]])))
         XCTAssertEqual(try Data(contentsOf: f.url), bytes); XCTAssertEqual(try f.context.query("SELECT * FROM native_pdf_page_history").count, 1)
     }
+    func testHistoryEligibilityDetectsPayloadChangesWithoutTimestampAndProjectsUndoAndRedoSides() throws {
+        let f = try Fixture(), changed = try f.call("pdf:restructure", f.request(["pages": [1, 2, 3, 0]]))
+        let token = try XCTUnwrap(changed["historyToken"] as? String)
+        XCTAssertEqual(try f.call("pdf:pageHistory", f.request())["canUndo"] as? Bool, true)
+        let originalData = try XCTUnwrap(f.context.query("SELECT data_json FROM pdf_drawings WHERE id='ink-1'").first?["data_json"] as? String)
+        // Metadata-only fingerprints must not let a modified point payload pass.
+        try f.context.run("UPDATE pdf_drawings SET data_json='{}' WHERE id='ink-1'")
+        XCTAssertEqual(try f.call("pdf:pageHistory", f.request())["canUndo"] as? Bool, false)
+        try f.context.run("UPDATE pdf_drawings SET data_json=? WHERE id='ink-1'", [originalData])
+        XCTAssertEqual(try f.call("pdf:pageHistory", f.request())["canUndo"] as? Bool, true)
+        let undo = try f.call("pdf:restorePages", f.request(["documentRevision": changed["documentRevision"]!, "historyToken": token, "direction": "undo"]))
+        XCTAssertEqual(try f.call("pdf:pageHistory", f.request())["canRedo"] as? Bool, true)
+        try f.context.run("UPDATE annotations SET comment='changed without timestamp' WHERE id='annotation-1'")
+        XCTAssertEqual(try f.call("pdf:pageHistory", f.request())["canRedo"] as? Bool, false)
+        XCTAssertThrowsError(try f.call("pdf:restorePages", f.request(["documentRevision": undo["documentRevision"]!, "historyToken": token, "direction": "redo"])))
+    }
     func testExactUndoRedoAndRecoveryCopyProtectLaterInk() throws {
         let f = try Fixture(), changed = try f.call("pdf:restructure", f.request(["pages": [3, 1]])), token = changed["historyToken"]!
         let changedBytes = try Data(contentsOf: f.url)

@@ -51,7 +51,7 @@ struct NativeChromeButton: View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 16, weight: .regular))
                 .foregroundStyle(selected ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
-                .frame(width: 36, height: 36)
+                .frame(width: 44, height: 44)
                 .background(selected ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 6))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel(title).help(title)

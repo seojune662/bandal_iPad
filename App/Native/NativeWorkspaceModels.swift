@@ -16,12 +16,14 @@ struct NativeMaterial: Codable, Hashable, Identifiable {
     var children: [NativeMaterial]?
     var size: Int?
     var mtime: Double?
+    var learningTarget: NativeLearningDocumentTarget? = nil
 
-    var id: String { relPath }
+    var id: String { learningTarget?.id ?? relPath }
     var isDirectory: Bool { kind == "dir" }
 
     func document(in courseID: String) -> NativeDocumentReference {
-        NativeDocumentReference(courseID: courseID, relativePath: relPath, title: name, kind: kind)
+        if let learningTarget { return learningTarget.document(title: name) }
+        return NativeDocumentReference(courseID: courseID, relativePath: relPath, title: name, kind: kind)
     }
 }
 
@@ -33,10 +35,11 @@ struct NativeDocumentReference: Codable, Hashable, Identifiable {
     /// A tab instance is optional so older workspaces keep their original IDs.
     /// Storage calls must use the canonical course/path, never this identifier.
     var instanceID: String? = nil
+    var learningTarget: NativeLearningDocumentTarget? = nil
 
-    var storageID: String { courseID + ":" + relativePath }
+    var storageID: String { learningTarget?.id ?? courseID + ":" + relativePath }
     var id: String { instanceID.map { "instance:" + $0 } ?? storageID }
-    var supportsDuplicate: Bool { kind == "pdf" || kind == "note" || ["md", "markdown"].contains((relativePath as NSString).pathExtension.lowercased()) }
+    var supportsDuplicate: Bool { learningTarget == nil && kind != "learning" && (kind == "pdf" || kind == "note" || ["md", "markdown"].contains((relativePath as NSString).pathExtension.lowercased())) }
     func duplicated() -> NativeDocumentReference {
         var copy = self; copy.instanceID = UUID().uuidString.lowercased(); return copy
     }

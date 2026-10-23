@@ -2,6 +2,15 @@ import XCTest
 @testable import Bandal
 
 final class NativeBrowserAddressTests: XCTestCase {
+    func testNewTabsOpenTheChosenSearchEngineAndRespectCustomHomePages() {
+        XCTAssertEqual(NativeBrowserAddress.newTabURL(preferences: [:], isPrivate: false), "https://www.google.com/")
+        for (engine, url) in [("naver", "https://www.naver.com/"), ("daum", "https://www.daum.net/"), ("duckduckgo", "https://duckduckgo.com/")] {
+            XCTAssertEqual(NativeBrowserAddress.newTabURL(preferences: ["browserSearchEngine": engine], isPrivate: false), url)
+        }
+        XCTAssertEqual(NativeBrowserAddress.homeURL(preferences: ["browser": ["homePage": "https://school.example/course"]]), "https://school.example/course")
+        XCTAssertEqual(NativeBrowserAddress.homeURL(preferences: ["browser": ["homePage": "javascript:alert(1)"]]), "https://www.google.com/")
+        XCTAssertEqual(NativeBrowserAddress.newTabURL(preferences: ["browser": ["homePage": "https://school.example/course"]], isPrivate: true), "about:blank")
+    }
     func testDirectNavigationAndEngineSearchUseTheSameResolutionAsSuggestions() throws {
         for value in ["localhost:8123/lecture", "http://intranet/lecture", "https://예시.한국/수학", "example.org/path?q=one"] {
             let resolved = try NativeBrowserAddress.resolve(value)
@@ -61,6 +70,37 @@ final class NativeBrowserAddressTests: XCTestCase {
 
 @MainActor
 final class NativeBrowserFeaturesTests: XCTestCase {
+    func testNewTabRequestsARealPageButPrivateTabDoesNotNavigateUntilHomeIsPressed() async throws {
+        let (root, _, host, session) = await makeSession()
+        defer { host.pages.keys.forEach(host.destroy); try? FileManager.default.removeItem(at: root) }
+        XCTAssertEqual(session.active?.url, "https://www.google.com/")
+        session.preferences = ["browser": ["homePage": "https://school.example/course"]]
+        try await session.add()
+        XCTAssertEqual(session.active?.url, "https://school.example/course")
+        try await session.add(isPrivate: true)
+        XCTAssertEqual(session.active?.url, "about:blank")
+        try await session.home()
+        XCTAssertEqual(session.active?.url, "https://school.example/course", "Home is an explicit navigation even in a private tab")
+    }
+    func testRestoringAnOldBlankTabOpensTheDefaultHomePage() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("browser-restore-home-\(UUID())")
+        let store = NativeWorkspaceStore(storageRoot: root); await store.start()
+        let host = DesktopBrowserHost(root: root)
+        host.emit = { channel, payload in store.events.send(.init(channel: channel, payload: payload)) }
+        defer { host.pages.keys.forEach(host.destroy); try? FileManager.default.removeItem(at: root) }
+        var previous: NativeBrowserSession? = NativeBrowserSession(store: store, host: host, workspaceID: "features")
+        await previous?.start()
+        let createdID = try await previous?.add(initialURL: "about:blank")
+        let id = try XCTUnwrap(createdID)
+        try previous?.save()
+        previous = nil
+        host.pages.keys.forEach(host.destroy)
+        let restored = NativeBrowserSession(store: store, host: host, workspaceID: "features")
+        await restored.start()
+        XCTAssertNil(restored.error)
+        XCTAssertEqual(restored.activeID, id)
+        XCTAssertEqual(restored.active?.url, "https://www.google.com/", "A saved dashboard tab should become the real homepage after upgrading")
+    }
     func testExternalProfileMutationRefreshesEveryOpenSession() async throws {
         let (root, store, host, session) = await makeSession()
         defer { host.pages.keys.forEach(host.destroy); try? FileManager.default.removeItem(at: root) }

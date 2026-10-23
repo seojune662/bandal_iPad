@@ -116,6 +116,14 @@ final class NativePDFPersistence {
     private var peerEditRejected = false
     private var uncertainStroke = false
     private var peerDrawingVersion = 0, peerAnnotationVersion = 0
+    // A new owner has no canonical baseline yet: [] is not proof that the
+    // document is empty. Partial reads and receipt splices may only extend a
+    // full listing (or a full peer snapshot), never publish an incomplete file.
+    private var hasCanonicalRows = false, hasCanonicalAnnotations = false
+    private var hasCoordinatedDrawingBaseline = false, hasCoordinatedAnnotationBaseline = false
+    // nil means that a full canonical read must be broadcast without a hint.
+    private var unpublishedDrawingIDs: Set<String>?
+    private var unpublishedAnnotationIDs: Set<String>?
     var hasUnsettledEdits: Bool { pendingHistory?.action.recovery != nil || !eraseRecords.isEmpty || uncertainStroke }
     var onRowsChanged: (() async throws -> Void)?
     private(set) var rows: [[String: Any]] = []
@@ -154,17 +162,44 @@ final class NativePDFPersistence {
     }
     /// Peer writes do not become this pane's undo actions. Only history that
     /// touches a changed object is invalidated; unrelated local strokes remain.
-    func receivePeerSnapshot(drawings: [[String: Any]]?, annotations incomingAnnotations: [[String: Any]]?) {
-        func changed(_ before: [[String: Any]], _ after: [[String: Any]]) -> Set<String> {
-            let old = Dictionary(before.compactMap { row in (row["id"] as? String).map { ($0, row) } }, uniquingKeysWith: { _, new in new })
-            let new = Dictionary(after.compactMap { row in (row["id"] as? String).map { ($0, row) } }, uniquingKeysWith: { _, new in new })
-            return Set(old.keys).union(new.keys).filter { id in
-                guard let a = old[id], let b = new[id] else { return true }
+    func receivePeerSnapshot(drawings: [[String: Any]]?, annotations: [[String: Any]]?) {
+        applyPeerSnapshot(drawings: drawings, annotations: annotations, drawingIDs: nil, annotationIDs: nil)
+        // An uncoordinated refresh may contain changes other panes have never
+        // seen. Its next publication must therefore retain the full fallback.
+        if drawings != nil { unpublishedDrawingIDs = nil; hasCoordinatedDrawingBaseline = false }
+        if annotations != nil { unpublishedAnnotationIDs = nil; hasCoordinatedAnnotationBaseline = false }
+    }
+    /// Only the file coordinator can promise all live peers received the same
+    /// canonical broadcast. New peers still compare the entire first snapshot.
+    func receiveCoordinatedSnapshot(drawings: [[String: Any]]?, annotations: [[String: Any]]?,
+                                    drawingIDs: Set<String>?, annotationIDs: Set<String>?) {
+        let drawingHint = hasCoordinatedDrawingBaseline ? drawingIDs : nil
+        let annotationHint = hasCoordinatedAnnotationBaseline ? annotationIDs : nil
+        if drawings != nil { unpublishedDrawingIDs = [] }
+        if annotations != nil { unpublishedAnnotationIDs = [] }
+        applyPeerSnapshot(drawings: drawings, annotations: annotations,
+                          drawingIDs: drawingHint, annotationIDs: annotationHint)
+    }
+    private func applyPeerSnapshot(drawings: [[String: Any]]?, annotations incomingAnnotations: [[String: Any]]?,
+                                   drawingIDs hintedDrawings: Set<String>?, annotationIDs hintedAnnotations: Set<String>?) {
+        func changed(_ before: [[String: Any]], _ after: [[String: Any]], hint: Set<String>?) -> Set<String> {
+            func keyed(_ rows: [[String: Any]]) -> [String: [String: Any]] {
+                var result: [String: [String: Any]] = [:]
+                result.reserveCapacity(hint?.count ?? rows.count)
+                for row in rows {
+                    guard let id = row["id"] as? String, hint?.contains(id) != false else { continue }
+                    result[id] = row
+                }
+                return result
+            }
+            let old = keyed(before), new = keyed(after)
+            return (hint ?? Set(old.keys).union(new.keys)).filter { id in
+                guard let a = old[id], let b = new[id] else { return old[id] != nil || new[id] != nil }
                 return !(a as NSDictionary).isEqual(to: b)
             }
         }
-        let drawingIDs = drawings.map { changed(rows, $0) } ?? []
-        let annotationIDs = incomingAnnotations.map { changed(annotations, $0) } ?? []
+        let drawingIDs = drawings.map { changed(rows, $0, hint: hintedDrawings) } ?? []
+        let annotationIDs = incomingAnnotations.map { changed(annotations, $0, hint: hintedAnnotations) } ?? []
         func conflicts(_ action: HistoryAction) -> Bool {
             let affected = action.kind.hasPrefix("annotation") ? annotationIDs : drawingIDs
             return action.rows.contains { ($0["id"] as? String).map { affected.contains(resolve($0)) } == true }
@@ -173,8 +208,8 @@ final class NativePDFPersistence {
         if let pending = pendingHistory, pending.action.recovery == nil, conflicts(pending.action) {
             pendingHistory = nil; peerEditRejected = true
         }
-        if let drawings { peerDrawingVersion += 1; rows = drawings }
-        if let incomingAnnotations { peerAnnotationVersion += 1; annotations = incomingAnnotations }
+        if let drawings { peerDrawingVersion += 1; rows = drawings; hasCanonicalRows = true; hasCoordinatedDrawingBaseline = true }
+        if let incomingAnnotations { peerAnnotationVersion += 1; annotations = incomingAnnotations; hasCanonicalAnnotations = true; hasCoordinatedAnnotationBaseline = true }
         onPeerChanged?(drawingIDs.union(annotationIDs))
     }
     func reload() async throws {
@@ -182,14 +217,99 @@ final class NativePDFPersistence {
         guard let value = try await backend("drawings:listForFile", identity) as? [[String: Any]] else {
             throw NativePDFError.invalid("PDF 필기 목록을 확인하지 못했습니다.")
         }
-        if version == peerDrawingVersion { rows = value }
+        if version == peerDrawingVersion { rows = value; hasCanonicalRows = true; hasCoordinatedDrawingBaseline = false; unpublishedDrawingIDs = nil }
     }
     func reloadAnnotations() async throws {
         let version = peerAnnotationVersion
         guard let value = try await backend("annotations:listForFile", identity) as? [[String: Any]] else {
             throw NativePDFError.invalid("PDF 주석 목록을 확인하지 못했습니다.")
         }
-        if version == peerAnnotationVersion { annotations = value }
+        if version == peerAnnotationVersion { annotations = value; hasCanonicalAnnotations = true; hasCoordinatedAnnotationBaseline = false; unpublishedAnnotationIDs = nil }
+    }
+    private func publishDrawings() {
+        let hint = unpublishedDrawingIDs
+        unpublishedDrawingIDs = []; hasCoordinatedDrawingBaseline = true
+        coordinator?.publish(from: self, drawings: rows, drawingIDs: hint)
+    }
+    private func publishAnnotations() {
+        let hint = unpublishedAnnotationIDs
+        unpublishedAnnotationIDs = []; hasCoordinatedAnnotationBaseline = true
+        coordinator?.publish(from: self, annotations: annotations, annotationIDs: hint)
+    }
+    /// A canonical operation only needs fresh rows for its own IDs. Reading a
+    /// whole document here reparses every unrelated stroke for each erase or
+    /// history action. Keep the peer-version guard used by full reloads.
+    private func reloadDrawingIDs(_ ids: Set<String>) async throws {
+        if !hasCanonicalRows { try await reload(); return }
+        guard !ids.isEmpty else { return }
+        let version = peerDrawingVersion
+        let value = try await refreshedRows("drawings:listForFile", current: rows, ids: ids)
+        if version == peerDrawingVersion { rows = value.rows; unpublishedDrawingIDs?.formUnion(value.replacedIDs); hasCoordinatedDrawingBaseline = false }
+    }
+    private func reloadAnnotationIDs(_ ids: Set<String>) async throws {
+        if !hasCanonicalAnnotations { try await reloadAnnotations(); return }
+        guard !ids.isEmpty else { return }
+        let version = peerAnnotationVersion
+        let value = try await refreshedRows("annotations:listForFile", current: annotations, ids: ids)
+        if version == peerAnnotationVersion { annotations = value.rows; unpublishedAnnotationIDs?.formUnion(value.replacedIDs); hasCoordinatedAnnotationBaseline = false }
+    }
+    private struct CanonicalOrderKey: Hashable {
+        let page: Int
+        let created: String
+        init(_ row: [String: Any]) {
+            page = (row["page"] as? NSNumber)?.intValue ?? 0
+            created = row["createdAt"] as? String ?? ""
+        }
+    }
+    private func refreshedRows(_ channel: String, current: [[String: Any]], ids: Set<String>) async throws -> (rows: [[String: Any]], replacedIDs: Set<String>) {
+        var request = identity; request["ids"] = ids.sorted()
+        guard let response = try await backend(channel, request) as? [[String: Any]] else {
+            throw NativePDFError.invalid("PDF 편집 목록을 확인하지 못했습니다.")
+        }
+        var updates = response.filter { ids.contains($0["id"] as? String ?? "") }
+        var replacedIDs = ids
+        let retainedKeys = Set(current.filter { !ids.contains($0["id"] as? String ?? "") }.map(CanonicalOrderKey.init))
+        let tiedPages = Set(updates.map(CanonicalOrderKey.init).filter { retainedKeys.contains($0) }.map(\.page))
+        // Equal timestamps are ordered by SQLite insertion order. A moved row
+        // cannot infer that order from its old page, so refresh only pages with
+        // ambiguous ties instead of changing the visual stacking order.
+        for page in tiedPages.sorted() {
+            var pageRequest = identity; pageRequest["page"] = page
+            guard let pageRows = try await backend(channel, pageRequest) as? [[String: Any]] else {
+                throw NativePDFError.invalid("PDF 페이지의 편집 목록을 확인하지 못했습니다.")
+            }
+            let canonical = pageRows.filter { CanonicalOrderKey($0).page == page }
+            replacedIDs.formUnion(current.filter { CanonicalOrderKey($0).page == page }.compactMap { $0["id"] as? String })
+            replacedIDs.formUnion(canonical.compactMap { $0["id"] as? String })
+            updates.removeAll { CanonicalOrderKey($0).page == page }
+            updates.append(contentsOf: canonical)
+        }
+        if !tiedPages.isEmpty {
+            updates.sort {
+                let a = CanonicalOrderKey($0), b = CanonicalOrderKey($1)
+                return a.page != b.page ? a.page < b.page : a.created < b.created
+            }
+        }
+        return (Self.mergingCanonicalRows(current, replacing: replacedIDs, with: updates), replacedIDs)
+    }
+    /// Both inputs are in canonical page/creation order. Preserve the relative
+    /// order of equal-key existing rows and merge in O(document + changed rows),
+    /// without serializing their data/style JSON or repeatedly scanning per ID.
+    private static func mergingCanonicalRows(_ current: [[String: Any]], replacing ids: Set<String>, with incoming: [[String: Any]]) -> [[String: Any]] {
+        let retained = current.filter { !ids.contains($0["id"] as? String ?? "") }
+        let updates = incoming.filter { ids.contains($0["id"] as? String ?? "") }
+        func comesBefore(_ left: [String: Any], _ right: [String: Any]) -> Bool {
+            let a = (left["page"] as? NSNumber)?.intValue ?? 0, b = (right["page"] as? NSNumber)?.intValue ?? 0
+            return a != b ? a < b : (left["createdAt"] as? String ?? "") < (right["createdAt"] as? String ?? "")
+        }
+        var output: [[String: Any]] = []; output.reserveCapacity(retained.count + updates.count)
+        var left = 0, right = 0
+        while left < retained.count, right < updates.count {
+            if comesBefore(updates[right], retained[left]) { output.append(updates[right]); right += 1 }
+            else { output.append(retained[left]); left += 1 }
+        }
+        output.append(contentsOf: retained[left...]); output.append(contentsOf: updates[right...])
+        return output
     }
     /// Called before exposing a reopened surface. Each create keeps its UUID
     /// across uncertain replies; delete recovery checks the current live IDs.
@@ -205,9 +325,9 @@ final class NativePDFPersistence {
         }
         try await reload()
         if coordinator != nil, records.contains(where: { ($0["kind"] as? String)?.hasPrefix("annotation") == true }) {
-            try await reloadAnnotations(); coordinator?.publish(from: self, annotations: annotations)
+            try await reloadAnnotations(); publishAnnotations()
         }
-        coordinator?.publish(from: self, drawings: rows)
+        publishDrawings()
     }
     func recoverStrokes(_ values: [[String: Any]]) async throws {
         for input in values { try await commitStroke(input) }
@@ -271,6 +391,7 @@ final class NativePDFPersistence {
         }
         let task = Task { @MainActor in
             try await self.drain()
+            if !self.hasCanonicalRows { try await self.reload() }
             func status() async throws -> [String: Any] {
                 guard let result = try await self.backend("drawings:mutationStatus", input) as? [String: Any] else {
                     throw NativePDFError.invalid("개체의 저장 영수증을 확인하지 못했습니다.")
@@ -294,14 +415,14 @@ final class NativePDFPersistence {
         return try await task.value
     }
     func updateObjects(_ values: [[String: Any]], expected: [[String: Any]]? = nil) async throws { try await edit("update", values, expected: expected) }
-    func deleteObjects(ids: Set<String>) async throws {
-        try await reload()
-        try await edit("delete", rows.filter { ids.contains($0["id"] as? String ?? "") })
+    func deleteObjects(ids: Set<String>, expected: [[String: Any]]? = nil) async throws {
+        try await reloadDrawingIDs(ids)
+        try await edit("delete", rows.filter { ids.contains($0["id"] as? String ?? "") }, expected: expected)
     }
     func createAnnotation(_ value: [String: Any]) async throws { try await edit("annotationRestore", [value]) }
     func updateAnnotation(_ value: [String: Any], expected: [String: Any]? = nil) async throws { try await edit("annotationUpdate", [value], expected: expected.map { [$0] }) }
     func deleteAnnotation(id: String) async throws {
-        try await reloadAnnotations()
+        try await reloadAnnotationIDs([id])
         try await edit("annotationDelete", annotations.filter { $0["id"] as? String == id })
     }
     private func edit(_ kind: String, _ values: [[String: Any]], expected original: [[String: Any]]? = nil, creationMutationIDs: [String]? = nil) async throws {
@@ -336,7 +457,7 @@ final class NativePDFPersistence {
             let otherPage = (other["page"] as? NSNumber)?.intValue ?? Int.max
             return otherPage > page || (otherPage == page && (other["createdAt"] as? String ?? "") > created)
         } ?? rows.endIndex
-        rows.insert(row, at: index); return true
+        rows.insert(row, at: index); unpublishedDrawingIDs?.insert(id); hasCoordinatedDrawingBaseline = false; return true
     }
     private func commitStroke(_ raw: [String: Any]) async throws {
         try await serial { try await self.commitStrokeUnlocked(raw) }
@@ -353,7 +474,9 @@ final class NativePDFPersistence {
               let mutation = input["clientMutationId"] as? String, UUID(uuidString: mutation) != nil else {
             throw NativePDFError.invalid("다른 문서의 필기를 저장할 수 없습니다.")
         }
+        if !hasCanonicalRows { try await reload() }
         var needsReload = true
+        var canApplyFreshReplacement = false
         if !completedMutations.contains(mutation) {
             uncertainStroke = true
             let peerVersion = peerDrawingVersion
@@ -370,13 +493,15 @@ final class NativePDFPersistence {
                 // The receipt is the canonical row: splice it in instead of
                 // re-reading and re-parsing every stroke of the document.
                 needsReload = !(peerVersion == peerDrawingVersion && upsertRow(created))
+                canApplyFreshReplacement = !needsReload
             } else if ["live", "deleted"].contains(result?["status"] as? String ?? ""), let saved = result?["drawingId"] as? String {
                 id = saved
                 isLive = result?["status"] as? String == "live"
                 if result?["status"] as? String == "live", !recordedMutations.contains(mutation) {
                     // The database may have committed before its response was
                     // lost. That retry still contributes exactly one undo step.
-                    try await reload()
+                    try await reloadDrawingIDs([saved])
+                    needsReload = false
                     undoRow = rows.first { $0["id"] as? String == saved }
                 }
             } else { throw NativePDFError.invalid("필기의 저장 영수증을 확인하지 못했습니다.") }
@@ -393,12 +518,12 @@ final class NativePDFPersistence {
                 // Receipt replay proves that the correction committed, not
                 // that this old edit still owns the current canonical row.
                 // Sync can update a closed document before its journal opens.
-                if !needsReload, let created = undoRow, (before as NSDictionary).isEqual(to: created), upsertRow(after) {
+                if canApplyFreshReplacement, let created = undoRow, (before as NSDictionary).isEqual(to: created), upsertRow(after) {
                     // The replace receipt proves it acted on the row just inserted.
                     undoRow = before; shapeUndoRow = before
                 } else {
-                    needsReload = true
-                    try await reload()
+                    try await reloadDrawingIDs([id])
+                    needsReload = false
                     if let current = rows.first(where: { $0["id"] as? String == id }), (current as NSDictionary).isEqual(to: after) {
                         undoRow = before; shapeUndoRow = before
                     } else {
@@ -419,9 +544,9 @@ final class NativePDFPersistence {
             _ = try await host("ack", ["clientMutationId": mutation, "drawingId": id])
             completedMutations.insert(mutation)
         }
-        if needsReload { try await reload() }
+        if needsReload, let id = mutations[mutation] { try await reloadDrawingIDs([id]) }
         uncertainStroke = false
-        coordinator?.publish(from: self, drawings: rows); try await onRowsChanged?()
+        publishDrawings(); try await onRowsChanged?()
     }
     private func commitErase(_ input: [String: Any]) async throws {
         try await serial { try await self.commitEraseUnlocked(input) }
@@ -444,8 +569,8 @@ final class NativePDFPersistence {
             resolved.append(value)
         }
         if eraseRecords[operationID] == nil {
-            try await reload()
             let ids = Set(resolved.compactMap { $0["drawingId"] as? String }.map(resolve))
+            try await reloadDrawingIDs(ids)
             let removed = rows.filter { ($0["id"] as? String).map(ids.contains) == true }
             let record = makeRecovery(kind: "delete", rows: removed)
             eraseRecords[operationID] = record
@@ -462,9 +587,10 @@ final class NativePDFPersistence {
         guard reply?["operationId"] as? String == operationID, reply?["outcome"] as? String == "committed" else {
             throw NativePDFError.invalid("지우기 저장 완료를 확인하지 못했습니다.")
         }
-        try await reload(); try await onRowsChanged?()
+        try await reloadDrawingIDs(Set(resolved.compactMap { $0["drawingId"] as? String }.map(resolve)))
+        try await onRowsChanged?()
         try recovery?.remove(record); eraseRecords.removeValue(forKey: operationID)
-        coordinator?.publish(from: self, drawings: rows)
+        publishDrawings()
     }
     private func runHistory(undo: Bool) async throws {
         try await drain()
@@ -487,7 +613,8 @@ final class NativePDFPersistence {
         guard let pending = pendingHistory else { return }
         let action = pending.action
         if action.recovery == nil {
-            if action.kind.hasPrefix("annotation") { try await reloadAnnotations() } else { try await reload() }
+            let ids = Set(action.rows.compactMap { $0["id"] as? String }.map(resolve))
+            if action.kind.hasPrefix("annotation") { try await reloadAnnotationIDs(ids) } else { try await reloadDrawingIDs(ids) }
             let sourceRows = action.kind.hasPrefix("annotation") ? annotations : rows
             if let expected = action.expected {
                 let ids = Set(action.rows.compactMap { $0["id"] as? String }.map(resolve))
@@ -516,8 +643,9 @@ final class NativePDFPersistence {
         let record = action.recovery!
         try recovery?.save(record)
         let changed = try await applyRecovery(record)
-        if action.kind.hasPrefix("annotation") { try await reloadAnnotations(); try await onAnnotationsChanged?() }
-        else { try await reload(); try await onRowsChanged?() }
+        let changedIDs = Set(changed.compactMap { $0["id"] as? String })
+        if action.kind.hasPrefix("annotation") { try await reloadAnnotationIDs(changedIDs); try await onAnnotationsChanged?() }
+        else { try await reloadDrawingIDs(changedIDs); try await onRowsChanged?() }
         try recovery?.remove(record)
         let inverseKind = ["replace": "replace", "update": "update", "delete": "restore", "restore": "delete", "annotationUpdate": "annotationUpdate", "annotationDelete": "annotationRestore", "annotationRestore": "annotationDelete"][action.kind]!
         let inverse = HistoryAction(inverseKind, rows: changed)
@@ -525,8 +653,8 @@ final class NativePDFPersistence {
         else if pending.direction == 1 { redoStack.removeLast(); undoStack.append(inverse) }
         else { undoStack.append(inverse); redoStack.removeAll() }
         pendingHistory = nil
-        if action.kind.hasPrefix("annotation") { coordinator?.publish(from: self, annotations: annotations) }
-        else { coordinator?.publish(from: self, drawings: rows) }
+        if action.kind.hasPrefix("annotation") { publishAnnotations() }
+        else { publishDrawings() }
     }
     private func makeRecovery(kind: String, rows: [[String: Any]], creationMutationIDs: [String]? = nil) -> [String: Any] {
         var result: [String: Any] = ["version": 1, "recoveryId": UUID().uuidString,
@@ -580,19 +708,22 @@ final class NativePDFPersistence {
             }
             for value in original {
                 guard let id = value["id"] as? String, let data = value["data"], let style = value["style"] else { throw NativePDFError.invalid("PDF 개체 편집이 올바르지 않습니다.") }
-                _ = try await backend("drawings:update", ["id": id, "data": data, "style": style])
+                var update: [String: Any] = ["id": id, "data": data, "style": style]
+                if let page = value["page"] { update["page"] = page }
+                _ = try await backend("drawings:update", update)
             }
             return before
         }
         if record["kind"] as? String == "delete" {
-            try await reload()
+            let originalIDs = Set(original.compactMap { $0["id"] as? String })
+            try await reloadDrawingIDs(originalIDs)
             let live = Set(rows.compactMap { $0["id"] as? String })
             let ids = original.compactMap { $0["id"] as? String }.filter(live.contains)
             if !ids.isEmpty {
                 do { _ = try await backend("drawings:delete", ["ids": ids]) }
                 catch {
                     let failure = error
-                    try await reload()
+                    try await reloadDrawingIDs(Set(ids))
                     let remaining = Set(rows.compactMap { $0["id"] as? String })
                     if ids.contains(where: remaining.contains) { throw failure }
                 }
@@ -625,12 +756,12 @@ final class NativePDFPersistence {
             }
             return before
         case "annotationDelete":
-            try await reloadAnnotations()
+            try await reloadAnnotationIDs(Set(rows.compactMap { $0["id"] as? String }))
             let live = Set(annotations.compactMap { $0["id"] as? String })
             for id in rows.compactMap({ $0["id"] as? String }) where live.contains(id) {
                 do { _ = try await backend("annotations:delete", ["id": id]) }
                 catch {
-                    let failure = error; try await reloadAnnotations()
+                    let failure = error; try await reloadAnnotationIDs([id])
                     if annotations.contains(where: { $0["id"] as? String == id }) { throw failure }
                 }
             }

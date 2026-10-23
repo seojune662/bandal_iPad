@@ -8,10 +8,12 @@ import Darwin
 /// Serial-queue repository for the existing PDF schema. All drawing data stays
 /// in its original normalized, displayed-CropBox coordinates and ink version.
 final class NativePDFRepository {
-    static let channels = ["drawings:listForFile", "drawings:create", "drawings:mutationStatus", "drawings:update", "drawings:replace", "drawings:delete", "annotations:listForFile", "annotations:create", "annotations:update", "annotations:delete", "nativePDF:binding", "nativePDF:mutationStatus", "nativePDF:renderDrawings", "nativePDF:exportBytes", "pdf:getViewState", "pdf:setViewState", "pdfNotes:create"]
+    static let channels = ["drawings:listForFile", "drawings:create", "drawings:mutationStatus", "drawings:update", "drawings:replace", "drawings:delete", "annotations:listForFile", "annotations:create", "annotations:update", "annotations:delete", "nativePDF:binding", "nativePDF:thumbnailSnapshot", "nativePDF:mutationStatus", "nativePDF:renderDrawings", "nativePDF:exportBytes", "pdf:getViewState", "pdf:setViewState", "pdfNotes:create"]
     private typealias V = NativePDFRepositoryValidation
     let context: NativeRepositoryContext
     private var verifiedOriginals = Set<String>()
+    private let decodedDrawings = NativePDFDrawingDecodeCache()
+    func releaseDecodedDrawings() { decodedDrawings.removeAll() }
 
     init(context: NativeRepositoryContext) throws {
         self.context = context
@@ -39,6 +41,7 @@ final class NativePDFRepository {
     func handle(channel: String, _ request: [String: Any]) throws -> Any? {
         switch channel {
         case "nativePDF:binding": return try checkBinding(request)
+        case "nativePDF:thumbnailSnapshot": return try thumbnailSnapshot(request)
         case "nativePDF:mutationStatus": return try mutationStatus(request)
         case "nativePDF:renderDrawings":
             guard let raw = request["pageAspects"] as? [Any] else { throw V.error("Invalid PDF page geometry") }
@@ -187,12 +190,74 @@ final class NativePDFRepository {
     }
 
     func listDrawings(_ request: [String: Any]) throws -> [[String: Any]] {
-        let (course, path) = try identity(request); try checkPDF(course, path)
-        return try db.query("SELECT * FROM pdf_drawings WHERE course_id=? AND rel_path=? AND deleted_at IS NULL ORDER BY page ASC,created_at ASC", params: [course, path]).map(drawing)
+        #if DEBUG
+        let decodedBefore = decodedDrawings.decodeCount
+        #endif
+        let rows = try listRows(table: "pdf_drawings", request: request).map(drawing)
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["BANDAL_PRIVATE_PDF_REPLAY_DIRECTORY"] != nil {
+            print("[PDF_DECODE_CACHE] rows=\(rows.count) newDecodes=\(decodedDrawings.decodeCount - decodedBefore) retainedCost=\(decodedDrawings.retainedCost)")
+        }
+        #endif
+        return rows
+    }
+    private func listRows(table: String, request: [String: Any]) throws -> [[String: Any]] {
+        let (course, path) = try identity(request)
+        let page = try request["page"].map { try V.integer($0, "page") }
+        let identifiers: [String]?
+        if let input = request["ids"] {
+            guard let values = input as? [Any] else { throw V.error("ids must be an array") }
+            identifiers = Array(try Set(values.map { try V.id($0) }))
+        } else { identifiers = nil }
+        if identifiers?.isEmpty == true { return [] }
+        try checkPDF(course, path)
+        let pageClause = page == nil ? "" : " AND page=?"
+        var parameters: [Any] = [course, path]
+        if let page { parameters.append(page) }
+        let query = "SELECT rowid AS _native_order,* FROM \(table) WHERE course_id=? AND rel_path=? AND deleted_at IS NULL" + pageClause
+        let order = " ORDER BY page ASC,created_at ASC,rowid ASC"
+        guard let identifiers else { return try db.query(query + order, params: parameters) }
+        var result: [[String: Any]] = []
+        // Keep well below SQLite's conservative 999-variable limit, including
+        // the course/path/page parameters. Decode only the requested objects.
+        for start in stride(from: 0, to: identifiers.count, by: 400) {
+            let chunk = Array(identifiers[start..<min(start + 400, identifiers.count)])
+            let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+            result += try db.query(query + " AND id IN (" + placeholders + ")" + order, params: parameters + chunk)
+        }
+        return result.sorted { left, right in
+            let lp = (left["page"] as? NSNumber)?.intValue ?? 0, rp = (right["page"] as? NSNumber)?.intValue ?? 0
+            if lp != rp { return lp < rp }
+            let ld = left["created_at"] as? String ?? "", rd = right["created_at"] as? String ?? ""
+            if ld != rd { return ld < rd }
+            return ((left["_native_order"] as? NSNumber)?.int64Value ?? 0) < ((right["_native_order"] as? NSNumber)?.int64Value ?? 0)
+        }
+    }
+    /// Previewing a library must not bind every unopened PDF, copy its original,
+    /// or fsync it. Only already-bound ink is eligible for a preview. The normal
+    /// editor open still establishes legacy bindings and recovery evidence.
+    func thumbnailSnapshot(_ request: [String: Any]) throws -> [String: Any] {
+        let (course, path) = try identity(request)
+        let page = try V.integer(request["page"] ?? 1, "page")
+        try assertCourse(course)
+        try assertPathAvailable(course: course, path: path)
+        let source = try context.materialURL(courseID: course, relativePath: path)
+        let empty: [String: Any] = ["drawings": [[String: Any]](), "annotations": [[String: Any]]()]
+        let arguments: [Any] = [course, path, page]
+        let hasDrawings = try one("SELECT 1 FROM pdf_drawings WHERE course_id=? AND rel_path=? AND page=? AND deleted_at IS NULL LIMIT 1", arguments) != nil
+        let hasAnnotations = try one("SELECT 1 FROM annotations WHERE course_id=? AND rel_path=? AND page=? AND deleted_at IS NULL LIMIT 1", arguments) != nil
+        guard hasDrawings || hasAnnotations, let bound = try binding(course: course, path: path) else { return empty }
+        // contentHash stat-checks a cached version before reading bytes. This
+        // preserves replacement protection without preserveOriginal's writes.
+        guard bound["bound_sha"] as? String == (try context.contentHash(source)) else { throw mismatch() }
+        let drawings = hasDrawings ? try db.query("SELECT * FROM pdf_drawings WHERE course_id=? AND rel_path=? AND page=? AND deleted_at IS NULL ORDER BY created_at ASC", params: arguments).map(drawing) : []
+        let annotations = hasAnnotations ? try db.query("SELECT * FROM annotations WHERE course_id=? AND rel_path=? AND page=? AND deleted_at IS NULL ORDER BY created_at ASC", params: arguments).map(annotation) : []
+        return ["drawings": drawings, "annotations": annotations]
     }
     private func drawing(_ row: [String: Any]) throws -> [String: Any] {
-        ["id": row["id"]!, "courseId": row["course_id"]!, "relPath": row["rel_path"]!, "page": row["page"]!, "kind": row["kind"]!,
-         "data": try V.parse(row["data_json"]), "style": try V.parse(row["style_json"]), "createdAt": row["created_at"]!, "updatedAt": row["updated_at"]!]
+        let payload = try decodedDrawings.decode(row)
+        return ["id": row["id"]!, "courseId": row["course_id"]!, "relPath": row["rel_path"]!, "page": row["page"]!, "kind": row["kind"]!,
+         "data": payload.data, "style": payload.style, "createdAt": row["created_at"]!, "updatedAt": row["updated_at"]!]
     }
     private func row(_ table: String, id: String, check: Bool = true) throws -> [String: Any] {
         guard let row = try one("SELECT * FROM \(table) WHERE id=? AND deleted_at IS NULL", [id]) else { throw DesktopRuntimeError("\(table) item was not found", code: "NOT_FOUND") }
@@ -246,7 +311,8 @@ final class NativePDFRepository {
         let old = try row("pdf_drawings", id: V.id(request["id"])), kind = old["kind"] as! String
         let data = try request["data"].map { try V.data($0, kind: kind) } ?? V.parse(old["data_json"])
         let style = try request["style"].map { try V.style($0) } ?? V.parse(old["style_json"])
-        _ = try db.run("UPDATE pdf_drawings SET data_json=?,style_json=?,updated_at=? WHERE id=?", params: [try V.json(data), try V.json(style), now(), old["id"]!])
+        let page = try request["page"].map { try V.integer($0, "page") } ?? V.integer(old["page"], "page")
+        _ = try db.run("UPDATE pdf_drawings SET page=?,data_json=?,style_json=?,updated_at=? WHERE id=?", params: [page, try V.json(data), try V.json(style), now(), old["id"]!])
         return try drawing(row("pdf_drawings", id: old["id"] as! String, check: false))
     }
     /// Kind-changing correction with an immutable receipt. Keeping the row ID
@@ -292,8 +358,7 @@ final class NativePDFRepository {
     }
 
     func listAnnotations(_ request: [String: Any]) throws -> [[String: Any]] {
-        let (course, path) = try identity(request); try checkPDF(course, path)
-        return try db.query("SELECT * FROM annotations WHERE course_id=? AND rel_path=? AND deleted_at IS NULL ORDER BY page ASC,created_at ASC", params: [course, path]).map(annotation)
+        try listRows(table: "annotations", request: request).map(annotation)
     }
     private func annotation(_ row: [String: Any]) throws -> [String: Any] {
         ["id": row["id"]!, "courseId": row["course_id"]!, "relPath": row["rel_path"]!, "page": row["page"]!, "color": row["color"]!,

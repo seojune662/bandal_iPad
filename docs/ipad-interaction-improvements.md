@@ -1,0 +1,65 @@
+# iPad 자료·올가미 개선 (2026-10-20)
+
+현재 `BandalApp → NativeWorkspaceView`에서 실행되는 Swift 앱의 변경이다. 기준 커밋은 `7a8e8ac`이며 이번 작업은 현재 작업 폴더의 미커밋 변경으로 남아 있다.
+이 문서의 기능 검증과 최초 실기기 설치 버전은 `1.0.0 (4)`다. 이후 성능·페이지 추가 오류를 수정한 `1.0.0 (5)`를 같은 iPad에 설치했으며, 최신 설치와 보존 검사는 [성능 개선 기록](ipad-performance-2026-10-20.md)에 있다. 아래의 build 4 기록은 당시 결과를 유지한다.
+
+## 사용 흐름
+
+- 올가미를 고른 뒤 빈 종이를 손가락으로 탭하거나 누르면 해당 위치에 붙여넣기 메뉴가 뜬다. Pencil의 짧은 접촉도 같은 위치를 사용한다.
+- 필기가 없는 PDF 영역도 올가미로 잡아 **영역 이미지 복사**를 할 수 있다. 원본 PDF의 해당 사각 영역을 이미지로 복사하고, 다른 페이지에 붙이면 문서의 이미지 개체로 저장한다.
+- 선택한 필기를 페이지 밖으로 끌고 화면 위·아래 가장자리에 유지하면 스크롤하며 다른 페이지로 옮긴다. 이동 후에도 선택을 유지하고 실행 취소·다시 실행과 재실행 복원을 지원한다.
+- 자료 헤더의 보기 메뉴에서 **아이콘 / 목록 / 열 / 갤러리**를 고른다. 보기 선택을 저장하고, PDF의 첫 페이지와 저장된 필기·강조·이미지를 미리보기에 반영한다.
+- 자료 아래 **사진 · 파일**에서 사진 또는 파일 앱의 항목을 선택한다. 작은 보관함의 항목을 PDF나 Markdown으로 끌어다 놓거나, 저장 버튼으로 현재 자료 폴더에 넣는다. 세로 화면의 자료 패널을 닫았다 열거나 다른 문서로 이동해도 앱 세션 동안 선택한 사진·파일이 유지된다. PDF는 이미지를 받고 Markdown은 이미지·파일 첨부를 받는다.
+- 외부 앱의 공유 메뉴에서 **반달**을 고른 뒤 과목과 폴더를 지정한다. 자료를 공유 보관함에 복사하고, 반달로 돌아오면 선택한 위치로 가져온다. 처음에는 시스템 공유 메뉴의 **더 보기**에 있을 수 있다.
+
+## 구현과 저장
+
+선택 표시를 지울 때 전체 문서 스냅샷과 도구 설정을 다시 저장하던 경로를 분리했다. 선택된 행을 캐시하고 해당 페이지의 표시만 갱신한다. PDF 영역 렌더링, 원본 미리보기 생성 및 이미지 인코딩은 작업 큐에서 처리한다.
+
+PDF 텍스트 입력창이 페이지 뒤로 가려져 탭을 받지 못하던 뷰 순서를 바로잡고, 반복 레이아웃 후에도 실제 hit test가 입력창에 도달하는지 검사했다.
+
+페이지 사이 이동은 화면 좌표를 도착 페이지 좌표로 다시 계산한다. `drawings:update`와 실행 취소 이력에 페이지 변경을 포함하여 저장 후 원래 페이지로 되돌아오는 문제를 막는다.
+
+드래그 자료는 제공자의 임시 파일 사용 기간 안에 읽는다. 이미지와 파일은 문서가 속한 과목의 `assets`에 고유한 이름으로 저장하며, 다른 과목이 자료 패널에 선택되어 있어도 문서의 과목을 따른다. Markdown은 영구 자산 경로를 원문에 기록한다. PDF 변경이나 편집 세션 교체가 일어나면 늦게 도착한 드롭을 잘못된 문서에 삽입하지 않는다.
+
+공유 확장은 별도 `BandalShare` 타깃과 `group.app.bandal.ipad` App Group을 사용한다. 항목별 가져오기 영수증과 원자적인 큐 게시로 재실행 중복을 막는다. 과목이나 폴더가 사라지면 다른 위치로 임의 저장하지 않고 보관함에 남겨 오류를 알린다. 서명과 실기기 확인 절차는 [공유 확장 안내](native-share-extension.md)에 있다.
+
+보관함에는 최대 30개 항목을 담는다. 문서로 한 번에 놓는 자료는 최대 20개, 파일당 50MiB, 합계 100MiB이며 이미지 해상도는 긴 변 4096px 이내로 정리한다. 큰 자료는 나누어 넣도록 오류를 안내한다. 자료실 자체의 파일 가져오기는 원본 파일을 보관한다.
+
+## 이번 변경의 검증
+
+- iOS 26.3 시뮬레이터에서 관련 단위·통합 **138개, 실패 0개**. 결과: `.build/improvements-unit-latest.xcresult`.
+- 범위: 미디어 제공자의 URL 수명과 용량 제한, 실제 과목 자산 저장, Markdown 특수문자·편집 회귀, 네 가지 자료 보기의 모델 및 PDF 미리보기, 페이지별 저장소 조회, 올가미 좌표와 페이지 변경·실행 취소, PDF 회전/CropBox 영역 캡처, 혼합 이미지 클립보드의 과목 간 복사, 공유 큐의 중단 복구·중복 방지, PDF 텍스트 편집기의 뷰 순서·실제 탭 전달.
+- 화면 검증: 자료의 네 가지 보기·중첩 폴더·재실행, 사진의 PDF/Markdown 드래그 및 재실행, 빈 공간 붙여넣기·PDF 영역 복사·이미지 재복사, 올가미 페이지 간 이동·실행 취소·재실행, 기존 팔레트·좁은 분할 화면을 각각 통과했다. 해당 성공 항목: `.build/improvements-ui-second.xcresult`.
+- 추가 회귀 검증: 텍스트 편집기의 한글 입력·서식·재실행은 `.build/improvements-ui-third.xcresult`에서 통과했고, 11형 세로 화면의 PDF/Markdown 드래그·패널 재열기·동일 자료 유지 검사는 `.build/improvements-ui-compact.xcresult`에서 통과했다. 결과 묶음에는 수정 이전 시스템 사진 테스트 실패도 포함되어 있으며, 각 항목의 최종 성공 여부를 구분한다.
+- 실제 시스템 사진 선택기에서 사진을 선택하고 완료한 뒤 보관함에 임시 파일이 복사되는 UI 검사도 통과했다. 결과: `.build/improvements-ui-picker-final.xcresult`.
+- 실제 Photos 시스템 공유 시트에서 Bandal 선택 → 과목과 폴더 명시 선택 → 저장 → 반달 활성화 → 지정 폴더 가져오기 → 앱 재실행 후 1개만 유지까지 통과했다. 결과: `.build/improvements-ui-share-final.xcresult`. 위 화면 시나리오는 최종 개별 실행 기준 **9개 모두 통과**했다.
+- `generic/platform=iOS` **Release build 성공**, 서명 제외. `Bandal.app/PlugIns/BandalShare.appex`와 앱·확장의 실행 파일, 일치하는 `1.0.0 (4)` 버전을 확인했다. 결과물: `.derivedData-improvements-release/Build/Products/Release-iphoneos/Bandal.app`.
+
+## 실제 화면
+
+아래는 테스트 중 실행한 앱의 시뮬레이터 캡처다. 드래그용 사진은 합성 fixture를 사용했다.
+
+- [갤러리 보기](ipad-interaction-improvements/gallery.png)
+- [빈 PDF 공간의 올가미 붙여넣기](ipad-interaction-improvements/lasso-paste.png)
+- [11형 세로 화면에서 PDF로 사진 드래그](ipad-interaction-improvements/compact-pdf-drop.png)
+- [드래그한 사진의 Markdown 표시](ipad-interaction-improvements/compact-markdown-drop.png)
+- [시스템 사진 선택기로 가져온 사진](ipad-interaction-improvements/system-photo-picker.png)
+- [외부 사진 앱에서 과목·폴더 선택](ipad-interaction-improvements/external-share-destination.png)
+- [공유한 사진을 지정 폴더로 가져온 결과](ipad-interaction-improvements/external-share-imported.png)
+
+## 검증 경계
+
+이번 변경의 검증은 과거 build 38–41 기록과 별도로 기록한다. 실행 취소 이력은 현재 앱 세션 안에서 유지되며 앱 재시작은 저장된 문서 상태를 복원한다. 시뮬레이터의 터치/합성 필기 검사는 물리 Apple Pencil의 지연·필압·팜 리젝션을 입증하지 않는다. Photos 공유 확장 전체 흐름은 시뮬레이터에서 검증했다. 실기기 App Group 프로비저닝과 앱의 공유 목록 생성은 아래와 같이 확인했으며, 카카오톡·사진 앱의 실제 기기 공유 조작 및 물리 Pencil 체감 성능은 별도 확인 대상이다.
+
+## 실제 iPad 설치 (2026-10-20)
+
+연결된 iPad Pro 11형 3세대(iPadOS 26.5)의 기존 **1.0.0 (2)** 위에 서명한 **Release 1.0.0 (4)**를 업데이트 설치했다. 앱을 삭제하거나 자료 저장소를 초기화하지 않았다. 설치 버전은 기기의 앱 목록으로 확인했고 테스트 인자 없이 일반 실행했다.
+
+`project.yml`에 팀 `VUZ7Z98BW3`와 자동 서명을 저장했다. Xcode의 프로비저닝 갱신을 사용해 실제 Apple 개발자 계정의 앱 및 공유 확장 프로파일을 생성했다. 양쪽 프로파일과 서명된 바이너리 모두 `group.app.bandal.ipad`를 포함하고 해당 iPad가 허용된 기기임을 확인했다. 중첩된 확장까지 `codesign --verify --deep --strict`를 통과했다. [서명 검사](ipad-interaction-improvements/device-signing-audit.json).
+
+실기기에서 앱 실행 후 App Group의 `ShareInbox/destinations.json` 생성과 읽기를 확인했다. 기존 과목 2개가 공유 확장의 선택 목록으로 게시됐으며, 현재 과목 내부의 하위 폴더는 0개다. 외부 앱에서 **공유 → 반달/Bandal → 과목·폴더 → 저장**을 누르고 반달로 돌아오면 해당 위치로 가져온다. 처음 보이지 않으면 공유 앱 목록의 **더 보기**에서 찾을 수 있다.
+
+설치 전후의 자료 65개는 같은 상대 위치에서 SHA-256이 모두 일치했다. PDF 필기 12,291행, 화이트보드 필기 43행 및 관련 영수증 행도 전체 열 값이 동일했고, 데이터베이스 2개의 무결성 검사가 정상이다. 기존 설정 27개 중 삭제된 키는 없으며 25개는 동일하고 StoreKit 확인 시각과 PDF 컨테이너 이전 경로 등록 2개만 갱신됐다. 전체 백업 파일을 모두 동일하다고 주장하지 않는다(91→92개, 기존 84개 동일·7개 메타데이터 변경·1개 추가·누락 0). [자료 보존 검사](ipad-interaction-improvements/device-data-preservation.json), [설치·실행 확인](ipad-interaction-improvements/device-installation-verification.json).
+
+설치 전후 백업은 Git에서 제외되는 `.build/device-backups/2026-10-20-before`와 `2026-10-20-after`에 보관했다. 검사 후 테스트 인자 없이 앱을 다시 실행했고 업데이트된 설치 경로의 프로세스가 살아 있음을 확인했다.

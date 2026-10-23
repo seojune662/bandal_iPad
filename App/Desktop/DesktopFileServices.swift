@@ -165,12 +165,12 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
             do { try preview(source) } catch { releaseTemporaryFile(source); throw error }
             return ["ok": true]
         case "materials:export":
-            let source = try await materialSnapshot(request)
+            let source = try await materialSnapshot(request, includingPDFAnnotations: true)
             defer { releaseTemporaryFile(source) }
             let destination = try await pick(UIDocumentPickerViewController(forExporting: [source], asCopy: true))?.first
             return ["saved": destination != nil, "canceled": destination == nil]
         case "materials:share":
-            let source = try await materialSnapshot(request)
+            let source = try await materialSnapshot(request, includingPDFAnnotations: true)
             defer { releaseTemporaryFile(source) }
             guard let presenter, presenter.viewIfLoaded?.window != nil, presenter.presentedViewController == nil else { throw DesktopRuntimeError("열린 창을 닫은 뒤 다시 시도해 주세요.") }
             let identifier = UUID()
@@ -192,10 +192,21 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
         }
     }
 
-    private func materialSnapshot(_ request: [String: Any]) async throws -> URL {
+    private func materialSnapshot(_ request: [String: Any], includingPDFAnnotations: Bool = false) async throws -> URL {
         let generation = presentationGeneration
         guard let courseID = request["courseId"] as? String, let relative = request["relPath"] as? String,
               let path = try await runtime.invokePrivate("nativeMaterial:path", request: ["courseId": courseID, "relPath": relative]) as? String else { throw DesktopRuntimeError("자료를 확인해 주세요.") }
+        if includingPDFAnnotations, (relative as NSString).pathExtension.lowercased() == "pdf" {
+            // Library exports must use the same canonical ink/image/highlight
+            // compositor as the PDF editor. Never silently fall back to the
+            // original when binding validation or image resolution fails.
+            guard let output = try await runtime.invokePrivate("nativePDF:exportBytes", request: ["courseId": courseID, "relPath": relative]) as? [String: Any],
+                  let name = output["suggestedName"] as? String, let encoded = output["data"] as? String,
+                  let data = Data(base64Encoded: encoded) else { throw DesktopRuntimeError("필기를 포함한 PDF를 준비하지 못했습니다.") }
+            guard generation == presentationGeneration else { throw CancellationError() }
+            try Task.checkCancellation()
+            return try temporaryFile(name: name, data: data)
+        }
         let source = try await DesktopMaterialExport.snapshot(path: path, root: runtime.root)
         guard generation == presentationGeneration else {
             try? FileManager.default.removeItem(at: source.deletingLastPathComponent())

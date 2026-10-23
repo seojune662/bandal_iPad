@@ -1,0 +1,25 @@
+{
+  "beforeKeyCount": 46,
+  "afterKeyCount": 46,
+  "unchangedBaselineKeys": 43,
+  "missingBaselineKeys": [],
+  "changedBaselineKeys": [
+    "StoreKit transaction update timestamp",
+    "One PDF viewport progress",
+    "One PDF preference predecessor history"
+  ],
+  "additionalKeys": [],
+  "allBaselineValuesPreserved": false,
+  "privacy": "Preference values excluded",
+  "viewportProgress": {
+    "before": 0.9167870822003479,
+    "after": 0.7163411930093028
+  },
+  "allOtherValuesInChangedDocumentPreferencePreserved": true,
+  "predecessorHistory": {
+    "beforeCount": 12,
+    "afterCount": 13,
+    "allBaselineEntriesRetained": true
+  },
+  "scope": "All 46 preference keys remain; 43 values unchanged. One viewport progress changed during launch, one predecessor history gained an entry, and StoreKit updated its check timestamp. This is not a claim of bit-for-bit preference preservation."
+}

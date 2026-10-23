@@ -38,6 +38,27 @@ final class NativePDFPencilGestureTests: XCTestCase {
         surface.isLoading = false
         return surface
     }
+    func testSelectedLassoAcceptsFingerAndRetainsUnboundedPointerAcrossNavigation() throws {
+        let surface = try surface(), touch = PencilGestureTouch(kind: .direct)
+        surface.tool = .init(name: "lasso", style: .init(color: "ink", width: 0.004, opacity: 1))
+        surface.selectionBox = ["x": 0.1, "y": 0.1, "width": 0.3, "height": 0.3]
+        surface.selectionResizable = true
+        XCTAssertNil(surface.selectionInputTarget(at: CGPoint(x: 500, y: 350)), "Empty paper must continue to scroll")
+        XCTAssertTrue(surface.selectionInputTarget(at: touch.point) === surface)
+        var events: [[String: Any]] = []
+        surface.onPointer = { events.append($0) }
+        XCTAssertTrue(surface.beginSelectionGesture(touch, with: nil))
+        surface.retainsObjectDrag = true
+        touch.point = CGPoint(x: 700, y: 500); touch.currentTime += 0.1
+        surface.movePencilGesture(touch, with: nil)
+        let moved = try XCTUnwrap((events.last?["points"] as? [[String: Any]])?.last)
+        XCTAssertGreaterThan(try XCTUnwrap(moved["x"] as? Double), 1)
+        XCTAssertGreaterThan(try XCTUnwrap(moved["y"] as? Double), 1)
+        try surface.prepareForNavigation()
+        XCTAssertEqual(events.last?["phase"] as? String, "move", "Page scrolling must not prematurely end a selected group's drag")
+        surface.endPencilGesture(touch, with: nil)
+        XCTAssertEqual(events.last?["phase"] as? String, "up")
+    }
     func testDrawAndHoldPreviewsBeforeLiftAndResumingPreservesMeasuredInk() async throws {
         let surface = try surface(), touch = PencilGestureTouch(kind: .pencil)
         var saved: [NativePDFCompletedStroke] = []

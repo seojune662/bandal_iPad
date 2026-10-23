@@ -5,6 +5,7 @@ import ImageIO
 
 struct NativeMarkdownWorkspace: View {
     let document: NativeDocumentReference
+    @ObservedObject private var annotation: NativeAnnotationCoordinator
     @ObservedObject var store: NativeWorkspaceStore
     @StateObject private var session: NativeMarkdownSession
     @State private var registration: UUID?
@@ -24,6 +25,8 @@ struct NativeMarkdownWorkspace: View {
     @State private var linkAddress = "https://"
     @State private var editingLink = false
     @State private var imagePicker = false
+    @State private var imageImportTask: Task<Void, Never>?
+    @State private var imageImportGeneration: UUID?
     @State private var formulaPrompt = false
     @State private var formula = ""
     @State private var wikiPicker = false
@@ -35,6 +38,7 @@ struct NativeMarkdownWorkspace: View {
 
     init(document: NativeDocumentReference, store: NativeWorkspaceStore) {
         self.document = document; self.store = store
+        _annotation = ObservedObject(wrappedValue: store.annotation)
         let pageKey = "native.pageNotePage." + document.id, syncKey = "native.pageNoteSync." + document.id
         if let sourceID = store.documentDuplicateSourceIDs[document.id] {
             let defaults = UserDefaults.standard
@@ -52,7 +56,9 @@ struct NativeMarkdownWorkspace: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            formattingToolbar
+            if annotation.request?.documentID == document.id {
+                NativeAnnotationToolbar(coordinator: annotation, regionMode: $annotation.regionMode, attachText: attachAnnotatedText)
+            } else { formattingToolbar }
             if let error = session.errorMessage {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(error, systemImage: "exclamationmark.triangle").font(.callout)
@@ -76,12 +82,13 @@ struct NativeMarkdownWorkspace: View {
                         pageIndex: $pageIndex, showAppendix: $showAppendix,
                         sourceMode: sourceMode, fontScale: fontScale * noteFontScale, editorFont: editorFont,
                         loadImage: loadImage, openLink: openLink, requestInsertion: requestInsertion,
+                        importMedia: importMedia, mediaError: { copyMessage = $0 },
                         selectionChanged: { store.documentSelections[document.id] = $0.isEmpty ? nil : $0 },
                         formatsChanged: { activeFormats = $0 }, codeLanguageChanged: { activeCodeLanguage = $0 }, pageActivated: selectPage)
                 } else {
-                    NativeRichTextEditor(session: session, pageIndex: nil, appendix: false,
-                        sourceMode: sourceMode, fontScale: fontScale * noteFontScale, editorFont: editorFont, loadImage: loadImage, openLink: openLink, requestInsertion: requestInsertion, selectionChanged: { store.documentSelections[document.id] = $0.isEmpty ? nil : $0 }, formatsChanged: { activeFormats = $0 }, codeLanguageChanged: { activeCodeLanguage = $0 })
-                        .accessibilityIdentifier("native-markdown-editor")
+                    NativeAnnotatableTextEditor(editor: NativeRichTextEditor(session: session, pageIndex: nil, appendix: false,
+                        sourceMode: sourceMode, fontScale: fontScale * noteFontScale, editorFont: editorFont, loadImage: loadImage, openLink: openLink, requestInsertion: requestInsertion, importMedia: importMedia, mediaError: { copyMessage = $0 }, selectionChanged: { store.documentSelections[document.id] = $0.isEmpty ? nil : $0 }, formatsChanged: { activeFormats = $0 }, codeLanguageChanged: { activeCodeLanguage = $0 }), document: document, page: nil,
+                        editorAccessibilityID: "native-markdown-editor", coordinator: annotation)
                 }
             } else {
                 ContentUnavailableView("노트를 열지 못했어요", systemImage: "doc.badge.ellipsis", description: Text("저장된 파일은 그대로 보관되어 있습니다."))
@@ -121,6 +128,7 @@ struct NativeMarkdownWorkspace: View {
             }
         }
         .onDisappear {
+            imageImportTask?.cancel(); imageImportTask = nil; imageImportGeneration = nil
             guard let token = registration else { return }
             registration = nil
             if session.retired { store.unregisterDocumentFlush(token); return }
@@ -191,6 +199,16 @@ struct NativeMarkdownWorkspace: View {
         .alert("텍스트 노트", isPresented: Binding(get: { copyMessage != nil }, set: { if !$0 { copyMessage = nil } })) {
             Button("확인", role: .cancel) { copyMessage = nil }
         } message: { Text(copyMessage ?? "") }
+    }
+
+    private func attachAnnotatedText() {
+        guard let request = annotation.request, request.documentID == document.id else { return }
+        guard let text = store.documentSelections[document.id], !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            annotation.fail("먼저 노트의 텍스트를 선택해 주세요.", requestID: request.id); return
+        }
+        annotation.complete(.init(title: document.title, text: text, courseID: document.courseID,
+            relativePath: document.relativePath, page: NativePDFPageNoteDocument(session.text) == nil || showAppendix ? nil : pageIndex + 1,
+            revision: UUID().uuidString), requestID: request.id)
     }
 
     @ViewBuilder private var errorRecoveryActions: some View {
@@ -332,38 +350,44 @@ struct NativeMarkdownWorkspace: View {
         }
     }
     private func importImages(_ urls: [URL]) {
-        Task { @MainActor in
+        imageImportTask?.cancel()
+        let generation = UUID(); imageImportGeneration = generation
+        imageImportTask = Task { @MainActor in
+            defer { if imageImportGeneration == generation { imageImportTask = nil } }
             do {
                 for url in urls {
-                    guard !session.retired, !session.frozen else { return }
-                    let scoped = url.startAccessingSecurityScopedResource()
-                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                    let values = try url.resourceValues(forKeys: [.fileSizeKey])
-                    guard (values.fileSize ?? 0) <= 50 * 1024 * 1024 else { throw DesktopRuntimeError("이미지는 50MB 이하로 선택해 주세요.") }
-                    let bytes = try Data(contentsOf: url, options: .mappedIfSafe)
+                    guard imageImportGeneration == generation, !session.retired, !session.frozen, !Task.isCancelled else { return }
+                    let encoded = try await NativeEditorMediaImport.fileBase64(url)
+                    guard imageImportGeneration == generation, !session.retired, !session.frozen, !Task.isCancelled else { return }
                     let value = try await store.invoke("materials:writeFile", ["courseId": document.courseID, "dirRelPath": "assets", "createDirIfMissing": true,
-                        "fileName": url.lastPathComponent, "encoding": "base64", "data": bytes.base64EncodedString()])
-                    guard let path = (value as? [String: Any])?["relPath"] as? String, !session.retired, !session.frozen else { continue }
+                        "fileName": url.lastPathComponent, "encoding": "base64", "data": encoded])
+                    guard let path = (value as? [String: Any])?["relPath"] as? String,
+                          imageImportGeneration == generation, !session.retired, !session.frozen, !Task.isCancelled else { return }
                     session.applyFormat?("image:" + path)
                 }
-            } catch { copyMessage = error.localizedDescription }
+            } catch is CancellationError { /* A closed or replaced editor must not receive an insertion. */ }
+            catch { if imageImportGeneration == generation, !Task.isCancelled { copyMessage = error.localizedDescription } }
         }
     }
+    private func importMedia(_ items: [NativeDroppedMedia]) async throws -> String {
+        guard session.canEdit, !session.retired, !session.frozen else { throw DesktopRuntimeError("문서를 편집할 수 없는 상태입니다.") }
+        return try await NativeEditorMediaImport.markdown(items, courseID: document.courseID, store: store)
+    }
     private func loadImage(_ raw: String) async -> UIImage? {
+        guard !session.retired, !Task.isCancelled else { return nil }
         let path = raw.removingPercentEncoding ?? raw
-        let data: Data
+        let image: UIImage?
         if let url = URL(string: path), ["https", "http"].contains(url.scheme ?? "") {
             var request = URLRequest(url: url); request.timeoutInterval = 20
-            guard let response = try? await URLSession.shared.data(for: request), response.0.count <= 50 * 1024 * 1024 else { return nil }
-            data = response.0
+            guard let response = try? await URLSession.shared.data(for: request), !Task.isCancelled,
+                  response.0.count <= NativeEditorMediaImport.maximumBytes else { return nil }
+            image = await NativeEditorMediaImport.previewImage(data: response.0)
         } else {
             guard let value = try? await store.invokePrivate("nativeMaterial:path", ["courseId": document.courseID, "relPath": path]),
-                  let file = value as? String, let bytes = try? Data(contentsOf: URL(fileURLWithPath: file), options: .mappedIfSafe) else { return nil }
-            data = bytes
+                  let file = value as? String, !Task.isCancelled else { return nil }
+            image = await NativeEditorMediaImport.previewImage(fileURL: URL(fileURLWithPath: file))
         }
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 1600, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else { return nil }
-        return UIImage(cgImage: image)
+        return session.retired || Task.isCancelled ? nil : image
     }
     private func openLink(_ raw: String) {
         if raw.hasPrefix("bandal-wiki:") {
@@ -376,6 +400,19 @@ struct NativeMarkdownWorkspace: View {
                    let match = NativeLibraryIndex.flatten(nodes).first(where: { $0.relPath == name || ($0.relPath as NSString).deletingPathExtension == name || ($0.name as NSString).deletingPathExtension == name }) {
                     store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: ["courseId": document.courseID, "relPath": match.relPath, "title": match.name, "kind": match.kind]))
                 } else { copyMessage = "연결된 노트를 찾지 못했습니다: " + name }
+            }
+        } else if let url = URL(string: raw), url.scheme == nil {
+            let path = raw.removingPercentEncoding ?? raw
+            Task { @MainActor in
+                do {
+                    let value = try await store.invoke("materials:tree", ["courseId": document.courseID])
+                    let nodes = try JSONDecoder().decode([NativeMaterial].self, from: JSONSerialization.data(withJSONObject: value))
+                    guard let material = NativeLibraryIndex.flatten(nodes).first(where: { $0.relPath == path && !$0.isDirectory }) else {
+                        throw DesktopRuntimeError("첨부 파일을 찾지 못했습니다.")
+                    }
+                    store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: ["courseId": document.courseID,
+                        "relPath": material.relPath, "title": material.name, "kind": material.kind]))
+                } catch { copyMessage = error.localizedDescription }
             }
         } else if let url = URL(string: raw) {
             if ["https", "http"].contains(url.scheme?.lowercased() ?? "") {

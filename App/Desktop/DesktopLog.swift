@@ -6,8 +6,19 @@ enum DesktopSignpost {
     static let launch = OSSignposter(subsystem: "app.bandal", category: "launch")
     static let open = OSSignposter(subsystem: "app.bandal", category: "pdf-open")
     static func measure<T>(_ poster: OSSignposter, _ name: StaticString, _ body: () async throws -> T) async rethrows -> T {
-        let state = poster.beginInterval(name); defer { poster.endInterval(name, state) }
+        let started = ProcessInfo.processInfo.systemUptime
+        let state = poster.beginInterval(name)
+        defer { poster.endInterval(name, state); benchmark(name, startedAt: started) }
         return try await body()
+    }
+    /// Opt-in, static phase names and elapsed time only; no document identities.
+    static func benchmark(_ name: StaticString, startedAt: TimeInterval) {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["BANDAL_PRIVATE_PDF_REPLAY_DIRECTORY"] != nil {
+            let elapsed = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
+            print("[PDF_PHASE] \(name) ms=\(String(format: "%.3f", elapsed))")
+        }
+        #endif
     }
 }
 

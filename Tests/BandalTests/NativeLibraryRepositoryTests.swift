@@ -130,6 +130,57 @@ final class NativeLibraryRepositoryTests: XCTestCase {
         XCTAssertEqual(nested.first?["relPath"] as? String, "Nested/" + nfc)
     }
 
+    func testUnchangedMaterialPollDoesNotRewriteIndexAndExternalChangesStillRefresh() throws {
+        let id = try course(), folder = try context.courseFolder(id)
+        for number in 0..<40 { try Data("# Note \(number)".utf8).write(to: folder.appendingPathComponent("\(number).md")) }
+        let initial = try NativeRepositoryContext.json(call("materials:tree", ["courseId": id]))
+        func changes() throws -> Int64 { try XCTUnwrap(context.query("SELECT total_changes() AS n").first?["n"] as? NSNumber).int64Value }
+        let writes = try changes()
+        for _ in 0..<3 { XCTAssertEqual(try NativeRepositoryContext.json(call("materials:tree", ["courseId": id])), initial) }
+        XCTAssertEqual(try changes(), writes, "The 5 s watcher and share refresh must not rewrite unchanged material rows")
+
+        let externalEdit = Data("# Externally changed note with different length".utf8)
+        try externalEdit.write(to: folder.appendingPathComponent("0.md"))
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("1.md"))
+        try Data("# Added externally".utf8).write(to: folder.appendingPathComponent("new.md"))
+        let changed = try XCTUnwrap(call("materials:tree", ["courseId": id]) as? [[String: Any]])
+        XCTAssertTrue(changed.contains { $0["relPath"] as? String == "new.md" })
+        XCTAssertFalse(changed.contains { $0["relPath"] as? String == "1.md" })
+        XCTAssertEqual((try context.query("SELECT size FROM materials_index WHERE course_id=? AND rel_path='0.md'", [id]).first?["size"] as? NSNumber)?.intValue, externalEdit.count)
+        XCTAssertNotNil(try context.query("SELECT deleted_at FROM materials_index WHERE course_id=? AND rel_path='1.md'", [id]).first?["deleted_at"] as? String)
+        let refreshedWrites = try changes()
+        XCTAssertGreaterThan(refreshedWrites, writes)
+        _ = try call("materials:tree", ["courseId": id])
+        XCTAssertEqual(try changes(), refreshedWrites)
+    }
+
+    func testMatchingSnapshotDoesNotSkipIncompleteMaterialBaseline() throws {
+        let id = try course()
+        _ = try note(id)
+        _ = try call("materials:tree", ["courseId": id])
+        try context.run("UPDATE material_added_baselines SET completed=0 WHERE course_id=?", [id])
+        _ = try call("materials:tree", ["courseId": id])
+        XCTAssertEqual((try context.query("SELECT completed FROM material_added_baselines WHERE course_id=?", [id]).first?["completed"] as? NSNumber)?.intValue, 1)
+    }
+
+    func testShareFoldersReadDoesNotBuildIndexAndReflectsDirectoryChanges() throws {
+        let id = try course(), folder = try context.courseFolder(id)
+        for relative in ["자료/시험", "다른 폴더", ".hidden/secret"] {
+            try FileManager.default.createDirectory(at: folder.appendingPathComponent(relative), withIntermediateDirectories: true)
+        }
+        try Data("# Note".utf8).write(to: folder.appendingPathComponent("자료/note.md"))
+        try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("shortcut"), withDestinationURL: root)
+        let changes = context.db.totalChanges
+        let folders = try XCTUnwrap(call("nativeMaterial:folders", ["courseId": id]) as? [String])
+        XCTAssertEqual(Set(folders), ["자료", "자료/시험", "다른 폴더"])
+        XCTAssertEqual(context.db.totalChanges, changes, "Publishing share destinations must not rewrite the material/sync index")
+        XCTAssertTrue(try context.query("SELECT * FROM materials_index WHERE course_id=?", [id]).isEmpty)
+        XCTAssertTrue(try context.query("SELECT * FROM material_added_baselines WHERE course_id=?", [id]).isEmpty)
+        try FileManager.default.moveItem(at: folder.appendingPathComponent("자료/시험"), to: folder.appendingPathComponent("자료/새 시험"))
+        XCTAssertEqual(Set(try XCTUnwrap(call("nativeMaterial:folders", ["courseId": id]) as? [String])), ["자료", "자료/새 시험", "다른 폴더"])
+        XCTAssertEqual(context.db.totalChanges, changes)
+    }
+
     func testContainerRelocationRebasesOnlyLocalMetadataAndKeepsCanonicalPayload() throws {
         let old = root.appendingPathComponent("OldContainer"), new = root.appendingPathComponent("NewContainer")
         var source: NativeRepositoryContext? = try NativeRepositoryContext(root: old, legacyRoot: root.appendingPathComponent("Legacy"))

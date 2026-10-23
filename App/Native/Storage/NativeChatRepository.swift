@@ -11,7 +11,12 @@ final class NativeChatRepository {
     }
     private func scoped(_ request: [String:Any]) throws -> [String:Any] {
         let value = try session(NativeValue.string(request["sessionId"],"대화"))
-        guard value["courseId"] as? String == request["courseId"] as? String else { throw DesktopRuntimeError("대화와 과목이 일치하지 않습니다.") }; return value
+        guard value["courseId"] as? String == request["courseId"] as? String else { throw DesktopRuntimeError("대화와 과목이 일치하지 않습니다.") }
+        if let workspace = request["workspace"] as? [String: Any], let id = workspace["id"] as? String {
+            let policy = value["accessPolicy"] as? [String: Any] ?? [:]
+            guard NativeAssistantPayload.scopeID(policy, course: value["courseId"] as? String ?? "") == id else { throw DesktopRuntimeError("대화와 작업 공간이 일치하지 않습니다.") }
+        }
+        return value
     }
     private func history(_ id: String) throws -> [[String:Any]] {
         try context.db.query("SELECT * FROM (SELECT * FROM messages WHERE session_id=? AND deleted_at IS NULL ORDER BY turn_seq DESC,CASE role WHEN 'user' THEN 1 ELSE 0 END,created_at DESC LIMIT 200) ORDER BY turn_seq,CASE role WHEN 'user' THEN 0 ELSE 1 END,created_at",params:[id]).map { row in
@@ -21,12 +26,18 @@ final class NativeChatRepository {
             }; return value
         }
     }
-    private func append(course: String,id: String,role: String,turn: Int,text: String,interrupted: Bool = false) throws -> [String:Any] {
+    private func append(course: String,id: String,role: String,turn: Int,text: String,interrupted: Bool = false, extras: [[String: Any]] = []) throws -> [String:Any] {
         let message = UUID().uuidString, block = UUID().uuidString, now = NativeValue.now()
         var payload: [String:Any] = ["text":text]; if interrupted { payload["interrupted"] = true }
         _ = try context.db.run("INSERT INTO messages(id,course_id,session_id,role,turn_seq,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",params:[message,course,id,role,turn,now,now])
         _ = try context.db.run("INSERT INTO message_blocks(id,message_id,ord,kind,payload_json,created_at,updated_at) VALUES(?,?,0,'text',?,?,?)",params:[block,message,try NativeValue.json(payload),now,now])
-        return ["id":message,"courseId":course,"sessionId":id,"role":role,"turnSeq":turn,"createdAt":now,"blocks":[["id":block,"messageId":message,"ord":0,"kind":"text","payload":payload]]]
+        var blocks: [[String: Any]] = [["id":block,"messageId":message,"ord":0,"kind":"text","payload":payload]]
+        for (index, extra) in extras.enumerated() {
+            let extraID = UUID().uuidString, kind = extra["kind"] as? String ?? "metadata", data = extra["payload"] ?? [:]
+            _ = try context.db.run("INSERT INTO message_blocks(id,message_id,ord,kind,payload_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", params:[extraID,message,index+1,kind,try NativeValue.json(data),now,now])
+            blocks.append(["id":extraID,"messageId":message,"ord":index+1,"kind":kind,"payload":data])
+        }
+        return ["id":message,"courseId":course,"sessionId":id,"role":role,"turnSeq":turn,"createdAt":now,"blocks":blocks]
     }
     func recover() throws {
         try context.transaction {
@@ -42,17 +53,35 @@ final class NativeChatRepository {
     func handle(_ channel: String, _ request: [String:Any]) throws -> Any? {
         switch channel {
         case "chat:open":
+            return try context.transaction {
             let course = try NativeValue.string(request["courseId"],"과목"), id = try NativeValue.string(request["sessionId"],"대화"); _ = try context.courseFolder(course)
             if try context.db.query("SELECT id FROM agent_sessions WHERE id=?",params:[id]).isEmpty {
                 let provider = request["provider"] as? String ?? "claude-code"; guard ["claude-code","codex","gemini"].contains(provider) else { throw DesktopRuntimeError("AI 제공자를 확인해 주세요.") }
                 let now = NativeValue.now()
                 _ = try context.db.run("INSERT INTO agent_sessions(id,course_id,surface,provider,status,created_at,updated_at) VALUES(?,?,?,?,'idle',?,?)",params:[id,course,request["surface"] as? String == "desktop" ? "desktop" : "app",provider,now,now])
+                if let workspace = request["workspace"] as? [String: Any] {
+                    guard workspace["courseId"] as? String == course,
+                          let kind = workspace["kind"] as? String, ["course", "project"].contains(kind),
+                          workspace["id"] as? String == (kind == "course" ? "course:" + course : "project:" + (workspace["projectId"] as? String ?? "")) else { throw DesktopRuntimeError("작업 공간을 확인해 주세요.") }
+                    if kind == "project" {
+                        let snapshot = try NativeLearningRepository(context: context).handle("learning:get", ["binding": ["courseId":course,"rootRelPath":workspace["rootRelPath"] as? String ?? ""]]) as? [String: Any]
+                        guard snapshot?["projectId"] as? String == workspace["projectId"] as? String else { throw DesktopRuntimeError("프로젝트가 변경되었습니다.") }
+                    }
+                    let policy: [String: Any] = ["mode":"ask","scope":["course":true,"browser":false,"screen":false],"workspace":workspace]
+                    _ = try context.db.run("UPDATE agent_sessions SET access_policy=? WHERE id=?",params:[try NativeValue.json(policy),id])
+                }
             }
             return ["history":try history(id),"sessionInfo":try scoped(request),"pendingPermissions":[]]
+            }
         case "chat:conversations":
             let course = try NativeValue.string(request["courseId"],"과목"); _ = try context.courseFolder(course)
             let rows = try context.db.query("SELECT s.*,COUNT(m.id) AS message_count FROM agent_sessions s JOIN messages m ON m.session_id=s.id AND m.deleted_at IS NULL WHERE s.course_id=? AND s.deleted_at IS NULL GROUP BY s.id ORDER BY COALESCE(s.last_used_at,s.created_at) DESC",params:[course])
-            return ["conversations":rows.filter { request["surface"] == nil || $0["surface"] as? String == request["surface"] as? String }.map { NativeValue.mapped($0,["id":"id","course_id":"courseId","surface":"surface","provider":"provider","title":"title","model":"model","last_used_at":"lastUsedAt","created_at":"createdAt","message_count":"messageCount"]) }]
+            return ["conversations":rows.filter { row in
+                guard request["surface"] == nil || row["surface"] as? String == request["surface"] as? String else { return false }
+                guard let workspace = request["workspace"] as? [String: Any], let scope = workspace["id"] as? String else { return true }
+                let policy = (try? NativeValue.decode(row["access_policy"])) as? [String: Any] ?? [:]
+                return NativeAssistantPayload.scopeID(policy, course: course) == scope
+            }.map { NativeValue.mapped($0,["id":"id","course_id":"courseId","surface":"surface","provider":"provider","title":"title","model":"model","last_used_at":"lastUsedAt","created_at":"createdAt","message_count":"messageCount"]) }]
         case "chat:setProvider", "chat:setConfiguration", "chat:setModel", "chat:deleteConversation":
             let current = try scoped(request), id = current["id"] as! String
             guard current["status"] as? String != "running" else { throw DesktopRuntimeError("진행 중인 응답을 중지한 뒤 변경해 주세요.",code:"BUSY") }
@@ -71,7 +100,14 @@ final class NativeChatRepository {
                 guard current["status"] as? String != "running" else { throw DesktopRuntimeError("응답을 기다리거나 중지해 주세요.",code:"BUSY") }
                 let text = try NativeValue.string(request["content"],"메시지")
                 let sequence = (try context.db.query("SELECT COALESCE(MAX(turn_seq),0)+1 AS n FROM messages WHERE session_id=? AND deleted_at IS NULL",params:[id]).first?["n"] as? NSNumber)?.intValue ?? 1
-                let message = try append(course:course,id:id,role:"user",turn:sequence,text:text)
+                let attachments = try NativeAssistantPayload.validatedAttachments(request["attachments"])
+                for attachment in attachments { _ = try NativeAssistantPayload.cacheImage(attachment,context:context) }
+                var extras = attachments.map { ["kind":"attachment", "payload":$0] as [String: Any] }
+                var metadata: [String: Any] = ["mode": request["mode"] as? String ?? "chat"]
+                if let workspace = request["workspace"] { metadata["workspace"] = workspace }
+                if let document = request["documentContext"] { metadata["documentContext"] = document }
+                extras.append(["kind":"request-context", "payload":metadata])
+                let message = try append(course:course,id:id,role:"user",turn:sequence,text:text,extras:extras)
                 let now = NativeValue.now()
                 _ = try context.db.run("UPDATE agent_sessions SET status='running',title=CASE WHEN title IS NULL OR title='' THEN ? ELSE title END,last_used_at=?,updated_at=? WHERE id=?",params:[String(text.prefix(80)),now,now,id])
                 context.emit?("chat:message",["sessionId":id,"message":message])
@@ -90,7 +126,8 @@ final class NativeChatRepository {
                 // Replaying a completion after a lost acknowledgement is safe.
                 if try context.db.query("SELECT id FROM messages WHERE session_id=? AND turn_seq=? AND role='assistant' AND deleted_at IS NULL",params:[id,turn]).isEmpty {
                     guard let text = request["text"] as? String else { throw DesktopRuntimeError("응답 형식이 올바르지 않습니다.") }
-                    let message = try append(course:course,id:id,role:"assistant",turn:turn,text:text,interrupted:request["interrupted"] as? Bool == true)
+                    let extras = (request["artifacts"] as? [[String: Any]] ?? []).map { ["kind":"artifact","payload":$0] as [String: Any] }
+                    let message = try append(course:course,id:id,role:"assistant",turn:turn,text:text,interrupted:request["interrupted"] as? Bool == true,extras:extras)
                     context.emit?("chat:message",["sessionId":id,"message":message])
                 }
                 let now = NativeValue.now(); _ = try context.db.run("UPDATE agent_sessions SET status='idle',last_used_at=?,updated_at=? WHERE id=?",params:[now,now,id]); return NativeValue.ok

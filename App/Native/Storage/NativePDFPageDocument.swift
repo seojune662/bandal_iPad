@@ -3,8 +3,9 @@ import CryptoKit
 import PDFKit
 import CoreGraphics
 
-/// Page edits retain PDFKit's original document/catalog. Rebuilding a new PDF
-/// from copied pages would discard forms, outlines, and other document data.
+/// Page edits retain the original document/catalog. Insertion preserves its raw
+/// object graph; reorder/deletion use PDFKit with full preservation validation.
+/// Rebuilding from copied pages would discard forms/outlines/document data.
 enum NativePDFPageDocument {
     private typealias C = NativeRepositoryContext
     private typealias F = NativeSyncFormat
@@ -54,6 +55,10 @@ enum NativePDFPageDocument {
     static func rewrite(_ bytes: Data, pages recipe: [Int]) throws -> Data {
         let pages = recipe.filter { $0 != 0 }
         let document = try open(bytes), keep = Set(pages)
+        if let output = NativePDFPageInsertionWriter.write(bytes, pages: recipe) {
+            try validate(source: bytes, target: output, pages: recipe)
+            return output
+        }
         let originalPages = (0..<document.pageCount).map { document.page(at: $0)! }
         // PDFKit otherwise silently retargets destinations to a removed page.
         func prune(_ parent: PDFOutline) {
@@ -87,23 +92,43 @@ enum NativePDFPageDocument {
     /// Verify actual target pages rather than trusting a remotely supplied
     /// revision/recipe. Form values, geometry, searchable text, and pixels must
     /// match; this also rejects accidental flattening or rotated ink surfaces.
-    static func validate(source: Data, target: Data, pages recipe: [Int]) throws {
+    struct ValidationSummary { var structuralPages = 0; var rasterPages = 0 }
+    @discardableResult
+    static func validate(source: Data, target: Data, pages recipe: [Int]) throws -> ValidationSummary {
         let before = try open(source), after = try open(target), pages = recipe.filter { $0 != 0 }
         guard after.pageCount == recipe.count, Set(pages).count == pages.count, pages.allSatisfy({ (1...before.pageCount).contains($0) }) else { throw C.conflict("PDF 페이지 변경 이력이 원본과 다릅니다.") }
+        let sourceContent = NativePDFPageContentDigest(), targetContent = NativePDFPageContentDigest()
+        // CGPDF exposes names as NUL-terminated C strings. Never use that
+        // structural proof for an escaped NUL name; retain the pixel fallback.
+        let nulName = Data("#00".utf8)
+        let canProveStructure = source.range(of: nulName) == nil && target.range(of: nulName) == nil
+        var summary = ValidationSummary()
+        func preserved(_ a: PDFPage, _ b: PDFPage, annotations: Bool = true) throws -> Bool {
+            let sourceMeta = try metadata(a, annotations: annotations), targetMeta = try metadata(b)
+            guard sourceMeta == targetMeta else { return false }
+            let hasAnnotations = (annotations && a.annotations.contains { $0.type != "Link" }) || b.annotations.contains { $0.type != "Link" }
+            if canProveStructure, !hasAnnotations, let a = a.pageRef, let b = b.pageRef,
+               let source = sourceContent.digest(a), let target = targetContent.digest(b), source == target {
+                summary.structuralPages += 1; return true
+            }
+            summary.rasterPages += 1
+            return try matches(fingerprint(a, annotations: annotations, metadata: sourceMeta), fingerprint(b, metadata: targetMeta))
+        }
         for (index, old) in recipe.enumerated() {
             guard let b = after.page(at: index) else { throw C.conflict("PDF 페이지 변경 이력이 원본과 다릅니다.") }
             if old == 0 {
                 // A new page is a template copy: same geometry and pixels as its source, no annotations.
-                guard let a = before.page(at: template(recipe, at: index) - 1), try matches(fingerprint(a, annotations: false), fingerprint(b)), b.annotations.isEmpty else { throw C.conflict("새 페이지를 원본 양식대로 만들지 못했습니다. 원본은 변경하지 않았습니다.") }
+                guard let a = before.page(at: template(recipe, at: index) - 1), try preserved(a, b, annotations: false), b.annotations.isEmpty else { throw C.conflict("새 페이지를 원본 양식대로 만들지 못했습니다. 원본은 변경하지 않았습니다.") }
                 continue
             }
             // Destinations map through the full recipe: inserted pages shift later numbers.
-            guard let a = before.page(at: old - 1), try matches(fingerprint(a), fingerprint(b)), try links(before, page: a, pages: recipe) == links(after, page: b, pages: Array(1...after.pageCount)) else { throw C.conflict("PDF 내용·양식 또는 페이지 크기를 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
+            guard let a = before.page(at: old - 1), try preserved(a, b), try links(before, page: a, pages: recipe) == links(after, page: b, pages: Array(1...after.pageCount)) else { throw C.conflict("PDF 내용·양식 또는 페이지 크기를 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
         }
         guard try outlines(before, pages: recipe) == outlines(after, pages: Array(1...after.pageCount)) else { throw C.conflict("PDF 책갈피의 대상을 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
         for key in [PDFDocumentAttribute.titleAttribute, .authorAttribute, .subjectAttribute, .keywordsAttribute, .creatorAttribute] {
             if let expected = before.documentAttributes?[key] as? NSObject, (after.documentAttributes?[key] as? NSObject).map({ expected.isEqual($0) }) != true { throw C.conflict("PDF 문서 정보를 그대로 보존하지 못했습니다.") }
         }
+        return summary
     }
     struct Fingerprint { let meta: String; let pixels: [UInt8] }
     static func signature(_ page: PDFPage, annotations includeAnnotations: Bool = true) throws -> String {
@@ -122,8 +147,7 @@ enum NativePDFPageDocument {
         }
         return differing * 500 <= a.pixels.count
     }
-    static func fingerprint(_ page: PDFPage, annotations includeAnnotations: Bool = true) throws -> Fingerprint {
-        func rect(_ box: CGRect) -> [Double] { [box.origin.x, box.origin.y, box.width, box.height].map(Double.init) }
+    static func fingerprint(_ page: PDFPage, annotations includeAnnotations: Bool = true, metadata: String? = nil) throws -> Fingerprint {
         let crop = page.bounds(for: .cropBox)
         guard crop.width.isFinite, crop.height.isFinite, crop.width > 0, crop.height > 0 else { throw C.validation("Invalid PDF page geometry") }
         let scale = min(1.5, 1800 / max(crop.width, crop.height)), width = max(1, Int(ceil(crop.width * scale))), height = max(1, Int(ceil(crop.height * scale)))
@@ -133,10 +157,18 @@ enum NativePDFPageDocument {
         // The CG page excludes link hit areas, which are intentionally detached
         // when their destination is removed. Fields are compared separately.
         if let reference = page.pageRef { bitmap.drawPDFPage(reference) }
+        // Appearance streams can change without changing the widget value or
+        // comment text. Compare their rendered output too; link hit areas are
+        // still excluded because deletion intentionally removes dead links.
+        if includeAnnotations { for annotation in page.annotations where annotation.type != "Link" { annotation.draw(with: .cropBox, in: bitmap) } }
+        return Fingerprint(meta: try metadata ?? Self.metadata(page, annotations: includeAnnotations), pixels: pixels)
+    }
+    private static func metadata(_ page: PDFPage, annotations includeAnnotations: Bool = true) throws -> String {
+        func rect(_ box: CGRect) -> [Double] { [box.origin.x, box.origin.y, box.width, box.height].map(Double.init) }
         let annotations: [[String: Any]] = (includeAnnotations ? page.annotations : []).filter { $0.type != "Link" }.map { annotation in
             ["type": annotation.type ?? "", "bounds": rect(annotation.bounds), "contents": annotation.contents ?? "", "field": annotation.fieldName ?? "", "value": annotation.widgetStringValue ?? "", "state": annotation.buttonWidgetState.rawValue]
         }
-        return Fingerprint(meta: try F.digest(["media": rect(page.bounds(for: .mediaBox)), "crop": rect(crop), "rotation": page.rotation, "text": page.string ?? "", "annotations": annotations]), pixels: pixels)
+        return try F.digest(["media": rect(page.bounds(for: .mediaBox)), "crop": rect(page.bounds(for: .cropBox)), "rotation": page.rotation, "text": page.string ?? "", "annotations": annotations])
     }
     private static func outlines(_ document: PDFDocument, pages: [Int]) throws -> String {
         func children(_ parent: PDFOutline) -> [[String: Any]] {

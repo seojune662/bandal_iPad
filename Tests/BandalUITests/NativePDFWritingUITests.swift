@@ -74,19 +74,24 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTAssertTrue(left.waitForExistence(timeout: 15)); XCTAssertTrue(right.waitForExistence(timeout: 15))
         for pane in [left, right] {
             for index in 0..<3 {
-                let favorite = pane.buttons["native-pdf-favorite-\(index)"]
-                XCTAssertTrue(favorite.isHittable, app.debugDescription)
-                XCTAssertGreaterThanOrEqual(favorite.frame.width, 44)
-                XCTAssertGreaterThanOrEqual(favorite.frame.height, 44)
-                XCTAssertGreaterThanOrEqual(favorite.frame.minX, pane.frame.minX)
-                XCTAssertLessThanOrEqual(favorite.frame.maxX, pane.frame.maxX)
+                XCTAssertFalse(pane.buttons["native-pdf-favorite-\(index)"].exists)
             }
+            let tools = pane.scrollViews["native-pdf-tool-scroll"]
+            XCTAssertTrue(tools.exists, app.debugDescription)
+            XCTAssertGreaterThan(tools.frame.width, pane.frame.width - 24, "Editing tools use the width previously occupied by numbered presets")
+            tools.swipeLeft()
+            XCTAssertTrue(pane.sliders["native-pdf-quick-width"].isHittable, app.debugDescription)
         }
-        right.buttons["native-pdf-favorite-2"].tap()
+        right.buttons["native-pdf-style"].tap()
+        let rightSettings = right.scrollViews["native-pdf-palette-scroll"]
+        let savedPreset = right.buttons["native-pdf-palette-favorite-2"]
+        for _ in 0..<3 where !savedPreset.isHittable { rightSettings.swipeUp() }
+        savedPreset.tap()
         XCTAssertEqual(left.buttons["native-pdf-style"].value as? String, penStyle)
-        right.buttons["native-pdf-favorite-0"].tap()
+        right.buttons["native-pdf-palette-favorite-0"].tap()
+        right.buttons["native-pdf-style-close"].tap()
         XCTAssertEqual(right.buttons["native-pdf-style"].value as? String, penStyle)
-        capture("Swift favorites remain reachable in two narrow PDF panes")
+        capture("PDF tools use full width with numbered shortcuts removed")
         XCTAssertEqual(app.webViews.count, 0)
     }
 
@@ -148,9 +153,9 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTAssertEqual(app.webViews.count, 0)
     }
 
-    @MainActor private func createDocument(_ title: String) -> XCUIApplication {
+    @MainActor private func createDocument(_ title: String, extra: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
-        let app = XCUIApplication(); app.launchArguments = arguments(reset: true); app.launch()
+        let app = XCUIApplication(); app.launchArguments = arguments(reset: true) + extra; app.launch()
         let add = app.buttons["native-course-add-menu"]
         XCTAssertTrue(add.waitForExistence(timeout: 25)); add.tap(); app.buttons["native-new-course"].tap()
         let name = app.textFields["native-course-name"]
@@ -167,6 +172,84 @@ final class NativePDFWritingUITests: XCTestCase {
         let loaded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: pen)
         XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 20), .completed, app.debugDescription)
         return app
+    }
+    @MainActor
+    func testEmptyPaperLassoCopiesPDFRegionAndFingerTapPastesImageAfterRestart() {
+        let app = createDocument("Lasso Region")
+        chooseTool("lasso", in: app)
+        let box = app.buttons["박스형"].firstMatch
+        XCTAssertTrue(box.waitForExistence(timeout: 5)); box.tap()
+        let body = app.otherElements["native-pdf-workspace"]
+        body.coordinate(withNormalizedOffset: .init(dx: 0.35, dy: 0.3)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.65, dy: 0.55)),
+            withVelocity: .slow, thenHoldForDuration: 0.05)
+        let crop = app.buttons["native-pdf-copy-region"]
+        XCTAssertTrue(crop.waitForExistence(timeout: 10), "An area of the PDF must be selectable without ink")
+        XCTAssertFalse(app.buttons["native-pdf-delete-selection"].exists)
+        crop.tap()
+        let copied = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: crop)
+        XCTAssertEqual(XCTWaiter.wait(for: [copied], timeout: 15), .completed)
+        capture("PDF region selection on paper without ink")
+        app.terminate(); app.launchArguments = ["--native-ui-testing"]; app.launch()
+        XCTAssertTrue(body.waitForExistence(timeout: 25))
+        chooseTool("lasso", in: app)
+        body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
+        let bar = app.descendants(matching: .any).matching(identifier: "native-pdf-selection-bar").firstMatch
+        let menuVisible = bar.waitForExistence(timeout: 10)
+        capture("Empty-paper finger paste menu")
+        XCTAssertTrue(menuVisible, "A real finger tap on empty paper offers paste\n" + app.debugDescription)
+        let paste = bar.buttons["native-pdf-paste"]
+        XCTAssertTrue(paste.isEnabled); paste.tap(); expectInk(1, in: app)
+        capture("Copied PDF area pasted as an editable image")
+        tap("native-pdf-undo", in: app); expectInk(0, in: app)
+        tap("native-pdf-redo", in: app); expectInk(1, in: app)
+        app.terminate(); app.launchArguments = arguments(reset: false); app.launch(); expectInk(1, in: app)
+        body.coordinate(withNormalizedOffset: .init(dx: 0.25, dy: 0.3)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.75, dy: 0.85)),
+            withVelocity: .slow, thenHoldForDuration: 0.05)
+        let copyImage = app.buttons["native-pdf-copy-selection"]
+        XCTAssertTrue(copyImage.waitForExistence(timeout: 10)); copyImage.tap()
+        let imageCopied = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: copyImage)
+        XCTAssertEqual(XCTWaiter.wait(for: [imageCopied], timeout: 15), .completed)
+        body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2)).tap()
+        XCTAssertTrue(bar.waitForExistence(timeout: 10)); bar.buttons["native-pdf-paste"].tap()
+        expectInk(2, in: app)
+        capture("A pasted image can be selected and copied again")
+        app.terminate(); app.launch(); expectInk(2, in: app)
+        XCTAssertEqual(app.webViews.count, 0)
+    }
+    @MainActor
+    func testLassoDragAutoscrollMovesInkAcrossPagesWithUndoAndSavesAfterRestart() {
+        let app = createDocument("Across Pages", extra: ["--native-pages-fixture"])
+        let body = app.otherElements["native-pdf-workspace"], nativeBody = app.otherElements["bandal-native-pdf-body"]
+        body.coordinate(withNormalizedOffset: .init(dx: 0.36, dy: 0.34)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.62, dy: 0.46)),
+            withVelocity: .slow, thenHoldForDuration: 0.05)
+        expectInk(1, in: app)
+        func expectPages(_ text: String) {
+            let expected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", text), object: nativeBody)
+            XCTAssertEqual(XCTWaiter.wait(for: [expected], timeout: 15), .completed, app.debugDescription)
+        }
+        expectPages("savedObjectPages=1:1,2:0,3:0")
+        chooseTool("lasso", in: app)
+        app.buttons["박스형"].firstMatch.tap()
+        body.coordinate(withNormalizedOffset: .init(dx: 0.30, dy: 0.27)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.68, dy: 0.53)),
+            withVelocity: .slow, thenHoldForDuration: 0.05)
+        XCTAssertTrue(app.buttons["native-pdf-delete-selection"].waitForExistence(timeout: 10))
+        body.coordinate(withNormalizedOffset: .init(dx: 0.49, dy: 0.40)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.50, dy: 0.97)),
+            withVelocity: .slow, thenHoldForDuration: 2.4)
+        expectPages("savedObjectPages=1:0,")
+        let saved = nativeBody.value as? String ?? ""
+        let movedToThird = saved.contains("savedObjectPages=1:0,2:0,3:1")
+        let movedPages = movedToThird ? "savedObjectPages=1:0,2:0,3:1" : "savedObjectPages=1:0,2:1,3:0"
+        expectPages(movedPages); expectInk(1, in: app)
+        capture("Lasso drag across page edge commits the destination page")
+        tap("native-pdf-undo", in: app); expectPages("savedObjectPages=1:1,2:0,3:0")
+        tap("native-pdf-redo", in: app); expectPages(movedPages)
+        app.terminate(); app.launchArguments = arguments(reset: false) + ["--native-pages-fixture"]; app.launch()
+        expectInk(1, in: app); expectPages(movedPages)
     }
     private func arguments(reset: Bool) -> [String] {
         ["--native-ui-testing", "--native-pencil-dispatch-fixture"] + (reset ? ["--reset-native-ui-testing"] : [])

@@ -11,6 +11,7 @@ final class NativePDFPencilGestureRecognizer: UIGestureRecognizer {
     private(set) var inputTouchType: UITouch.TouchType = .pencil
     private var contact: UITouch?
     private var receiver: NativePDFInkSurface?
+    private var selectionTouches = false
     private final class WeakSurface {
         weak var value: NativePDFInkSurface?
         init(_ value: NativePDFInkSurface) { self.value = value }
@@ -37,6 +38,12 @@ final class NativePDFPencilGestureRecognizer: UIGestureRecognizer {
     }
     #endif
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    /// A separate direct-touch recognizer owns only a selected group's drag;
+    /// empty-paper fingers continue through PDFKit's pan/pinch recognizers.
+    convenience init(selectionTouches: Bool) {
+        self.init(); self.selectionTouches = selectionTouches
+        inputTouchType = .direct; configureTouchType()
+    }
     private func configureTouchType() {
         allowedTouchTypes = [NSNumber(value: inputTouchType.rawValue)]
     }
@@ -53,6 +60,10 @@ final class NativePDFPencilGestureRecognizer: UIGestureRecognizer {
         return receiver != nil && super.canPrevent(preventedGestureRecognizer)
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        if selectionTouches, let contact, let receiver, touches.contains(where: { $0 !== contact }) {
+            receiver.cancelPencilGesture(contact, with: event)
+            self.contact = nil; self.receiver = nil; state = .cancelled; return
+        }
         guard contact == nil else { return }
         guard let touch = touches.first(where: { $0.type == inputTouchType }) else {
             state = .failed; return
@@ -63,7 +74,9 @@ final class NativePDFPencilGestureRecognizer: UIGestureRecognizer {
         }
         contact = touch; receiver = surface
         rememberEstimates(event.coalescedTouches(for: touch) ?? [touch], for: surface)
-        guard surface.beginPencilGesture(touch, with: event, directFixture: inputTouchType == .direct) else {
+        let accepted = selectionTouches ? surface.beginSelectionGesture(touch, with: event)
+            : surface.beginPencilGesture(touch, with: event, directFixture: inputTouchType == .direct)
+        guard accepted else {
             report("rejected-surface"); contact = nil; receiver = nil; state = .failed; return
         }
         // Recognize on the first contact, not after a distance/time threshold.

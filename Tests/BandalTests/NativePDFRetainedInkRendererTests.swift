@@ -10,6 +10,34 @@ final class NativePDFRetainedInkRendererTests: XCTestCase {
     private typealias Renderer = NativePDFRetainedInkRenderer
     private let size = CGSize(width: 64, height: 64)
 
+    func testImmutableMeshMatchesIndependentLiveFanVerticesAndFloatBounds() throws {
+        let f = try Fixture()
+        let points = (0..<60).map { index in
+            NativePDFPoint(x: 0.1 + Double(index) * 0.01, y: 0.4 + sin(Double(index) * 0.2) * 0.1,
+                           p: 0.2 + Double(index % 7) * 0.1, t: Double(index) * 4)
+        }
+        for version in 2...5 {
+            let polygons: [[CGPoint]]
+            switch version {
+            case 2: polygons = NativePDFInkGeometry.polygons(points: points, width: 0.003, aspect: 1.4, highlighter: false)
+            case 3: polygons = NativePDFInkGeometryV3.polygons(points: points, width: 0.003, aspect: 1.4, highlighter: false)
+            case 4: polygons = NativePDFInkGeometryV4.polygons(points: points, width: 0.003, aspect: 1.4, highlighter: false)
+            default: polygons = NativePDFInkGeometryV5.polygons(points: points, width: 0.003, aspect: 1.4, highlighter: false)
+            }
+            let reference = NativePDFInkVertexCache(); reference.update(polygons)
+            let mesh = try XCTUnwrap(f.renderer.makeMesh(convexPolygons: polygons))
+            let actual = Data(bytes: mesh.buffer.contents(), count: mesh.buffer.length)
+            let expected = reference.vertices.withUnsafeBytes { Data($0) }
+            XCTAssertEqual(actual, expected, "Version \(version) must preserve every GPU triangle byte")
+            XCTAssertEqual(mesh.vertexCount, reference.vertices.count)
+            let xs = reference.vertices.map(\.x), ys = reference.vertices.map(\.y)
+            let lowX = try XCTUnwrap(xs.min()), lowY = try XCTUnwrap(ys.min())
+            let highX = try XCTUnwrap(xs.max()), highY = try XCTUnwrap(ys.max())
+            XCTAssertEqual(mesh.bounds, CGRect(x: CGFloat(lowX), y: CGFloat(lowY),
+                width: CGFloat(highX - lowX), height: CGFloat(highY - lowY)))
+        }
+    }
+
     func testOneStrokeUnionsCrossingAndRepeatedPolygonsBeforeApplyingOpacity() throws {
         let f = try Fixture()
         let horizontal = rectangle(8, 24, 48, 16)

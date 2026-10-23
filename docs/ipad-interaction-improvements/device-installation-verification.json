@@ -1,0 +1,25 @@
+{
+  "verifiedAt": "2026-10-20T00:51:52+09:00",
+  "device": "iPad Pro (11-inch) (3rd generation)",
+  "iPadOS": "26.5",
+  "previousVersion": "1.0.0 (2)",
+  "installedVersion": "1.0.0 (4)",
+  "configuration": "Release",
+  "installSucceeded": true,
+  "normalLaunchWithoutTestArguments": true,
+  "runningProcessVerified": true,
+  "appGroup": "group.app.bandal.ipad",
+  "appAndExtensionProfilesIncludeGroupAndDevice": true,
+  "deviceSharedCatalogReadable": true,
+  "sharedCatalogCourseCount": 2,
+  "sharedCatalogFolderCount": 0,
+  "existingPreferences": 27,
+  "existingPreferencesUnchanged": 25,
+  "existingPreferencesRemoved": 0,
+  "changedPreferenceCategories": [
+    "StoreKit transaction check timestamp",
+    "PDF container predecessor path registration"
+  ],
+  "physicalExternalShareUITested": false,
+  "simulatorExternalShareUITested": true
+}

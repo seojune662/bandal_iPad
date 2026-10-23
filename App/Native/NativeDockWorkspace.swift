@@ -217,16 +217,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                             .presentationCompactAdaptation(.popover)
                     }
                 groupMenu(group)
-                // Desktop parity: the top-right pane carries the materials sidebar toggle.
-                if corner {
-                    Button(action: toggleMaterials) {
-                        Image(systemName: "sidebar.right").font(.system(size: 14))
-                            .foregroundStyle(materialsOpen ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
-                            .frame(width: 44, height: 44).contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityLabel(materialsOpen ? "자료 사이드바 접기" : "자료 사이드바 펼치기")
-                        .accessibilityIdentifier("native-toggle-materials-rail").accessibilityAddTraits(materialsOpen ? .isSelected : [])
-                        .help(materialsOpen ? "자료 사이드바 접기" : "자료 사이드바 펼치기")
-                }
+                if corner { Color.clear.frame(width: 44, height: 44) }
             }.frame(height: headerHeight, alignment: .bottom).padding(.horizontal, 4).padding(.top, topPadding)
         }.frame(height: headerHeight + topPadding).clipped().background(NativeDesktopTheme.surface)
             .background { NativeDockTabStripBounds(groupID: group.id) }

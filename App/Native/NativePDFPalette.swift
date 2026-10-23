@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Visual contract: the notebook-style palette from the reference iPad renderer
 /// (`PdfPalette.tsx`). Pages · history · view on the first row; tools · colours ·
-/// thickness · favourites on the second; a "<tool> 설정" sheet anchored inside the PDF body.
+/// thickness on the second; a "<tool> 설정" sheet anchored inside the PDF body.
 @MainActor enum NativePDFPaletteLook {
     static let colorNames = ["ink": "먹색", "red": "빨강", "orange": "주황", "yellow": "노랑", "green": "초록", "blue": "파랑", "violet": "보라"]
     static let sizeNames = ["가는 선", "중간 선", "굵은 선"]
@@ -153,14 +153,13 @@ struct NativePDFPaletteControls: View {
     }
 }
 
-/// Second docked row: tools · colours · thickness slider + styles button · favourites.
+/// Second docked row: tools · colours · thickness slider + styles button.
 struct NativePDFPaletteQuickControls: View {
     @ObservedObject var model: NativePDFWorkspaceModel
     private var highlighter: Bool { model.tool == "highlighter" }
     var body: some View {
         HStack(spacing: 0) {
-            // Tools · colours · thickness scroll in a narrow pane; favourites stay
-            // fixed at the trailing edge so every pane keeps them one tap away.
+            // Let the editing controls use the full width, including in split panes.
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
                     HStack(spacing: 0) { ForEach(NativePDFToolbar.tools, id: \.0) { NativePDFToolbar.toolButton(model, $0) } }
@@ -192,19 +191,6 @@ struct NativePDFPaletteQuickControls: View {
                     }
                 }.fixedSize(horizontal: true, vertical: false)
             }.accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-tool-scroll")
-            group(leadingDivider: true) {
-                ForEach(model.favorites.indices, id: \.self) { index in
-                    let preset = model.favorites[index], selected = model.isPenLike && model.currentPreset == preset
-                    Button { model.chooseFavorite(index) } label: {
-                        VStack(spacing: 0) {
-                            NativePDFSwatch(color: preset.color, size: NativePDFPaletteLook.swatchSize(preset.width), ring: selected)
-                            Text("\(index + 1)").font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted)
-                        }.frame(width: 44, height: 44).contentShape(Rectangle())
-                    }.accessibilityLabel("즐겨찾는 펜 \(index + 1) 바로 선택").accessibilityValue(model.favoriteAccessibilityValue(index))
-                        .accessibilityIdentifier("native-pdf-favorite-\(index)").accessibilityAddTraits(selected ? .isSelected : [])
-                        .contextMenu { Button("현재 펜 저장") { model.saveFavorite(index) }.disabled(!model.isPenLike) }
-                }
-            }.fixedSize(horizontal: true, vertical: false)
         }.frame(height: 44)
     }
     private func group<Content: View>(leadingDivider: Bool = false, @ViewBuilder content: () -> Content) -> some View {
