@@ -119,6 +119,29 @@ final class NativeSidebarParityUITests: XCTestCase {
         capture("Inspector stays available after rotation")
     }
 
+    /// Lecture recording stays out of store builds (NativeReleaseFlags.showsRecording, App Review 2.5.4).
+    @MainActor func testNewTabMenuHasNoRecordingEntry() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
+        openHome(app)
+        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        let courseName = app.textFields["native-course-name"]
+        XCTAssertTrue(courseName.waitForExistence(timeout: 5)); courseName.tap(); courseName.typeText("Physics")
+        app.buttons["native-create-course"].tap()
+        let plus = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
+        XCTAssertTrue(plus.waitForExistence(timeout: 15), app.debugDescription); plus.tap()
+        for id in ["new-browser", "new-whiteboard", "new-note", "chat"] {
+            XCTAssertTrue(app.buttons["native-new-tab-" + id].waitForExistence(timeout: 5), id + app.debugDescription)
+        }
+        XCTAssertFalse(app.buttons["native-new-tab-recording"].exists)
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "녹음")).firstMatch.exists)
+        let search = app.textFields["native-new-tab-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("녹음")
+        XCTAssertTrue(app.staticTexts["일치하는 항목이 없어요"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["native-new-tab-recording"].exists)
+        capture("New tab menu has no recording entry")
+    }
+
     @MainActor private func openHome(_ app: XCUIApplication) {
         let home = app.buttons["native-section-library"]
         XCTAssertTrue(home.waitForExistence(timeout: 25), app.debugDescription)

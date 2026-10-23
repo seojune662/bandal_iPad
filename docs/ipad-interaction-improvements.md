@@ -45,7 +45,6 @@ PDF 텍스트 입력창이 페이지 뒤로 가려져 탭을 받지 못하던 �
 - [11형 세로 화면에서 PDF로 사진 드래그](ipad-interaction-improvements/compact-pdf-drop.png)
 - [드래그한 사진의 Markdown 표시](ipad-interaction-improvements/compact-markdown-drop.png)
 - [시스템 사진 선택기로 가져온 사진](ipad-interaction-improvements/system-photo-picker.png)
-- [외부 사진 앱에서 과목·폴더 선택](ipad-interaction-improvements/external-share-destination.png)
 - [공유한 사진을 지정 폴더로 가져온 결과](ipad-interaction-improvements/external-share-imported.png)
 
 ## 검증 경계
