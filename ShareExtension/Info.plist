@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDevelopmentRegion</key><string>ko</string>
+<key>CFBundleDisplayName</key><string>반달</string>
+<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+<key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
+<key>CFBundlePackageType</key><string>XPC!</string>
+<key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+<key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+<key>NSExtension</key><dict>
+<key>NSExtensionPointIdentifier</key><string>com.apple.share-services</string>
+<key>NSExtensionPrincipalClass</key><string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
+<key>NSExtensionAttributes</key><dict>
+<key>NSExtensionActivationRule</key><string>
+extensionItems.@count &gt; 0 AND
+SUBQUERY(extensionItems, $item,
+    $item.attachments.@count &gt; 0 AND $item.attachments.@count &lt;= 20 AND
+    SUBQUERY($item.attachments, $attachment,
+        ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.pdf" OR
+        ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.image" OR
+        ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text" OR
+        ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "net.daringfireball.markdown" OR
+        ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url"
+    ).@count == $item.attachments.@count
+).@count == extensionItems.@count
+</string>
+</dict>
+</dict>
+</dict></plist>

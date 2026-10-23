@@ -61,6 +61,14 @@ final class NativePDFPageRepository {
     private func row(_ token: String, material: String) throws -> [String: Any] {
         guard let row = try context.query("SELECT * FROM native_pdf_page_history WHERE id=? AND material_id=?", [token, material]).first else { throw C.validation("페이지 변경 복구 기록이 없습니다.") }; return row
     }
+    /// Eligibility reads just one side. Fetching SELECT * copied both large ink
+    /// snapshots even though undo only needs after_json and redo only before_json.
+    private func eligibilityRow(_ token: String, material: String, variant: String) throws -> [String: Any] {
+        guard ["before", "after"].contains(variant) else { throw C.validation("Invalid PDF history variant") }
+        let columns = "course_id,rel_path,\(variant)_sha,\(variant)_json,files_json"
+        guard let row = try context.query("SELECT \(columns) FROM native_pdf_page_history WHERE id=? AND material_id=?", [token, material]).first else { throw C.validation("페이지 변경 복구 기록이 없습니다.") }
+        return row
+    }
     func state(course: String, path: String) throws -> [String: Any] {
         var result: [String: Any] = [:]
         for table in ["pdf_drawings", "annotations", "pdf_view_state"] { result[table] = try context.query("SELECT * FROM \(table) WHERE course_id=? AND rel_path=? ORDER BY \(table == "pdf_view_state" ? "page" : "id")", [course, path]) }
@@ -72,21 +80,55 @@ final class NativePDFPageRepository {
             after[table] = (before[table] as? [[String: Any]] ?? []).map { row -> [String: Any] in
                 guard row["deleted_at"] is NSNull else { return row }
                 var row = row; let page = (row["page"] as? NSNumber)?.intValue ?? 0
-                if page > 0, map.indices.contains(page - 1), let next = map[page - 1].first { row["page"] = next }
+                if page > 0, map.indices.contains(page - 1), let next = map[page - 1].first {
+                    guard next != page else { return row }
+                    row["page"] = next
+                }
                 else if row["deleted_at"] is NSNull { row["deleted_at"] = C.nowISO }
                 row["updated_at"] = C.nowISO; return row
             }
         }
         after["pdf_view_state"] = (before["pdf_view_state"] as? [[String: Any]] ?? []).map { row -> [String: Any] in
             var row = row; let page = (row["page"] as? NSNumber)?.intValue ?? 1
-            row["page"] = page > 0 && map.indices.contains(page - 1) ? map[page - 1].first ?? min(page, count) : 1; row["updated_at"] = C.nowISO; return row
+            let next = page > 0 && map.indices.contains(page - 1) ? map[page - 1].first ?? min(page, count) : 1
+            guard next != page else { return row }
+            row["page"] = next; row["updated_at"] = C.nowISO; return row
         }
         return after
     }
     func applyState(_ state: [String: Any], course: String, path: String) throws {
         for table in ["pdf_drawings", "annotations", "pdf_view_state"] {
-            try context.run("DELETE FROM \(table) WHERE course_id=? AND rel_path=?", [course, path])
-            for row in state[table] as? [[String: Any]] ?? [] { try insert(table, row) }
+            let current = try context.query("SELECT * FROM \(table) WHERE course_id=? AND rel_path=?", [course, path])
+            let incoming = state[table] as? [[String: Any]] ?? []
+            let keyedByID = table != "pdf_view_state"
+            func key(_ row: [String: Any]) throws -> String {
+                guard row["course_id"] as? String == course, row["rel_path"] as? String == path,
+                      !keyedByID || row["id"] is String else { throw C.validation("PDF 페이지 기록의 자료 연결이 올바르지 않습니다.") }
+                return keyedByID ? row["id"] as! String : "view"
+            }
+            var oldRows: [String: [String: Any]] = [:], seen = Set<String>()
+            for row in current { oldRows[try key(row)] = row }
+            for row in incoming {
+                let id = try key(row)
+                guard seen.insert(id).inserted else { throw C.validation("PDF 페이지 기록에 중복된 개체가 있습니다.") }
+                guard let old = oldRows.removeValue(forKey: id) else { try insert(table, row); continue }
+                // Appending a page leaves all existing ink byte-identical. Do
+                // not delete/reinsert megabytes of point JSON for a no-op map.
+                if try NativePDFPageStateEquality.row(old, row) { continue }
+                let clause = "course_id=? AND rel_path=?" + (keyedByID ? " AND id=?" : "")
+                let parameters: [Any] = [course, path] + (keyedByID ? [id] : [])
+                if Set(old.keys) != Set(row.keys) {
+                    try context.run("DELETE FROM \(table) WHERE \(clause)", parameters)
+                    try insert(table, row)
+                } else {
+                    let changed = try row.keys.filter { try !NativePDFPageStateEquality.scalar(old[$0]!, row[$0]!) }.sorted()
+                    guard !changed.isEmpty else { continue }
+                    try context.run("UPDATE \(table) SET \(changed.map { $0 + "=?" }.joined(separator: ",")) WHERE \(clause)", changed.map { row[$0]! } + parameters)
+                }
+            }
+            for id in oldRows.keys {
+                try context.run("DELETE FROM \(table) WHERE course_id=? AND rel_path=?" + (keyedByID ? " AND id=?" : ""), [course, path] + (keyedByID ? [id] : []))
+            }
         }
         for table in ["material_links", "recording_anchors"] { for row in state[table] as? [[String: Any]] ?? [] { try F.upsert(context, table: table, values: row) } }
     }
@@ -153,7 +195,7 @@ final class NativePDFPageRepository {
     private func eligible(_ row: [String: Any], course: String, path: String, revision: String, variant: String) throws -> Bool {
         guard row["course_id"] as? String == course, row["rel_path"] as? String == path, row[variant + "_sha"] as? String == revision else { return false }
         let expected = try F.object(row[variant + "_json"]), actual = try state(course: course, path: path)
-        for table in ["pdf_drawings", "annotations"] { if try F.canonical(expected[table] ?? []) != F.canonical(actual[table] ?? []) { return false } }
+        for table in ["pdf_drawings", "annotations"] { if try !NativePDFPageStateEquality.rows(expected[table] ?? [], actual[table] ?? []) { return false } }
         var related: [String: Set<String>] = [:]
         for row in try context.query("SELECT a.* FROM recording_anchors a JOIN recording_sessions s ON s.id=a.session_id WHERE s.course_id=?", [course]) {
             let value = try F.object(row["payload"])
@@ -195,8 +237,8 @@ final class NativePDFPageRepository {
         }
         var result: [String: Any] = ["documentRevision": revision, "pageCount": info.pageCount, "canUndo": false, "canRedo": false, "canRestructure": info.reason == nil]
         if let reason = info.reason { result["restructureReason"] = reason }
-        if let token = head.0 { let row = try row(token, material: material); result["undoToken"] = token; result["canUndo"] = try eligible(row, course: course, path: path, revision: revision, variant: "after"); result["recoverToken"] = token }
-        if let token = head.1.last { let row = try row(token, material: material); result["redoToken"] = token; result["canRedo"] = try eligible(row, course: course, path: path, revision: revision, variant: "before"); if result["recoverToken"] == nil { result["recoverToken"] = token } }
+        if let token = head.0 { let row = try eligibilityRow(token, material: material, variant: "after"); result["undoToken"] = token; result["canUndo"] = try eligible(row, course: course, path: path, revision: revision, variant: "after"); result["recoverToken"] = token }
+        if let token = head.1.last { let row = try eligibilityRow(token, material: material, variant: "before"); result["redoToken"] = token; result["canRedo"] = try eligible(row, course: course, path: path, revision: revision, variant: "before"); if result["recoverToken"] == nil { result["recoverToken"] = token } }
         if result["recoverToken"] == nil { result["recoverToken"] = try context.query("SELECT id FROM native_pdf_page_history WHERE material_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1", [material]).first?["id"] }
         if result["recoverToken"] != nil { result["recoverVariant"] = "before"; result["reason"] = "변경 뒤 필기나 연결 노트를 수정했다면 원본에 덮어쓰지 않고 변경 전 사본으로 복구할 수 있습니다." }
         return result

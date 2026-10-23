@@ -25,6 +25,28 @@ final class NativeWorkspaceStoreTests: XCTestCase {
         XCTAssertTrue(store.isReady, store.errorMessage ?? "Native workspace did not start")
         return store
     }
+    func testMaterialShareAndExportWaitForPendingDocumentEdits() async throws {
+        let store = try await started()
+        var events: [String] = []
+        let token = store.registerDocumentFlush(id: "pending") { events.append("saved") }
+        defer { store.unregisterDocumentFlush(token) }
+        store.nativeChannelHandler = { channel, _ in events.append(channel); return [:] }
+        for channel in ["materials:share", "materials:export"] {
+            store.markDocumentChanged()
+            _ = try await store.invoke(channel, ["courseId": "course", "relPath": "paper.pdf"])
+        }
+        XCTAssertEqual(events, ["saved", "materials:share", "saved", "materials:export"])
+    }
+    func testFailedPendingSavePreventsLibraryShare() async throws {
+        let store = try await started()
+        let token = store.registerDocumentFlush(id: "pending") { throw DesktopRuntimeError("Unsettled ink") }
+        defer { store.unregisterDocumentFlush(token) }
+        var presented = false
+        store.nativeChannelHandler = { _, _ in presented = true; return [:] }
+        do { _ = try await store.invoke("materials:share", ["courseId": "course", "relPath": "paper.pdf"]); XCTFail("Sharing must not bypass an unfinished save") }
+        catch {}
+        XCTAssertFalse(presented)
+    }
 
     func testNativeFacadeReusesExistingDesktopDatabaseAndPreservesPDFAndInk() async throws {
         let existing = DesktopRuntime(root: directory, legacyRoot: directory.appendingPathComponent("Legacy"))

@@ -13,6 +13,13 @@ final class NativePDFCommittedVisualToken {
             keys: ["kind", "data", "style", "nativePath"])
         visual = snapshot.value; canReuseIdentity = snapshot.identitySafe
     }
+    init(validatedJSON: NativePDFValidatedDrawingJSON) {
+        var appearance: [String: Any] = [:]
+        for key in ["kind", "data", "style", "nativePath"] {
+            appearance[key] = validatedJSON.value[key]
+        }
+        visual = appearance; canReuseIdentity = true
+    }
     func hasSameAppearance(as other: NativePDFCommittedVisualToken) -> Bool {
         if self === other, canReuseIdentity { return true }
         return NativePDFCommittedSceneCache.equal(visual, other.visual)

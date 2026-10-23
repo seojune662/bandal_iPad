@@ -17,6 +17,8 @@ struct NativePagedMarkdownEditor: View {
     let loadImage: (String) async -> UIImage?
     let openLink: (String) -> Void
     let requestInsertion: (String) -> Void
+    var importMedia: (([NativeDroppedMedia]) async throws -> String)? = nil
+    var mediaError: ((String) -> Void)? = nil
     let selectionChanged: (String) -> Void
     let formatsChanged: (Set<String>) -> Void
     let codeLanguageChanged: (String?) -> Void
@@ -100,10 +102,18 @@ struct NativePagedMarkdownEditor: View {
 
     private func pageEditor(_ index: Int, height: CGFloat) -> some View {
         let pane = editors.editor(index, document: document, store: store)
-        return NativeRichTextEditor(session: pane, pageIndex: max(0, index), appendix: index < 0,
+        return NativeAnnotatableTextEditor(editor: NativeRichTextEditor(session: pane, pageIndex: max(0, index), appendix: index < 0,
             sourceMode: sourceMode, fontScale: fontScale, editorFont: editorFont,
             loadImage: loadImage, openLink: openLink, requestInsertion: requestInsertion,
-            selectionChanged: { if editors.activePage == index { selectionChanged($0) } },
+            importMedia: importMedia, mediaError: mediaError,
+            selectionChanged: { text in
+                if store.annotation.request?.documentID == document.id, !text.isEmpty {
+                    editors.activePage = index
+                    if index < 0 { showAppendix = true }
+                    else if pageIndex != index || showAppendix { pageActivated(index) }
+                }
+                if editors.activePage == index { selectionChanged(text) }
+            },
             formatsChanged: { if editors.activePage == index { formatsChanged($0) } },
             codeLanguageChanged: { if editors.activePage == index { codeLanguageChanged($0) } },
             scrollsInternally: (measuredHeights[index] ?? 0) > height + 1,
@@ -116,9 +126,9 @@ struct NativePagedMarkdownEditor: View {
                 editors.activePage = index
                 if index < 0 { showAppendix = true }
                 else if pageIndex != index || showAppendix { pageActivated(index) }
-            })
+            }), document: document, page: index < 0 ? nil : index + 1,
+            editorAccessibilityID: "native-markdown-page-editor-\(index + 1)", coordinator: store.annotation)
             .disabled(!pane.canEdit)
-            .accessibilityIdentifier("native-markdown-page-editor-\(index + 1)")
             .task { await pane.load(); await Task.yield(); editors.editorMounted(index) }
     }
 }

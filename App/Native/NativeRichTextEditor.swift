@@ -11,6 +11,8 @@ struct NativeRichTextEditor: UIViewRepresentable {
     var loadImage: (String) async -> UIImage?
     var openLink: (String) -> Void
     var requestInsertion: (String) -> Void
+    var importMedia: (([NativeDroppedMedia]) async throws -> String)? = nil
+    var mediaError: ((String) -> Void)? = nil
     var selectionChanged: ((String) -> Void)? = nil
     var formatsChanged: ((Set<String>) -> Void)? = nil
     var codeLanguageChanged: ((String?) -> Void)? = nil
@@ -18,24 +20,30 @@ struct NativeRichTextEditor: UIViewRepresentable {
     var compactPaperLayout = false
     var contentHeightChanged: ((CGFloat) -> Void)? = nil
     var focusChanged: ((Bool) -> Void)? = nil
+    var captureViewChanged: ((UIView) -> Void)? = nil
+    var selectionOnly = false
+    var editorAccessibilityID = "native-markdown-textview"
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
     func makeUIView(context: Context) -> UITextView {
         let view = NativeRichTextView(frame: .zero, textContainer: nil)
         let coordinator = context.coordinator
-        coordinator.view = view; view.delegate = coordinator
+        coordinator.view = view; view.delegate = coordinator; view.textDropDelegate = coordinator
         view.backgroundColor = UIColor(NativeDesktopTheme.bgApp); view.tintColor = UIColor(NativeDesktopTheme.accent)
         view.textContainer.lineFragmentPadding = 0; view.alwaysBounceVertical = true
         view.isScrollEnabled = scrollsInternally
+        view.isEditable = !selectionOnly && !session.frozen && !session.retired
         view.compactPaperLayout = compactPaperLayout
         view.keyboardDismissMode = .interactive; view.smartQuotesType = .no; view.smartDashesType = .no
         view.adjustsFontForContentSizeCategory = true
-        view.accessibilityIdentifier = "native-markdown-textview"; view.accessibilityLabel = "텍스트 노트 편집기"
+        view.accessibilityIdentifier = editorAccessibilityID; view.accessibilityLabel = "텍스트 노트 편집기"
         view.command = { [weak coordinator] in coordinator?.format($0) }
         view.compositionEnded = { [weak coordinator] in coordinator?.finishComposition() }
         let tap = UITapGestureRecognizer(target: coordinator, action: #selector(Coordinator.tapped(_:)))
         tap.cancelsTouchesInView = false; tap.delegate = coordinator; view.addGestureRecognizer(tap)
         coordinator.installCallbacks(); coordinator.reset()
+        coordinator.installMediaDrop(on: view)
+        captureViewChanged?(view)
         let toolbar = UIToolbar()
         toolbar.items = [
             UIBarButtonItem(title: "제목", image: UIImage(systemName: "textformat.size"), primaryAction: UIAction { [weak coordinator] _ in coordinator?.format("h2") }),
@@ -50,12 +58,14 @@ struct NativeRichTextEditor: UIViewRepresentable {
         return view
     }
     func updateUIView(_ uiView: UITextView, context: Context) {
+        uiView.accessibilityIdentifier = editorAccessibilityID
+        captureViewChanged?(uiView)
         let c = context.coordinator
-        let pageChanged = c.parent.pageIndex != pageIndex || c.parent.appendix != appendix
+        let pageChanged = c.parent.pageIndex != pageIndex || c.parent.appendix != appendix || c.parent.session !== session
         let modeChanged = c.parent.sourceMode != sourceMode
         let appearanceChanged = c.parent.fontScale != fontScale || c.parent.editorFont != editorFont
         if pageChanged || modeChanged { c.commitComposition() }
-        c.parent = self; uiView.isEditable = !session.frozen && !session.retired; uiView.isScrollEnabled = scrollsInternally
+        c.parent = self; uiView.isEditable = !selectionOnly && !session.frozen && !session.retired; uiView.isScrollEnabled = scrollsInternally
         (uiView as? NativeRichTextView)?.compactPaperLayout = compactPaperLayout
         if pageChanged { c.reset() }
         else if c.lastPublished != session.text && c.source != c.displayText { c.receiveSharedText(reset: false) }
@@ -68,12 +78,13 @@ struct NativeRichTextEditor: UIViewRepresentable {
         return CGSize(width: width, height: height)
     }
     static func dismantleUIView(_ view: UITextView, coordinator: Coordinator) {
-        coordinator.commitComposition(); coordinator.parent.session.prepareForFlush = nil
+        coordinator.commitComposition(); coordinator.cancelImageRequests(); coordinator.parent.session.prepareForFlush = nil
         coordinator.parent.session.applyFormat = nil; coordinator.parent.session.setEditingEnabled = nil
         coordinator.parent.session.applyRemoteText = nil
-        coordinator.menu?.removeFromSuperview(); view.delegate = nil
+        coordinator.imageInspector?.dismiss(animated: false)
+        coordinator.menu?.removeFromSuperview(); view.delegate = nil; view.textDropDelegate = nil
     }
-    @MainActor final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
+    @MainActor final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate, UITextDropDelegate {
         var parent: NativeRichTextEditor
         weak var view: NativeRichTextView?
         var source = "", projection = NativeRichTextDocument("")
@@ -83,7 +94,15 @@ struct NativeRichTextEditor: UIViewRepresentable {
         var compositionSelection = NSRange(location: 0, length: 0)
         var applying = false
         var images: [String: UIImage] = [:], requestedImages = Set<String>()
+        private var imageGeneration = UUID()
+        private var imageTasks: [String: Task<Void, Never>] = [:]
+        private var pendingImagePaths = Set<String>()
+        private var attachmentUpdate: Task<Void, Never>?
         weak var menu: UIView?
+        weak var imageInspector: UIViewController?
+        private var mediaDrop: NativeEditorDropInteraction?
+        private var dropAnchor: (source: String, range: NSRange, page: Int?, appendix: Bool, session: ObjectIdentifier)?
+        private var importingMedia = false
         private var typingGroupOpen = false
         private var typingSelection: NSRange?
         private var typingIdle: Task<Void, Never>?
@@ -97,6 +116,55 @@ struct NativeRichTextEditor: UIViewRepresentable {
         private var pendingEdit: UserEdit?
         private var inputSourceSelection: NSRange?
         init(parent: NativeRichTextEditor) { self.parent = parent }
+        func installMediaDrop(on view: UITextView) {
+            let drop = NativeEditorDropInteraction(view: view, imagesOnly: false) { [weak self] items, _ in self?.receiveMedia(items) }
+            drop.isEnabled = { [weak self] in
+                guard let self else { return false }
+                return !parent.selectionOnly && parent.importMedia != nil && parent.session.canEdit && !parent.session.frozen && !parent.session.retired && !importingMedia
+            }
+            drop.onBegin = { [weak self, weak view] point in
+                guard let self, let view else { return }
+                commitComposition()
+                let location = view.closestPosition(to: point).map { view.offset(from: view.beginningOfDocument, to: $0) } ?? view.selectedRange.location
+                let range = projection.sourceRange(for: NSRange(location: max(0, min(location, (view.text as NSString).length)), length: 0))
+                dropAnchor = (source, NSRange(location: range.location, length: 0), parent.pageIndex, parent.appendix, ObjectIdentifier(parent.session))
+                parent.focusChanged?(true)
+            }
+            drop.onError = { [weak self] error in self?.parent.mediaError?(error.localizedDescription) }
+            mediaDrop = drop
+        }
+        private func receiveMedia(_ items: [NativeDroppedMedia]) {
+            guard let anchor = dropAnchor, let importer = parent.importMedia,
+                  anchor.session == ObjectIdentifier(parent.session),
+                  anchor.page == parent.pageIndex, anchor.appendix == parent.appendix else { return }
+            dropAnchor = nil; importingMedia = true
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer { importingMedia = false }
+                do {
+                    let markup = try await importer(items)
+                    guard parent.session.canEdit, !parent.session.frozen, !parent.session.retired,
+                          anchor.session == ObjectIdentifier(parent.session),
+                          anchor.page == parent.pageIndex, anchor.appendix == parent.appendix else {
+                        throw DesktopRuntimeError("편집 중인 페이지가 바뀌어 첨부를 넣지 않았습니다. 다시 놓아 주세요.")
+                    }
+                    commitComposition()
+                    let inserted = (anchor.source as NSString).replacingCharacters(in: anchor.range, with: markup)
+                    let merged = try NativeMarkdownTextChange.rebase(from: anchor.source, to: inserted, onto: displayText)
+                    let selected = NativeMarkdownTextChange(from: inserted, to: merged).translate(NSRange(location: anchor.range.location + markup.utf16.count, length: 0))
+                    apply(.init(markdown: merged, sourceSelection: selected))
+                    try await parent.session.flush()
+                } catch { parent.mediaError?(error.localizedDescription) }
+            }
+        }
+        func textDroppableView(_ textDroppableView: UIView & UITextDroppable, proposalForDrop drop: UITextDropRequest) -> UITextDropProposal {
+            // File/image drops must use the durable asset path above. UIKit's
+            // default NSTextAttachment insertion would disappear on Markdown save.
+            if drop.dropSession.items.contains(where: { NativeEditorMediaImport.supports($0.itemProvider, imagesOnly: false) }) {
+                return UITextDropProposal(operation: .cancel)
+            }
+            return drop.suggestedProposal
+        }
         var displayText: String {
             if let index = parent.pageIndex, let note = NativePDFPageNoteDocument(parent.session.text) {
                 return parent.appendix ? note.appendix : note.pages.indices.contains(index) ? note.pages[index] : ""
@@ -112,7 +180,9 @@ struct NativeRichTextEditor: UIViewRepresentable {
             }
             parent.session.prepareForFlush = { [weak self] in self?.commitComposition() }
             parent.session.applyFormat = { [weak self] in self?.format($0) }
-            parent.session.setEditingEnabled = { [weak self] enabled in self?.view?.isEditable = enabled }
+            parent.session.setEditingEnabled = { [weak self] enabled in
+                guard let self else { return }; self.view?.isEditable = enabled && !self.parent.selectionOnly
+            }
             parent.session.applyRemoteText = { [weak self] reset in self?.receiveSharedText(reset: reset) }
             view?.contentHeightChanged = { [weak self] height in self?.parent.contentHeightChanged?(height) }
             view?.textInputWillBegin = { [weak self] in
@@ -126,6 +196,8 @@ struct NativeRichTextEditor: UIViewRepresentable {
             }
         }
         func reset() {
+            imageInspector?.dismiss(animated: false)
+            cancelImageRequests()
             endTypingGroup()
             pendingEdit = nil; inputSourceSelection = nil
             source = displayText; projection = NativeRichTextDocument(source, sourceMode: parent.sourceMode); composition = nil
@@ -179,6 +251,7 @@ struct NativeRichTextEditor: UIViewRepresentable {
             guard let view, !applying else { return }
             if view.text != projection.text || composition != nil { acceptDisplayChange(view) }
             else { publish(source, composing: false) }
+            scheduleAttachmentUpdate()
         }
         func textViewDidChange(_ textView: UITextView) { guard let view else { return }; acceptDisplayChange(view) }
         func acceptDisplayChange(_ view: NativeRichTextView) {
@@ -377,18 +450,82 @@ struct NativeRichTextEditor: UIViewRepresentable {
                     attributes[.attachment] = attachment
                 }
                 if style.contains("image"), let path = run.destination {
-                    let attachment = NSTextAttachment(); let image = images[path] ?? placeholder(path)
-                    attachment.image = image
-                    let width = min(max(180, view.bounds.width - 80), min(560, image.size.width)), height = max(40, width * image.size.height / max(1, image.size.width))
-                    attachment.bounds = CGRect(x: 0, y: 0, width: width, height: min(600, height)); attributes[.attachment] = attachment
-                    if requestedImages.insert(path).inserted { Task { [weak self] in guard let self else { return }; if let loaded = await parent.loadImage(path) { images[path] = loaded; render() } } }
+                    attributes[.attachment] = imageAttachment(images[path] ?? placeholder(path), layout: run.imageLayout)
+                    if let layout = run.imageLayout {
+                        let p = paragraph.mutableCopy() as! NSMutableParagraphStyle
+                        p.alignment = layout.alignment == .center ? .center : layout.alignment == .right ? .right : .left
+                        attributes[.paragraphStyle] = p
+                    }
+                    requestImage(path)
                 }
                 attributed.addAttributes(attributes, range: run.visible)
             }
             view.attributedText = attributed
+            pendingImagePaths.removeAll()
             let location = min(selected.location, attributed.length), length = min(selected.length, attributed.length - location)
             view.selectedRange = NSRange(location: location, length: length); view.typingAttributes = base
             view.isEditable = !parent.session.frozen && !parent.session.retired
+        }
+        func cancelImageRequests() {
+            imageGeneration = UUID()
+            for task in imageTasks.values { task.cancel() }
+            imageTasks.removeAll(); requestedImages.removeAll(); images.removeAll()
+            pendingImagePaths.removeAll(); attachmentUpdate?.cancel(); attachmentUpdate = nil
+        }
+        private func requestImage(_ path: String) {
+            guard requestedImages.insert(path).inserted else { return }
+            let generation = imageGeneration, session = parent.session, loader = parent.loadImage
+            imageTasks[path] = Task { @MainActor [weak self] in
+                let loaded = await loader(path)
+                guard let self, !Task.isCancelled, imageGeneration == generation,
+                      parent.session === session, !session.retired else { return }
+                imageTasks[path] = nil
+                guard projection.runs.contains(where: { $0.styles.contains("image") && $0.destination == path }) else {
+                    requestedImages.remove(path); return
+                }
+                guard let loaded else { return }
+                images[path] = loaded; pendingImagePaths.insert(path)
+                scheduleAttachmentUpdate()
+            }
+        }
+        private func scheduleAttachmentUpdate() {
+            guard !pendingImagePaths.isEmpty, attachmentUpdate == nil else { return }
+            let generation = imageGeneration
+            attachmentUpdate = Task { @MainActor [weak self] in
+                await Task.yield()
+                guard let self, !Task.isCancelled, imageGeneration == generation else { return }
+                attachmentUpdate = nil
+                updateLoadedAttachments()
+            }
+        }
+        /// Image completions only replace attachment attributes, never the
+        /// text storage contents, caret, undo history, or active IME composition.
+        /// Several completions in one turn share this single update.
+        private func updateLoadedAttachments() {
+            guard let view, !applying, view.markedTextRange == nil, composition == nil,
+                  !parent.session.retired, !parent.session.frozen,
+                  view.text == projection.text else { return }
+            let paths = pendingImagePaths; pendingImagePaths.removeAll()
+            guard !paths.isEmpty else { return }
+            applying = true; defer { applying = false }
+            view.textStorage.beginEditing()
+            for run in projection.runs where run.styles.contains("image") {
+                guard let path = run.destination, paths.contains(path), let image = images[path],
+                      run.visible.location >= 0, NSMaxRange(run.visible) <= view.textStorage.length else { continue }
+                view.textStorage.addAttribute(.attachment, value: imageAttachment(image, layout: run.imageLayout), range: run.visible)
+            }
+            view.textStorage.endEditing()
+            view.setNeedsLayout()
+        }
+        private func imageAttachment(_ image: UIImage, layout: NativeRichTextImageLayout?) -> NSTextAttachment {
+            let attachment = NSTextAttachment(); attachment.image = image
+            let available = max(40, (view?.bounds.width ?? 640) - (view?.textContainerInset.left ?? 28) - (view?.textContainerInset.right ?? 28))
+            let base = min(560, available)
+            let width = layout?.widthPercent.map { base * CGFloat($0) / 100 } ?? min(base, image.size.width)
+            let height = width * image.size.height / max(1, image.size.width)
+            let scale = min(1, 600 / max(1, height))
+            attachment.bounds = CGRect(x: 0, y: 0, width: width * scale, height: height * scale)
+            return attachment
         }
         private func placeholder(_ path: String) -> UIImage {
             UIGraphicsImageRenderer(size: CGSize(width: 420, height: 120)).image { context in
@@ -399,6 +536,15 @@ struct NativeRichTextEditor: UIViewRepresentable {
         }
         @objc func tapped(_ recognizer: UITapGestureRecognizer) {
             guard let view, view.isEditable, !parent.sourceMode, let position = view.closestPosition(to: recognizer.location(in: view)) else { return }
+            // closestPosition can report the caret *after* an attachment when its
+            // right half is tapped. Hit its rendered rectangle instead.
+            let point = recognizer.location(in: view)
+            if let image = projection.runs.first(where: { run in
+                guard run.styles.contains("image") else { return false }
+                return attachmentRect(run).insetBy(dx: -4, dy: -4).contains(point)
+            }) {
+                showImageInspector(image); return
+            }
             let offset = view.offset(from: view.beginningOfDocument, to: position)
             if let link = projection.runs.first(where: { NSLocationInRange(offset, $0.visible) && ($0.styles.contains("link") || $0.styles.contains("wikilink")) }), let destination = link.destination {
                 parent.openLink(destination); return
@@ -410,6 +556,58 @@ struct NativeRichTextEditor: UIViewRepresentable {
             let raw = (source as NSString).substring(with: run.source), checked = run.styles.contains("checked")
             let replacement = raw.replacingOccurrences(of: checked ? #"\[[xX]\]"# : #"\[ \]"#, with: checked ? "[ ]" : "[x]", options: .regularExpression)
             apply(.init(markdown: (source as NSString).replacingCharacters(in: run.source, with: replacement), sourceSelection: NSRange(location: NSMaxRange(run.source), length: 0)))
+        }
+        private func attachmentRect(_ run: NativeRichTextDocument.Run) -> CGRect {
+            guard let view else { return .zero }
+            let glyphs = view.layoutManager.glyphRange(forCharacterRange: run.visible, actualCharacterRange: nil)
+            return view.layoutManager.boundingRect(forGlyphRange: glyphs, in: view.textContainer)
+                .offsetBy(dx: view.textContainerInset.left, dy: view.textContainerInset.top)
+        }
+        func showImageInspector(_ image: NativeRichTextDocument.Run) {
+            guard let view, !parent.session.frozen, !parent.session.retired, imageInspector == nil else { return }
+            let beforeComposition = source
+            commitComposition()
+            let currentRange = NativeMarkdownTextChange(from: beforeComposition, to: source).translate(image.source)
+            guard let image = projection.runs.first(where: { $0.styles.contains("image") && $0.source == currentRange }) else { return }
+            var responder: UIResponder? = view
+            while responder != nil, !(responder is UIViewController) { responder = responder?.next }
+            guard let presenter = responder as? UIViewController, presenter.presentedViewController == nil else { return }
+            view.resignFirstResponder(); view.selectedRange = image.visible
+            var expectedSource = source, selected = image.source
+            let attachment = view.attributedText.attribute(.attachment, at: image.visible.location, effectiveRange: nil) as? NSTextAttachment
+            let available = min(560, max(40, view.bounds.width - view.textContainerInset.left - view.textContainerInset.right))
+            let currentWidth = image.imageLayout?.widthPercent.map(Double.init) ?? Double((attachment?.bounds.width ?? available) / available * 100)
+            let controller = UIHostingController(rootView: NativeMarkdownImageInspector(
+                layout: image.imageLayout ?? NativeRichTextImageLayout(),
+                widthPercent: min(100, max(20, currentWidth)),
+                action: { [weak self] command in
+                    guard let self, let view = self.view, !parent.session.frozen, !parent.session.retired else { return }
+                    // A peer pane may have edited the note while this popover was
+                    // open. Never apply its old image range to different content.
+                    guard source == expectedSource, displayText == expectedSource else {
+                        imageInspector?.dismiss(animated: true)
+                        parent.mediaError?("문서가 변경되었습니다. 이미지를 다시 선택해 주세요.")
+                        return
+                    }
+                    let start = projection.visibleOffset(for: selected.location)
+                    let end = projection.visibleOffset(for: NSMaxRange(selected))
+                    let visible = NSRange(location: start, length: max(1, end - start))
+                    let edit = NativeRichTextCommands.apply(command, to: projection, selection: visible)
+                    apply(edit)
+                    expectedSource = source; selected = edit.sourceSelection
+                    if command == "image-delete" { imageInspector?.dismiss(animated: true) }
+                    else { view.scrollRangeToVisible(view.selectedRange) }
+                },
+                close: { [weak self] in self?.imageInspector?.dismiss(animated: true) }
+            ))
+            controller.modalPresentationStyle = .popover
+            controller.preferredContentSize = CGSize(width: 300, height: 260)
+            if let popover = controller.popoverPresentationController {
+                popover.sourceView = view; popover.sourceRect = attachmentRect(image)
+                popover.permittedArrowDirections = [.up, .down]
+            }
+            imageInspector = controller
+            presenter.present(controller, animated: true)
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
         func updateSlashMenu() {
@@ -441,6 +639,44 @@ struct NativeRichTextEditor: UIViewRepresentable {
             view.addSubview(scroll); menu = scroll
         }
         @objc func done() { menu?.removeFromSuperview(); view?.resignFirstResponder() }
+    }
+}
+
+private struct NativeMarkdownImageInspector: View {
+    @State var layout: NativeRichTextImageLayout
+    @State var widthPercent: Double
+    let action: (String) -> Void
+    let close: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("이미지").font(.headline)
+                Spacer()
+                Button("완료", action: close)
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text("크기 \(Int(widthPercent))%").font(.subheadline)
+                Slider(value: $widthPercent,
+                       in: 20...100, step: 5, onEditingChanged: { editing in
+                    if !editing { action("image-width:" + String(Int(widthPercent))) }
+                })
+                .accessibilityLabel("이미지 크기").accessibilityIdentifier("native-markdown-image-size")
+            }
+            Picker("위치", selection: $layout.alignment) {
+                Image(systemName: "text.alignleft").tag(NativeRichTextImageLayout.Alignment.left).accessibilityLabel("왼쪽")
+                Image(systemName: "text.aligncenter").tag(NativeRichTextImageLayout.Alignment.center).accessibilityLabel("가운데")
+                Image(systemName: "text.alignright").tag(NativeRichTextImageLayout.Alignment.right).accessibilityLabel("오른쪽")
+            }
+            .pickerStyle(.segmented).accessibilityIdentifier("native-markdown-image-alignment")
+            .onChange(of: layout.alignment) { _, alignment in action("image-align:" + alignment.rawValue) }
+            HStack {
+                Button("위로", systemImage: "arrow.up") { action("image-move-up") }
+                Spacer()
+                Button("아래로", systemImage: "arrow.down") { action("image-move-down") }
+                Spacer()
+                Button("삭제", systemImage: "trash", role: .destructive) { action("image-delete") }
+            }.font(.subheadline)
+        }.padding(20)
     }
 }
 

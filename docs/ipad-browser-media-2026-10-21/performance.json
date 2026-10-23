@@ -1,0 +1,30 @@
+{
+  "fixture": {
+    "pages": 6,
+    "drawingRows": 7094,
+    "jsonBytes": 53658974,
+    "privateFixtureCommitted": false
+  },
+  "environment": "iPad iOS 26.3 simulator, Debug, same local fixture copy",
+  "before": {
+    "warmSimulatorOpenMS": 5236.951791681349,
+    "appendMS": 4621.8514166539535
+  },
+  "after": {
+    "openMS": 3204.1900000185706,
+    "appendMS": 2995.5414999858476,
+    "courseReopenMS": [
+      2097.825708333403,
+      2150.9788333205506
+    ],
+    "reopenNewDecodes": [
+      0,
+      0
+    ]
+  },
+  "notes": [
+    "The before/after open runs use the same fixture and simulator; the very first simulator boot measurement was excluded from the headline comparison.",
+    "Course reopen is after switching to another empty course; the bounded cache may evict drawings from multiple large documents.",
+    "These are simulator measurements, not physical iPad timings."
+  ]
+}

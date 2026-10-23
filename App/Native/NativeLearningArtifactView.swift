@@ -7,10 +7,17 @@ struct NativeLearningArtifactView: View {
     @State private var revealed: Set<String> = []
     @State private var rated: Set<String> = []
     private var kind: String { artifact["kind"] as? String ?? "" }
+    private var isExam: Bool { artifact["generationMode"] as? String == "expected-exam" }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text(artifact["title"] as? String ?? "학습 자료").font(NativeDesktopTheme.font(26, weight: .semibold))
+                if artifact["generationMode"] as? String == "expected-exam" {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("AI 생성 예상문제", systemImage: "sparkles").font(.subheadline.weight(.medium))
+                        Text([artifact["difficulty"] as? String, (artifact["questionCount"] as? Int).map { "\($0)문항" }, artifact["scope"] as? String].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 if kind == "summary" { Text(LocalizedStringKey(artifact["markdown"] as? String ?? "")).textSelection(.enabled).lineSpacing(5) }
                 else if kind == "cards" { cards }
                 else if kind == "quiz" { quiz }
@@ -46,9 +53,15 @@ struct NativeLearningArtifactView: View {
     private var quiz: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack { Text(model.completed ? "풀이 완료" : model.saved ? "답안 저장됨" : "답안 저장 중…").font(.caption).foregroundStyle(.secondary); Spacer(); if model.completed { Button("다시 풀기") { model.retryQuiz() } } }
-            ForEach(Array((artifact["questions"] as? [[String: Any]] ?? []).enumerated()), id: \.offset) { index, question in NativeLearningQuizQuestion(model: model, question: question, number: index + 1) }
+            ForEach(Array((artifact["questions"] as? [[String: Any]] ?? []).enumerated()), id: \.offset) { index, question in NativeLearningQuizQuestion(model: model, question: question, number: index + 1, requiresSubmission: isExam) }
             if model.completed { Text("점수 \((model.attempt?["score"] as? NSNumber)?.intValue ?? 0) / \((model.attempt?["total"] as? NSNumber)?.intValue ?? 0)").font(.headline) }
-            else { Button("풀이 마치기", systemImage: "checkmark.circle") { Task { await model.finishQuiz() } }.buttonStyle(.borderedProminent).accessibilityIdentifier("native-learning-finish-quiz") }
+            else if isExam && !model.submitted {
+                Button("답안 제출", systemImage: "checkmark.circle") { Task { await model.submitExam() } }
+                    .buttonStyle(.borderedProminent).accessibilityIdentifier("native-learning-submit-exam")
+            } else {
+                if isExam { Text("제출한 답안을 확인하고 서술형을 자기 점검해 주세요.").font(.subheadline).foregroundStyle(.secondary) }
+                Button("풀이 마치기", systemImage: "checkmark.circle") { Task { await model.finishQuiz() } }.buttonStyle(.borderedProminent).accessibilityIdentifier("native-learning-finish-quiz")
+            }
         }
     }
 }
@@ -57,6 +70,7 @@ private struct NativeLearningQuizQuestion: View {
     @ObservedObject var model: NativeLearningWorkspaceModel
     let question: [String: Any]
     let number: Int
+    var requiresSubmission = false
     @State private var showAnswer = false
     private var id: String { question["id"] as? String ?? "" }
     private var type: String { question["type"] as? String ?? "" }
@@ -65,16 +79,16 @@ private struct NativeLearningQuizQuestion: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("\(number). " + (question["prompt"] as? String ?? "")).font(.headline).textSelection(.enabled)
             if type == "choice" { choices }
-            else { TextField("답을 입력하세요", text: answer, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...8).disabled(model.completed).accessibilityIdentifier("native-learning-answer-" + id) }
-            if model.completed || (type == "short-answer" && showAnswer) { solution }
-            else if type == "short-answer" { Button("모범 답안과 비교") { showAnswer = true }.disabled((model.answers[id] ?? "").isEmpty) }
+            else { TextField("답을 입력하세요", text: answer, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...8).disabled(model.completed || requiresSubmission && model.submitted).accessibilityIdentifier("native-learning-answer-" + id) }
+            if model.completed || requiresSubmission && model.submitted || (!requiresSubmission && type == "short-answer" && showAnswer) { solution }
+            else if type == "short-answer" && !requiresSubmission { Button("모범 답안과 비교") { showAnswer = true }.disabled((model.answers[id] ?? "").isEmpty) }
         }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 10))
     }
     private var choices: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array((question["options"] as? [[String: Any]] ?? []).enumerated()), id: \.offset) { _, option in
                 let optionID = option["id"] as? String ?? ""
-                Button { model.answer(id, text: optionID) } label: { HStack { Image(systemName: model.answers[id] == optionID ? "largecircle.fill.circle" : "circle"); Text(option["text"] as? String ?? ""); Spacer() }.frame(minHeight: 44).contentShape(Rectangle()) }.buttonStyle(.plain).disabled(model.completed)
+                Button { model.answer(id, text: optionID) } label: { HStack { Image(systemName: model.answers[id] == optionID ? "largecircle.fill.circle" : "circle"); Text(option["text"] as? String ?? ""); Spacer() }.frame(minHeight: 44).contentShape(Rectangle()) }.buttonStyle(.plain).disabled(model.completed || requiresSubmission && model.submitted)
             }
         }
     }

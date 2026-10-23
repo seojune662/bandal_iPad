@@ -1,0 +1,101 @@
+{
+  "measuredAt": "2026-10-20",
+  "platform": "iOS Simulator 26.3.1, iPad Pro 13-inch M5, Debug",
+  "fixture": "Private read-only copied document; fixture assets excluded from repository",
+  "baselineScope": "Whole-workspace baseline was recorded during this performance investigation, after initial snapshot optimization; it is not an unmodified build-4 baseline",
+  "workspaceDuringInvestigation": {
+    "afterPages": 7,
+    "appendMS": 9571.87541667372,
+    "beforePages": 6,
+    "errors": 0,
+    "openMS": 6042.6759999973,
+    "rows": 7094
+  },
+  "workspaceFinal": {
+    "afterPages": 7,
+    "appendMS": 5113.835124997422,
+    "beforePages": 6,
+    "errors": 0,
+    "openMS": 4116.852416671463,
+    "rows": 7094
+  },
+  "snapshotAndPeerBeforeHint": {
+    "jsonBytes": 53658974,
+    "pages": 6,
+    "parseMS": 1023.9293333434034,
+    "peerUpdateMS": 684.6172083314741,
+    "rows": 7094,
+    "snapshotIngestMS": 378.79425000573974
+  },
+  "snapshotAndPeerFinal": {
+    "jsonBytes": 53658974,
+    "pages": 6,
+    "parseMS": 1029.0769583225483,
+    "peerUpdateMS": 2.3108750028768554,
+    "rows": 7094,
+    "snapshotIngestMS": 378.45845833362546
+  },
+  "initialSnapshotIngestBeforeOptimizationMS": 1999.816,
+  "limitations": [
+    "Single same-fixture measurements, not statistical latency guarantees",
+    "Simulator figures do not measure physical iPad or Apple Pencil latency",
+    "File preparation and fixture insertion excluded; actual model open/append and all-ink preservation checked"
+  ],
+  "regressionValidation": {
+    "broadRun": {
+      "bundle": ".build/performance-regressions.xcresult",
+      "total": 698,
+      "passed": 691,
+      "skipped": 6,
+      "failed": 1,
+      "assertionFailures": 15,
+      "failure": "Existing stable textbox creation token test exposed incomplete first-load baseline after scoped query optimization"
+    },
+    "afterCorrection": {
+      "bundle": ".build/performance-recovery-final.xcresult",
+      "total": 78,
+      "passed": 77,
+      "skipped": 1,
+      "failed": 0,
+      "scope": "Targeted regression rerun after correction; not a rerun of all 698 broad-regression tests",
+      "skipReason": "Private document replay requires an explicit local fixture",
+      "includes": [
+        "Unchanged previously failing creation-retry regression",
+        "Fresh drawing/object/annotation canonical baseline tests",
+        "Committed page change retry after destination save failure",
+        "Committed page change retry after adopting new revision but failing ink reload",
+        "Host and workspace mutation barriers"
+      ]
+    },
+    "finalUI": {
+      "bundle": ".build/performance-ui-final.xcresult",
+      "platform": "iOS Simulator",
+      "total": 3,
+      "passed": 3,
+      "skipped": 0,
+      "failed": 0,
+      "tests": [
+        "NativeExternalShareUITests.testPhotosShareChoosesCourseAndFolderAndImportsOnForeground",
+        "NativeLibraryPresentationUITests.testMaterialViewsPersistAndSourceTrayStaysAvailable",
+        "NativePDFWritingUITests.testLassoDragAutoscrollMovesInkAcrossPagesWithUndoAndSavesAfterRestart"
+      ],
+      "flows": [
+        "Actual Photos share sheet to Bandal, explicit course and folder selection, foreground import and restart",
+        "Material view preferences persist and the source tray remains accessible",
+        "Lasso drag autoscroll moves ink across pages, undo works, and saved content survives restart"
+      ]
+    }
+  },
+  "releaseValidation": {
+    "version": "1.0.0(5)",
+    "configuration": "Release",
+    "build": "passed",
+    "signingCheck": "passed",
+    "physicalDeviceInstallation": "passed",
+    "physicalDeviceDataPreservationComparison": "passed",
+    "normalLaunchWithoutTestArguments": "passed",
+    "installationEvidence": "performance-device-installation.json",
+    "signingEvidence": "performance-device-signing.json",
+    "dataPreservationEvidence": "performance-device-data-preservation.json"
+  }
+}

@@ -1,0 +1,413 @@
+{
+  "schema_version": 1,
+  "mode": "comparison",
+  "privacy": "No user filenames, paths, contents, or individual document hashes included",
+  "sqlite_policy": "Integrity and row reads use temporary database+WAL copies; source backups are never opened by SQLite",
+  "before": {
+    "regular_file_count": 139,
+    "total_bytes": 1685582157,
+    "material_file_count": 86,
+    "material_bytes": 129504794,
+    "material_hash_multiset_sha256": "64b1456f55dd58de675876df468fd7eacb4311a0a350ccf147a2722212868f64",
+    "sqlite_database_count": 4,
+    "empty_database_file_count": 2,
+    "nonempty_invalid_database_file_count": 0,
+    "symlinks_skipped": 0
+  },
+  "databases": [
+    {
+      "database_ordinal": 1,
+      "before": {
+        "integrity_ok": true,
+        "integrity_error_count": 0,
+        "table_count": 5,
+        "ink_tables": []
+      },
+      "after": {
+        "integrity_ok": true,
+        "integrity_error_count": 0,
+        "table_count": 5,
+        "ink_tables": []
+      },
+      "ink_row_preservation": []
+    },
+    {
+      "database_ordinal": 2,
+      "before": {
+        "integrity_ok": true,
+        "integrity_error_count": 0,
+        "table_count": 66,
+        "ink_tables": [
+          {
+            "table": "annotation_create_receipts",
+            "columns": 3,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "annotations",
+            "columns": 11,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "drawing_create_receipts",
+            "columns": 3,
+            "rows": 30,
+            "all_columns_rows_sha256": "e3265c65ca04ea6fc74ba2662887a8b6e57fb7dfc755afb0222dacbd9757e54a"
+          },
+          {
+            "table": "drawing_replace_receipts",
+            "columns": 4,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "pdf_drawings",
+            "columns": 10,
+            "rows": 30,
+            "all_columns_rows_sha256": "69b908b4efc396146dadea40050b69ea06371edb385e28b4aee1f4e4b7a27cce"
+          },
+          {
+            "table": "whiteboard_local_shapes",
+            "columns": 9,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "whiteboard_shapes_cache",
+            "columns": 12,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "after": {
+        "integrity_ok": true,
+        "integrity_error_count": 0,
+        "table_count": 66,
+        "ink_tables": [
+          {
+            "table": "annotation_create_receipts",
+            "columns": 3,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "annotations",
+            "columns": 11,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "drawing_create_receipts",
+            "columns": 3,
+            "rows": 30,
+            "all_columns_rows_sha256": "e3265c65ca04ea6fc74ba2662887a8b6e57fb7dfc755afb0222dacbd9757e54a"
+          },
+          {
+            "table": "drawing_replace_receipts",
+            "columns": 4,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "pdf_drawings",
+            "columns": 10,
+            "rows": 30,
+            "all_columns_rows_sha256": "69b908b4efc396146dadea40050b69ea06371edb385e28b4aee1f4e4b7a27cce"
+          },
+          {
+            "table": "whiteboard_local_shapes",
+            "columns": 9,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "whiteboard_shapes_cache",
+            "columns": 12,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "ink_row_preservation": [
+        {
+          "table": "annotation_create_receipts",
+          "all_baseline_columns_available": true,
+          "before_rows": 0,
+          "after_rows": 0,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "annotations",
+          "all_baseline_columns_available": true,
+          "before_rows": 0,
+          "after_rows": 0,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "drawing_create_receipts",
+          "all_baseline_columns_available": true,
+          "before_rows": 30,
+          "after_rows": 30,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "drawing_replace_receipts",
+          "all_baseline_columns_available": true,
+          "before_rows": 0,
+          "after_rows": 0,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "pdf_drawings",
+          "all_baseline_columns_available": true,
+          "before_rows": 30,
+          "after_rows": 30,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "whiteboard_local_shapes",
+          "all_baseline_columns_available": true,
+          "before_rows": 0,
+          "after_rows": 0,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "whiteboard_shapes_cache",
+          "all_baseline_columns_available": true,
+          "before_rows": 0,
+          "after_rows": 0,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        }
+      ]
+    },
+    {
+      "database_ordinal": 3,
+      "before": {
+        "integrity_ok": true,
+        "integrity_error_count": 0,
+        "table_count": 5,
+        "ink_tables": []
+      },
+      "after": {
+        "integrity_ok": true,
+        "integrity_error_count": 0,
+        "table_count": 5,
+        "ink_tables": []
+      },
+      "ink_row_preservation": []
+    },
+    {
+      "database_ordinal": 4,
+      "before": {
+        "integrity_ok": true,
+        "integrity_error_count": 0,
+        "table_count": 66,
+        "ink_tables": [
+          {
+            "table": "annotation_create_receipts",
+            "columns": 3,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "annotations",
+            "columns": 11,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "drawing_create_receipts",
+            "columns": 3,
+            "rows": 12292,
+            "all_columns_rows_sha256": "7b7762dc0f91f9381a383598abe4f844e9ef36d5d807e374f09a62500218b17f"
+          },
+          {
+            "table": "drawing_replace_receipts",
+            "columns": 4,
+            "rows": 55,
+            "all_columns_rows_sha256": "2b5ced6c2118ad7473570d551244603e22e72eab5ebb7366c218fbb294e50ffc"
+          },
+          {
+            "table": "pdf_drawings",
+            "columns": 10,
+            "rows": 12292,
+            "all_columns_rows_sha256": "7d4fd8a8da6fd447b5014a84f4f058a04aacb68573b8ae937ef4d81b69258d28"
+          },
+          {
+            "table": "whiteboard_local_shapes",
+            "columns": 9,
+            "rows": 43,
+            "all_columns_rows_sha256": "a447ff7f1927a7b508a3b699da2e383003a90868eb385f152d45f1f5ef05ff8a"
+          },
+          {
+            "table": "whiteboard_shapes_cache",
+            "columns": 12,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "after": {
+        "integrity_ok": true,
+        "integrity_error_count": 0,
+        "table_count": 66,
+        "ink_tables": [
+          {
+            "table": "annotation_create_receipts",
+            "columns": 3,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "annotations",
+            "columns": 11,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "table": "drawing_create_receipts",
+            "columns": 3,
+            "rows": 12292,
+            "all_columns_rows_sha256": "7b7762dc0f91f9381a383598abe4f844e9ef36d5d807e374f09a62500218b17f"
+          },
+          {
+            "table": "drawing_replace_receipts",
+            "columns": 4,
+            "rows": 55,
+            "all_columns_rows_sha256": "2b5ced6c2118ad7473570d551244603e22e72eab5ebb7366c218fbb294e50ffc"
+          },
+          {
+            "table": "pdf_drawings",
+            "columns": 10,
+            "rows": 12292,
+            "all_columns_rows_sha256": "7d4fd8a8da6fd447b5014a84f4f058a04aacb68573b8ae937ef4d81b69258d28"
+          },
+          {
+            "table": "whiteboard_local_shapes",
+            "columns": 9,
+            "rows": 43,
+            "all_columns_rows_sha256": "a447ff7f1927a7b508a3b699da2e383003a90868eb385f152d45f1f5ef05ff8a"
+          },
+          {
+            "table": "whiteboard_shapes_cache",
+            "columns": 12,
+            "rows": 0,
+            "all_columns_rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "ink_row_preservation": [
+        {
+          "table": "annotation_create_receipts",
+          "all_baseline_columns_available": true,
+          "before_rows": 0,
+          "after_rows": 0,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "annotations",
+          "all_baseline_columns_available": true,
+          "before_rows": 0,
+          "after_rows": 0,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "drawing_create_receipts",
+          "all_baseline_columns_available": true,
+          "before_rows": 12292,
+          "after_rows": 12292,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "drawing_replace_receipts",
+          "all_baseline_columns_available": true,
+          "before_rows": 55,
+          "after_rows": 55,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "pdf_drawings",
+          "all_baseline_columns_available": true,
+          "before_rows": 12292,
+          "after_rows": 12292,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "whiteboard_local_shapes",
+          "all_baseline_columns_available": true,
+          "before_rows": 43,
+          "after_rows": 43,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        },
+        {
+          "table": "whiteboard_shapes_cache",
+          "all_baseline_columns_available": true,
+          "before_rows": 0,
+          "after_rows": 0,
+          "baseline_rows_not_identical": 0,
+          "new_or_modified_rows": 0,
+          "all_baseline_rows_preserved": true
+        }
+      ]
+    }
+  ],
+  "after": {
+    "regular_file_count": 140,
+    "total_bytes": 1685764840,
+    "material_file_count": 86,
+    "material_bytes": 129504794,
+    "material_hash_multiset_sha256": "64b1456f55dd58de675876df468fd7eacb4311a0a350ccf147a2722212868f64",
+    "sqlite_database_count": 4,
+    "empty_database_file_count": 2,
+    "nonempty_invalid_database_file_count": 0,
+    "symlinks_skipped": 0
+  },
+  "material_preservation": {
+    "baseline_count": 86,
+    "identical_at_same_relative_path": 86,
+    "changed_at_same_relative_path": 0,
+    "missing_at_same_relative_path": 0,
+    "additional_files": 0,
+    "all_baseline_bytes_preserved_at_same_relative_path": true
+  },
+  "all_files_observation": {
+    "baseline_count": 139,
+    "identical_at_same_relative_path": 132,
+    "changed_at_same_relative_path": 7,
+    "missing_at_same_relative_path": 0,
+    "additional_files": 1,
+    "all_baseline_bytes_preserved_at_same_relative_path": false
+  },
+  "additional_databases": [],
+  "preservation_checks_passed": true,
+  "scope": "Original material bytes, SQLite integrity, and every baseline value in drawing/annotation/ink tables; unrelated metadata changes are counted but do not fail this scoped check"
+}

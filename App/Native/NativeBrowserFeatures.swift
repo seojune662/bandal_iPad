@@ -69,8 +69,7 @@ extension NativeBrowserSession {
         }
     }
     func home() async throws {
-        let home = (preferences["browser"] as? [String: Any])?["homePage"] as? String ?? ""
-        try await navigate(home.isEmpty ? "about:blank" : home)
+        try await navigate(NativeBrowserAddress.homeURL(preferences: preferences))
     }
     func zoom(_ direction: Int?) async throws {
         try await action("setZoomLevel", args: [direction.map { min(8, max(-8, zoomLevel + Double($0))) } ?? defaultZoom])
@@ -152,7 +151,7 @@ extension NativeBrowserSession {
             Task {
                 do {
                     let url = try Self.addressURL(text, searchEngine: preferences["browserSearchEngine"] as? String ?? "google")
-                    let createdID = try await add(profileID: source.profileID, isPrivate: source.isPrivate)
+                    let createdID = try await add(profileID: source.profileID, isPrivate: source.isPrivate, initialURL: "about:blank")
                     try await action("loadURL", args: [url.absoluteString], tabID: createdID)
                 } catch { self.error = error.localizedDescription }
             }; return

@@ -123,3 +123,43 @@ final class NativeLearningWorkspaceTests: XCTestCase {
         await model.close()
     }
 }
+
+extension NativeLearningWorkspaceTests {
+    func testIndependentArtifactTabsFlushBothAnswersWithoutReplacingEachOther() async throws {
+        let first = NativeLearningWorkspaceModel(store: store, binding: binding, detailID: "artifact-tab-a")
+        let second = NativeLearningWorkspaceModel(store: store, binding: binding, detailID: "artifact-tab-b")
+        await first.start(); await first.openArtifact("quiz-a")
+        await second.start(); await second.openArtifact("quiz-b")
+        first.answer("short", text: "First independent draft", check: true)
+        second.answer("short", text: "Second independent draft", check: false)
+        try await store.flushDocuments()
+        XCTAssertEqual(first.answers["short"], "First independent draft")
+        XCTAssertEqual(second.answers["short"], "Second independent draft")
+        await first.close(); await second.close()
+        let reopened = NativeLearningWorkspaceModel(store: store, binding: binding)
+        await reopened.start(); await reopened.openArtifact("quiz-a")
+        XCTAssertEqual(reopened.answers["short"], "First independent draft")
+        XCTAssertEqual(reopened.selfChecks["short"], true)
+        await reopened.openArtifact("quiz-b")
+        XCTAssertEqual(reopened.answers["short"], "Second independent draft")
+        XCTAssertEqual(reopened.selfChecks["short"], false)
+        await reopened.close()
+    }
+}
+
+extension NativeLearningWorkspaceTests {
+    func testDeleteAfterFlushAndRestorePreservesPendingQuizDraft() async throws {
+        let model = NativeLearningWorkspaceModel(store: store, binding: binding, detailID: "deleting-project-quiz")
+        await model.start(); await model.openArtifact("quiz-a")
+        model.answer("short", text: "Draft typed immediately before deleting project")
+        try await store.flushDocuments()
+        _ = try await store.invoke("learning:delete", ["binding": binding.request])
+        await model.close()
+        _ = try await store.invoke("learning:restore", ["binding": binding.request])
+        let restored = NativeLearningWorkspaceModel(store: store, binding: binding)
+        await restored.start(); await restored.openArtifact("quiz-a")
+        XCTAssertEqual(restored.answers["short"], "Draft typed immediately before deleting project")
+        XCTAssertNil(store.errorMessage)
+        await restored.close()
+    }
+}

@@ -33,37 +33,45 @@ struct NativeBrowserFindBar: View {
 struct NativeBrowserStartPage: View {
     @ObservedObject var session: NativeBrowserSession
     let navigate: (String) -> Void
+    @State private var query = ""
+    @FocusState private var focused: Bool
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Image(systemName: session.active?.isPrivate == true ? "hand.raised" : "globe").font(.system(size: 32)).foregroundStyle(NativeDesktopTheme.muted)
-                    Text(session.active?.isPrivate == true ? "개인정보 보호 브라우징" : "웹에서 학습을 이어가세요").font(.system(size: 22, weight: .semibold))
-                    Text(session.active?.isPrivate == true ? "이 탭의 방문 기록과 열린 주소는 저장하지 않습니다." : "주소를 입력하거나 즐겨찾기와 학교 사이트를 열어보세요.")
-                        .font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
-                }
-                if !session.favoriteLinks.isEmpty { links("즐겨찾기", rows: session.favoriteLinks, symbol: "star") }
-                if !session.schoolLinks.isEmpty { links("학교 사이트", rows: session.schoolLinks, symbol: "building.columns") }
-            }.frame(maxWidth: 720, alignment: .leading).padding(28).frame(maxWidth: .infinity)
-        }.background(NativeDesktopTheme.bgApp).accessibilityElement(children: .contain).accessibilityIdentifier("native-browser-start-page")
-    }
-    private func links(_ title: String, rows: [NativeBrowserLink], symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(NativeDesktopTheme.muted)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 10)], spacing: 10) {
-                ForEach(rows) { row in
-                    Button { navigate(row.url) } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: symbol).foregroundStyle(NativeDesktopTheme.muted)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(row.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                                Text(NativeBrowserAddress.display(row.url)).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }.padding(12).frame(minHeight: 58).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 9))
-                    }.buttonStyle(.plain)
-                }
-            }
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 24) {
+                    VStack(spacing: 12) {
+                        Image(systemName: session.active?.isPrivate == true ? "hand.raised.fill" : "magnifyingglass")
+                            .font(.system(size: 36, weight: .light)).foregroundStyle(NativeDesktopTheme.muted)
+                        Text(session.active?.isPrivate == true ? "개인정보 보호 브라우징" : "새 탭")
+                            .font(.system(size: 25, weight: .medium))
+                        if session.active?.isPrivate == true {
+                            Text("이 탭의 방문 기록과 열린 주소는 저장하지 않습니다.")
+                                .font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
+                        }
+                    }.multilineTextAlignment(.center)
+                    HStack(spacing: 12) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(NativeDesktopTheme.muted)
+                        TextField("검색 또는 웹사이트 주소", text: $query)
+                            .textFieldStyle(.plain).font(.system(size: 15)).focused($focused)
+                            .keyboardType(.webSearch).textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .submitLabel(.go).onSubmit(submit).accessibilityIdentifier("native-browser-new-tab-search")
+                        Button("이동", systemImage: "arrow.right") { submit() }
+                            .labelStyle(.iconOnly).frame(width: 44, height: 44).disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }.padding(.leading, 20).padding(.trailing, 4).frame(height: 52)
+                        .background(NativeDesktopTheme.overlay, in: Capsule())
+                        .overlay(Capsule().strokeBorder(NativeDesktopTheme.border))
+                        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+                }.frame(maxWidth: 560).padding(28)
+                    .frame(maxWidth: .infinity, minHeight: max(240, geometry.size.height * 0.7))
+            }.background(NativeDesktopTheme.bgApp)
+                .accessibilityElement(children: .contain).accessibilityIdentifier("native-browser-start-page")
         }
+    }
+    private func submit() {
+        let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        focused = false
+        navigate(value)
     }
 }
 

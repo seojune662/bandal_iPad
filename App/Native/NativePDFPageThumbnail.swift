@@ -10,46 +10,51 @@ import SwiftUI
 final class NativePDFPageThumbnailSource {
     let revision: String
     private let worker: Worker
-    private let cache = NSCache<NSNumber, UIImage>()
+    private let cache = NativeThumbnailImageCache(bytes: 24 * 1024 * 1024, count: 40)
     init(root: URL, revision: String) {
         self.revision = revision
         worker = Worker(url: root.appendingPathComponent("PDFOriginals/" + revision + ".pdf"))
-        cache.countLimit = 40
     }
-    /// The original page with the current drawings on top; the base render is cached, the ink is cheap.
-    func image(page: Int, rows: [[String: Any]]) async -> UIImage? {
-        guard let base = await image(page: page) else { return nil }
-        guard !rows.isEmpty, !Task.isCancelled else { return base }
-        let format = UIGraphicsImageRendererFormat(); format.scale = 1
-        return UIGraphicsImageRenderer(size: base.size, format: format).image { renderer in
-            base.draw(in: CGRect(origin: .zero, size: base.size))
-            let mapper = InkCoordinateMapper.whiteboard(size: base.size)
-            for row in rows { NativePDFObjectRenderer.draw(row, in: renderer.cgContext, mapper: mapper, image: nil) }
+    func image(page: Int, rows: [[String: Any]], inkRevision: Int? = nil) async -> UIImage? {
+        guard !rows.isEmpty else { return await image(page: page) }
+        let snapshot = Rows(values: rows)
+        guard let inkRevision else { return await worker.image(page: page, rows: snapshot)?.image }
+        return await cache.image(key: "\(page):ink:\(inkRevision)") { [worker] in
+            await worker.image(page: page, rows: snapshot)?.image
         }
     }
     func image(page: Int) async -> UIImage? {
-        if let image = cache.object(forKey: NSNumber(value: page)) { return image }
-        guard !Task.isCancelled, let image = await worker.image(page: page)?.image, !Task.isCancelled else { return nil }
-        cache.setObject(image, forKey: NSNumber(value: page)); return image
+        await cache.image(key: "\(page):original") { [worker] in
+            await worker.image(page: page, rows: Rows(values: []))?.image
+        }
     }
-    /// The rendered thumbnail crosses from the worker once; no PNG encode/decode.
-    private final class ImageBox: @unchecked Sendable { let image: UIImage; init(_ image: UIImage) { self.image = image } }
+    private struct Rows: @unchecked Sendable { let values: [[String: Any]] }
     private final class Worker: @unchecked Sendable {
         let url: URL
-        let queue = DispatchQueue(label: "bandal.pdf.page-thumbnails", qos: .utility)
+        private let queue = NativeThumbnailWorkQueue(name: "bandal.pdf.page-thumbnails")
+        private let originals = NSCache<NSNumber, UIImage>()
         private var document: PDFDocument?
-        init(url: URL) { self.url = url }
-        func image(page: Int) async -> ImageBox? {
-            await withCheckedContinuation { completion in
-                queue.async { [self] in
+        init(url: URL) {
+            self.url = url
+            originals.countLimit = 40
+            originals.totalCostLimit = 16 * 1024 * 1024
+        }
+        func image(page: Int, rows: Rows) async -> NativeThumbnailWorkQueue.ImageBox? {
+            await queue.image { [self] in
+                let key = NSNumber(value: page)
+                let base: UIImage
+                if let cached = originals.object(forKey: key) { base = cached }
+                else {
                     if document == nil { document = PDFDocument(url: url) }
-                    guard let page = document?.page(at: page - 1) else { completion.resume(returning: nil); return }
-                    let coordinates = NativePDFPageCoordinates(page: page)
-                    let size = CGSize(width: coordinates.width, height: coordinates.height)
-                    let width: CGFloat = 260
-                    let height = min(520, max(64, width * size.height / max(size.width, 1)))
-                    completion.resume(returning: ImageBox(page.thumbnail(of: CGSize(width: width, height: height), for: .cropBox)))
+                    guard let pdfPage = document?.page(at: page - 1) else { return nil }
+                    let coordinates = NativePDFPageCoordinates(page: pdfPage)
+                    let scale = min(260 / max(1, coordinates.width), 520 / max(1, coordinates.height))
+                    base = pdfPage.thumbnail(of: CGSize(width: coordinates.width * scale, height: coordinates.height * scale), for: .cropBox)
+                    let cost = base.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+                    originals.setObject(base, forKey: key, cost: cost)
                 }
+                guard !rows.values.isEmpty else { return base }
+                return NativeThumbnailCompositeInput(base: base, rows: rows.values).render()
             }
         }
     }
@@ -61,6 +66,7 @@ struct NativePDFPageThumbnail: View {
     var rows: [[String: Any]] = []
     var inkRevision = 0
     @State private var image: UIImage?
+    @State private var loadedIdentity = ""
     var body: some View {
         ZStack {
             Color.white
@@ -72,6 +78,12 @@ struct NativePDFPageThumbnail: View {
         .overlay(RoundedRectangle(cornerRadius: 3).stroke(NativeDesktopTheme.border, lineWidth: 1))
         .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
         .accessibilityHidden(true)
-        .task(id: (source?.revision ?? "") + ":" + String(page) + ":" + String(inkRevision)) { if let next = await source?.image(page: page, rows: rows) { image = next } }
+        .task(id: (source?.revision ?? "") + ":" + String(page) + ":" + String(inkRevision)) {
+            let identity = (source?.revision ?? "") + ":" + String(page)
+            if loadedIdentity != identity { image = nil; loadedIdentity = identity }
+            let next = await source?.image(page: page, rows: rows, inkRevision: inkRevision)
+            guard !Task.isCancelled else { return }
+            image = next
+        }
     }
 }

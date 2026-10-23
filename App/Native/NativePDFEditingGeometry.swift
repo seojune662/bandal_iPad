@@ -52,6 +52,35 @@ enum NativePDFEditingGeometry {
         let dx = min(max(dx, -box.minX), 1 - box.maxX), dy = min(max(dy, -box.minY), 1 - box.maxY)
         return rows.map { transform($0) { CGPoint(x: $0.x + dx, y: $0.y + dy) } }
     }
+    static func regionBounds(_ polygon: [CGPoint]) -> CGRect? {
+        guard polygon.count >= 3, polygon.allSatisfy({ $0.x.isFinite && $0.y.isFinite }),
+              let minX = polygon.map(\.x).min(), let maxX = polygon.map(\.x).max(),
+              let minY = polygon.map(\.y).min(), let maxY = polygon.map(\.y).max() else { return nil }
+        let box = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        return !box.isNull && box.width > 0.003 && box.height > 0.003 ? box : nil
+    }
+    /// Keep physical dimensions and the grabbed point when moving between pages
+    /// of different sizes. Clamp the group as a whole, never each stroke sample.
+    static func movedAcrossPages(_ rows: [[String: Any]], from source: CGSize, to destination: CGSize,
+                                 grabbedAt start: CGPoint, droppedAt end: CGPoint, page: Int) -> [[String: Any]] {
+        guard source.width > 0, source.height > 0, destination.width > 0, destination.height > 0,
+              let box = union(rows, aspect: source.height / source.width) else { return rows }
+        var sx = source.width / destination.width, sy = source.height / destination.height
+        let fit = min(1, 1 / max(box.width * sx, 0.000001), 1 / max(box.height * sy, 0.000001))
+        sx *= fit; sy *= fit
+        let dx = min(max(end.x - start.x * sx, -box.minX * sx), 1 - box.maxX * sx)
+        let dy = min(max(end.y - start.y * sy, -box.minY * sy), 1 - box.maxY * sy)
+        return rows.map { original in
+            var row = transform(original) { CGPoint(x: $0.x * sx + dx, y: $0.y * sy + dy) }
+            row["page"] = page
+            if var style = row["style"] as? [String: Any], let width = number(style["width"]) {
+                style["width"] = width * sx; row["style"] = style
+            }
+            row.removeValue(forKey: "_nativeInk")
+            return row
+        }
+    }
     static func resized(_ rows: [[String: Any]], original: CGRect, corner: String, to point: CGPoint) -> [[String: Any]] {
         let west = corner.contains("w"), north = corner.contains("n")
         if rows.count == 1, rows.first?["kind"] as? String == "textbox" {

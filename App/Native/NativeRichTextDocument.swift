@@ -1,5 +1,29 @@
 import Foundation
 
+/// A standard Markdown image remains readable outside Bandal. The adjacent
+/// HTML comment keeps its layout with the source without changing the asset URL.
+struct NativeRichTextImageLayout: Equatable {
+    enum Alignment: String, CaseIterable { case left, center, right }
+    var widthPercent: Int?
+    var alignment: Alignment = .left
+    var marker: String { "<!-- bandal-image width=\(widthPercent.map(String.init) ?? "auto") align=\(alignment.rawValue) -->" }
+    private static let pattern = #"<!-- bandal-image width=(auto|\d{1,3}) align=(left|center|right) -->"#
+    static func prefix(in text: String) -> (layout: Self, length: Int)? {
+        guard let regex = try? NSRegularExpression(pattern: "^" + pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: text.utf16.count)),
+              let alignment = Alignment(rawValue: (text as NSString).substring(with: match.range(at: 2))) else { return nil }
+        let rawWidth = (text as NSString).substring(with: match.range(at: 1))
+        let width = Int(rawWidth)
+        guard rawWidth == "auto" || width.map({ (20...100).contains($0) }) == true else { return nil }
+        return (Self(widthPercent: width, alignment: alignment), match.range.length)
+    }
+    static func imageSyntax(in token: String) -> String {
+        guard let range = token.range(of: pattern + "$", options: .regularExpression),
+              prefix(in: String(token[range])) != nil else { return token }
+        return String(token[..<range.lowerBound])
+    }
+}
+
 /// An editable projection, not a Markdown serializer. Every visible character
 /// retains its original UTF-16 source range; untouched syntax stays byte exact.
 struct NativeRichTextDocument {
@@ -9,6 +33,7 @@ struct NativeRichTextDocument {
         var styles: Set<String>
         var destination: String?
         var atomic: Bool = false
+        var imageLayout: NativeRichTextImageLayout?
     }
     private struct Span { var visible: NSRange; var full: NSRange; var opening: String; var closing: String }
     private var spans: [Span] = []
@@ -245,11 +270,16 @@ struct NativeRichTextDocument {
                 append(NSRange(location: index, length: wiki.range.length), display: pieces.last ?? token, styles: styles.union(["wikilink"]), destination: "bandal-wiki:" + (pieces.first ?? token), atomic: true)
                 index += wiki.range.length; plain = index; continue
             }
-            if let link = Self.match(#"^(!?)\[([^\]\n]*)\]\(([^\s)]+)(?:\s+\"[^\"]*\")?\)"#, remaining) {
+            if let link = Self.match(#"^(!?)\[((?:\\[^\n]|[^\]\\\n])*)\]\(([^\s)]+)(?:\s+\"[^\"]*\")?\)"#, remaining) {
                 append(NSRange(location: plain, length: index - plain), styles: styles)
                 let href = (remaining as NSString).substring(with: link.range(at: 3))
+                var tokenLength = link.range.length
                 if link.range(at: 1).length > 0 {
-                    append(NSRange(location: index, length: link.range.length), display: "\u{fffc}", styles: styles.union(["image"]), destination: href, atomic: true)
+                    let following = (remaining as NSString).substring(from: tokenLength)
+                    let metadata = NativeRichTextImageLayout.prefix(in: following)
+                    tokenLength += metadata?.length ?? 0
+                    append(NSRange(location: index, length: tokenLength), display: "\u{fffc}", styles: styles.union(["image"]), destination: href, atomic: true)
+                    runs[runs.count - 1].imageLayout = metadata?.layout
                 } else {
                     let label = link.range(at: 2)
                     let firstRun = runs.count, visibleStart = text.utf16.count
@@ -258,7 +288,7 @@ struct NativeRichTextDocument {
                     for item in firstRun..<runs.count { runs[item].destination = href }
                     span(from: visibleStart, full: NSRange(location: index, length: link.range.length), content: content)
                 }
-                index += link.range.length; plain = index; continue
+                index += tokenLength; plain = index; continue
             }
             if remaining.hasPrefix("$"), !remaining.hasPrefix("$$"), let end = String(remaining.dropFirst()).firstIndex(of: "$"), !String(remaining.dropFirst())[..<end].contains("\n") {
                 let formula = String(String(remaining.dropFirst())[..<end])

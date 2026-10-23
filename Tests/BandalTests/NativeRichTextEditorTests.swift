@@ -10,7 +10,7 @@ final class NativeRichTextEditorTests: XCTestCase {
         for window in windows { window.endEditing(true); window.isHidden = true }
         windows.removeAll()
     }
-    private func editor(_ source: String, page: Int? = nil) async throws -> (NativeMarkdownSession, NativeRichTextEditor.Coordinator, NativeRichTextView, URL) {
+    private func editor(_ source: String, page: Int? = nil, loadImage: @escaping (String) async -> UIImage? = { _ in nil }) async throws -> (NativeMarkdownSession, NativeRichTextEditor.Coordinator, NativeRichTextView, URL) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("rich-editor-\(UUID())")
         var stored = source, version = 1.0
         let session = NativeMarkdownSession(courseID: "course", relativePath: "note.md", draftFile: .init(documentID: UUID().uuidString, directory: directory), debounceNanoseconds: 60_000_000_000) { channel, request in
@@ -19,7 +19,7 @@ final class NativeRichTextEditorTests: XCTestCase {
             stored = try XCTUnwrap(request["markdown"] as? String); version += 1; return ["mtime": version]
         }
         await session.load()
-        let parent = NativeRichTextEditor(session: session, pageIndex: page, appendix: false, sourceMode: false, fontScale: 1, editorFont: "sans", loadImage: { _ in nil }, openLink: { _ in }, requestInsertion: { _ in })
+        let parent = NativeRichTextEditor(session: session, pageIndex: page, appendix: false, sourceMode: false, fontScale: 1, editorFont: "sans", loadImage: loadImage, openLink: { _ in }, requestInsertion: { _ in })
         let coordinator = NativeRichTextEditor.Coordinator(parent: parent), view = NativeRichTextView(frame: CGRect(x: 0, y: 0, width: 800, height: 600), textContainer: nil)
         coordinator.view = view; view.delegate = coordinator
         view.compositionEnded = { [weak coordinator] in coordinator?.finishComposition() }
@@ -330,6 +330,177 @@ final class NativeRichTextEditorTests: XCTestCase {
         XCTAssertEqual(session.text, "**한글**")
         XCTAssertEqual(view.text, "한글")
         XCTAssertFalse(session.dirty)
+    }
+
+    func testImageCompletionUpdatesOnlyAttachmentsAndKeepsTextCaretAndUndo() async throws {
+        let loader = PendingImages()
+        let original = "Text ![one](assets/one.png) ![two](assets/two.png)"
+        let (session, coordinator, view, directory) = try await editor(original, loadImage: loader.load)
+        defer { coordinator.cancelImageRequests(); closeEditors(session); try? FileManager.default.removeItem(at: directory) }
+        try await waitUntil { loader.count == 2 }
+        view.selectedRange = NSRange(location: 2, length: 0)
+        view.textStorage.addAttribute(.backgroundColor, value: UIColor.magenta, range: NSRange(location: 0, length: 1))
+        let selected = view.selectedRange, displayed = view.text, canUndo = view.sourceUndo.canUndo
+        let first = image(color: .blue), second = image(color: .green)
+        loader.finish(0, with: first); loader.finish(1, with: second)
+        try await waitUntil {
+            coordinator.images.count == 2 && coordinator.projection.runs.filter { $0.styles.contains("image") }.allSatisfy { run in
+                (view.attributedText.attribute(.attachment, at: run.visible.location, effectiveRange: nil) as? NSTextAttachment)?.image === coordinator.images[run.destination ?? ""]
+            }
+        }
+        XCTAssertEqual(view.text, displayed)
+        XCTAssertEqual(view.selectedRange, selected)
+        XCTAssertEqual(view.sourceUndo.canUndo, canUndo)
+        XCTAssertEqual(session.text, original); XCTAssertFalse(session.dirty)
+        XCTAssertEqual(view.attributedText.attribute(.backgroundColor, at: 0, effectiveRange: nil) as? UIColor, .magenta,
+                       "An image completion must not replace the entire attributed text")
+    }
+
+    func testImageResizeAlignmentMoveAndUndoPersistThroughReload() async throws {
+        let pixels = image(color: .blue)
+        let original = "Before\n![photo](assets/photo.png)\nAfter\n"
+        let (session, coordinator, view, directory) = try await editor(original, loadImage: { _ in pixels })
+        defer { coordinator.cancelImageRequests(); closeEditors(session); try? FileManager.default.removeItem(at: directory) }
+        try await waitUntil { coordinator.images.count == 1 }
+        let first = try XCTUnwrap(coordinator.projection.runs.first { $0.styles.contains("image") })
+        view.selectedRange = first.visible
+        coordinator.format("image-width:50")
+        coordinator.format("image-align:center")
+        let resized = try XCTUnwrap(coordinator.projection.runs.first { $0.styles.contains("image") })
+        let attachment = try XCTUnwrap(view.attributedText.attribute(.attachment, at: resized.visible.location, effectiveRange: nil) as? NSTextAttachment)
+        XCTAssertEqual(attachment.bounds.width, 280, accuracy: 0.01)
+        XCTAssertEqual(attachment.bounds.height, 140, accuracy: 0.01)
+        XCTAssertEqual((view.attributedText.attribute(.paragraphStyle, at: resized.visible.location, effectiveRange: nil) as? NSParagraphStyle)?.alignment, .center)
+        let styled = session.text
+        coordinator.format("image-move-up")
+        XCTAssertTrue(session.text.hasPrefix("![photo]"))
+        view.sourceUndo.undo()
+        XCTAssertEqual(session.text, styled)
+        try await session.flush()
+        try await session.reloadDiscardingDraft()
+        coordinator.reset()
+        XCTAssertEqual(coordinator.source, styled)
+        let reloaded = try XCTUnwrap(coordinator.projection.runs.first { $0.styles.contains("image") })
+        XCTAssertEqual(reloaded.imageLayout, .init(widthPercent: 50, alignment: .center))
+        XCTAssertFalse(session.dirty)
+    }
+
+    func testTallImageResizingPreservesAspectRatio() async throws {
+        let pixels = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 1000)).image { context in
+            UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 100, height: 1000))
+        }
+        let (session, coordinator, view, directory) = try await editor("![photo](assets/photo.png)", loadImage: { _ in pixels })
+        defer { coordinator.cancelImageRequests(); closeEditors(session); try? FileManager.default.removeItem(at: directory) }
+        try await waitUntil { coordinator.images.count == 1 }
+        view.selectedRange = NSRange(location: 0, length: 1)
+        coordinator.format("image-width:100")
+        let attachment = try XCTUnwrap(view.attributedText.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)
+        XCTAssertEqual(attachment.bounds.height, 600, accuracy: 0.01)
+        XCTAssertEqual(attachment.bounds.width, 60, accuracy: 0.01)
+    }
+
+    func testAligningSmallImagePreservesNaturalSizeUntilSliderChangesIt() async throws {
+        let pixels = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 80)).image { context in
+            UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 120, height: 80))
+        }
+        let (session, coordinator, view, directory) = try await editor("![photo](assets/photo.png)", loadImage: { _ in pixels })
+        defer { coordinator.cancelImageRequests(); closeEditors(session); try? FileManager.default.removeItem(at: directory) }
+        try await waitUntil {
+            (view.attributedText.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)?.image === pixels
+        }
+        let before = try XCTUnwrap(view.attributedText.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)
+        XCTAssertEqual(before.bounds.size, CGSize(width: 120, height: 80))
+        view.selectedRange = NSRange(location: 0, length: 1)
+        coordinator.format("image-align:center")
+        let aligned = try XCTUnwrap(view.attributedText.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)
+        XCTAssertEqual(aligned.bounds.size, before.bounds.size)
+        XCTAssertTrue(session.text.contains("width=auto align=center"))
+        try await session.flush(); try await session.reloadDiscardingDraft()
+        coordinator.reset()
+        try await waitUntil {
+            (view.attributedText.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)?.image === pixels
+        }
+        let reloaded = try XCTUnwrap(view.attributedText.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)
+        XCTAssertEqual(reloaded.bounds.size, before.bounds.size)
+        view.selectedRange = NSRange(location: 0, length: 1)
+        coordinator.format("image-width:50")
+        let resized = try XCTUnwrap(view.attributedText.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)
+        XCTAssertEqual(resized.bounds.width, 280, accuracy: 0.01)
+    }
+
+    func testOpeningImageInspectorCommitsKoreanTextWithoutSelectingAnOldRange() async throws {
+        let original = "한 ![photo](assets/photo.png)"
+        let (session, coordinator, view, directory) = try await editor(original)
+        defer { coordinator.imageInspector?.dismiss(animated: false); closeEditors(session); try? FileManager.default.removeItem(at: directory) }
+        let image = try XCTUnwrap(coordinator.projection.runs.first { $0.styles.contains("image") })
+        view.selectedRange = NSRange(location: 1, length: 0)
+        view.setMarkedText("글", selectedRange: NSRange(location: 1, length: 0))
+        coordinator.textViewDidChange(view)
+        XCTAssertNotNil(view.markedTextRange)
+        coordinator.showImageInspector(image)
+        XCTAssertNil(view.markedTextRange)
+        XCTAssertEqual(session.text, "한글 ![photo](assets/photo.png)")
+        let selected = try XCTUnwrap(NativeRichTextCommands.image(in: coordinator.projection, selection: view.selectedRange))
+        XCTAssertEqual(selected.source.location, image.source.location + 1)
+        XCTAssertEqual(view.selectedRange, selected.visible)
+    }
+    func testImageCompletionWaitsForKoreanCompositionWithoutChangingItsUndo() async throws {
+        let loader = PendingImages(), original = "한 ![one](assets/one.png)"
+        let (session, coordinator, view, directory) = try await editor(original, loadImage: loader.load)
+        defer { coordinator.cancelImageRequests(); closeEditors(session); try? FileManager.default.removeItem(at: directory) }
+        try await waitUntil { loader.count == 1 }
+        view.selectedRange = NSRange(location: 1, length: 0)
+        view.setMarkedText("글", selectedRange: NSRange(location: 1, length: 0)); coordinator.textViewDidChange(view)
+        let textDuringComposition = view.text, selection = view.selectedRange
+        loader.finish(0, with: image(color: .blue))
+        try await waitUntil { coordinator.images.count == 1 }
+        XCTAssertNotNil(view.markedTextRange)
+        XCTAssertEqual(view.text, textDuringComposition); XCTAssertEqual(view.selectedRange, selection)
+        coordinator.commitComposition()
+        XCTAssertEqual(session.text, "한글 ![one](assets/one.png)")
+        let run = try XCTUnwrap(coordinator.projection.runs.first { $0.styles.contains("image") })
+        let attachment = view.attributedText.attribute(.attachment, at: run.visible.location, effectiveRange: nil) as? NSTextAttachment
+        XCTAssertTrue(attachment?.image === coordinator.images["assets/one.png"])
+        view.sourceUndo.undo()
+        XCTAssertEqual(session.text, original)
+    }
+
+    func testImageResultFromBeforeResetCannotReplaceCurrentPageRequest() async throws {
+        let loader = PendingImages()
+        let (session, coordinator, _, directory) = try await editor("![one](assets/one.png)", loadImage: loader.load)
+        defer { coordinator.cancelImageRequests(); closeEditors(session); try? FileManager.default.removeItem(at: directory) }
+        try await waitUntil { loader.count == 1 }
+        coordinator.reset()
+        try await waitUntil { loader.count == 2 }
+        let current = image(color: .blue)
+        loader.finish(1, with: current)
+        try await waitUntil { coordinator.images["assets/one.png"] === current }
+        loader.finish(0, with: image(color: .red))
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertTrue(coordinator.images["assets/one.png"] === current)
+        NativeRichTextEditor.dismantleUIView(try XCTUnwrap(coordinator.view), coordinator: coordinator)
+        XCTAssertTrue(coordinator.images.isEmpty)
+    }
+
+    private func image(color: UIColor) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 80, height: 40)).image { context in
+            color.setFill(); context.fill(CGRect(x: 0, y: 0, width: 80, height: 40))
+        }
+    }
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(3)
+        while !condition(), Date() < deadline { try await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertTrue(condition(), "Asynchronous image work did not complete")
+    }
+    @MainActor private final class PendingImages {
+        private var requests: [CheckedContinuation<UIImage?, Never>?] = []
+        var count: Int { requests.count }
+        func load(_ path: String) async -> UIImage? {
+            await withCheckedContinuation { requests.append($0) }
+        }
+        func finish(_ index: Int, with image: UIImage) {
+            requests[index]?.resume(returning: image); requests[index] = nil
+        }
     }
 
     func testMathAttachmentCacheUsesResolvedThemeColor() throws {

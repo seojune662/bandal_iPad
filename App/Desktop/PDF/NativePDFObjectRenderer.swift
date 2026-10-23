@@ -14,6 +14,13 @@ enum NativePDFObjectRenderer {
     /// transparency group of opaque objects: the same picture with ~20x less
     /// path data. On-screen callers keep the pixel-exact polygon fill.
     static func draw(_ object: [String: Any], in context: CGContext, mapper: InkCoordinateMapper, image: UIImage?, overrideBlend: Bool = false, compact: Bool = false) {
+        drawPrepared(object, in: context, mapper: mapper, image: image,
+                     preparedInk: prepareInk(object, aspect: mapper.geometry.height / mapper.geometry.width),
+                     overrideBlend: overrideBlend, compact: compact)
+    }
+    /// Background thumbnail workers own their own ink cache and text layouts.
+    /// This entry point never reads the main actor's shared path cache.
+    nonisolated static func drawPrepared(_ object: [String: Any], in context: CGContext, mapper: InkCoordinateMapper, image: UIImage?, preparedInk: NativePDFPreparedInk?, overrideBlend: Bool = false, compact: Bool = false) {
         guard let data = object["data"] as? [String: Any], let style = object["style"] as? [String: Any],
               let transform = pageTransform(mapper) else { return }
         let width = mapper.geometry.width, height = mapper.geometry.height
@@ -34,7 +41,7 @@ enum NativePDFObjectRenderer {
         defer { if layered { context.endTransparencyLayer() } }
         context.setFillColor(ink.cgColor); context.setStrokeColor(ink.cgColor)
         context.setLineWidth(strokeWidth); context.setLineCap(.round); context.setLineJoin(.round)
-        if let prepared = prepareInk(object, aspect: height / width) {
+        if let prepared = preparedInk {
             // ponytail: pressure ink still exports ~20 vertices per sample; stroke a variable-width outline if it ever matters.
             var scale = CGAffineTransform(scaleX: width, y: height)
             if compact, let centerline = prepared.centerline, let physical = centerline.copy(using: &scale) {
@@ -118,7 +125,7 @@ enum NativePDFObjectRenderer {
         return physicalBox(data, width: width, height: height)?.insetBy(dx: -margin, dy: -margin).applying(transform)
     }
 
-    private static func shapeOutline(kind: String, data: [String: Any], strokeWidth: Double, aspect: Double) -> CGPath? {
+    nonisolated private static func shapeOutline(kind: String, data: [String: Any], strokeWidth: Double, aspect: Double) -> CGPath? {
         guard strokeWidth.isFinite, strokeWidth > 0,
               let path = shapePath(kind: kind, data: data, strokeWidth: strokeWidth, aspect: aspect) else { return nil }
         // CGPath's stroker uses absolute flatness. At normalized widths such as
@@ -132,7 +139,7 @@ enum NativePDFObjectRenderer {
             lineJoin: kind == "rect" ? .miter : .round, miterLimit: 4).copy(using: &down)
     }
 
-    private static func shapePath(kind: String, data: [String: Any], strokeWidth: Double, aspect: Double) -> CGPath? {
+    nonisolated private static func shapePath(kind: String, data: [String: Any], strokeWidth: Double, aspect: Double) -> CGPath? {
         let shape = CGMutablePath()
         if kind == "rect" || kind == "ellipse" {
             guard let box = physicalBox(data, width: 1, height: 1), box.width > 0, box.height > 0 else { return nil }
@@ -155,7 +162,7 @@ enum NativePDFObjectRenderer {
         return shape
     }
 
-    static func pageTransform(_ mapper: InkCoordinateMapper) -> CGAffineTransform? {
+    nonisolated static func pageTransform(_ mapper: InkCoordinateMapper) -> CGAffineTransform? {
         let width = mapper.geometry.width, height = mapper.geometry.height
         guard width.isFinite, height.isFinite, width > 0, height > 0 else { return nil }
         let p0 = mapper.canvasPoint(InkPoint(x: 0, y: 0, p: 0.5)), px = mapper.canvasPoint(InkPoint(x: 1, y: 0, p: 0.5)), py = mapper.canvasPoint(InkPoint(x: 0, y: 1, p: 0.5))
@@ -163,7 +170,7 @@ enum NativePDFObjectRenderer {
         return [transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty].allSatisfy(\.isFinite) ? transform : nil
     }
 
-    static func attributedText(data: [String: Any], style: [String: Any], surfaceWidth: Double) -> NSAttributedString {
+    nonisolated static func attributedText(data: [String: Any], style: [String: Any], surfaceWidth: Double) -> NSAttributedString {
         let text = data["text"] as? String ?? "", length = (text as NSString).length
         let baseSize = baseFontSize(style, surfaceWidth: surfaceWidth)
         let paragraph = NSMutableParagraphStyle()
@@ -189,14 +196,14 @@ enum NativePDFObjectRenderer {
         }
         return output
     }
-    private static func textAttributes(_ style: [String: Any], fontSize: Double) -> [NSAttributedString.Key: Any] {
+    nonisolated private static func textAttributes(_ style: [String: Any], fontSize: Double) -> [NSAttributedString.Key: Any] {
         [.font: UIFont.systemFont(ofSize: fontSize, weight: style["bold"] as? Bool == true ? .bold : .regular),
          .foregroundColor: color(style["color"] as? String ?? "ink"),
          .obliqueness: style["italic"] as? Bool == true ? tan(12 * Double.pi / 180) : 0,
          .underlineStyle: style["underline"] as? Bool == true ? NSUnderlineStyle.single.rawValue : 0,
          .strikethroughStyle: style["strike"] as? Bool == true ? NSUnderlineStyle.single.rawValue : 0]
     }
-    static func baseFontSize(_ style: [String: Any], surfaceWidth: Double) -> Double {
+    nonisolated static func baseFontSize(_ style: [String: Any], surfaceWidth: Double) -> Double {
         let point = finite(style["fontSizePt"], fallback: 0)
         return point > 0 ? point : max(0.01, surfaceWidth * 0.026 * max(0.01, finite(style["fontScale"], fallback: 1)))
     }
@@ -210,7 +217,7 @@ enum NativePDFObjectRenderer {
         let glyphRange: NSRange
         let height: CGFloat
     }
-    static func textLayout(data: [String: Any], style: [String: Any], surfaceWidth: Double, contentWidth: CGFloat) -> TextLayout {
+    nonisolated static func textLayout(data: [String: Any], style: [String: Any], surfaceWidth: Double, contentWidth: CGFloat) -> TextLayout {
         let text = attributedText(data: data, style: style, surfaceWidth: surfaceWidth)
         let storage = NSTextStorage(attributedString: text), manager = NSLayoutManager()
         let container = NSTextContainer(size: CGSize(width: max(1, contentWidth), height: .greatestFiniteMagnitude))
@@ -222,14 +229,14 @@ enum NativePDFObjectRenderer {
         let height = max(minimum, max(manager.usedRect(for: container).maxY, manager.extraLineFragmentRect.maxY))
         return TextLayout(storage: storage, manager: manager, container: container, glyphRange: glyphRange, height: height)
     }
-    private static func finite(_ value: Any?, fallback: Double) -> Double {
+    nonisolated private static func finite(_ value: Any?, fallback: Double) -> Double {
         // Native tool dictionaries may contain Int while JSON supplies NSNumber.
         // Accept both numeric representations, but never treat true/false as 1/0.
         guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
               number.doubleValue.isFinite else { return fallback }
         return number.doubleValue
     }
-    private static func physicalBox(_ data: [String: Any], width: Double, height: Double) -> CGRect? {
+    nonisolated private static func physicalBox(_ data: [String: Any], width: Double, height: Double) -> CGRect? {
         guard let box = data["box"] as? [String: Any] else { return nil }
         // Swift geometry previews can contain CGFloat/Int values before JSON
         // persistence turns them into Double. All numeric forms use one check.
@@ -238,14 +245,14 @@ enum NativePDFObjectRenderer {
         guard [x,y,w,h].allSatisfy(\.isFinite), w >= 0, h >= 0 else { return nil }
         return CGRect(x: x * width, y: y * height, width: w * width, height: h * height)
     }
-    private static func endpoints(_ data: [String: Any], width: Double, height: Double) -> (CGPoint, CGPoint)? {
+    nonisolated private static func endpoints(_ data: [String: Any], width: Double, height: Double) -> (CGPoint, CGPoint)? {
         if let points = data["points"] as? [[String: Double]], points.count >= 2,
            let first = points.first, let last = points.last, let x0 = first["x"], let y0 = first["y"], let x1 = last["x"], let y1 = last["y"], [x0,y0,x1,y1].allSatisfy(\.isFinite) {
             return (CGPoint(x: x0 * width, y: y0 * height), CGPoint(x: x1 * width, y: y1 * height))
         }
         return physicalBox(data, width: width, height: height).map { (CGPoint(x: $0.minX, y: $0.minY), CGPoint(x: $0.maxX, y: $0.maxY)) }
     }
-    static func color(_ name: String) -> UIColor {
+    nonisolated static func color(_ name: String) -> UIColor {
         let rgb: (CGFloat, CGFloat, CGFloat)
         switch name {
         case "canvasLightInk": rgb = (240,240,240)
@@ -259,7 +266,7 @@ enum NativePDFObjectRenderer {
         }
         return UIColor(red: rgb.0/255, green: rgb.1/255, blue: rgb.2/255, alpha: 1)
     }
-    static func path(_ source: String, width: Double, height: Double) -> CGPath? {
+    nonisolated static func path(_ source: String, width: Double, height: Double) -> CGPath? {
         guard source.count <= 8_000_000 else { return nil }
         let pattern = #"[MLQZ]|[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }

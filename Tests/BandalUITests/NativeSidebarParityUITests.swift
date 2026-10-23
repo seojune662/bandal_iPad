@@ -1,82 +1,139 @@
 import XCTest
 
-/// Assertions follow the desktop source's information hierarchy, not the old
-/// native screen. This fixture stays in the isolated UI-test data directory.
+/// Exercises the unified iPad shell in an isolated test profile. No live AI key
+/// or network response is required to verify drafting, navigation and capture.
 final class NativeSidebarParityUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
-    @MainActor func testSourceBasedSidebarFavoritesNewTabMenuAndLearning() throws {
+
+    @MainActor func testHomeProjectsInspectorAndDraftSurviveModesAndRelaunch() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
-        let add = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(add.waitForExistence(timeout: 25), app.debugDescription)
-        let rail = ["library", "learning", "planner", "assistant", "tools", "help", "settings"]  // account rail is hidden in the local-only 1.0 build
-        for section in rail { XCTAssertTrue(app.buttons["native-section-" + section].exists, section) }
-        for section in ["browser", "recordings", "marketplace"] { XCTAssertFalse(app.buttons["native-section-" + section].exists, section) }
-        XCTAssertTrue(app.buttons["native-university-choose"].exists)
-        for ai in ["chatgpt", "claude", "gemini"] { XCTAssertTrue(app.buttons["native-ai-web-" + ai].exists, app.debugDescription) }
-        capture("Desktop source rail and university AI shortcuts")
-        add.tap(); app.buttons["native-new-course"].firstMatch.tap()
-        let name = app.textFields["native-course-name"]; XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Source parity")
+        openHome(app)
+        XCTAssertTrue(app.buttons["native-home-courses"].exists)
+        XCTAssertTrue(app.buttons["native-home-projects"].exists)
+        for removed in ["learning", "assistant", "tools"] { XCTAssertFalse(app.buttons["native-section-" + removed].exists) }
+        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        let courseName = app.textFields["native-course-name"]
+        XCTAssertTrue(courseName.waitForExistence(timeout: 5)); courseName.tap(); courseName.typeText("Physics")
         app.buttons["native-create-course"].tap()
-        let favoriteAdd = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-favorite-add-")).firstMatch
-        XCTAssertTrue(favoriteAdd.waitForExistence(timeout: 10), app.debugDescription)
-        favoriteAdd.tap(); app.buttons["링크 추가"].tap()
-        let url = app.textFields["native-favorite-url"]; XCTAssertTrue(url.waitForExistence(timeout: 5)); url.tap(); url.typeText("https://example.com/study")
-        let label = app.textFields["native-favorite-name"]; label.tap(); label.typeText("Course reference")
-        app.buttons["native-favorite-save"].tap()
-        let favorite = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-favorite-", "Course reference")).firstMatch
-        XCTAssertTrue(favorite.waitForExistence(timeout: 10), app.debugDescription)
-        capture("Course children are persisted favorites")
-        let plus = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
-        XCTAssertTrue(plus.exists); plus.tap()
-        for id in ["new-browser", "new-whiteboard", "new-note", "chat", "recording"] {
-            XCTAssertTrue(app.buttons["native-new-tab-" + id].waitForExistence(timeout: 5), id + app.debugDescription)
+        openHome(app); app.buttons["native-home-projects"].tap()
+        app.buttons["native-project-create"].tap()
+        let projectName = app.textFields["native-name-input"]
+        XCTAssertTrue(projectName.waitForExistence(timeout: 5), app.debugDescription); projectName.tap(); projectName.typeText("Exam preparation")
+        app.buttons["만들기"].tap()
+        openInspector(app)
+        app.buttons["native-inspector-materials"].tap()
+        for action in ["native-library-view-menu", "native-library-import", "native-library-create"] {
+            XCTAssertTrue(app.buttons[action].waitForExistence(timeout: 15), app.debugDescription)
         }
-        XCTAssertFalse(app.buttons["새 화이트보드"].exists)
-        for id in ["learning", "board", "add-link"] { XCTAssertFalse(app.buttons["native-new-tab-" + id].exists, id) }
-        capture("Tab plus source order and note naming")
-        app.buttons["native-new-tab-new-note"].tap()
+        app.buttons["native-library-create"].tap(); app.buttons["새 마크다운"].tap()
+        let noteName = app.textFields["native-name-input"]
+        XCTAssertTrue(noteName.waitForExistence(timeout: 5)); noteName.tap(); noteName.typeText("Revision notes")
+        app.buttons["만들기"].tap()
         let editor = app.textViews["native-markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 15), app.debugDescription)
-        editor.tap(); editor.typeText("Current document context persists.")
+        editor.tap(); editor.typeText("A project keeps its original notes.")
         app.dismissNativeTestKeyboard()
-        app.buttons["native-section-assistant"].tap()
-        XCTAssertTrue(app.otherElements["native-document-assistant"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(editor.exists, "Contextual AI retains the active document")
-        capture("Document assistant preserves current editor")
-        app.buttons["native-document-assistant-close"].tap()
-        app.buttons["native-section-planner"].tap()
-        let boardClose = app.buttons["native-board-overlay-close"]
-        XCTAssertTrue(boardClose.waitForExistence(timeout: 10), app.debugDescription)
-        capture("Global academic board overlays the current document")
-        boardClose.tap()
-        XCTAssertTrue(editor.exists, "Closing the global board restores the same document")
-        app.buttons["native-section-tools"].tap()
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "native-study-tools").firstMatch.waitForExistence(timeout: 10))
-        for pack in ["vocab-chain-en", "quiz", "flashcards", "summary"] { XCTAssertTrue(app.buttons["native-study-tool-" + pack].waitForExistence(timeout: 10)) }
-        capture("Native document tool launcher")
-        app.buttons["native-section-learning"].tap()
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "native-learning-home").firstMatch.waitForExistence(timeout: 10))
-        app.buttons["native-learning-start-english"].tap()
-        let projectName = app.textFields["native-learning-create-name"]
-        XCTAssertTrue(projectName.waitForExistence(timeout: 5)); projectName.tap(); projectName.typeText("My English")
-        let topic = app.textFields["native-learning-create-topic"]; topic.tap(); topic.typeText("Science")
-        app.buttons["native-learning-create-confirm"].tap()
-        let learningWorkspace = app.descendants(matching: .any).matching(identifier: "native-learning-workspace").firstMatch
-        XCTAssertTrue(learningWorkspace.waitForExistence(timeout: 15), "A newly created standalone project must open, not merely appear behind an error alert.\n" + app.debugDescription)
-        XCTAssertTrue(learningWorkspace.staticTexts["My English"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertFalse(app.alerts.firstMatch.exists, app.debugDescription)
-        XCTAssertFalse(learningWorkspace.descendants(matching: .any).matching(identifier: "native-tool-error").firstMatch.exists, app.debugDescription)
-        capture("Real portable learning project created and opened")
+        openInspector(app); app.buttons["native-inspector-assistant"].tap()
+        let input = app.descendants(matching: .any).matching(identifier: "native-chat-input").firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout: 10), app.debugDescription)
+        input.tap(); input.typeText("Explain this material")
+        app.dismissNativeTestKeyboard()
+        app.buttons["native-ai-mode-quiz"].tap()
+        XCTAssertTrue((input.value as? String ?? "").contains("Explain this material"))
+        app.buttons["native-ai-mode-expected-exam"].tap()
+        XCTAssertTrue((input.value as? String ?? "").contains("Explain this material"))
+        XCTAssertTrue(app.buttons["native-ai-connect"].exists, "No key is required to compose a request")
+        XCTAssertFalse(app.otherElements["native-document-assistant"].exists)
+        capture("Project notes and unified AI with exam mode")
+        app.buttons["native-inspector-materials"].tap()
+        app.buttons["native-inspector-assistant"].tap()
+        XCTAssertTrue((input.value as? String ?? "").contains("Explain this material"))
         app.terminate(); app.launchArguments = ["--native-ui-testing"]; app.launch()
-        XCTAssertTrue(learningWorkspace.waitForExistence(timeout: 25), app.debugDescription)
-        XCTAssertTrue(learningWorkspace.staticTexts["My English"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertFalse(app.alerts.firstMatch.exists, app.debugDescription)
-        XCTAssertTrue(app.buttons["native-section-library"].waitForExistence(timeout: 25)); app.buttons["native-section-library"].tap()
-        if !favorite.waitForExistence(timeout: 5) { app.buttons["native-section-library"].tap() }
-        XCTAssertTrue(favorite.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "native-course-", "My English")).firstMatch.exists, "Standalone learning projects are not course folders")
-        capture("Favorites restored and learning separated from course list")
+        openInspector(app); app.buttons["native-inspector-assistant"].tap()
+        XCTAssertTrue(input.waitForExistence(timeout: 25), app.debugDescription)
+        XCTAssertTrue((input.value as? String ?? "").contains("Explain this material"), app.debugDescription)
+        XCTAssertTrue(editor.exists, "The project's document tab is restored")
+        app.buttons["native-inspector-materials"].tap()
+        openHome(app); app.buttons["native-home-courses"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-course-", "Physics")).firstMatch.exists)
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-course-", "Exam preparation")).firstMatch.exists)
+        capture("Courses and projects keep separate lists")
     }
-    @MainActor private func capture(_ name: String) { let item = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); item.name = name; item.lifetime = .keepAlways; add(item) }
+
+    @MainActor func testAnnotationCaptureCancelAndPanelRotationKeepEditor() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
+        openHome(app); app.buttons["native-home-projects"].tap(); app.buttons["native-project-create"].tap()
+        let name = app.textFields["native-name-input"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5), app.debugDescription); name.tap(); name.typeText("Annotation project")
+        app.buttons["만들기"].tap()
+        openInspector(app); app.buttons["native-inspector-materials"].tap()
+        XCTAssertTrue(app.buttons["native-library-create"].waitForExistence(timeout: 15))
+        app.buttons["native-library-create"].tap(); app.buttons["새 마크다운"].tap()
+        let note = app.textFields["native-name-input"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5)); note.tap(); note.typeText("Capture note")
+        app.buttons["만들기"].tap()
+        let editor = app.textViews["native-markdown-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 15), app.debugDescription); editor.tap(); editor.typeText("This paragraph stays editable after annotation.")
+        app.dismissNativeTestKeyboard()
+        openInspector(app); app.buttons["native-inspector-assistant"].tap()
+        let annotate = app.buttons["native-ai-annotate"]
+        XCTAssertTrue(annotate.waitForExistence(timeout: 10)); annotate.tap()
+        let toolbar = app.descendants(matching: .any).matching(identifier: "native-ai-annotation-toolbar").firstMatch
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["native-ai-annotation-cancel"].tap()
+        XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(editor.exists)
+        editor.tap(); editor.typeText(" Still editable.")
+        XCTAssertTrue((editor.value as? String ?? "").contains("Still editable."))
+        app.dismissNativeTestKeyboard()
+        annotate.tap()
+        let region = app.descendants(matching: .any).matching(identifier: "native-ai-annotation-region").firstMatch
+        XCTAssertTrue(region.waitForExistence(timeout: 10), app.debugDescription)
+        region.coordinate(withNormalizedOffset: .init(dx: 0.1, dy: 0.1))
+            .press(forDuration: 0.05, thenDragTo: region.coordinate(withNormalizedOffset: .init(dx: 0.75, dy: 0.4)))
+        XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(toolbar.exists)
+        XCTAssertTrue(app.buttons["첨부 제거"].waitForExistence(timeout: 10), "The selected region is retained as an attachment")
+        capture("Captured note is attached in the unified AI panel")
+        let toggle = app.buttons["native-toggle-materials-rail"]
+        XCTAssertEqual(app.buttons.matching(identifier: "native-toggle-materials-rail").count, 1)
+        toggle.tap(); XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.tap()
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(toggle.isHittable)
+        XCTAssertTrue(annotate.isEnabled, app.debugDescription)
+        XCTAssertGreaterThan(annotate.frame.midX, app.frame.midX, "The inspector stays against the right edge in portrait")
+        XCTAssertEqual(app.buttons.matching(identifier: "native-toggle-materials-rail").count, 1)
+        capture("Portrait inspector keeps annotation attachment and controls available")
+        // Exercise a real touch at the visible control after the drawer moves
+        // across the pinned/overlay boundary, then assert its actual behavior.
+        annotate.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 10))
+        app.buttons["native-ai-annotation-cancel"].tap()
+        XCTAssertTrue(annotate.waitForExistence(timeout: 10))
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(editor.waitForExistence(timeout: 10), app.debugDescription)
+        capture("Inspector stays available after rotation")
+    }
+
+    @MainActor private func openHome(_ app: XCUIApplication) {
+        let home = app.buttons["native-section-library"]
+        XCTAssertTrue(home.waitForExistence(timeout: 25), app.debugDescription)
+        if !app.buttons["native-home-projects"].isHittable { home.tap() }
+        XCTAssertTrue(app.buttons["native-home-projects"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+    @MainActor private func openInspector(_ app: XCUIApplication) {
+        if !app.buttons["native-inspector-materials"].isHittable {
+            let toggle = app.buttons["native-toggle-materials-rail"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 10), app.debugDescription); toggle.tap()
+        }
+        XCTAssertTrue(app.buttons["native-inspector-materials"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+    @MainActor private func capture(_ name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
 }

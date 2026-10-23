@@ -3,6 +3,49 @@ import XCTest
 @testable import Bandal
 
 final class NativeRichTextDocumentTests: XCTestCase {
+    func testImageLayoutIsAtomicAndSurvivesSourceRoundTrip() throws {
+        let token = #"![사진 \[1\]](assets/photo.png "keep title")"#
+        let marker = "<!-- bandal-image width=45 align=center -->"
+        let source = "앞 😀\r\n" + token + marker + "\r\n**뒤**"
+        let document = NativeRichTextDocument(source)
+        let image = try XCTUnwrap(document.runs.first { $0.styles.contains("image") })
+        XCTAssertEqual(image.imageLayout, .init(widthPercent: 45, alignment: .center))
+        XCTAssertEqual((source as NSString).substring(with: image.source), token + marker)
+        XCTAssertEqual(document.text, "앞 😀\r\n\u{fffc}\r\n뒤")
+        XCTAssertEqual(document.incorporating(document.text).markdown, source)
+        XCTAssertEqual(document.replacing(image.visible, with: "").markdown, "앞 😀\r\n\r\n**뒤**")
+        XCTAssertEqual(NativeRichTextDocument(source, sourceMode: true).text, source)
+        let unknown = token + "<!-- bandal-image width=999 align=center -->"
+        XCTAssertTrue(NativeRichTextDocument(unknown).text.contains("width=999"), "Unknown metadata must remain visible and untouched")
+    }
+    func testImageLayoutCommandsPreserveTitleAssetAndNeighbors() throws {
+        let token = #"![사진](assets/photo.png "keep title")"#
+        let original = "앞 😀\n" + token + "\n**뒤**"
+        let document = NativeRichTextDocument(original)
+        let image = try XCTUnwrap(NativeRichTextCommands.image(in: document, selection: NSRange(location: 5, length: 1)))
+        let sized = NativeRichTextCommands.apply("image-width:50", to: document, selection: image.visible)
+        let resized = NativeRichTextDocument(sized.markdown)
+        let aligned = NativeRichTextCommands.apply("image-align:right", to: resized, selection: image.visible)
+        XCTAssertEqual(aligned.markdown, "앞 😀\n" + token + "<!-- bandal-image width=50 align=right -->\n**뒤**")
+        XCTAssertEqual(NativeRichTextCommands.apply("image-width:0", to: resized, selection: image.visible).markdown, sized.markdown)
+        XCTAssertEqual(NativeRichTextCommands.apply("image-align:unknown", to: resized, selection: image.visible).markdown, sized.markdown)
+    }
+    func testMovingImagesPreservesLayoutNewlinesAndNeighboringText() throws {
+        let token = "![photo](assets/a.png)<!-- bandal-image width=50 align=center -->"
+        let original = "Before\r\n" + token + "\r\nAfter\r\n"
+        let document = NativeRichTextDocument(original)
+        let image = try XCTUnwrap(document.runs.first { $0.styles.contains("image") })
+        let up = NativeRichTextCommands.apply("image-move-up", to: document, selection: image.visible)
+        XCTAssertEqual(up.markdown, token + "\r\nBefore\r\nAfter\r\n")
+        let back = NativeRichTextCommands.apply("image-move-down", to: NativeRichTextDocument(up.markdown), selection: NSRange(location: 0, length: 1))
+        XCTAssertEqual(back.markdown, original)
+        let down = NativeRichTextCommands.apply("image-move-down", to: document, selection: image.visible)
+        XCTAssertEqual(down.markdown, "Before\r\nAfter\r\n" + token + "\r\n")
+        let inline = NativeRichTextDocument("Before\nleft " + token + " right\nAfter\n")
+        let inlineImage = try XCTUnwrap(inline.runs.first { $0.styles.contains("image") })
+        let moved = NativeRichTextCommands.apply("image-move-up", to: inline, selection: inlineImage.visible)
+        XCTAssertEqual(moved.markdown, token + "\nBefore\nleft  right\nAfter\n")
+    }
     func testSupportedSyntaxRendersWithoutMarkdownMarkers() {
         let source = "# Heading\n**bold** _italic_ ~~old~~ `x*y`\n- [ ] todo\n- [x] done\n> quote\n[site](https://example.com) [[Note|Alias]]\n"
         let document = NativeRichTextDocument(source)

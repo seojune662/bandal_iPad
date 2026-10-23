@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 final class NativeLearningWorkspaceModel: ObservableObject {
     let store: NativeWorkspaceStore
-    let binding: NativeLearningBinding
+    private(set) var binding: NativeLearningBinding
     @Published var snapshot: [String: Any] = [:]
     @Published var article: [String: Any]?
     @Published var artifact: [String: Any]?
@@ -24,13 +24,23 @@ final class NativeLearningWorkspaceModel: ObservableObject {
     private var readRevision = 0
     private var detailRevision = 0
     private var retired = false
-    init(store: NativeWorkspaceStore, binding: NativeLearningBinding) { self.store = store; self.binding = binding }
+    private let detailID: String?
+    init(store: NativeWorkspaceStore, binding: NativeLearningBinding, detailID: String? = nil) { self.store = store; self.binding = binding; self.detailID = detailID }
+    func rebind(_ binding: NativeLearningBinding) async {
+        guard self.binding != binding else { return }
+        debounce?.cancel()
+        do { if !retired { try await flush() } }
+        catch { self.error = error.localizedDescription; store.errorMessage = error.localizedDescription; return }
+        if let flushToken { store.unregisterDocumentFlush(flushToken); self.flushToken = nil }
+        self.binding = binding; retired = false; frozen = false
+    }
     func rows(_ key: String) -> [[String: Any]] { snapshot[key] as? [[String: Any]] ?? [] }
     var name: String { snapshot["name"] as? String ?? "학습 공간" }
     var attempt: [String: Any]? { rows("quizAttempts").first { $0["id"] as? String == attemptID } }
+    var submitted: Bool { attempt?["submittedAt"] as? String != nil }
     func start() async {
         if flushToken == nil {
-            flushToken = store.registerDocumentFlush(id: binding.id + ":learning", document: .init(courseID: binding.courseID, relativePath: binding.rootRelPath, title: name, kind: "learning"), freeze: { [weak self] in self?.frozen = true }, resume: { [weak self] in self?.frozen = false }, retire: { [weak self] in self?.retired = true; self?.frozen = true }, flush: { [self] in try await flush() })
+            flushToken = store.registerDocumentFlush(id: detailID ?? binding.id + ":learning", document: .init(courseID: binding.courseID, relativePath: binding.rootRelPath, title: name, kind: "learning"), freeze: { [weak self] in self?.frozen = true }, resume: { [weak self] in self?.frozen = false }, retire: { [weak self] in self?.retired = true; self?.frozen = true }, flush: { [self] in try await flush() })
         }
         await store.waitForExternalMutation()
         guard !retired, !Task.isCancelled else { return }
@@ -75,6 +85,10 @@ final class NativeLearningWorkspaceModel: ObservableObject {
     func clearDetail() { Task { do { try await flush(); detailRevision += 1; article = nil; artifact = nil } catch { self.error = error.localizedDescription } } }
     func answer(_ question: String, text: String, check: Bool? = nil) {
         guard !completed, !frozen, !retired else { return }
+        if artifact?["generationMode"] as? String == "expected-exam" {
+            if submitted && (check == nil || answers[question] != text) { return }
+            if !submitted && check != nil { return }
+        }
         if answers[question] != text && check == nil { selfChecks[question] = nil }; answers[question] = text; if let check { selfChecks[question] = check }; dirty.insert(question); saved = false; store.markDocumentChanged()
         debounce?.cancel(); debounce = Task { [weak self] in try? await Task.sleep(for: .milliseconds(350)); guard !Task.isCancelled else { return }; do { try await self?.flush() } catch { self?.error = error.localizedDescription } }
     }
@@ -90,7 +104,7 @@ final class NativeLearningWorkspaceModel: ObservableObject {
                 if let check { request["selfCheck"] = check }
                 let value = try await store.invoke("learning:saveQuizAnswer", request) as? [String: Any] ?? [:]
                 if answers[question] == text && selfChecks[question] == check { dirty.remove(question) }
-                snapshot = value
+                readRevision += 1; snapshot = value
             }
             saved = true
         }
@@ -103,13 +117,19 @@ final class NativeLearningWorkspaceModel: ObservableObject {
         do {
             try await flush()
             let result = try await store.invoke(channel, ["binding": binding.request].merging(input) { _, new in new })
-            if let state = result as? [String: Any], state["binding"] != nil { snapshot = state } else { await reload() }
+            if let state = result as? [String: Any], state["binding"] != nil { readRevision += 1; snapshot = state } else { await reload() }
             error = nil; return true
         } catch { self.error = error.localizedDescription; return false }
     }
     func finishQuiz() async {
         guard let id = artifact?["id"] as? String else { return }
         if await mutate("learning:finishQuiz", ["artifactId": id, "attemptId": attemptID]) { completed = true }
+    }
+    func submitExam() async {
+        guard let id = artifact?["id"] as? String,
+              await mutate("learning:submitQuiz", ["artifactId": id, "attemptId": attemptID]) else { return }
+        let questions = artifact?["questions"] as? [[String: Any]] ?? []
+        if !questions.contains(where: { $0["type"] as? String == "short-answer" }) { await finishQuiz() }
     }
     func retryQuiz() { completed = false; attemptID = UUID().uuidString.lowercased(); answers = [:]; selfChecks = [:]; dirty = []; saved = true }
     func close() async {

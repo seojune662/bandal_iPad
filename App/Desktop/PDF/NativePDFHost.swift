@@ -110,6 +110,10 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
         if view == nil { item.cancelKeyboardReveal(); item.restoreScrollAfterTextEditing() } else { item.revealTextEditorWhenKeyboardShows() }
     }
     func canHandle(_ channel: String) -> Bool { channel.hasPrefix("pdfNative:") }
+    func documentLocation(surfaceID: String, generation: String, point: CGPoint) -> (page: Int, point: CGPoint)? {
+        guard let item = documents[surfaceID], item.generation == generation else { return nil }
+        return item.documentLocation(point)
+    }
     func handle(_ channel: String, request: [String: Any]) async throws -> Any {
         if channel == "pdfNative:capabilities" {
             #if DEBUG
@@ -169,7 +173,9 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             // material file cannot corrupt a lazily-read document. Canonical
             // drawings stay bound to the first verified revision across reopen,
             // rename and sync; a replacement file at the same path is rejected.
+            var openPhaseStarted = ProcessInfo.processInfo.systemUptime
             let bound = try await invoke("nativePDF:binding", ["courseId": course, "relPath": path])
+            DesktopSignpost.benchmark("host.open.binding", startedAt: openPhaseStarted)
             // A close during the round trip wins over whatever the binding returned.
             guard openingGenerations[identifier] == generation else { throw CancellationError() }
             guard let binding = bound as? [String: Any],
@@ -178,10 +184,12 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
                 throw NativePDFError.invalid("PDF 원본과 필기 연결을 확인하지 못했습니다. 자료를 보존한 채 다시 열어 주세요.")
             }
             let originalURL = root.appendingPathComponent("PDFOriginals", isDirectory: true).appendingPathComponent(revision + ".pdf")
+            openPhaseStarted = ProcessInfo.processInfo.systemUptime
             let loaded = try await Task.detached(priority: .userInitiated) { () -> NativePDFDocumentBox? in
                 guard let document = PDFDocument(url: originalURL), !document.isLocked, document.pageCount > 0 else { return nil }
                 return NativePDFDocumentBox(document)
             }.value
+            DesktopSignpost.benchmark("host.open.pdfDecode", startedAt: openPhaseStarted)
             guard openingGenerations[identifier] == generation else { throw CancellationError() }
             guard let pdf = loaded?.document else { throw NativePDFError.invalid("PDF를 열지 못했습니다. 잠금 또는 파일 형식을 확인해 주세요.") }
             // Freeze only the surface being replaced before taking its disk
@@ -196,20 +204,24 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             }
             // Only orphaned disk records are recovery. Opening a second pane
             // must not finalize or ACK the first pane's live measured contact.
+            openPhaseStarted = ProcessInfo.processInfo.systemUptime
             let pending = try await journal.pending(courseID: course, relativePath: path, retryFailed: true).filter {
                 NativePDFInputOwnership.shared.claim(root: root, course: course, path: path,
                     mutation: $0.input.clientMutationId, owner: inputOwner, replacing: previousOwner)
             }
             try reconcileJournal()
             guard openingGenerations[identifier] == generation else { throw CancellationError() }
+            DesktopSignpost.benchmark("host.open.journalRecovery", startedAt: openPhaseStarted)
             guard pending.allSatisfy({ $0.documentRevision == revision }) else {
                 throw NativePDFError.invalid("PDF 원본이 바뀌어 이전 문서의 미전송 필기를 보존했습니다. 원본 복구 후 다시 열어 주세요.")
             }
             // A process ending during estimated-property correction recovers
             // the last durable measured checkpoint as its final payload.
+            openPhaseStarted = ProcessInfo.processInfo.systemUptime
             for record in pending where record.provisional == true { try journal.enqueueStroke(record.input, documentRevision: record.documentRevision) }
             try await journal.barrier(retryFailed: true)
             try reconcileJournal()
+            DesktopSignpost.benchmark("host.open.journalBarrier", startedAt: openPhaseStarted)
             guard openingGenerations[identifier] == generation else { throw CancellationError() }
             try documents[identifier]?.close()
             documents.removeValue(forKey: identifier)
@@ -224,8 +236,10 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             let isolatedNative = root.lastPathComponent == "BandalDesktop-Native-UI-Tests" && arguments.contains("--native-ui-testing")
             testingDirectPencil = (isolatedLegacy || isolatedNative) && arguments.contains("--native-pencil-dispatch-fixture")
             #endif
+            openPhaseStarted = ProcessInfo.processInfo.systemUptime
             let item = NativePDFDocument(id: identifier, generation: generation, courseID: course, relativePath: path,
                                          revision: revision, document: pdf, testingDirectPencil: testingDirectPencil)
+            DesktopSignpost.benchmark("host.open.documentInit", startedAt: openPhaseStarted)
             item.usesNativeChrome = directEnabled
             item.onDiagnostic = { [weak self] event, code in self?.onDiagnostic(event, code) }
             item.onEvent = { [weak self, weak item] type, body in
@@ -294,6 +308,9 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
                 layoutRevisions[identifier] = revision
             }
             let visible = request["visible"] as? Bool ?? false
+            let restore = try item.validatedViewportRestore(request["restoreViewport"])
+            if visible, restore != nil { item.beginViewportRestore() }
+            defer { if visible, restore != nil { item.finishViewportRestore() } }
             if !replacing { try item.setVisible(visible) }
             if visible { visibleSurfaces.insert(identifier) } else { visibleSurfaces.remove(identifier) }
             if request["occluded"] as? Bool == true { occludedSurfaces.insert(identifier) } else { occludedSurfaces.remove(identifier) }
@@ -304,7 +321,9 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
                 guard let x = value["x"], let y = value["y"], let width = value["width"], let height = value["height"], [x,y,width,height].allSatisfy(\.isFinite), width > 0, height > 0 else { return nil }
                 return CGRect(x: x, y: y, width: width, height: height)
             }
-            layout(); return ["revision": layoutRevisions[identifier] ?? 0]
+            layout()
+            if visible, !replacing, let restore { try item.navigate(restore) }
+            return ["revision": layoutRevisions[identifier] ?? 0]
         case "pdfNative:snapshot":
             return try item.snapshot(request)
         case "pdfNative:objectScene":
@@ -469,6 +488,8 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
         try reconcileJournal(); reportJournalTimings()
     }
     func layout() {
+        let benchmarkStarted = ProcessInfo.processInfo.systemUptime
+        defer { DesktopSignpost.benchmark("host.layout", startedAt: benchmarkStarted) }
         guard let container else { return }
         let sourceView = shell as UIView? ?? container
         for (identifier, item) in documents {
@@ -489,6 +510,11 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             let frameChanged = item.pdfView.frame != frame
             if frameChanged { item.pdfView.frame = frame }
             container.bringSubviewToFront(item.pdfView)
+            // The live text box is a sibling of PDFView. Keep it above the
+            // paper after presentation/layout changes so taps can focus it.
+            if let editor = item.textEditor?.view, editor.superview === container {
+                container.bringSubviewToFront(editor)
+            }
             let offsetX = unclipped.minX - frame.minX, offsetY = unclipped.minY - frame.minY
             let localHoles: [CGRect] = (holes[identifier] ?? []).map { hole in
                 let x = hole.minX * factor + offsetX, y = hole.minY * factor + offsetY
@@ -647,6 +673,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private var imageTasks: [String: Task<Void, Never>] = [:]
     private var imageFailures: Set<String> = []
     private var overlays: [Int: NativePDFInkSurface] = [:]
+    private var deferredOverlayPages: Set<Int> = []
+    private var deferringOverlayPreparation = false
     var textEditor: (page: Int, view: NativePDFTextInputView)? { didSet {
         if oldValue?.view !== textEditor?.view { oldValue?.view.resignFirstResponder(); oldValue?.view.removeFromSuperview() }
         applyTextEditor()
@@ -693,6 +721,9 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     }
     private let drawingSnapshots = NativePDFDrawingSnapshotStore()
     private var objects: [[String: Any]] { drawingSnapshots.orderedRows.map(\.object) }
+    #if DEBUG
+    private var diagnosticNonInkObjectCount = 0
+    #endif
     private var pendingRows: [String: NativePDFDrawingSnapshotStore.Row] = [:]
     private var highlights: [[String: Any]] = []
     private var objectScenes: [Int: NativePDFEditorScene] = [:]
@@ -720,6 +751,12 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private var pinchFallback: PinchFallback?
     private var pinchGeneration: UInt64 = 0
     private let pencilGesture: NativePDFPencilGestureRecognizer
+    private let selectionGesture = NativePDFPencilGestureRecognizer(selectionTouches: true)
+    private var selectionDragSource: Int?
+    private var selectionDragLocation: CGPoint?
+    private var selectionDragPayload: [String: Any]?
+    private var selectionScrollLink: CADisplayLink?
+    private var pasteHoldGesture: UILongPressGestureRecognizer?
     private var selectedTextRects: [Int: [[String: Double]]] = [:]
     private let pageActions = UIButton(type: .system)
     var usesNativeChrome = false { didSet { pageActions.isHidden = usesNativeChrome || loading } }
@@ -742,7 +779,9 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
          "retainedPages": overlays.count, "suspended": suspended,
          "tool": tool.name, "loading": loading, "markup": pdfView.isInMarkupMode,
          "inputs": overlays.values.map(\.inputDiagnostics), "journalCounts": journalCounts,
-         "hostTiming": latencyStatistics.mapValues(\.diagnostics)]
+         "hostTiming": latencyStatistics.mapValues(\.diagnostics),
+         "preparedRowsByPage": drawingSnapshots.rowsByPage.mapValues { rows in rows.filter { $0.preparationCount > 0 }.count },
+         "deferredOverlayPages": deferredOverlayPages.sorted()]
     }
     private var lastViewport = ""
     private var emission: Task<Void, Never>?
@@ -831,11 +870,23 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         }
         pencilGesture.onDiagnostic = { [weak self] code in self?.onDiagnostic("nativePDF.gesture", code) }
         pdfView.addGestureRecognizer(pencilGesture)
+        selectionGesture.targetAtLocation = { [weak self] point in
+            guard let self, !self.suspended else { return nil }
+            return self.overlays.values.first { overlay in
+                overlay.window != nil && overlay.selectionInputTarget(at: overlay.convert(point, from: self.pdfView)) != nil
+            }
+        }
+        pdfView.addGestureRecognizer(selectionGesture)
         let annotationTap = UITapGestureRecognizer(target: self, action: #selector(annotationTapped(_:)))
         annotationTap.cancelsTouchesInView = false
         annotationTap.delaysTouchesBegan = false; annotationTap.delaysTouchesEnded = false
         annotationTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         pdfView.addGestureRecognizer(annotationTap)
+        let pasteHold = UILongPressGestureRecognizer(target: self, action: #selector(lassoHeld(_:)))
+        pasteHold.minimumPressDuration = 0.35; pasteHold.cancelsTouchesInView = false
+        pasteHold.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        pasteHold.isEnabled = false; pasteHoldGesture = pasteHold
+        pdfView.addGestureRecognizer(pasteHold)
         var buttonStyle = UIButton.Configuration.gray()
         buttonStyle.image = UIImage(systemName: "ellipsis")
         buttonStyle.cornerStyle = .medium
@@ -862,7 +913,11 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     }
     func prepareNavigation() {
         guard !suspended else { return }
+        let benchmarkStarted = ProcessInfo.processInfo.systemUptime
+        defer { DesktopSignpost.benchmark("host.prepareNavigation", startedAt: benchmarkStarted) }
+        let pdfLayoutStarted = ProcessInfo.processInfo.systemUptime
         pdfView.layoutIfNeeded()
+        DesktopSignpost.benchmark("host.pdfLayout", startedAt: pdfLayoutStarted)
         if pdfView.bounds.width > 0, pdfView.bounds.height > 0, pdfView.bounds.size != layoutSize {
             cancelPinchFallback()
             let zoom = layoutSize == .zero ? 1 : pdfView.scaleFactor / max(fit, 0.001)
@@ -1014,7 +1069,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                 try flush()
                 suspendedViewport = persistedViewport; suspended = true
                 viewportObservation = nil; nativePinch = nil; nativePan = nil
-                pdfView.document = nil; overlays.removeAll(); releaseCaches()
+                pdfView.document = nil; overlays.removeAll(); deferredOverlayPages.removeAll(); releaseCaches()
             }
             pdfView.isHidden = true
         } else {
@@ -1062,7 +1117,16 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             epoch = nil
         }
         // Reject an invalid delta before changing either drawings or UI state.
+        let ingestStarted = ProcessInfo.processInfo.systemUptime
         let changedPages = try drawingSnapshots.apply(request, pageCount: document.pageCount)
+        DesktopSignpost.benchmark("host.snapshot.ingest", startedAt: ingestStarted)
+        #if DEBUG
+        if Self.diagnosticsEnabled, !changedPages.isEmpty {
+            diagnosticNonInkObjectCount = drawingSnapshots.orderedRows.reduce(0) { count, row in
+                count + (["ink", "highlighter"].contains(row.object["kind"] as? String ?? "") ? 0 : 1)
+            }
+        }
+        #endif
         let nextHighlights = request["annotations"] as? [[String: Any]] ?? []
         let nextLoading = request["loading"] as? Bool ?? true
         // Anything that changes every overlay's inputs refreshes all of them;
@@ -1071,7 +1135,9 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             || (nextTool != nil && nextTool != tool) || loading != nextLoading || !(nextHighlights as NSArray).isEqual(to: highlights)
         nativeInkEraseEnabled = nextNativeErase
         if nativeInkEraseEnabled, request["drawings"] != nil || request["drawingPatch"] != nil {
+            let ledgerStarted = ProcessInfo.processInfo.systemUptime
             operationLedger.observeCanonical(objects)
+            DesktopSignpost.benchmark("host.snapshot.ledger", startedAt: ledgerStarted)
         }
         if epoch != objectSceneEpoch {
             // Retire delta authority, while preserving the displayed editor
@@ -1085,6 +1151,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         workspaceActive = request["active"] as? Bool ?? false
         if let nextTool {
             tool = nextTool
+            pasteHoldGesture?.isEnabled = tool.name == "lasso"
             if ["pen", "highlighter"].contains(tool.name) {
                 objectScenes.removeAll()
                 if nativeInkEraseEnabled { operationLedger.retireEditors() }
@@ -1099,7 +1166,9 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             pdfView.isInMarkupMode = markup
             onDiagnostic("nativePDF.mode", "\(tool.name).markup.\(markup ? "on" : "off")")
         }
+        let overlaysStarted = ProcessInfo.processInfo.systemUptime
         refreshOverlays(pages: refreshAll ? nil : changedPages)
+        DesktopSignpost.benchmark("host.snapshot.overlays", startedAt: overlaysStarted)
         pageActions.isHidden = usesNativeChrome || loading
         updateAccessibilityState()
         return epoch.map { ["objectSceneEpoch": $0, "tool": tool.name] } ?? [:]
@@ -1240,6 +1309,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     /// overlays whose content changed; nil refreshes every overlay.
     func refreshOverlays(pages only: Set<Int>? = nil) {
         let started = CACurrentMediaTime(); defer { recordLatency("refreshOverlays", startedAt: started) }
+        let benchmarkStarted = ProcessInfo.processInfo.systemUptime
+        defer { DesktopSignpost.benchmark("host.refreshOverlays", startedAt: benchmarkStarted) }
         var pages = only
         // Only already-ACKed previews can be retired by the two-stream erase
         // barrier. Their original journal was removed by the normal stroke ACK.
@@ -1253,6 +1324,14 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         pages?.formUnion(operationLedger.takeRetiredPages())
         for (number, overlay) in overlays {
             if let pages, !pages.contains(number) { continue }
+            // PDFKit asks for several neighboring page overlays before their
+            // frames are on screen. Preparing their thousands of CGPaths and
+            // retained meshes here blocked the first visible page's layout.
+            guard !deferringOverlayPreparation, selectionDragSource == number || hasVisibleArea(overlay) else {
+                deferredOverlayPages.insert(number)
+                continue
+            }
+            deferredOverlayPages.remove(number)
             overlay.retainedInkEnabled = nativeInkEraseEnabled
             overlay.nativeErasingEnabled = nativeInkEraseEnabled
             let excluded = operationLedger.excludedIdentifiers(page: number)
@@ -1265,8 +1344,10 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             let rows = drawingSnapshots.rows(page: number)
             let coordinates = document.page(at: number - 1).map { NativePDFPageCoordinates(page: $0) }
             let aspect = coordinates.map { $0.height / $0.width } ?? sqrt(2)
+            let prepareStarted = ProcessInfo.processInfo.systemUptime
             var drawings = scene?.prepared(aspect: aspect) ?? rows.map { $0.prepared(aspect: aspect) }
             var tokens = scene?.visualTokens ?? rows.map(\.visualToken)
+            DesktopSignpost.benchmark("host.overlay.prepare", startedAt: prepareStarted)
             overlay.selectionBox = scene?.selection
             overlay.selectionResizable = scene?.resizable ?? false
             overlay.selectionTextHandles = scene?.textHandles ?? false
@@ -1294,7 +1375,9 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                 }
                 drawings = visible.map(\.0); tokens = visible.map(\.1)
             }
+            let applyStarted = ProcessInfo.processInfo.systemUptime
             overlay.applyObjects(objects: drawings, visualTokens: tokens)
+            DesktopSignpost.benchmark("host.overlay.apply", startedAt: applyStarted)
             for object in drawings where ["image", "clip"].contains(object["kind"] as? String ?? "") {
                 let key = Self.imageKey(object)
                 guard images.object(forKey: key as NSString) == nil, imageTasks[key] == nil, !imageFailures.contains(key), let resolveImage else { continue }
@@ -1313,6 +1396,46 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         pendingRows = pendingRows.filter { pending[$0.key] != nil }
         publishSelectionFrame()
     }
+    private func hasVisibleArea(_ overlay: NativePDFInkSurface) -> Bool {
+        guard !suspended, !pdfView.isHidden, let window = overlay.window,
+              overlay.bounds.width > 0, overlay.bounds.height > 0 else { return false }
+        let page = overlay.convert(overlay.bounds, to: window)
+        let viewport = pdfView.convert(pdfView.bounds, to: window).intersection(window.bounds)
+        let visible = page.intersection(viewport)
+        return !visible.isNull && !visible.isEmpty
+    }
+    private func refreshDeferredOverlays() {
+        guard !deferringOverlayPreparation else { return }
+        let ready = Set(deferredOverlayPages.filter { number in overlays[number].map(hasVisibleArea) ?? false })
+        if !ready.isEmpty { refreshOverlays(pages: ready) }
+    }
+    /// Fit scale requires the real frame, but restoring to a later page must
+    /// not first build the opening page's ink and GPU meshes. This transaction
+    /// keeps the canonical rows intact and prepares only the final viewport.
+    func beginViewportRestore() { deferringOverlayPreparation = true }
+    func finishViewportRestore() {
+        deferringOverlayPreparation = false
+        refreshDeferredOverlays()
+        overlays.values.forEach { $0.refreshViewport() }
+    }
+    func validatedViewportRestore(_ raw: Any?) throws -> [String: Any]? {
+        guard let raw else { return nil }
+        guard let values = raw as? [String: Any], let page = NativePDFEditorScene.integer(values["page"]),
+              (1...document.pageCount).contains(page) else { throw NativePDFEditorScene.invalid() }
+        var result: [String: Any] = ["page": page]
+        for key in ["zoom", "progress", "horizontalProgress"] {
+            guard let rawNumber = values[key] else { continue }
+            guard let number = rawNumber as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+                  number.doubleValue.isFinite else { throw NativePDFEditorScene.invalid() }
+            let value = number.doubleValue
+            if key == "zoom" {
+                // Older view-state writers allowed any positive zoom. Match
+                // navigate's existing fallback to the fitted scale for those.
+                if (0.4...4).contains(value) { result[key] = value }
+            } else { result[key] = min(1, max(0, value)) }
+        }
+        return result
+    }
     private var lastSelectionFrame: [String: Any] = [:]
     /// The selection box in the host container's coordinates, so SwiftUI can
     /// float an action bar above it. Emits only when the rectangle changes.
@@ -1324,6 +1447,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             let a = mapper.canvasPoint(InkPoint(x: x, y: y, p: 0.5)), b = mapper.canvasPoint(InkPoint(x: x + w, y: y + h, p: 0.5))
             let local = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
             let rect = overlay.convert(local, to: pdfView.superview ?? pdfView)
+            let visible = pdfView.convert(pdfView.bounds, to: pdfView.superview ?? pdfView)
+            guard rect.insetBy(dx: -1, dy: -1).intersects(visible) else { continue }
             payload = ["page": number, "x": Double(rect.minX), "y": Double(rect.minY), "width": Double(rect.width), "height": Double(rect.height)]
             break
         }
@@ -1337,6 +1462,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
     func navigate(_ request: [String: Any]) throws {
+        let benchmarkStarted = ProcessInfo.processInfo.systemUptime
+        defer { DesktopSignpost.benchmark("host.navigate", startedAt: benchmarkStarted) }
         cancelPinchFallback()
         try flush(); navigating = true; defer { navigating = false; viewportChanged() }
         navigateCommands += 1
@@ -1375,6 +1502,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         }
     }
     private func viewportChanged() {
+        refreshDeferredOverlays()
         overlays.values.forEach { $0.refreshViewport() }
         checkPullToAddPage()
         publishSelectionFrame()
@@ -1401,13 +1529,18 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private static let diagnosticsEnabled = ProcessInfo.processInfo.arguments.contains("--ui-testing") || ProcessInfo.processInfo.arguments.contains("--native-ui-testing") || NSClassFromString("XCTestCase") != nil
     private func updateAccessibilityState() {
         guard Self.diagnosticsEnabled else { return }
+        let benchmarkStarted = ProcessInfo.processInfo.systemUptime
+        defer { DesktopSignpost.benchmark("host.accessibility", startedAt: benchmarkStarted) }
         let number = pdfView.currentPage.map { document.index(for: $0) + 1 } ?? 1
         pdfView.accessibilityValue = String(format: "page=%d zoom=%.4f scale=%.4f width=%.1f height=%.1f pinch=%d pinchScale=%.3f scaleChanges=%d navigation=%d requestedZoom=%.3f submitP95ms=%.2f samples=%d scrollZoom=%.3f scrollMin=%.3f scrollMax=%.3f autoScales=%d active=%d", number,
             pdfView.scaleFactor/max(fit,0.001), pdfView.scaleFactor, pdfView.bounds.width, pdfView.bounds.height,
             pinchEvents, lastPinchScale, scaleChanges, navigateCommands, lastRequestedZoom, submissionP95, submissionSamples,
             scrollView?.zoomScale ?? 0, scrollView?.minimumZoomScale ?? 0, scrollView?.maximumZoomScale ?? 0, pdfView.autoScales ? 1 : 0, workspaceActive ? 1 : 0)
         #if DEBUG
-        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " drawings=\(objects.count) pending=\(pending.count)"
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " drawings=\(drawingSnapshots.order.count) pending=\(pending.count)"
+        let savedPageCounts = drawingSnapshots.rowsByPage.mapValues(\.count)
+        let savedPages = (1...max(1, document.pageCount)).map { "\($0):\(savedPageCounts[$0] ?? 0)" }.joined(separator: ",")
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " savedObjectPages=" + savedPages
         pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + String(format:
             " presentP95ms=%.2f firstPresentP95ms=%.2f liveFrames=%d liveStrokes=%d lateStrokes=%d",
             presentationStatistics.receiveToPresentP95MS, presentationStatistics.firstPresentationP95MS,
@@ -1421,7 +1554,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         let retainedInstalls = scenes.reduce(0) { $0 + ($1["retainedInkInstalls"] as? Int ?? 0) }
         let retainedBuilds = scenes.reduce(0) { $0 + ($1["retainedInkMeshBuilds"] as? Int ?? 0) }
         let retainedObjects = scenes.reduce(0) { $0 + ($1["retainedObjectTextures"] as? Int ?? 0) }
-        let nonInkObjects = objects.filter { !["ink", "highlighter"].contains($0["kind"] as? String ?? "") }.count
+        let nonInkObjects = diagnosticNonInkObjectCount
         let retainedSummary = " retainedActive=\(retainedActive) countMesh=\(retainedMeshes) retainedInstalls=\(retainedInstalls)"
         let operationSummary = " retainedMeshBuilds=\(retainedBuilds) nativeEraseOperations=\(operationLedger.eraseOperationCount) retainedObjects=\(retainedObjects) nonInkObjects=\(nonInkObjects)"
         pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + retainedSummary + operationSummary
@@ -1479,6 +1612,72 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         }), let id = annotation["id"] as? String else { return }
         onEvent("annotation", ["id": id, "x": location.x, "y": location.y])
     }
+    @objc private func lassoHeld(_ gesture: UILongPressGestureRecognizer) {
+        guard tool.name == "lasso", gesture.state == .began, selectionDragSource == nil,
+              let target = locationInPDF(gesture.location(in: pdfView)) else { return }
+        onEvent("bodyTap", ["page": target.page, "x": Double(target.point.x), "y": Double(target.point.y)])
+    }
+    func documentLocation(_ point: CGPoint) -> (page: Int, point: CGPoint)? {
+        locationInPDF(pdfView.convert(point, from: pdfView.superview))
+    }
+    private func locationInPDF(_ point: CGPoint) -> (page: Int, point: CGPoint)? {
+        guard let page = pdfView.page(for: point, nearest: true) else { return nil }
+        return (document.index(for: page) + 1, NativePDFPageCoordinates(page: page).displayNormalized(pdfView.convert(point, to: page)))
+    }
+    private func receiveObjectPointer(_ payload: [String: Any], page number: Int, overlay: NativePDFInkSurface) {
+        let phase = payload["phase"] as? String ?? ""
+        if phase == "down", selectionDragSource == nil, overlay.selectionResizable,
+           let point = (payload["points"] as? [[String: Any]])?.first.flatMap(NativePDFEditingGeometry.point),
+           let rawBox = overlay.selectionBox, let x = rawBox["x"], let y = rawBox["y"], let w = rawBox["width"], let h = rawBox["height"],
+           let sourcePage = document.page(at: number - 1) {
+            let box = CGRect(x: x, y: y, width: w, height: h)
+            let coordinates = NativePDFPageCoordinates(page: sourcePage), aspect = coordinates.height / coordinates.width
+            if box.insetBy(dx: -0.018, dy: -0.018 / aspect).contains(point),
+               NativePDFEditingGeometry.corner(at: point, box: box, aspect: aspect) == nil {
+                selectionDragSource = number; overlay.retainsObjectDrag = true
+                let link = CADisplayLink(target: self, selector: #selector(scrollSelectionDrag))
+                link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+                selectionScrollLink?.invalidate(); selectionScrollLink = link; link.add(to: .main, forMode: .common)
+            }
+        }
+        var event = payload; event["page"] = number
+        if selectionDragSource == number {
+            if let location = overlay.objectContactLocation(in: pdfView) { selectionDragLocation = location }
+            selectionDragPayload = event
+            event = pointerWithDestination(event)
+        }
+        onEvent("pointer", event)
+        if (phase == "up" || phase == "cancel"), selectionDragSource == number { stopSelectionDrag() }
+    }
+    private func pointerWithDestination(_ payload: [String: Any]) -> [String: Any] {
+        var result = payload
+        if let location = selectionDragLocation, let target = locationInPDF(location) {
+            result["destinationPage"] = target.page
+            result["destinationX"] = Double(target.point.x); result["destinationY"] = Double(target.point.y)
+        }
+        return result
+    }
+    @objc private func scrollSelectionDrag() {
+        guard let location = selectionDragLocation, let scroll = scrollView, let payload = selectionDragPayload else { return }
+        let margin: CGFloat = min(72, pdfView.bounds.height / 5), y = location.y - pdfView.bounds.minY
+        let velocity: CGFloat
+        if y < margin { velocity = -min(1, max(0, (margin - y) / margin)) }
+        else if y > pdfView.bounds.height - margin { velocity = min(1, (y - pdfView.bounds.height + margin) / margin) }
+        else { return }
+        let low = -scroll.adjustedContentInset.top
+        let high = max(low, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        let next = min(high, max(low, scroll.contentOffset.y + velocity * 14))
+        guard abs(next - scroll.contentOffset.y) > 0.1 else { return }
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: next), animated: false)
+        pdfView.layoutIfNeeded()
+        var event = pointerWithDestination(payload); event["phase"] = "move"
+        onEvent("pointer", event)
+    }
+    private func stopSelectionDrag() {
+        selectionScrollLink?.invalidate(); selectionScrollLink = nil
+        if let source = selectionDragSource { overlays[source]?.retainsObjectDrag = false }
+        selectionDragSource = nil; selectionDragLocation = nil; selectionDragPayload = nil
+    }
     func pdfViewWillClick(onLink sender: PDFView, with url: URL) { onEvent("link", ["url": url.absoluteString]) }
     func pdfView(_ view: PDFView, overlayViewFor page: PDFPage) -> UIView? {
         let number = document.index(for: page) + 1
@@ -1520,7 +1719,10 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             self?.presentationStatistics = statistics; self?.updateAccessibilityState()
         }
         overlay.onInteraction = { [weak self] tool, payload in self?.onEvent("interaction", payload.merging(["page": number, "tool": tool]) { _, new in new }) }
-        overlay.onPointer = { [weak self] payload in self?.onEvent("pointer", payload.merging(["page": number]) { _, new in new }) }
+        overlay.onPointer = { [weak self, weak overlay] payload in
+            guard let self, let overlay else { return }
+            self.receiveObjectPointer(payload, page: number, overlay: overlay)
+        }
         overlay.onInputOwnership = { [weak self] active in
             self?.onEvent(active ? "activate" : "deactivate", [:])
             // Touch-type filtering isolates the stylus. Toggling the finger
@@ -1528,6 +1730,9 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         }
         overlay.onLayout = { [weak self, weak overlay, weak page] in
             guard let self, let overlay, let page, overlay.window != nil else { return }
+            if self.deferredOverlayPages.contains(number), self.hasVisibleArea(overlay) {
+                self.refreshOverlays(pages: [number])
+            }
             let coordinates = NativePDFPageCoordinates(page: page)
             let convert: (CGPoint) -> CGPoint = { coordinates.displayPhysical(self.pdfView.convert(overlay.convert($0, to: self.pdfView), to: page)) }
             guard let transform = NativePDFCoordinateMapping.sample(bounds: overlay.bounds, convert: convert) else { return }
@@ -1540,7 +1745,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     func pdfView(_ pdfView: PDFView, willEndDisplayingOverlayView overlayView: UIView, for page: PDFPage) {
         guard let overlay = overlayView as? NativePDFInkSurface else { return }
         let number = document.index(for: page) + 1
-        do { try overlay.flush(); if overlays[number] === overlay { overlays.removeValue(forKey: number) } }
+        if selectionDragSource == number { return }
+        do { try overlay.flush(); if overlays[number] === overlay { overlays.removeValue(forKey: number); deferredOverlayPages.remove(number) } }
         catch { onEvent("error", ["message": error.localizedDescription]) }
     }
     private func prepareForNavigation() throws {
@@ -1554,13 +1760,14 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     func close() throws {
         cancelPinchFallback()
         try flush()
+        stopSelectionDrag()
         try onDurabilityBarrier?()
         guard operationLedger.pendingEraseCount == 0 else { throw NativePDFError.invalid("지우기 저장 결과를 확인하지 못해 PDF를 닫지 않았습니다.") }
         emission?.cancel(); viewportObservation = nil
         observations.forEach(NotificationCenter.default.removeObserver); observations.removeAll()
         imageTasks.values.forEach { $0.cancel() }; imageTasks.removeAll(); images.removeAllObjects()
         cancelKeyboardReveal(); textEditor = nil
-        pdfView.removeFromSuperview(); pdfView.pageOverlayViewProvider = nil; pdfView.document = nil; overlays.removeAll()
+        pdfView.removeFromSuperview(); pdfView.pageOverlayViewProvider = nil; pdfView.document = nil; overlays.removeAll(); deferredOverlayPages.removeAll()
         objectScenes.removeAll()
     }
 }

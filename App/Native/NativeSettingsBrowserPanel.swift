@@ -39,7 +39,7 @@ struct NativeSettingsBrowserPanel: View {
     }
     private var navigation: some View {
         NativeSettingsCard(title: "홈페이지·검색·확대/축소", description: "새 브라우저 페이지에서 사용할 기본값입니다.") {
-            TextField("홈페이지 · 비워두면 빈 페이지", text: $homePage).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().nativeToolField().accessibilityIdentifier("native-settings-browser-home")
+            TextField("홈페이지 · 비워두면 기본 검색 엔진", text: $homePage).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().nativeToolField().accessibilityIdentifier("native-settings-browser-home")
             Button("홈페이지 저장") { run { let value = homePage.trimmingCharacters(in: .whitespacesAndNewlines); if !value.isEmpty { _ = try NativeSettingsValidation.webURL(value) }; try await save(["browser": ["homePage": value]]) } }
             Picker("검색 엔진", selection: Binding(get: { settings["browserSearchEngine"] as? String ?? "google" }, set: { value in persist(["browserSearchEngine": value]) })) { Text("Google").tag("google"); Text("네이버").tag("naver"); Text("다음").tag("daum"); Text("DuckDuckGo").tag("duckduckgo") }.accessibilityIdentifier("native-settings-search-engine")
             Picker("기본 확대/축소", selection: Binding(get: { (browser["defaultZoomLevel"] as? NSNumber)?.doubleValue ?? 0 }, set: { persist(["browser": ["defaultZoomLevel": $0]]) })) {

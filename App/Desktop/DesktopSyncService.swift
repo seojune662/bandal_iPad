@@ -458,6 +458,17 @@ final class DesktopSyncService {
             }
             return result
         }
+        if !record.deleted, record.kind == "chat", let payload = try JSONSerialization.jsonObject(with:record.payload) as? [String: Any],
+           payload["recordType"] as? String == "desktop-chat-message" {
+            var references: [String: AssetRevision] = [:]
+            for block in payload["blocks"] as? [[String: Any]] ?? [] where block["kind"] as? String == "attachment" {
+                guard let capture = block["payload"] as? [String: Any], let raw = capture["imageAsset"] as? [String: Any] else { continue }
+                let revision = try asset(raw)
+                guard references[revision.sha256] == nil || references[revision.sha256]?.byteCount == revision.byteCount else { throw CoreError.assetIntegrity }
+                references[revision.sha256] = revision
+            }
+            return references.values.sorted { $0.sha256 < $1.sha256 }
+        }
         if !record.deleted, ["drawing", "annotation"].contains(record.kind),
            let payload = try JSONSerialization.jsonObject(with: record.payload) as? [String: Any], let encoded = payload["data"] as? String {
             guard let bytes = Data(base64Encoded: encoded), let page = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw CoreError.assetIntegrity }

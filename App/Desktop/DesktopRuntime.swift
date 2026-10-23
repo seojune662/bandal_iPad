@@ -26,13 +26,14 @@ final class DesktopRuntime: @unchecked Sendable {
     private var whiteboards: NativeWhiteboardRepository?
     private var initialization: Task<Void,Error>?
     private var watcher: DispatchSourceTimer?
+    private var memoryPressure: DispatchSourceMemoryPressure?
     private var watches: [String:String] = [:]
     private var snapshots: [String:String] = [:]
     private var workspaceSession = ""
     private var active = true
 
     init(root: URL, legacyRoot: URL) { self.root = root; self.legacyRoot = legacyRoot; log = DesktopLog(root:root) }
-    deinit { watcher?.cancel() }
+    deinit { watcher?.cancel(); memoryPressure?.cancel() }
 
     @MainActor func start() async throws {
         if let initialization { return try await initialization.value }
@@ -52,6 +53,9 @@ final class DesktopRuntime: @unchecked Sendable {
             self.library = library
             self.pdfPages = try NativePDFPageRepository(context:context,pdf:pdf)
             self.pdf = pdf; self.planner = NativePlannerRepository(context:context)
+            let pressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: self.queue)
+            pressure.setEventHandler { [weak self] in self?.pdf?.releaseDecodedDrawings() }
+            self.memoryPressure = pressure; pressure.resume()
             self.recordings = NativeRecordingRepository(context:context)
             self.preferences = NativePreferencesRepository(context:context)
             self.search = try NativeSearchRepository(context:context)
@@ -94,7 +98,20 @@ final class DesktopRuntime: @unchecked Sendable {
         if channel == "studyMarket:request" || channel == "native:extractArticle" || channel.hasPrefix("native:cloud") || Self.nativeChannels.contains(channel) || channel.hasPrefix("browser:") || channel.hasPrefix("credentials:") || channel.hasPrefix("auth:") || channel.hasPrefix("sync:") || channel.hasPrefix("native:ai") || (channel.hasPrefix("nativeSettings:") && channel != "nativeSettings:usage") {
             return try await native(Self.aliases[channel] ?? channel,object)
         }
-        if let result = try await onQueue({ try self.handle(channel,object) }) { return result }
+        if let result = try await onQueue({
+            let started = ProcessInfo.processInfo.systemUptime
+            defer {
+                switch channel {
+                case "nativePDF:binding": DesktopSignpost.benchmark("storage.binding", startedAt: started)
+                case "drawings:listForFile": DesktopSignpost.benchmark("storage.drawings", startedAt: started)
+                case "annotations:listForFile": DesktopSignpost.benchmark("storage.annotations", startedAt: started)
+                case "pdf:restructure": DesktopSignpost.benchmark("storage.pageRestructure", startedAt: started)
+                case "pdf:pageHistory": DesktopSignpost.benchmark("storage.pageHistory", startedAt: started)
+                default: break
+                }
+            }
+            return try self.handle(channel,object)
+        }) { return result }
         throw DesktopRuntimeError("이 작업은 Swift 앱에서 제공되지 않습니다: \(channel)",code:"UNSUPPORTED_CHANNEL")
     }
     private func native(_ channel: String,_ request: [String:Any]) async throws -> Any {

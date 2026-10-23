@@ -20,9 +20,11 @@ settings:
     SUPPORTS_MACCATALYST: NO
     SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
     MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "4"
+    CURRENT_PROJECT_VERSION: "7"
     GENERATE_INFOPLIST_FILE: NO
     ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEVELOPMENT_TEAM: VUZ7Z98BW3
+    CODE_SIGN_STYLE: Automatic
 targets:
   Bandal:
     type: application
@@ -30,6 +32,7 @@ targets:
     sources:
       - path: App
         excludes: [Resources, Info.plist]
+      - path: Shared
       - path: App/Resources/Assets.xcassets
         buildPhase: resources
       - path: App/Resources/Configuration.plist
@@ -48,6 +51,8 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
+      - target: BandalShare
+        embed: true
       - package: BandalCore
       - package: SwiftMath
       - package: sherpa-onnx
@@ -61,6 +66,21 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     scheme:
       testTargets: [BandalTests, BandalUITests]
+  BandalShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShareExtension
+        excludes: [Info.plist, BandalShare.entitlements]
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.bandal.ipad.share
+        CODE_SIGN_ENTITLEMENTS: ShareExtension/BandalShare.entitlements
+        INFOPLIST_FILE: ShareExtension/Info.plist
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        TARGETED_DEVICE_FAMILY: "2"
   BandalTests:
     type: bundle.unit-test
     platform: iOS

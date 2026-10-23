@@ -116,3 +116,33 @@ final class NativeLearningRepositoryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), bytes)
     }
 }
+
+extension NativeLearningRepositoryTests {
+    func testNameOnlyProjectCreatesIndependentSpaceWithStableManifestIdentity() throws {
+        let created = try XCTUnwrap(learning.handle("learning:create", ["name": "Research"]) as? [String: Any])
+        let projectID = try XCTUnwrap(created["projectId"] as? String), binding = try binding(created)
+        XCTAssertEqual(created["topic"] as? String, "Research")
+        XCTAssertEqual(binding["rootRelPath"] as? String, "")
+        XCTAssertNil(created["linkedCourseId"])
+        let list = try XCTUnwrap(learning.handle("learning:list", [:]) as? [String: Any])
+        XCTAssertEqual((list["projects"] as? [[String: Any]])?.first?["projectId"] as? String, projectID)
+        _ = try learning.handle("learning:rename", ["binding": binding, "name": "Renamed Research"])
+        _ = try learning.handle("learning:delete", ["binding": binding])
+        _ = try learning.handle("learning:restore", ["binding": binding])
+        XCTAssertEqual(try read(binding)["projectId"] as? String, projectID)
+        XCTAssertEqual(try read(binding)["name"] as? String, "Renamed Research")
+    }
+    func testEnsureCourseReviewReusesExistingLinkedSpaceAndRetainsItsID() throws {
+        let sourceCourse = try course()
+        let first = try XCTUnwrap(learning.handle("learning:ensureCourseReview", ["courseId": sourceCourse]) as? [String: Any])
+        let second = try XCTUnwrap(learning.handle("learning:ensureCourseReview", ["courseId": sourceCourse]) as? [String: Any])
+        XCTAssertEqual(first["projectId"] as? String, second["projectId"] as? String)
+        XCTAssertEqual(first["linkedCourseId"] as? String, sourceCourse)
+        XCTAssertEqual(first["purpose"] as? String, "course-review")
+        let list = try XCTUnwrap(learning.handle("learning:list", ["courseId": sourceCourse]) as? [String: Any])
+        XCTAssertEqual((list["projects"] as? [Any])?.count, 1)
+        try reopen()
+        let restarted = try XCTUnwrap(learning.handle("learning:ensureCourseReview", ["courseId": sourceCourse]) as? [String: Any])
+        XCTAssertEqual(restarted["projectId"] as? String, first["projectId"] as? String)
+    }
+}

@@ -28,11 +28,13 @@ final class NativeCourseRefreshQueue {
 final class NativeWorkspaceStore: ObservableObject {
     private lazy var studyService = NativeStudyService(store: self)
     let runtime: DesktopRuntime
+    let annotation = NativeAnnotationCoordinator()
     var root: URL { runtime.root }
     @Published var courses: [NativeCourse] = []
     @Published var selectedCourseID: String?
     /// A newly created docked browser consumes its URL after its page exists.
     @Published var assistantDocumentIDs = Set<String>()
+    @Published var pendingAssistantConversationIDs: [String: String] = [:]
     @Published var documentSelections: [String: String] = [:]
     @Published var documentDuplicateSourceIDs: [String: String] = [:]
     @Published var pageNoteSourceTabIDs: [String: String] = [:]
@@ -117,7 +119,7 @@ final class NativeWorkspaceStore: ObservableObject {
             #if DEBUG
             // Each explicitly reset UI fixture starts with visible desktop rails.
             // Normal launches and restart tests preserve the user's preference.
-            for key in ["native.desktop.courseRail", "native.desktop.materialsRail"] { UserDefaults.standard.removeObject(forKey: key) }
+            for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.home.section", "native.inspector.tab", "native.inspector.width"] { UserDefaults.standard.removeObject(forKey: key) }
             #endif
         }
         let legacy = storageRoot != nil ? folder.appendingPathComponent("Legacy", isDirectory: true)
@@ -207,6 +209,13 @@ final class NativeWorkspaceStore: ObservableObject {
             try await loadMaterials()
             errorMessage = nil
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    func clearCourseSelection() async throws {
+        try await ensureStarted()
+        try await flushDocuments()
+        selectedCourseID = nil; materials = []
+        try saveSelection()
     }
 
     func refreshMaterials() async {
@@ -483,7 +492,10 @@ final class NativeWorkspaceStore: ObservableObject {
                     for courseID in changedCourseIDs { courseReloadEpochs[courseID,default:0] &+= 1 }
                 } else { universalReloadEpoch &+= 1 }
                 documentReloadEpoch &+= 1
-                events.send(NativeWorkspaceEvent(channel:"nativeWorkspace:externalMutationFinished",payload:[:]))
+                var scope: [String: Any] = [:]
+                if let changedDocuments { scope["changedDocuments"] = changedDocuments }
+                if let changedCourseIDs { scope["changedCourseIDs"] = changedCourseIDs.sorted() }
+                events.send(NativeWorkspaceEvent(channel:"nativeWorkspace:externalMutationFinished",payload:scope))
             }
             let waiters = externalMutationWaiters
             externalMutationWaiters.removeAll()
@@ -507,8 +519,13 @@ final class NativeWorkspaceStore: ObservableObject {
         let payload = result as? [String: Any]
         changedCourseIDs = (payload?["changedCourseIDs"] as? [String]).map(Set.init)
         changedDocuments = payload?["changedDocuments"] as? [[String: Any]]
-        // An explicitly empty course scope changed nothing the lists show.
-        if changedCourseIDs?.isEmpty != true { try await loadCourses(); try await loadMaterials() }
+        // A document-only change does not rename/create courses. Let its editor
+        // reopen immediately; refreshing the sidebar must not sit in that path.
+        if changedDocuments != nil {
+            if changedCourseIDs?.isEmpty != true { scheduleMaterialRefresh() }
+        } else if changedCourseIDs?.isEmpty != true {
+            try await loadCourses(); try await loadMaterials()
+        }
         return result
     }
 
@@ -545,6 +562,12 @@ final class NativeWorkspaceStore: ObservableObject {
 
     private func performNativeChannel(_ channel: String, _ request: [String: Any]) async throws -> Any {
         guard let nativeChannelHandler else { throw DesktopRuntimeError("파일 창을 아직 열 수 없습니다. 잠시 후 다시 시도해 주세요.") }
+        // Every entry point (library, dock and future menus) must finish its
+        // pending edit journal before the file service captures an export.
+        if channel == "materials:share" || channel == "materials:export" {
+            await waitForExternalMutation()
+            try await flushDocuments()
+        }
         return try await nativeChannelHandler(channel, request)
     }
 
@@ -588,10 +611,17 @@ final class NativeWorkspaceStore: ObservableObject {
         let courseID = (payload as? [String: Any])?["courseId"] as? String
         guard channel == "courses:changed" || channel == "materials:changed" && courseID == selectedCourseID else { return }
         if channel == "courses:changed" { refreshCoursesPending = true }
+        scheduleMaterialRefresh()
+    }
+
+    private func scheduleMaterialRefresh() {
         guard isReady, eventRefresh == nil else { return }
         eventRefresh = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 80_000_000)
-            guard let self else { return }
+            guard let self, !Task.isCancelled else { return }
+            // File events during a replacement are folded into one settled
+            // refresh; they must not race the journal's intermediate state.
+            await self.waitForExternalMutation()
             self.eventRefresh = nil
             do {
                 if self.refreshCoursesPending { self.refreshCoursesPending = false; try await self.loadCourses() }

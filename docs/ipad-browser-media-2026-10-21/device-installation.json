@@ -1,0 +1,14 @@
+{
+  "bundleID": "app.bandal.ipad",
+  "version": "1.0.0",
+  "build": "6",
+  "releaseBuildSucceeded": true,
+  "installed": true,
+  "normalLaunchSucceeded": true,
+  "testArguments": [],
+  "runningAfterFinalLaunch": true,
+  "documentsBackupBeforeAndAfterSucceeded": true,
+  "preferencesBackupBeforeAndAfterSucceeded": true,
+  "shareInboxBackupBeforeSucceeded": false,
+  "shareInboxBackupAfterSucceeded": true
+}

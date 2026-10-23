@@ -1,4 +1,5 @@
 import QuickLook
+import PDFKit
 import UIKit
 import XCTest
 @testable import Bandal
@@ -65,6 +66,52 @@ final class DesktopTemporaryFileTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
         let original = try await runtime.readMaterial(courseID: id, relativePath: path)
         XCTAssertEqual(String(data: original, encoding: .utf8), "original material")
+        presenter.dismiss(animated: false)
+    }
+    func testLibraryPDFShareIncludesSavedInkAndKeepsOriginal() async throws {
+        try await assertAnnotatedMaterial(channel: "materials:share")
+    }
+    func testLibraryPDFExportIncludesSavedInkAndKeepsOriginal() async throws {
+        try await assertAnnotatedMaterial(channel: "materials:export")
+    }
+    private func assertAnnotatedMaterial(channel: String) async throws {
+        let (root, runtime, service, window, presenter) = try fixture()
+        defer { service.cancelPresentations(); window.isHidden = true }
+        try await runtime.start()
+        let course = try await runtime.invoke("courses:create", request: ["name": "Annotated export", "color": "blue"]) as! [String: Any]
+        let courseID = course["id"] as! String
+        let note = try await runtime.invoke("pdfNotes:create", request: ["courseId": courseID, "title": "Shared ink", "paper": "blank", "orientation": "portrait"]) as! [String: Any]
+        let identity: [String: Any] = ["courseId": courseID, "relPath": note["relPath"]!]
+        let original = try await runtime.readMaterial(courseID: courseID, relativePath: note["relPath"] as! String)
+        _ = try await runtime.invoke("drawings:create", request: identity.merging([
+            "page": 1, "kind": "ink", "data": ["inkVersion": 5, "points": [["x": 0.2, "y": 0.3, "p": 0.8], ["x": 0.8, "y": 0.6, "p": 0.8]]],
+            "style": ["width": 0.03, "color": "red", "opacity": 1.0]
+        ]) { _, value in value })
+        let task = Task { try await service.handle(channel: channel, request: identity) }
+        let deadline = Date().addingTimeInterval(10)
+        while presenter.presentedViewController == nil, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        let exported = try XCTUnwrap(exportedFiles(root).first)
+        let page = try XCTUnwrap(PDFDocument(url: exported)?.page(at: 0))
+        let image = try XCTUnwrap(page.thumbnail(of: CGSize(width: 300, height: 424), for: .mediaBox).cgImage)
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        let context = try XCTUnwrap(CGContext(data: &pixels, width: image.width, height: image.height, bitsPerComponent: 8,
+            bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        var redPixels = 0
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            let red = Int(pixels[offset]), green = Int(pixels[offset + 1]), blue = Int(pixels[offset + 2])
+            if red > 130 && red > green + 40 && red > blue + 40 { redPixels += 1 }
+        }
+        XCTAssertGreaterThan(redPixels, 200, "The exact temporary file offered by the library must contain visible handwriting")
+        let preserved = try await runtime.readMaterial(courseID: courseID, relativePath: note["relPath"] as! String)
+        XCTAssertEqual(preserved, original)
+        if let picker = presenter.presentedViewController as? UIDocumentPickerViewController { service.documentPickerWasCancelled(picker) }
+        else {
+            let share = try XCTUnwrap(presenter.presentedViewController as? UIActivityViewController)
+            share.completionWithItemsHandler?(nil, false, nil, nil)
+        }
+        _ = try await task.value
+        XCTAssertFalse(FileManager.default.fileExists(atPath: exported.path))
         presenter.dismiss(animated: false)
     }
 }

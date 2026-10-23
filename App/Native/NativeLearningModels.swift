@@ -11,6 +11,7 @@ struct NativeLearningBinding: Codable, Hashable, Identifiable {
 
 struct NativeLearningSummary: Decodable, Identifiable {
     let binding: NativeLearningBinding
+    let projectId: String?
     let name: String
     let topic: String
     let purpose: String?
@@ -21,7 +22,7 @@ struct NativeLearningSummary: Decodable, Identifiable {
     let updatedAt: String
     let deletedAt: String?
     let warning: String?
-    var id: String { binding.id }
+    var id: String { projectId ?? binding.id }
     var group: String { ["english-reading", "course-review"].contains(purpose ?? "") ? purpose! : "unclassified" }
     func displayName(courses: [NativeCourse]) -> String {
         guard name == "AI 학습자료", topic == "과목 자료", purpose == "course-review" else { return name }

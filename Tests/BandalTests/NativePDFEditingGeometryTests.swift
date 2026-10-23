@@ -60,5 +60,29 @@ final class NativePDFEditingGeometryTests: XCTestCase {
         let next = try XCTUnwrap(NativePDFEditingGeometry.union(resized))
         XCTAssertEqual(next.minX, 0); XCTAssertEqual(next.minY, 0); XCTAssertLessThanOrEqual(next.maxX, 1); XCTAssertLessThanOrEqual(next.maxY, 1)
     }
+    func testCrossPageMovePreservesPhysicalStrokeSizeGrabPointAndMetadata() throws {
+        var row = stroke([["x": 0.2, "y": 0.3, "p": 0.7, "t": 123.5], ["x": 0.4, "y": 0.5, "p": 0.4, "t": 124.0]])
+        row["page"] = 1
+        let moved = NativePDFEditingGeometry.movedAcrossPages([row], from: CGSize(width: 600, height: 800),
+            to: CGSize(width: 1200, height: 600), grabbedAt: CGPoint(x: 0.3, y: 0.4), droppedAt: CGPoint(x: 0.5, y: 0.5), page: 2)
+        let value = try XCTUnwrap(moved.first), points = try XCTUnwrap((value["data"] as? [String: Any])?["points"] as? [[String: Any]])
+        XCTAssertEqual(value["page"] as? Int, 2); XCTAssertEqual(value["id"] as? String, "ink")
+        XCTAssertEqual(try XCTUnwrap(points[0]["x"] as? Double), 0.45, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(points[0]["y"] as? Double), 0.5 - 0.1 * 800 / 600, accuracy: 1e-9)
+        XCTAssertEqual(points[0]["p"] as? Double, 0.7); XCTAssertEqual(points[0]["t"] as? Double, 123.5)
+        XCTAssertEqual((value["style"] as? [String: Any])?["width"] as? Double, 0.0015)
+        let edge = NativePDFEditingGeometry.movedAcrossPages([row], from: CGSize(width: 600, height: 800),
+            to: CGSize(width: 600, height: 800), grabbedAt: CGPoint(x: 0.3, y: 0.4), droppedAt: CGPoint(x: -2, y: 4), page: 3)
+        let bounds = try XCTUnwrap(NativePDFEditingGeometry.union(edge, aspect: 800.0 / 600))
+        XCTAssertGreaterThanOrEqual(bounds.minX, -1e-9); XCTAssertLessThanOrEqual(bounds.maxY, 1 + 1e-9)
+        XCTAssertEqual(bounds.width, try XCTUnwrap(NativePDFEditingGeometry.union([row], aspect: 800.0 / 600)).width, accuracy: 1e-9)
+    }
+    func testPaperRegionNeedsAreaAndClipsToPageWithoutInk() {
+        XCTAssertNil(NativePDFEditingGeometry.regionBounds([CGPoint(x: 0.2, y: 0.2)]))
+        XCTAssertNil(NativePDFEditingGeometry.regionBounds([CGPoint(x: 0.2, y: 0.2), CGPoint(x: 0.5, y: 0.2), CGPoint(x: 0.3, y: 0.2)]))
+        let box = NativePDFEditingGeometry.regionBounds([CGPoint(x: -0.1, y: 0.2), CGPoint(x: 0.5, y: 0.2), CGPoint(x: 0.5, y: 0.6)])
+        XCTAssertEqual(box?.minX, 0); XCTAssertEqual(box?.width, 0.5)
+        XCTAssertEqual(box?.height ?? 0, 0.4, accuracy: 1e-9)
+    }
     private func stroke(_ points: [[String: Any]]) -> [String: Any] { ["id": "ink", "kind": "ink", "data": ["inkVersion": 5, "points": points], "style": ["color": "blue", "width": 0.003, "opacity": 1]] }
 }

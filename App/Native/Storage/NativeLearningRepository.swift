@@ -25,8 +25,9 @@ final class NativeLearningRepository {
     func handle(_ channel: String, _ request: [String: Any]) throws -> Any? {
         guard channel.hasPrefix("learning:") || channel.hasPrefix("nativeLearning:") else { return nil }
         switch channel {
-        case "nativeLearning:putArtifact", "nativeLearning:updateRun", "nativeLearning:putArticle", "learning:saveProgress", "learning:completeArticle", "learning:reviewCard", "learning:saveQuizAnswer", "learning:finishQuiz", "learning:dismissRun": return try learningMutation(channel, request)
+        case "nativeLearning:putArtifact", "nativeLearning:updateRun", "nativeLearning:putArticle", "learning:saveProgress", "learning:completeArticle", "learning:reviewCard", "learning:saveQuizAnswer", "learning:submitQuiz", "learning:finishQuiz", "learning:dismissRun": return try learningMutation(channel, request)
         case "learning:create": return try context.withMaterialLock { try create(request) }
+        case "learning:ensureCourseReview": return try context.withMaterialLock { try ensureCourseReview(request) }
         case "learning:list":
             return try context.withMaterialLock {
                 let requested = request["courseId"] as? String, includeDeleted = request["includeDeleted"] as? Bool == true
@@ -167,7 +168,7 @@ final class NativeLearningRepository {
                 }
                 project.state["articles"] = rows
             case "learning:reviewCard": try self.reviewCard(request, project: &project)
-            case "learning:saveQuizAnswer", "learning:finishQuiz": try self.quizMutation(channel, request, project: &project)
+            case "learning:saveQuizAnswer", "learning:submitQuiz", "learning:finishQuiz": try self.quizMutation(channel, request, project: &project)
             case "learning:dismissRun":
                 let id = try NativeSyncFormat.identity(request["runId"])
                 var rows = project.state["runs"] as? [[String: Any]] ?? []
@@ -220,10 +221,25 @@ final class NativeLearningRepository {
         guard ["quiz", "cards", "summary"].contains(kind) else { throw C.validation("지원하지 않는 학습 결과입니다.") }
         var refs = project.state["artifacts"] as? [[String: Any]] ?? []
         guard !refs.contains(where: { $0["id"] as? String == id }) else { throw C.conflict("이미 저장된 학습 결과입니다.") }
-        let sources = try (draft["sourceRefs"] as? [[String: Any]] ?? []).map { try validateSource($0, project: project, verifyQuote: true) }
+        let attachments = try capturedAttachments(draft["attachments"])
+        let sources = try (draft["sourceRefs"] as? [[String: Any]] ?? []).map { source in
+            if source["kind"] as? String == "annotation" { return try annotationSource(source, attachments: attachments, project: project) }
+            return try validateSource(source, project: project, verifyQuote: true)
+        }
         guard !sources.isEmpty else { throw C.validation("학습 결과에 원문 근거가 필요합니다.") }
         let title = try string(draft["title"], "학습 결과 제목")
         var output: [String: Any] = ["id": id, "schemaVersion": 1, "revision": 0, "kind": kind, "title": title, "createdAt": C.nowISO, "sourceRefs": sources, "articleIds": draft["articleIds"] ?? [], "wordIds": draft["wordIds"] ?? []]
+        if !attachments.isEmpty { output["attachments"] = attachments }
+        if let mode = draft["generationMode"] as? String {
+            guard mode == "expected-exam" || mode == "quiz" || mode == "flashcards" || mode == "summary" else { throw C.validation("지원하지 않는 생성 모드입니다.") }
+            output["generationMode"] = mode
+        }
+        if let count = draft["questionCount"] { output["questionCount"] = try NativeValue.int(count, "문항 수", min: 1, max: 30) }
+        if let difficulty = draft["difficulty"] as? String {
+            guard ["쉬움", "보통", "어려움"].contains(difficulty) else { throw C.validation("문제 난이도를 확인해 주세요.") }
+            output["difficulty"] = difficulty
+        }
+        if let scope = draft["scope"] { output["scope"] = try string(scope, "범위", empty: true) }
         if kind == "summary" { output["markdown"] = try string(draft["markdown"], "요약 본문") }
         else {
             let key = kind == "quiz" ? "questions" : "cards"
@@ -256,9 +272,47 @@ final class NativeLearningRepository {
         let path = Self.directory + "/artifacts/\(id).json"
         let bytes = try immutable(output, path: path, project: &project)
         let hash = NativeSyncFormat.hash(bytes)
-        refs.append(["id": id, "kind": kind, "title": title, "relPath": path, "exportRelPath": null, "createdAt": output["createdAt"]!, "contentHash": hash, "sourceRefs": sources, "articleIds": output["articleIds"]!, "wordIds": output["wordIds"]!])
+        var reference: [String: Any] = ["id": id, "kind": kind, "title": title, "relPath": path, "exportRelPath": null, "createdAt": output["createdAt"]!, "contentHash": hash, "sourceRefs": sources, "articleIds": output["articleIds"]!, "wordIds": output["wordIds"]!]
+        for key in ["generationMode", "questionCount", "difficulty", "scope"] { reference[key] = output[key] }
+        refs.append(reference)
         project.state["artifacts"] = refs
         history("artifact-created", entity: id, summary: title, project: &project)
+    }
+    private func capturedAttachments(_ value: Any?) throws -> [[String: Any]] {
+        guard let value else { return [] }
+        guard let attachments = value as? [[String: Any]], attachments.count <= 24,
+              attachments.filter({ $0["imageDataURL"] != nil }).count <= 6,
+              JSONSerialization.isValidJSONObject(attachments),
+              try JSONSerialization.data(withJSONObject: attachments).count <= 28 * 1024 * 1024 else { throw C.validation("첨부 자료의 크기를 확인해 주세요.") }
+        var ids = Set<String>()
+        for attachment in attachments {
+            let id = try NativeSyncFormat.identity(attachment["id"])
+            guard ids.insert(id).inserted else { throw C.validation("중복된 첨부 자료입니다.") }
+            _ = try string(attachment["capturedAt"], "첨부 시각")
+            let text = attachment["text"] as? String ?? "", image = attachment["imageDataURL"] as? String ?? ""
+            guard !text.isEmpty || !image.isEmpty else { throw C.validation("첨부한 텍스트나 이미지를 확인해 주세요.") }
+            if !image.isEmpty {
+                guard ["data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,"].contains(where: { image.hasPrefix($0) }),
+                      let encoded = image.split(separator: ",", maxSplits: 1).last, Data(base64Encoded: String(encoded)) != nil else { throw C.validation("첨부 이미지 형식이 올바르지 않습니다.") }
+            }
+        }
+        return attachments
+    }
+    private func annotationSource(_ source: [String: Any], attachments: [[String: Any]], project: Project) throws -> [String: Any] {
+        let id = try NativeSyncFormat.identity(source["attachmentId"])
+        guard let attachment = attachments.first(where: { $0["id"] as? String == id }) else { throw C.validation("지목한 원문의 저장본이 필요합니다.") }
+        if let owner = attachment["courseID"] as? String {
+            guard owner == project.course || owner == project.state["linkedCourseId"] as? String else { throw C.validation("다른 과목의 첨부를 이 프로젝트에 저장할 수 없습니다.") }
+        }
+        var retained = source
+        retained["quote"] = attachment["text"] as? String ?? ""
+        retained["capturedAt"] = attachment["capturedAt"]
+        retained["title"] = attachment["title"]
+        retained["sourceCourseId"] = attachment["courseID"]
+        retained["relPath"] = attachment["relativePath"]
+        retained["page"] = attachment["page"]
+        retained["url"] = attachment["url"]
+        return retained
     }
     private func reviewCard(_ request: [String: Any], project: inout Project) throws {
         let id = try NativeSyncFormat.identity(request["cardId"]), reviewID = try NativeSyncFormat.identity(request["reviewId"])
@@ -289,11 +343,12 @@ final class NativeLearningRepository {
     private func quizMutation(_ channel: String, _ request: [String: Any], project: inout Project) throws {
         let artifactID = try NativeSyncFormat.identity(request["artifactId"]), attemptID = try NativeSyncFormat.identity(request["attemptId"])
         let quiz = try artifact(artifactID, project: project)
+        let isExam = quiz["generationMode"] as? String == "expected-exam"
         guard quiz["kind"] as? String == "quiz", let questions = quiz["questions"] as? [[String: Any]] else { throw C.validation("퀴즈 자료가 아닙니다.") }
         var attempts = project.state["quizAttempts"] as? [[String: Any]] ?? []
         let existing = attempts.firstIndex(where: { $0["id"] as? String == attemptID })
         if let existing, attempts[existing]["artifactId"] as? String != artifactID { throw C.conflict("다른 퀴즈의 실행 식별자입니다.") }
-        if channel == "learning:finishQuiz", existing == nil { throw C.notFound("퀴즈 실행", attemptID) }
+        if channel != "learning:saveQuizAnswer", existing == nil { throw C.notFound("퀴즈 실행", attemptID) }
         var attempt: [String: Any] = existing.map { attempts[$0] } ?? ["id": attemptID, "artifactId": artifactID, "answers": [], "startedAt": C.nowISO, "completedAt": null, "score": 0, "total": questions.filter { $0["type"] as? String != "short-answer" }.count, "selfCheckedCount": 0, "selfPassedCount": 0, "resultRelPath": null]
         if attempt["completedAt"] as? String != nil { if channel == "learning:finishQuiz" { return }; throw C.conflict("이미 완료한 퀴즈입니다.") }
         var answers = attempt["answers"] as? [[String: Any]] ?? []
@@ -301,6 +356,10 @@ final class NativeLearningRepository {
             let questionID = try NativeSyncFormat.identity(request["questionId"])
             guard let question = questions.first(where: { $0["id"] as? String == questionID }) else { throw C.notFound("문항", questionID) }
             let answer = try string(request["answer"], "답안", empty: question["type"] as? String != "choice"), type = question["type"] as? String
+            if isExam, attempt["submittedAt"] as? String != nil {
+                guard type == "short-answer", request["selfCheck"] is Bool,
+                      answers.first(where: { $0["questionId"] as? String == questionID })?["answer"] as? String == answer else { throw C.conflict("제출한 답안은 변경할 수 없습니다. 다시 풀기를 이용해 주세요.") }
+            } else if isExam, request["selfCheck"] != nil { throw C.validation("답안을 제출한 뒤 서술형을 자기 점검해 주세요.") }
             guard answer.count <= 20_000 else { throw C.validation("답안이 너무 깁니다.") }
             if type == "choice", !(question["options"] as? [[String: String]] ?? []).contains(where: { $0["id"] == answer }) { throw C.validation("선택지를 다시 확인해 주세요.") }
             let normalize: (String) -> String = { $0.precomposedStringWithCompatibilityMapping.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -310,7 +369,13 @@ final class NativeLearningRepository {
             if let index = answers.firstIndex(where: { $0["questionId"] as? String == questionID }) { answers[index] = row } else { answers.append(row) }
             attempt["answers"] = answers; attempt["score"] = answers.filter { $0["correct"] as? Bool == true }.count
             attempt["selfCheckedCount"] = answers.filter { $0["selfCheck"] != nil }.count; attempt["selfPassedCount"] = answers.filter { $0["selfCheck"] as? Bool == true }.count
+        } else if channel == "learning:submitQuiz" {
+            guard isExam else { throw C.validation("예상문제 제출에만 사용할 수 있습니다.") }
+            if attempt["submittedAt"] as? String != nil { return }
+            guard questions.allSatisfy({ question in answers.contains { $0["questionId"] as? String == question["id"] as? String && !(($0["answer"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)).isEmpty } }) else { throw C.validation("모든 문항에 답한 뒤 제출해 주세요.") }
+            attempt["submittedAt"] = C.nowISO
         } else {
+            if isExam, attempt["submittedAt"] as? String == nil { throw C.validation("답안을 먼저 제출해 주세요.") }
             guard questions.allSatisfy({ q in answers.contains { a in a["questionId"] as? String == q["id"] as? String && !(a["answer"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (q["type"] as? String != "short-answer" || a["selfCheck"] is Bool) } }) else { throw C.validation("모든 문항에 답하고 서술형 답안을 자기 점검해 주세요.") }
             attempt["completedAt"] = C.nowISO
             let path = Self.directory + "/results/quiz-\(attemptID).json"; attempt["resultRelPath"] = path
@@ -322,7 +387,8 @@ final class NativeLearningRepository {
     }
 
     private func create(_ request: [String: Any]) throws -> [String: Any] {
-        let name = try string(request["name"], "name"), topic = try string(request["topic"], "topic"), placement = request["placement"] as? String
+        let name = try string(request["name"], "name")
+        let topic = try string(request["topic"] ?? name, "topic"), placement = request["placement"] as? String ?? "standalone"
         guard placement == "in-course" || placement == "standalone" else { throw C.validation("Choose a learning project location") }
         var state: [String: Any] = ["schemaVersion": 1, "projectId": UUID().uuidString.lowercased(), "revision": 0, "name": name, "topic": topic, "level": "intermediate", "readingMinutes": 4, "purpose": "unclassified", "topicIds": [], "readingSetupConfirmed": false, "createdAt": C.nowISO, "updatedAt": C.nowISO]
         for key in Self.collections { state[key] = [] }
@@ -352,6 +418,23 @@ final class NativeLearningRepository {
         try context.atomicWrite(Data(try C.json(manifest).utf8), to: directory.appendingPathComponent("manifest.json"))
         let project = try load(course: course, relative: relative)
         changed(project); return project.snapshot
+    }
+    private func ensureCourseReview(_ request: [String: Any]) throws -> [String: Any] {
+        let courseID = try C.requireID(request["courseId"])
+        _ = try context.courseFolder(courseID)
+        // This lookup and creation share the material lock: concurrent AI
+        // requests cannot manufacture a second course review project.
+        let courses = try context.query("SELECT id,name FROM courses WHERE deleted_at IS NULL ORDER BY sort_order,created_at")
+        for course in courses.compactMap({ $0["id"] as? String }) {
+            if let existing = try discover(course: course).first(where: {
+                $0.state["deletedAt"] as? String == nil && $0.state["purpose"] as? String == "course-review" &&
+                    ($0.state["linkedCourseId"] as? String ?? $0.course) == courseID
+            }) { return existing.snapshot }
+        }
+        let courseName = courses.first { $0["id"] as? String == courseID }?["name"] as? String ?? "과목"
+        var input: [String: Any] = ["name": courseName + " 복습", "topic": "과목 자료", "placement": "standalone", "purpose": "course-review", "linkedCourseId": courseID]
+        if let ai = request["ai"] { input["ai"] = ai }
+        return try create(input)
     }
     private func settings(_ input: [String: Any], into state: inout [String: Any]) throws {
         if let level = input["level"] as? String { guard ["beginner", "intermediate", "advanced"].contains(level) else { throw C.validation("Invalid learning level") }; state["level"] = level }

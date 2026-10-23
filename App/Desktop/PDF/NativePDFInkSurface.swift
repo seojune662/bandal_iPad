@@ -278,6 +278,10 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     // Refreshes assign every setter; only a real change may revalidate the scene.
     var highlights: [[String: Any]] = [] { didSet { if !(highlights as NSArray).isEqual(to: oldValue) { invalidateObjectScene() } } }
     var selectionBox: [String: Double]? { didSet { if selectionBox != oldValue { decorations.setNeedsDisplay() } } }
+    /// The original page can leave PDFKit's viewport while a selected group is
+    /// being dragged into the next page. Keep that contact until its real lift.
+    var retainsObjectDrag = false
+    func objectContactLocation(in view: UIView) -> CGPoint? { active?.preciseLocation(in: view) }
     /// The live text box being edited on this page. The host owns the view
     /// (a sibling above the PDF view, so it stays reachable by accessibility);
     /// this overlay only maps `pageBox` into its frame on every layout pass.
@@ -625,7 +629,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     override func didMoveToWindow() {
         super.didMoveToWindow(); refreshViewport()
         if window == nil {
-            finishMeasuredStroke()
+            if !retainsObjectDrag { finishMeasuredStroke() }
             cancelBackdropWake(invalidateEpoch: true)
             backdropDependencyNeedsReview = true
             updateScheduler?.stop(); updateScheduler = nil
@@ -651,6 +655,8 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         if event?.allTouches?.contains(where: { $0.type == .pencil }) == true { return pencilInputTarget(at: point) }
         guard !isLoading, !journalBlocked, mapper != nil, !isHidden, bounds.contains(point) else { return nil }
+        if selectionInputTarget(at: point) != nil,
+           event?.allTouches?.filter({ $0.type == .direct }).count == 1 { return self }
         // Fingers still navigate empty paper. Explicit selection/text objects
         // can be manipulated by touch, including their visible resize handles.
         if ["select", "text"].contains(tool.name), let mapper,
@@ -660,6 +666,20 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
                (NativePDFObjectRenderer.hitBounds(object, mapper: mapper)?.insetBy(dx: -10, dy: -10).contains(point) ?? false)
            }) { return self }
         return nil
+    }
+    func selectionInputTarget(at point: CGPoint) -> NativePDFInkSurface? {
+        guard ["select", "lasso"].contains(tool.name), selectionResizable, !isLoading, !journalBlocked,
+              isUserInteractionEnabled, !isHidden, let mapper, let box = selectionBox,
+              let x = box["x"], let y = box["y"], let width = box["width"], let height = box["height"] else { return nil }
+        let a = mapper.canvasPoint(InkPoint(x: x, y: y, p: 0.5)), b = mapper.canvasPoint(InkPoint(x: x + width, y: y + height, p: 0.5))
+        let rect = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
+        return rect.insetBy(dx: -12, dy: -12).contains(point) ? self : nil
+    }
+    func beginSelectionGesture(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        guard touch.type == .direct, selectionInputTarget(at: touch.location(in: self)) != nil else { return false }
+        gestureContact = touch; beginInput([touch], with: event)
+        if active !== touch { gestureContact = nil }
+        return active === touch
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         // Pencil has exactly one owner: the recognizer attached to PDFView.
@@ -689,7 +709,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         let enteredAt = handlerEnteredAt ?? CACurrentMediaTime()
         if ending { finishMeasuredStroke() }
         if let touch = touches.first { recordInput("begin", type: touch.type) }
-        guard !journalBlocked, active == nil, let touch = touches.first(where: { $0.type == .pencil }) ?? touches.first(where: { $0.type == .direct && (allowDirectInk || ["select", "text"].contains(tool.name)) }), mapper != nil else { return }
+        guard !journalBlocked, active == nil, let touch = touches.first(where: { $0.type == .pencil }) ?? touches.first(where: { $0.type == .direct && (allowDirectInk || ["select", "text", "lasso"].contains(tool.name)) }), mapper != nil else { return }
         if tool.name == "highlighter", !prepareRetainedScene(), !navigationDisplayActive, prepareBackdrop() == nil, !asynchronousEditDisplayActive {
             onDiagnostic?("highlighter.backdrop.unavailable"); return
         }
@@ -839,7 +859,8 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         let force = touch.maximumPossibleForce > 0 ? Self.calibratedPressure(Double(touch.force / touch.maximumPossibleForce)) : 0.5
         let normalized = mapper.normalized(location ?? touch.preciseLocation(in: self), pressure: min(1, max(0, force)))
         let altitude = max(Double(touch.altitudeAngle), 0.001), azimuth = Double(touch.azimuthAngle(in: self))
-        return NativePDFPoint(x: min(1, max(0, normalized.x)), y: min(1, max(0, normalized.y)), p: normalized.p,
+        let movingObject = ["select", "lasso"].contains(strokeTool.name)
+        return NativePDFPoint(x: movingObject ? normalized.x : min(1, max(0, normalized.x)), y: movingObject ? normalized.y : min(1, max(0, normalized.y)), p: normalized.p,
                               t: max(0, (touch.timestamp - startTime) * 1000),
                               tiltX: atan(cos(azimuth) / tan(altitude)) * 180 / .pi,
                               tiltY: atan(sin(azimuth) / tan(altitude)) * 180 / .pi)
@@ -913,7 +934,12 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
                 }
                 continue
             }
-            guard let point = sample(touch), point.isValid else { continue }
+            guard let point = sample(touch) else { continue }
+            if ["select", "lasso"].contains(strokeTool.name) {
+                // Pointer geometry may cross the source page; only persisted
+                // ink samples require the normalized 0...1 page constraint.
+                guard [point.x, point.y, point.p].allSatisfy(\.isFinite) else { continue }
+            } else if !point.isValid { continue }
             if let previous = measured.last, previous == point { continue }
             measured.append(point)
             if let key = touch.estimationUpdateIndex, !touch.estimatedPropertiesExpectingUpdates.isEmpty {
@@ -1107,9 +1133,11 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         let scale = density.isFinite && density > 0 ? pow(2, ceil(log2(max(1, density)))) : 1
         if model.requiresObjectTextures && scale != retainedObjectScale { retainedModelDirty = true }
         if retainedModelDirty {
+            let benchmarkStarted = ProcessInfo.processInfo.systemUptime
             let result = model.update(objects: objects, visualTokens: objectVisualTokens,
                 pageSize: CGSize(width: mapper.geometry.width, height: mapper.geometry.height),
                 scale: scale, image: { [weak self] in self?.imageForObject?($0) })
+            DesktopSignpost.benchmark("host.retainedScene.update", startedAt: benchmarkStarted)
             retainedObjectScale = scale
             retainedInkActive = result == .supported || (result == .preparing && model.hasAcceptedScene)
             retainedModelDirty = false
@@ -1405,6 +1433,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     /// finalize a provisional stroke. Explicit close/tool/offscreen flushes
     /// keep their existing, separate lifecycle policy.
     func prepareForNavigation() throws {
+        if retainsObjectDrag { return }
         guard active != nil, !["pen", "highlighter"].contains(strokeTool.name) else { return }
         if nativeEraseContact { try flushActiveStroke(); return }
         // Object edits retain their previous up-on-navigation behavior, but
@@ -2100,7 +2129,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
             context.setStrokeColor(UIColor.white.cgColor); context.setLineWidth(2); context.strokeEllipse(in: handle.insetBy(dx: 1, dy: 1))
             context.setStrokeColor(UIColor.systemBlue.cgColor); context.setLineWidth(1)
         }
-        if active != nil, strokeTool.name == "lasso", measured.count > 1, let first = measured.first, let last = measured.last {
+        if active != nil, strokeTool.name == "lasso", !retainsObjectDrag, measured.count > 1, let first = measured.first, let last = measured.last {
             let path = CGMutablePath()
             if strokeTool.lassoBox {
                 let a = point(first.x, first.y), b = point(last.x, last.y)

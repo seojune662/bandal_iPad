@@ -5,14 +5,25 @@ struct NativeWorkspaceView: View {
     @StateObject private var store: NativeWorkspaceStore
     @StateObject private var navigation = NativeWorkspaceNavigation()
     @StateObject private var services: NativePlatformServices
+    @ObservedObject private var annotation: NativeAnnotationCoordinator
+    @StateObject private var librarySources = NativeLibrarySourceTrayModel()
+    @State private var shareInbox = NativeShareInboxCoordinator()
+    @State private var shareCatalogRefresh: Task<Void, Never>?
+    @State private var contextRefresh: Task<Void, Never>?
+    @State private var pendingContextRefresh = false
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("native.appearance") private var appearance = "system"
     @State private var section: NativeWorkspaceSection = .library
     @AppStorage("native.desktop.courseRail") private var courseRailOpen = true
     @AppStorage("native.desktop.materialsRail") private var materialsRailOpen = true
     @AppStorage("native.desktop.courseRailWidth") private var courseRailWidth = 240.0
-    @AppStorage("native.desktop.materialsRailWidth") private var materialsRailWidth = 288.0
-    @State private var leftPanel: NativeSidebarPanel = .courses
+    @AppStorage("native.inspector.width") private var materialsRailWidth = 360.0
+    @AppStorage("native.home.section") private var leftPanel: NativeHomeSection = .courses
+    @AppStorage("native.inspector.tab") private var inspectorTab: NativeInspectorTab = .materials
+    @State private var windowWidth: CGFloat = 1200
+    @State private var hasWindowWidth = false
+    @State private var restoreInspectorAfterAnnotation = true
+    @State private var pendingAttachments: [String: [NativeAssistantAttachment]] = [:]
     @State private var auxiliary: NativeAuxiliaryDestination?
     @State private var learningHome = false
     @State private var boardOverlayOpen = false
@@ -38,29 +49,38 @@ struct NativeWorkspaceView: View {
         let store = NativeWorkspaceStore()
         _store = StateObject(wrappedValue: store)
         _services = StateObject(wrappedValue: NativePlatformServices(store: store))
+        _annotation = ObservedObject(wrappedValue: store.annotation)
     }
 
     private var navigationURL: URL { store.root.appendingPathComponent("native-workspace.json") }
-    private var courseTitle: String { store.courses.first { $0.id == store.selectedCourseID }?.name ?? "자료실" }
+    private var workspaceContext: NativeWorkspaceContext? {
+        guard restored else { return nil }
+        return navigation.activeWorkspace ?? store.courses.first { $0.id == store.selectedCourseID }.map(NativeWorkspaceContext.course)
+    }
+    private var courseTitle: String { workspaceContext?.title ?? "자료실" }
+    private var showsWorkspace: Bool { section == .library && auxiliary == nil }
+
 
     var body: some View {
         GeometryReader { geometry in
-            let showLeft = courseRailOpen && geometry.size.width >= 1100 && section != .settings
-            let showRight = materialsRailOpen && geometry.size.width >= 900 && section == .library && !learningHome && auxiliary == nil && !["learning", "learning-home"].contains(navigation.active?.kind ?? "")
-            let railWidths = NativeDockRailWidths.resolve(windowWidth: geometry.size.width, leftRequested: courseRailWidth, rightRequested: materialsRailWidth, showLeft: showLeft, showRight: showRight)
+            let chrome = NativeWorkspaceChromeLayout(width: geometry.size.width,
+                leftOpen: courseRailOpen, rightOpen: materialsRailOpen && annotation.request == nil,
+                leftRequested: courseRailWidth, rightRequested: materialsRailWidth, showsWorkspace: showsWorkspace)
+            let rightVisible = showsWorkspace && annotation.request == nil &&
+                (chrome.rightPinned || geometry.size.width < 900 && compactMaterialsRail)
             HStack(spacing: 0) {
                 globalNavigation(width: geometry.size.width)
-                if showLeft {
-                    courseSidebar.frame(width: railWidths.left)
+                if chrome.leftPinned {
+                    courseSidebar.frame(width: chrome.leftWidth)
                     railDivider
                 }
-                // The dock is always mounted: section screens cover it instead of
-                // replacing it, so open editors survive a trip to Settings or Learning.
-                let covered = section != .library || auxiliary != nil || learningHome
+                // Editors and the inspector remain mounted while covered. Navigation
+                // and opening a keyboard must not discard an in-progress draft.
+                let covered = section != .library || auxiliary != nil
                 ZStack {
                     NativeDockWorkspace(navigation: navigation, store: store, content: { workspace($0) }, empty: { emptyWorkspace },
                         perform: transition, persist: saveNavigation, closeDocuments: closeDocuments,
-                        materialsOpen: geometry.size.width < 900 ? compactMaterialsRail : materialsRailOpen,
+                        materialsOpen: rightVisible,
                         toggleMaterials: { toggleMaterialsRail(width: geometry.size.width) },
                         openNewTab: openNewTab, covered: covered, select: selectTab)
                         .opacity(covered ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered)
@@ -72,60 +92,76 @@ struct NativeWorkspaceView: View {
                         case .help: NativeHelpView()
                         case .account: NativeAccountView(store: store)
                         }
-                    } else if learningHome {
-                        NativeLearningHome(store: store, onOpen: openLearning)
                     } else if section != .library {
                         VStack(spacing: 0) {
                             toolTabs
                             NativeToolsWorkspace(section: section, store: store, services: services)
                         }
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(NativeDesktopTheme.bgApp)
-                if showRight {
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).background(NativeDesktopTheme.bgApp)
+                if chrome.rightPinned {
                     railDivider
-                    materialsSidebar.frame(width: railWidths.right)
+                    Color.clear.frame(width: chrome.rightWidth)
                 }
             }
             .overlay {
-                if showLeft {
-                    NativeDockRailResizer(side: .left, width: Binding(get: { railWidths.left }, set: { courseRailWidth = $0 }), maximum: min(400, geometry.size.width - 48 - railWidths.right - 282))
+                if chrome.leftPinned {
+                    NativeDockRailResizer(side: .left, width: Binding(get: { chrome.leftWidth }, set: { courseRailWidth = $0 }), maximum: min(360, geometry.size.width - 48 - chrome.rightWidth - 480))
                         .frame(width: 44, height: geometry.size.height)
-                        .position(x: 48 + railWidths.left + 0.5, y: geometry.size.height / 2)
-                }
-                if showRight {
-                    NativeDockRailResizer(side: .right, width: Binding(get: { railWidths.right }, set: { materialsRailWidth = $0 }), maximum: min(520, geometry.size.width - 48 - railWidths.left - 282))
-                        .frame(width: 44, height: geometry.size.height)
-                        .position(x: geometry.size.width - railWidths.right - 0.5, y: geometry.size.height / 2)
+                        .position(x: 48 + chrome.leftWidth + 0.5, y: geometry.size.height / 2)
                 }
             }
             .overlay(alignment: .leading) {
-                if compactCourseRail && geometry.size.width < 1100 && section != .settings {
+                if compactCourseRail && geometry.size.width < 1200 && showsWorkspace && annotation.request == nil {
                     HStack(spacing: 0) {
-                        courseSidebar.frame(width: min(NativeDockRailSide.left.clamp(courseRailWidth), geometry.size.width - 88))
-                            .background(NativeDesktopTheme.surface).compositingGroup().shadow(color: .black.opacity(0.14), radius: 12, x: 4)
+                        courseSidebar.frame(width: min(320, geometry.size.width - 48))
+                            .background(NativeDesktopTheme.surface).shadow(color: .black.opacity(0.14), radius: 12, x: 4)
                         Color.black.opacity(0.12).onTapGesture { compactCourseRail = false }
                     }.padding(.leading, NativeDesktopTheme.navigationWidth)
                 }
             }
             .overlay(alignment: .trailing) {
-                if compactMaterialsRail && geometry.size.width < 900 && section != .settings {
-                    HStack(spacing: 0) {
+                // A concrete stack keeps the drawer's drawing and hit region
+                // aligned to the trailing edge when the backdrop appears.
+                ZStack(alignment: .trailing) {
+                    if rightVisible && !chrome.rightPinned {
                         Color.black.opacity(0.12).onTapGesture { compactMaterialsRail = false }
-                        materialsSidebar.frame(width: min(NativeDockRailSide.right.clamp(materialsRailWidth), geometry.size.width - 88))
-                            .background(NativeDesktopTheme.surface).compositingGroup().shadow(color: .black.opacity(0.14), radius: 12, x: -4)
                     }
+                    // One stable host, including while hidden, for file browsing and AI.
+                    inspectorSidebar
+                        .frame(width: chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth,
+                               height: geometry.size.height)
+                        .background(NativeDesktopTheme.surface)
+                        .shadow(color: rightVisible && !chrome.rightPinned ? .black.opacity(0.14) : .clear, radius: 12, x: -4)
+                        .opacity(rightVisible ? 1 : 0).allowsHitTesting(rightVisible).accessibilityHidden(!rightVisible)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             }
             .overlay {
-                if boardOverlayOpen { academicBoardOverlay(size: geometry.size) }
+                if chrome.rightPinned {
+                    NativeDockRailResizer(side: .right, width: Binding(get: { chrome.rightWidth }, set: { materialsRailWidth = max(320, $0) }), maximum: min(520, geometry.size.width - 48 - chrome.leftWidth - 480), resetWidth: 360)
+                        .frame(width: 44, height: geometry.size.height)
+                        .position(x: geometry.size.width - chrome.rightWidth - 0.5, y: geometry.size.height / 2)
+                }
             }
+            .overlay(alignment: .topTrailing) {
+                if showsWorkspace && annotation.request == nil {
+                    Button { toggleMaterialsRail(width: geometry.size.width) } label: {
+                        Image(systemName: "sidebar.right").font(.system(size: 17))
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }.buttonStyle(.plain).background(NativeDesktopTheme.surface)
+                        .padding(.trailing, 4).padding(.top, 16)
+                        .accessibilityLabel(rightVisible ? "오른쪽 패널 접기" : "오른쪽 패널 펼치기")
+                        .accessibilityIdentifier("native-toggle-materials-rail")
+                }
+            }
+            .overlay { if boardOverlayOpen { academicBoardOverlay(size: geometry.size) } }
             .overlay(alignment: .top) {
                 if showBusy { ProgressView().padding(10).background(.regularMaterial, in: Capsule()).padding(.top, 48) }
             }
+            .onAppear { updateWindowWidth(geometry.size.width) }
+            .onChange(of: geometry.size.width) { _, width in updateWindowWidth(width) }
             .task(id: busy) {
-                // Only a transition that actually takes time shows the capsule.
                 showBusy = false
                 guard busy else { return }
                 try? await Task.sleep(for: .milliseconds(300))
@@ -161,22 +197,67 @@ struct NativeWorkspaceView: View {
                 workspaceSettings = (try? await store.invoke("settings:get")) as? [String: Any] ?? [:]
             } }
             guard store.isReady, !restored else { return }
-            restored = true
             navigation.openAdjacentTab = openAdjacentTab
-            if restoreLastCourse { await navigation.restore(from: navigationURL) { item in
-                guard store.courses.contains(where: { $0.id == item.courseID }) else { return false }
+            let catalog = (try? await store.invoke("learning:list", ["includeDeleted": false])) as? [String: Any] ?? [:]
+            let projects: [NativeLearningSummary] = (try? NativeToolJSON.decode(catalog["projects"] ?? [])) ?? []
+            var projectBindings: [String: NativeLearningBinding] = [:]
+            for project in projects { if let id = project.projectId { projectBindings[id] = project.binding } }
+            let existingCourseIDs = Set(store.courses.map(\.id))
+            if restoreLastCourse { await navigation.restore(from: navigationURL, projectBindings: projectBindings) { item in
+                guard existingCourseIDs.contains(item.courseID) else { return false }
+                if let target = item.learningTarget {
+                    let channel = target.kind == .overview ? "learning:get" : target.kind == .article ? "learning:getArticle" : "learning:getArtifact"
+                    return (try? await store.invoke(channel, ["binding": target.binding.request, "id": target.entityID])) != nil
+                }
                 if item.kind == "learning" { return (try? await store.invoke("learning:get", ["binding": ["courseId": item.courseID, "rootRelPath": item.relativePath]])) != nil }
                 if item.isWorkspaceTool { return true }
                 if item.kind == "whiteboard" { return (try? await store.invoke("canvas:get",["courseId":item.courseID,"id":item.relativePath])) != nil }
                 return (try? await store.invokePrivate("nativeMaterial:path", ["courseId": item.courseID, "relPath": item.relativePath])) != nil
             } }
             store.pageNoteSourceTabIDs = navigation.pageNoteSourceTabIDs
-            if let course = store.selectedCourseID { navigation.activateCourse(course) }
+            if let saved = navigation.activeWorkspace {
+                await restoreContext(saved)
+            } else if let document = navigation.active, document.kind == "learning",
+                      let context = try? await NativeWorkspaceContext.loadProject(store: store, binding: .init(courseID: document.courseID, rootRelPath: document.relativePath)) {
+                await restoreContext(context)
+            } else if let course = store.courses.first(where: { $0.id == store.selectedCourseID }) {
+                if course.workspaceKind == "study-space", let context = try? await NativeWorkspaceContext.loadProject(store: store, binding: .init(courseID: course.id, rootRelPath: "")) {
+                    await restoreContext(context)
+                } else { navigation.activateWorkspace(.course(course)) }
+            }
+            restored = true
+            if let document = navigation.active, document.kind == "assistant" {
+                if let context = workspaceContext, let conversation = NativeToolSelection.conversationID(workspaceID: document.relativePath, root: store.root) {
+                    store.pendingAssistantConversationIDs[context.id] = conversation
+                }
+                revealInspector(.assistant)
+            }
+            await importSharedMaterials()
         }
         .onChange(of: store.selectedCourseID) { _, courseID in
-            if let courseID, restored { navigation.activateCourse(courseID); saveNavigation() }
+            if let courseID, restored, !busy, navigation.activeWorkspace?.courseID != courseID,
+               let course = store.courses.first(where: { $0.id == courseID }) {
+                navigation.activateWorkspace(.course(course)); saveNavigation()
+            }
+        }
+        .onChange(of: store.assistantDocumentIDs) { _, ids in
+            guard !ids.isEmpty else { return }
+            revealInspector(.assistant)
+            store.assistantDocumentIDs.removeAll()
+        }
+        .onChange(of: section) { old, new in
+            if old == .settings && new != .settings {
+                store.events.send(NativeWorkspaceEvent(channel: "agent:changed", payload: [:]))
+            }
+        }
+        .onChange(of: navigation.activeID) { _, _ in annotation.cancel() }
+        .onChange(of: annotation.completed?.id) { _, _ in receiveAnnotation() }
+        .onChange(of: annotation.request?.id) { old, new in
+            if old != nil && new == nil && restoreInspectorAfterAnnotation && showsWorkspace && !boardOverlayOpen { revealInspector(.assistant) }
         }
         .onChange(of: openAdjacentTab) { _, value in navigation.openAdjacentTab = value }
+        .onChange(of: store.courses) { _, _ in refreshShareDestinations(); refreshWorkspaceContext() }
+        .onChange(of: store.materials) { _, _ in refreshShareDestinations() }
         .onReceive(store.events) { event in
             if event.channel == "auth:changed", let state = event.payload as? [String: Any] { loginRequired = NativeLoginGate.requiresLogin(state) }
             receive(event)
@@ -185,20 +266,46 @@ struct NativeWorkspaceView: View {
             Task {
                 if store.isReady { _ = try? await store.invokePrivate("nativeRuntime:active", ["active": phase == .active]) }
                 if phase == .background { await flushInBackground() }
+                if phase == .active { await importSharedMaterials() }
             }
         }
         .onOpenURL { url in
             Task {
-                do { try await store.importFiles([url]) }
+                do { try await store.importFiles([url], parentPath: workspaceContext?.rootRelPath ?? "") }
                 catch { store.errorMessage = error.localizedDescription }
             }
         }
     }
 
+    private func importSharedMaterials() async {
+        let report = await shareInbox.synchronize(using: store)
+        if !report.failures.isEmpty { store.errorMessage = report.failures.joined(separator: "\n") }
+    }
+
+    private func refreshShareDestinations() {
+        shareCatalogRefresh?.cancel()
+        shareCatalogRefresh = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(350))
+                try Task.checkCancellation()
+                try await shareInbox.publishCatalog(using: store)
+            } catch is CancellationError { }
+            catch { store.errorMessage = error.localizedDescription }
+        }
+    }
+
     @ViewBuilder private func workspace(_ document: NativeDocumentReference) -> some View {
-        NativeDocumentAssistantHost(store: store, document: document) {
-            if document.kind == "learning-home" {
-                NativeLearningHome(store: store, courseID: document.courseID, onOpen: openLearning)
+        Group {
+            if document.learningTarget != nil {
+                NativeLearningDocumentWorkspace(store: store, document: document, onOpenDocument: open, onOpenBrowser: openBrowserURL)
+            } else if document.kind == "assistant" {
+                VStack(spacing: 12) {
+                    Image(systemName: "sparkles").font(.title)
+                    Text("AI가 오른쪽 패널로 이동했어요")
+                    Button("AI 열기", action: openActiveAssistant).buttonStyle(.borderedProminent)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if document.kind == "learning-home" {
+                NativeProjectSidebar(store: store, selectedID: workspaceContext?.id, onOpen: changeWorkspace).frame(maxWidth: 420)
             } else if document.kind == "learning" {
                 NativeLearningWorkspace(store: store, binding: NativeLearningBinding(courseID: document.courseID, rootRelPath: document.relativePath), onOpenDocument: open, onOpenBrowser: openBrowserURL)
             } else if document.isWorkspaceTool, let tool = NativeWorkspaceSection(rawValue: document.kind) {
@@ -223,33 +330,44 @@ struct NativeWorkspaceView: View {
                     }.buttonStyle(.borderedProminent)
                 }
             }
-        }.id(store.reloadIdentity(for:document))
+        }.allowsHitTesting(annotation.request == nil || annotation.request?.documentID == document.id)
+            .id(store.reloadIdentity(for:document))
     }
 
     private var railDivider: some View { NativeDesktopTheme.border.frame(width: 1) }
     private func toggleMaterialsRail(width: CGFloat) {
         if width < 900 { compactMaterialsRail.toggle() } else { materialsRailOpen.toggle() }
+        compactCourseRail = false
     }
-
+    private func updateWindowWidth(_ width: CGFloat) {
+        if hasWindowWidth {
+            if windowWidth >= 900 && width < 900 { compactMaterialsRail = materialsRailOpen; compactCourseRail = false }
+            if windowWidth < 900 && width >= 900 { materialsRailOpen = compactMaterialsRail; compactMaterialsRail = false }
+            if windowWidth >= 1200 && width < 1200 { compactCourseRail = false }
+            if width >= 1200 { compactCourseRail = false }
+        }
+        windowWidth = width; hasWindowWidth = true
+    }
+    private func revealInspector(_ tab: NativeInspectorTab) {
+        inspectorTab = tab
+        section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false
+        compactCourseRail = false
+        if windowWidth < 900 { compactMaterialsRail = true } else { materialsRailOpen = true }
+    }
     private func globalNavigation(width: CGFloat) -> some View {
         VStack(spacing: 8) {
-            NativeChromeButton(title: "과목", symbol: "folder", selected: section == .library && !learningHome && auxiliary == nil && leftPanel == .courses && (courseRailOpen || compactCourseRail)) {
-                if section == .library && !learningHome && auxiliary == nil && leftPanel == .courses {
-                    if width < 1100 { compactCourseRail.toggle() } else { courseRailOpen.toggle() }
-                } else { transition { section = .library; auxiliary = nil; learningHome = false; leftPanel = .courses; courseRailOpen = true; compactCourseRail = width < 1100 } }
-            }.accessibilityIdentifier("native-section-library")
-            NativeChromeButton(title: "학습", symbol: "book", selected: learningHome && section != .settings && auxiliary == nil) {
-                transition { section = .library; auxiliary = nil; learningHome = true; leftPanel = .learning; courseRailOpen = true; compactCourseRail = width < 1100 }
-            }.accessibilityIdentifier("native-section-learning")
-            NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
-            NativeChromeButton(title: "AI", symbol: "sparkle", selected: navigation.active?.kind == "assistant") { openActiveAssistant() }.accessibilityIdentifier("native-section-assistant")
-            NativeChromeButton(title: "도구", symbol: "puzzlepiece", selected: leftPanel == .tools && courseRailOpen && section != .settings && auxiliary == nil) {
-                transition {
-                    if leftPanel == .tools && courseRailOpen { courseRailOpen = false; compactCourseRail = false }
-                    else { leftPanel = .tools; courseRailOpen = true; compactCourseRail = width < 1100 }
-                    section = .library; auxiliary = nil; learningHome = false
+            NativeChromeButton(title: "홈", symbol: "house.fill", selected: showsWorkspace && (courseRailOpen || compactCourseRail)) {
+                if showsWorkspace {
+                    if width < 1200 { compactCourseRail.toggle(); compactMaterialsRail = false }
+                    else { courseRailOpen.toggle() }
+                } else {
+                    transition {
+                        section = .library; auxiliary = nil; learningHome = false
+                        courseRailOpen = true; compactCourseRail = width < 1200; compactMaterialsRail = false
+                    }
                 }
-            }.accessibilityIdentifier("native-section-tools")
+            }.accessibilityIdentifier("native-section-library")
+            NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
             if !NativeReleaseFlags.isLocalOnly {
                 NativeChromeButton(title: "마켓플레이스", symbol: "storefront", selected: auxiliary == .marketplace) { transition { section = .library; auxiliary = .marketplace; learningHome = false } }.accessibilityIdentifier("native-section-marketplace")
             }
@@ -264,17 +382,19 @@ struct NativeWorkspaceView: View {
         }.padding(.top, 12).padding(.bottom, 12).frame(width: NativeDesktopTheme.navigationWidth)
             .background(NativeDesktopTheme.surface).overlay(alignment: .trailing) { railDivider }
     }
-    @ViewBuilder private var courseSidebar: some View {
-        switch leftPanel {
-        case .courses:
-            NativeCourseSidebar(store: store, navigation: navigation, settings: workspaceSettings, onSelect: changeCourse,
-                onCreate: { showingCourseSheet = true }, onManage: { showingCourseManager = true }, onOpenSettings: openSettings,
-                onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb, descriptor: favoriteDescriptor, onOpenFavorite: openFavorite)
-        case .learning:
-            NativeLearningSidebar(store: store, onOpen: openLearning)
-        case .tools:
-            NativeFeatureLauncherPanel(store: store, source: navigation.active, onOpen: openLearning, onOpenSettings: openSettings)
-        }
+    private var courseSidebar: some View {
+        VStack(spacing: 0) {
+            NativeHomeSectionPicker(selection: $leftPanel)
+            switch leftPanel {
+            case .courses:
+                NativeCourseSidebar(store: store, navigation: navigation, settings: workspaceSettings, onSelect: changeCourse,
+                    onCreate: { showingCourseSheet = true }, onManage: { showingCourseManager = true }, onOpenSettings: openSettings,
+                    onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb, descriptor: favoriteDescriptor, onOpenFavorite: openFavorite)
+            case .projects:
+                NativeProjectSidebar(store: store, selectedID: workspaceContext?.id, onOpen: changeWorkspace)
+            }
+            NativeSidebarShortcuts(store: store, settings: workspaceSettings, onOpenSettings: openSettings, onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb)
+        }.background(NativeDesktopTheme.surface)
     }
     private func toggleAcademicBoard() {
         transition {
@@ -301,9 +421,33 @@ struct NativeWorkspaceView: View {
         }
     }
     private func openActiveAssistant() {
-        if let document = navigation.active, !document.isWorkspaceTool, document.kind != "learning-home", section == .library, !learningHome, auxiliary == nil {
-            store.assistantDocumentIDs.insert(document.id)
-        } else { openTool(.assistant) }
+        revealInspector(.assistant)
+    }
+    private func beginAnnotation() {
+        guard let document = navigation.active, let context = workspaceContext,
+              document.learningTarget == nil,
+              (["pdf", "note", "browser", "whiteboard", "md", "markdown"].contains(document.kind) ||
+               ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased())) else { return }
+        restoreInspectorAfterAnnotation = true
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        compactCourseRail = false
+        annotation.begin(documentID: document.id, spaceID: context.id)
+    }
+    private func receiveAnnotation() {
+        guard let capture = annotation.completed else { return }
+        do {
+            try NativeAssistantPendingCaptures.enqueue([capture.attachment], spaceID: capture.spaceID, root: store.root)
+        } catch {
+            store.errorMessage = "선택한 영역을 보관하지 못했습니다: \(error.localizedDescription)"
+            return
+        }
+        var attachments = pendingAttachments[capture.spaceID] ?? []
+        if !attachments.contains(where: { $0.id == capture.attachment.id }) { attachments.append(capture.attachment) }
+        pendingAttachments[capture.spaceID] = attachments
+        annotation.consumeCompleted()
+        if workspaceContext?.id == capture.spaceID && restoreInspectorAfterAnnotation && showsWorkspace && !boardOverlayOpen {
+            revealInspector(.assistant)
+        }
     }
     private func openSettings(_ category: String) { transition { boardOverlayOpen = false; settingsCategory = category; section = .settings; auxiliary = nil } }
     private func favoriteDescriptor(_ document: NativeDocumentReference) -> [String: Any]? {
@@ -334,6 +478,18 @@ struct NativeWorkspaceView: View {
             else { open(.init(courseID: course, relativePath: "favorite-" + favorite.id, title: "학습 공간", kind: "learning-home")) }
             return
         }
+        if favorite.kind == "chat", let course, let value = store.courses.first(where: { $0.id == course }) {
+            Task { @MainActor in
+                let context: NativeWorkspaceContext
+                if let current = workspaceContext, current.courseID == course { context = current }
+                else if value.workspaceKind == "study-space", let project = try? await NativeWorkspaceContext.loadProject(store: store, binding: .init(courseID: course, rootRelPath: "")) { context = project }
+                else { context = .course(value) }
+                if let conversation = payload["conversationId"] as? String { store.pendingAssistantConversationIDs[context.id] = conversation }
+                if workspaceContext?.id != context.id { changeWorkspace(context) }
+                revealInspector(.assistant)
+            }
+            return
+        }
         if ["board", "chat", "recording"].contains(favorite.kind) {
             let kind = favorite.kind == "board" ? "planner" : favorite.kind == "chat" ? "assistant" : "recordings"
             guard let course else { openTool(kind == "planner" ? .planner : kind == "assistant" ? .assistant : .recordings); return }
@@ -349,31 +505,35 @@ struct NativeWorkspaceView: View {
         open(NativeDocumentReference(courseID: course, relativePath: path, title: favorite.label, kind: favorite.kind == "file" ? NativeSidebarDescriptor.materialKind(path) : favorite.kind))
     }
     private func openLearning(_ binding: NativeLearningBinding) {
-        let document = NativeDocumentReference(courseID: binding.courseID, relativePath: binding.rootRelPath, title: "학습 공간", kind: "learning")
-        open(document)
+        Task { @MainActor in
+            do { changeWorkspace(try await NativeWorkspaceContext.loadProject(store: store, binding: binding)) }
+            catch { store.errorMessage = error.localizedDescription }
+        }
     }
     private func openNewTab(_ action: NativeNewTabAction, _ groupID: String) {
+        if action == .assistant { revealInspector(.assistant); return }
         guard !busy else { return }; busy = true
-        let courseID = navigation.activeCourseID ?? store.selectedCourseID
+        let context = workspaceContext
+        let courseID = context?.courseID ?? store.selectedCourseID
         Task { @MainActor in
-            defer { busy = false }
+            defer { finishWorkspaceTransition() }
             do {
                 try await store.flushDocuments()
                 guard let courseID else { throw DesktopRuntimeError("먼저 과목을 만들거나 선택해 주세요.") }
                 let document: NativeDocumentReference
                 switch action {
-                case .markdown(let title): document = try await store.createMarkdown(title: title ?? ((workspaceSettings["tabs"] as? [String: Any])?["markdownTitlePrefix"] as? String ?? "새 마크다운"), courseID: courseID)
+                case .markdown(let title): document = try await store.createMarkdown(title: title ?? ((workspaceSettings["tabs"] as? [String: Any])?["markdownTitlePrefix"] as? String ?? "새 마크다운"), courseID: courseID, parentPath: context?.rootRelPath ?? "")
                 case .note:
                     // Notes are PDF notes, like the desktop: same paper, same palette, same sync.
-                    document = try await store.createNote(title: "새 노트", paper: NativePaper.lines.rawValue, orientation: "portrait")
+                    document = try await store.createNote(title: "새 노트", paper: NativePaper.lines.rawValue, orientation: "portrait", parentPath: context?.rootRelPath ?? "")
                 case .browser(let url):
                     document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "브라우저", kind: "browser")
                     if let url { store.pendingBrowserURLs[document.relativePath] = url }
                 case .assistant: document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "AI", kind: "assistant")
                 case .recording: document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "녹음", kind: "recordings")
                 }
-                guard navigation.activeCourseID == courseID else { return }
-                navigation.open(document, inGroup: groupID.isEmpty ? navigation.focusedGroupID : groupID)
+                guard workspaceContext?.id == context?.id else { return }
+                navigation.open(document, inGroup: groupID.isEmpty ? navigation.focusedGroupID : groupID, workspace: context)
                 section = .library; auxiliary = nil; learningHome = false; saveNavigation()
             } catch { store.errorMessage = error.localizedDescription }
         }
@@ -385,7 +545,7 @@ struct NativeWorkspaceView: View {
         }
         transition {
             if let course = store.selectedCourseID {
-                navigation.activateCourse(course)
+                if navigation.activeWorkspace == nil, let value = store.courses.first(where: { $0.id == course }) { navigation.activateWorkspace(.course(value)) }
                 let document = NativeDocumentReference(courseID: course, relativePath: UUID().uuidString, title: "브라우저", kind: "browser")
                 store.pendingBrowserURLs[document.relativePath] = url
                 navigation.open(document, inGroup: navigation.focusedGroupID); section = .library; auxiliary = nil; learningHome = false
@@ -400,15 +560,34 @@ struct NativeWorkspaceView: View {
     private func courseColor(_ value: String) -> Color {
         switch value { case "red": .red; case "orange": .orange; case "yellow", "gold": .yellow; case "green": .green; case "purple": .purple; case "pink": .pink; default: .blue }
     }
-    private var materialsSidebar: some View {
-        GeometryReader { geometry in
-            VStack(spacing: 0) {
-                NativeLibraryView(store: store, selectedDocumentID: navigation.active?.id) { document in
-                    compactMaterialsRail = false; open(document)
-                }.frame(maxHeight: .infinity)
-                NativeSettingsWidgetDock(store: store, services: services, availableHeight: geometry.size.height)
+    private var inspectorSidebar: some View {
+        VStack(spacing: 0) {
+            NativeInspectorHeader(selection: $inspectorTab)
+            if let context = workspaceContext {
+                ZStack {
+                    VStack(spacing: 0) {
+                        NativeLibraryView(store: store, sourceTrayModel: librarySources, scope: context,
+                            onOpenAI: { revealInspector(.assistant) }, selectedDocumentID: navigation.active?.storageID) { document in
+                            compactMaterialsRail = false; open(document)
+                        }.id(context.id).frame(maxHeight: .infinity)
+                        NativeSettingsWidgetDock(store: store, services: services, availableHeight: 600)
+                    }.opacity(inspectorTab == .materials ? 1 : 0)
+                        .allowsHitTesting(inspectorTab == .materials).accessibilityHidden(inspectorTab != .materials)
+                    NativeAssistantPanel(store: store, context: context, sourceDocument: navigation.active,
+                        attachments: pendingAttachments[context.id] ?? [],
+                        onConsumeAttachments: { pendingAttachments[context.id] = nil },
+                        onOpenDocument: openWorkspaceResult, onOpenSettings: { openSettings("ai") }, onAnnotate: beginAnnotation)
+                        .id(context.id).opacity(inspectorTab == .assistant ? 1 : 0)
+                        .allowsHitTesting(inspectorTab == .assistant).accessibilityHidden(inspectorTab != .assistant)
+                }
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "folder").font(.largeTitle).foregroundStyle(NativeDesktopTheme.muted)
+                    Text("과목이나 프로젝트를 선택하세요").font(NativeDesktopTheme.font(14))
+                    Text("자료와 AI 대화를 한 공간에서 이어가세요.").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        }
+        }.background(NativeDesktopTheme.surface)
     }
     private var toolTabs: some View {
         HStack(spacing: 4) {
@@ -451,10 +630,11 @@ struct NativeWorkspaceView: View {
         switch document.kind { case "browser": "globe"; case "assistant": "sparkle"; case "recordings": "waveform"; case "planner": "checklist"; case "pdf": "doc.richtext"; case "whiteboard": "rectangle.and.pencil.and.ellipsis"; case "video": "play.rectangle"; case "audio": "waveform"; default: "doc.text" }
     }
     private func openTool(_ target: NativeWorkspaceSection, new: Bool = false) {
+        if target == .assistant { revealInspector(.assistant); return }
         guard target != .library && target != .settings else { transition { section = target }; return }
         transition {
             guard let course = store.selectedCourseID else { section = target; return }
-            navigation.activateCourse(course)
+            if navigation.activeWorkspace == nil, let value = store.courses.first(where: { $0.id == course }) { navigation.activateWorkspace(.course(value)) }
             let document = (!new ? navigation.documents.first { $0.courseID == course && $0.kind == target.rawValue } : nil)
                 ?? NativeDocumentReference(courseID: course, relativePath: UUID().uuidString, title: target.title, kind: target.rawValue)
             navigation.open(document, inGroup: navigation.focusedGroupID)
@@ -509,10 +689,10 @@ struct NativeWorkspaceView: View {
         guard !busy, !courseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         busy = true
         Task {
-            defer { busy = false }
+            defer { finishWorkspaceTransition() }
             do {
                 try await store.createCourse(name: courseName)
-                if let courseID = store.selectedCourseID { navigation.activateCourse(courseID) }
+                if let course = store.courses.first(where: { $0.id == store.selectedCourseID }) { navigation.activateWorkspace(.course(course)) }
                 section = .library; auxiliary = nil; learningHome = false; leftPanel = .courses; compactCourseRail = false; compactMaterialsRail = false
                 try navigation.save(to: navigationURL)
                 courseName = ""; showingCourseSheet = false
@@ -522,39 +702,125 @@ struct NativeWorkspaceView: View {
     }
 
     private func open(_ document: NativeDocumentReference) { openInGroup(document, groupID: nil) }
-    private func openInGroup(_ document: NativeDocumentReference, groupID: String?) {
+    private func openWorkspaceResult(_ document: NativeDocumentReference) {
+        openInGroup(document, groupID: nil, preservingWorkspace: true)
+    }
+    private func openInGroup(_ document: NativeDocumentReference, groupID: String?, preservingWorkspace: Bool = false) {
+        if document.kind == "assistant" {
+            if let context = workspaceContext,
+               let conversation = NativeToolSelection.conversationID(workspaceID: document.relativePath, root: store.root) {
+                store.pendingAssistantConversationIDs[context.id] = conversation
+            }
+            revealInspector(.assistant)
+            return
+        }
+        if document.kind == "learning-home" { leftPanel = .projects; compactCourseRail = windowWidth < 1200; courseRailOpen = true; return }
         guard !busy else { return }; busy = true
+        let current = workspaceContext
+        let preserve = preservingWorkspace || document.learningTarget != nil || current?.courseID == document.courseID || current?.linkedCourseID == document.courseID
         Task { @MainActor in
-            defer { busy = false }
+            defer { finishWorkspaceTransition() }
             do {
                 try await store.flushDocuments()
-                if store.selectedCourseID != document.courseID { await store.selectCourse(document.courseID) }
-                guard store.selectedCourseID == document.courseID else { return }
-                section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false; navigation.open(document, inGroup: groupID); try navigation.save(to: navigationURL)
+                let context: NativeWorkspaceContext?
+                if preserve { context = current }
+                else {
+                    await store.selectCourse(document.courseID)
+                    guard store.selectedCourseID == document.courseID else { return }
+                    context = store.courses.first(where: { $0.id == document.courseID }).map(NativeWorkspaceContext.course)
+                }
+                section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false
+                navigation.open(document, inGroup: groupID, workspace: context)
+                try navigation.save(to: navigationURL)
             } catch { store.errorMessage = error.localizedDescription }
         }
     }
     private func changeCourse(_ id: String) {
+        guard let course = store.courses.first(where: { $0.id == id }) else { return }
+        changeWorkspace(.course(course))
+    }
+    private func changeWorkspace(_ context: NativeWorkspaceContext) {
         guard !busy else { return }; busy = true
+        restoreInspectorAfterAnnotation = false; annotation.cancel()
         Task { @MainActor in
-            defer { busy = false }
-            await store.selectCourse(id)
-            guard store.selectedCourseID == id else { return }
-            navigation.activateCourse(id); section = .library; auxiliary = nil; learningHome = false; compactCourseRail = false
-            do { try navigation.save(to: navigationURL) } catch { store.errorMessage = error.localizedDescription }
+            defer { finishWorkspaceTransition() }
+            do {
+                try await store.flushDocuments()
+                await store.selectCourse(context.courseID)
+                guard store.selectedCourseID == context.courseID else { return }
+                navigation.activateWorkspace(context)
+                leftPanel = context.kind == .project ? .projects : .courses
+                section = .library; auxiliary = nil; learningHome = false; compactCourseRail = false
+                try navigation.save(to: navigationURL)
+            } catch { store.errorMessage = error.localizedDescription }
         }
+    }
+
+    private func resolveContext(_ context: NativeWorkspaceContext) async throws -> NativeWorkspaceContext? {
+        if context.kind == .course {
+            return store.courses.first(where: { $0.id == context.courseID && $0.workspaceKind != "study-space" }).map(NativeWorkspaceContext.course)
+        }
+        let result = try await store.invoke("learning:list", ["includeDeleted": true]) as? [String: Any] ?? [:]
+        let projects: [NativeLearningSummary] = try NativeToolJSON.decode(result["projects"] ?? [])
+        guard let project = projects.first(where: {
+            if let projectID = context.projectID { return $0.projectId == projectID }
+            return $0.binding == context.binding
+        }), project.deletedAt == nil else { return nil }
+        return .project(project, courses: store.courses)
+    }
+    private func restoreContext(_ saved: NativeWorkspaceContext) async {
+        do {
+            let resolved = try await resolveContext(saved)
+            let fallback = store.courses.first { $0.id == saved.linkedCourseID && $0.workspaceKind != "study-space" }
+                ?? store.courses.first { $0.workspaceKind != "study-space" }
+            if let context = resolved ?? fallback.map(NativeWorkspaceContext.course) {
+                await store.selectCourse(context.courseID)
+                guard store.selectedCourseID == context.courseID else { return }
+                navigation.activateWorkspace(context)
+                leftPanel = context.kind == .project ? .projects : .courses
+            } else {
+                try await store.clearCourseSelection()
+                navigation.deactivateWorkspace()
+                leftPanel = .projects; courseRailOpen = true; compactCourseRail = windowWidth < 1200
+            }
+        } catch { store.errorMessage = error.localizedDescription }
+    }
+    private func refreshWorkspaceContext() {
+        guard restored, let current = navigation.activeWorkspace else { return }
+        guard !busy else { pendingContextRefresh = true; return }
+        pendingContextRefresh = false
+        contextRefresh?.cancel()
+        contextRefresh = Task { @MainActor in
+            do {
+                let refreshed = try await resolveContext(current)
+                guard !Task.isCancelled, navigation.activeWorkspace?.id == current.id else { return }
+                guard !busy else { pendingContextRefresh = true; return }
+                if let refreshed { navigation.activateWorkspace(refreshed); saveNavigation() }
+                else {
+                    busy = true
+                    await restoreContext(current)
+                    saveNavigation()
+                    finishWorkspaceTransition()
+                }
+            } catch { if !Task.isCancelled { store.errorMessage = error.localizedDescription } }
+        }
+    }
+
+    private func finishWorkspaceTransition() {
+        busy = false
+        if pendingContextRefresh { refreshWorkspaceContext() }
     }
 
     private func closeDocuments(_ documentIDs: [String]) {
         guard !busy else { return }
-        let course = navigation.activeCourseID
+        let scopeID = workspaceContext?.id
         let current = Set(navigation.groups.flatMap(\.tabs))
         var seen = Set<String>()
         let documents = documentIDs.filter { current.contains($0) && seen.insert($0).inserted }.compactMap { navigation.document($0) }
         guard !documents.isEmpty else { return }
         busy = true
         Task { @MainActor in
-            defer { busy = false }
+            defer { finishWorkspaceTransition() }
             do {
                 try await store.flushDocuments()
                 var plans: [NativeBrowserScopeClosePlan] = []
@@ -565,7 +831,7 @@ struct NativeWorkspaceView: View {
                 // beforeunload can wait for user input while another pane is edited.
                 // Flush again before the synchronous all-or-nothing commit.
                 try await store.flushDocuments()
-                guard navigation.activeCourseID == course else { return }
+                guard workspaceContext?.id == scopeID else { return }
                 guard try NativeBrowserSession.commitScopes(plans, host: services.browser, store: store) else {
                     throw DesktopRuntimeError("웹페이지가 변경되었습니다. 닫기를 다시 시도해 주세요.")
                 }
@@ -583,6 +849,7 @@ struct NativeWorkspaceView: View {
     /// Switching to a tab whose outgoing editor is retained needs no global
     /// flush: nothing is torn down. Other kinds still take the flushing transition.
     private func selectTab(_ id: String, in groupID: String) {
+        if let target = navigation.document(id), target.kind == "assistant" { open(target); return }
         let outgoing = navigation.layout?.groups.first { $0.id == groupID }?.activeID.flatMap(navigation.document)
         let retained = outgoing.map { $0.kind == "pdf" || $0.isWorkspaceTool || NativeDockWorkspace<EmptyView, EmptyView>.retainsEditor($0) } ?? true
         guard retained else { transition { navigation.select(id, in: groupID) }; return }
@@ -590,15 +857,19 @@ struct NativeWorkspaceView: View {
     }
     private func transition(_ action: @escaping @MainActor () -> Void) {
         guard !busy else { return }
+        restoreInspectorAfterAnnotation = false; annotation.cancel()
         busy = true
         Task { @MainActor in
-            defer { busy = false }
+            defer { finishWorkspaceTransition() }
             do { try await store.flushDocuments(); compactCourseRail = false; compactMaterialsRail = false; action(); try navigation.save(to: navigationURL) }
             catch { store.errorMessage = error.localizedDescription }
         }
     }
 
     private func receive(_ event: NativeWorkspaceEvent) {
+        if ["learning:changed", "courses:changed"].contains(event.channel) { refreshWorkspaceContext() }
+        if event.channel == "nativeWorkspace:openAssistantResult", let payload = event.payload as? [String: Any],
+           let document = payload["document"] as? NativeDocumentReference { openWorkspaceResult(document); return }
         if event.channel == "nativeWorkspace:updateToolTitle", let payload = event.payload as? [String: Any],
            let workspaceID = payload["workspaceID"] as? String, let title = payload["title"] as? String {
             if navigation.updateToolTitle(workspaceID: workspaceID, title: title) { saveNavigation() }
@@ -614,12 +885,15 @@ struct NativeWorkspaceView: View {
            let course = value["courseId"] as? String, let path = value["relPath"] as? String {
             let document = NativeDocumentReference(courseID: course, relativePath: path, title: value["title"] as? String ?? (path as NSString).lastPathComponent, kind: value["kind"] as? String ?? "pdf")
             guard !busy else { return }; busy = true
+            let current = workspaceContext
             Task { @MainActor in
-                defer { busy = false }
+                defer { finishWorkspaceTransition() }
                 do {
                     try await store.flushDocuments()
-                    if store.selectedCourseID != course { await store.selectCourse(course) }
-                    guard store.selectedCourseID == course else { return }
+                    let preserve = current?.courseID == course || current?.linkedCourseID == course
+                    if !preserve, store.selectedCourseID != course { await store.selectCourse(course) }
+                    guard preserve || store.selectedCourseID == course else { return }
+                    let context = preserve ? current : store.courses.first(where: { $0.id == course }).map(NativeWorkspaceContext.course)
                     var target = document
                     if let targetID = value["targetTabID"] as? String, let existing = navigation.document(targetID), existing.storageID == document.storageID {
                         target = existing
@@ -635,7 +909,7 @@ struct NativeWorkspaceView: View {
                         }
                         navigation.openBeside(target, sourceID: besideID, reuseExisting: false)
                     } else if let group = navigation.group(containing: target.id) { navigation.select(target.id, in: group.id) }
-                    else { navigation.open(target) }
+                    else { navigation.open(target, workspace: context) }
                     try navigation.save(to: navigationURL)
                     if let page = value["page"] as? Int, page > 0 {
                         store.events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:goToPage", payload: ["courseId": course, "relPath": path, "page": page, "tabID": target.id]))
@@ -648,7 +922,11 @@ struct NativeWorkspaceView: View {
             Task { @MainActor in
                 for document in navigation.documents {
                     let exists: Bool
-                    if document.kind == "learning" { exists = (try? await store.invoke("learning:get", ["binding": ["courseId": document.courseID, "rootRelPath": document.relativePath]])) != nil }
+                    if let target = document.learningTarget {
+                        let channel = target.kind == .overview ? "learning:get" : target.kind == .article ? "learning:getArticle" : "learning:getArtifact"
+                        exists = (try? await store.invoke(channel, ["binding": target.binding.request, "id": target.entityID])) != nil
+                    }
+                    else if document.kind == "learning" { exists = (try? await store.invoke("learning:get", ["binding": ["courseId": document.courseID, "rootRelPath": document.relativePath]])) != nil }
                     else if document.isWorkspaceTool { exists = store.courses.contains { $0.id == document.courseID } }
                     else if document.kind == "whiteboard" {
                         let board = try? await store.invoke("canvas:get",["courseId":document.courseID,"id":document.relativePath]) as? [String:Any]
@@ -669,8 +947,9 @@ struct NativeWorkspaceView: View {
             case "new-ai-tab": openTool(.assistant, new: true)
             case "new-recording-tab": openTool(.recordings, new: true)
             case "open-study-board": toggleAcademicBoard()
-            case "toggle-left-rail": courseRailOpen.toggle()
-            case "toggle-right-rail": toggleMaterialsRail(width: UIScreen.main.bounds.width)
+            case "toggle-left-rail":
+                if windowWidth < 1200 { compactCourseRail.toggle(); compactMaterialsRail = false } else { courseRailOpen.toggle() }
+            case "toggle-right-rail": toggleMaterialsRail(width: windowWidth)
             case "close-tab": if let id = navigation.activeID { closeDocuments([id]) }
             case "new-tab": if store.selectedCourseID == nil { openTool(.browser, new: true) } else { showingNewTabMenu = true }
             case "new-markdown": openNewTab(.markdown(title: nil), navigation.focusedGroupID ?? "")
@@ -717,5 +996,4 @@ struct NativeWorkspaceView: View {
     }
 }
 
-private enum NativeSidebarPanel { case courses, learning, tools }
 private enum NativeAuxiliaryDestination { case marketplace, help, account }

@@ -1,0 +1,26 @@
+[
+  {
+    "bundleID": "app.bandal.ipad",
+    "version": "1.0.0",
+    "build": "7",
+    "team": "VUZ7Z98BW3",
+    "groups": [
+      "group.app.bandal.ipad"
+    ],
+    "profileDeviceIncluded": true,
+    "profileExpirationUTC": "2027-10-19 15:44:19",
+    "signatureValid": true
+  },
+  {
+    "bundleID": "app.bandal.ipad.share",
+    "version": "1.0.0",
+    "build": "7",
+    "team": "VUZ7Z98BW3",
+    "groups": [
+      "group.app.bandal.ipad"
+    ],
+    "profileDeviceIncluded": true,
+    "profileExpirationUTC": "2027-10-19 15:44:21",
+    "signatureValid": true
+  }
+]

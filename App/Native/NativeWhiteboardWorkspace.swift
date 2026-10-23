@@ -5,9 +5,20 @@ import Combine
 
 struct NativeWhiteboardWorkspace: View {
     @StateObject private var model: NativeWhiteboardModel
-    init(document: NativeDocumentReference, store: NativeWorkspaceStore) { _model = StateObject(wrappedValue: NativeWhiteboardModel(document: document, store: store)) }
+    @ObservedObject private var annotation: NativeAnnotationCoordinator
+    init(document: NativeDocumentReference, store: NativeWorkspaceStore) { _model = StateObject(wrappedValue: NativeWhiteboardModel(document: document, store: store)); _annotation = ObservedObject(wrappedValue: store.annotation) }
     var body: some View {
         VStack(spacing: 0) {
+            if let request = annotation.request, request.documentID == model.document.id {
+                HStack {
+                    Text(annotation.error ?? "질문할 필기 영역을 드래그하세요").font(.callout)
+                    Spacer()
+                    Button { annotation.cancel() } label: {
+                        Text("취소").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                    }.accessibilityIdentifier("native-ai-annotation-cancel")
+                }.padding(.horizontal, 12).background(.regularMaterial)
+                    .accessibilityElement(children: .contain).accessibilityIdentifier("native-ai-annotation-toolbar")
+            } else {
             ViewThatFits(in: .horizontal) {
                 HStack { tools; Spacer(); navigation }
                 VStack(spacing: 0) {
@@ -15,7 +26,21 @@ struct NativeWhiteboardWorkspace: View {
                     navigation
                 }
             }.padding(.horizontal, 8).background(NativeDesktopTheme.surface)
+            }
             NativeWhiteboardBody(model: model).accessibilityIdentifier("native-whiteboard-workspace")
+                .overlay {
+                    if let request = annotation.request, request.documentID == model.document.id {
+                        NativeAnnotationRegionOverlay { bounds in
+                            do {
+                                guard let image = try model.controller?.annotationImage(bounds: bounds),
+                                      let dataURL = NativeAssistantAttachment.dataURL(image) else { throw DesktopRuntimeError("필기 페이지 안에서 영역을 선택해 주세요.") }
+                                annotation.complete(.init(title: model.document.title, imageDataURL: dataURL,
+                                    courseID: model.document.courseID, relativePath: model.document.relativePath,
+                                    page: model.page, revision: UUID().uuidString), requestID: request.id)
+                            } catch { annotation.fail(error.localizedDescription, requestID: request.id) }
+                        }
+                    }
+                }
             if let error = model.error {
                 HStack { Text(error).font(.caption); Spacer(); Button("다시 저장") { model.retry() }.frame(minHeight: 44) }.padding(12).background(.bar)
             }
@@ -309,6 +334,23 @@ private final class NativeWhiteboardController: UIViewController, UIScrollViewDe
                 else if background == "grid" || background == "lines" { for y in stride(from: 24.0, to: paper.bounds.height, by: 24) { context.move(to: CGPoint(x: 0, y: y)); context.addLine(to: CGPoint(x: paper.bounds.width, y: y)) }; if background == "grid" { for x in stride(from: 24.0, to: paper.bounds.width, by: 24) { context.move(to: CGPoint(x: x, y: 0)); context.addLine(to: CGPoint(x: x, y: paper.bounds.height)) } }; context.strokePath() }
             }
             paper.image = image; surface.canvasPaperImage = image.cgImage
+        }
+    }
+    func annotationImage(bounds: CGRect) throws -> UIImage? {
+        try surface.flush()
+        let selected = CGRect(x: bounds.minX * view.bounds.width, y: bounds.minY * view.bounds.height,
+            width: bounds.width * view.bounds.width, height: bounds.height * view.bounds.height)
+        let crop = paper.convert(selected, from: view).intersection(paper.bounds)
+        guard !crop.isNull, crop.width > 1, crop.height > 1 else { return nil }
+        let format = UIGraphicsImageRendererFormat(); format.opaque = true
+        format.scale = min(2, 2048 / max(crop.width, crop.height), sqrt(4_000_000 / (crop.width * crop.height)))
+        return UIGraphicsImageRenderer(size: crop.size, format: format).image { renderer in
+            renderer.cgContext.translateBy(x: -crop.minX, y: -crop.minY)
+            paper.image?.draw(in: paper.bounds)
+            let mapper = InkCoordinateMapper.whiteboard(size: paper.bounds.size)
+            for row in surface.objects {
+                NativePDFObjectRenderer.draw(row, in: renderer.cgContext, mapper: mapper, image: surface.imageForObject?(row))
+            }
         }
     }
     func fit() {

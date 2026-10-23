@@ -15,6 +15,9 @@ enum NativeRichTextCommands {
         func edit(_ replacement: String, selectionOffset: Int = 0, length: Int = 0) -> Edit {
             Edit(markdown: source.replacingCharacters(in: range, with: replacement), sourceSelection: NSRange(location: range.location + selectionOffset, length: length))
         }
+        if command.hasPrefix("image-width:") || command.hasPrefix("image-align:") || command.hasPrefix("image-move-") || command == "image-delete" {
+            return editImage(command, in: document, selection: selection) ?? Edit(markdown: document.markdown, sourceSelection: range)
+        }
         if command == "unlink" {
             guard let link = link(in: document, selection: selection) else { return Edit(markdown: document.markdown, sourceSelection: range) }
             let label = source.substring(with: link.label)
@@ -77,6 +80,52 @@ enum NativeRichTextCommands {
         let lines = clean.components(separatedBy: "\n")
         let value = lines.enumerated().map { index, line in index == lines.count - 1 && line.isEmpty && current.hasSuffix("\n") ? "" : prefix + line }.joined(separator: "\n")
         return edit(value, selectionOffset: prefix.utf16.count, length: max(0, clean.utf16.count - (clean.hasSuffix("\n") ? 1 : 0)))
+    }
+    static func image(in document: NativeRichTextDocument, selection: NSRange) -> NativeRichTextDocument.Run? {
+        document.runs.first {
+            $0.styles.contains("image") && (NSLocationInRange(selection.location, $0.visible) || NSIntersectionRange(selection, $0.visible).length > 0)
+        }
+    }
+    private static func editImage(_ command: String, in document: NativeRichTextDocument, selection: NSRange) -> Edit? {
+        guard let image = image(in: document, selection: selection) else { return nil }
+        let source = document.markdown as NSString, token = source.substring(with: image.source)
+        if command == "image-delete" {
+            return Edit(markdown: source.replacingCharacters(in: image.source, with: ""), sourceSelection: NSRange(location: image.source.location, length: 0))
+        }
+        if command.hasPrefix("image-move-") {
+            // Move the complete image token to the adjacent source line. This
+            // also works for inline images without swallowing surrounding text.
+            let line = source.lineRange(for: image.source)
+            let standalone = source.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines) == token
+            let removal = standalone ? line : image.source
+            let up = command == "image-move-up"
+            let target: Int
+            if up {
+                guard line.location > 0 else { return nil }
+                target = source.lineRange(for: NSRange(location: line.location - 1, length: 0)).location
+            } else {
+                guard NSMaxRange(line) < source.length else { return nil }
+                target = NSMaxRange(source.lineRange(for: NSRange(location: NSMaxRange(line), length: 0)))
+            }
+            let remaining = source.replacingCharacters(in: removal, with: "") as NSString
+            let adjusted = target > removal.location ? target - removal.length : target
+            let newline = document.markdown.contains("\r\n") ? "\r\n" : "\n"
+            let prefix = adjusted > 0 && remaining.character(at: adjusted - 1) != 10 && remaining.character(at: adjusted - 1) != 13 ? newline : ""
+            let insertion = prefix + token + newline
+            return Edit(markdown: remaining.replacingCharacters(in: NSRange(location: adjusted, length: 0), with: insertion),
+                        sourceSelection: NSRange(location: adjusted + prefix.utf16.count, length: token.utf16.count))
+        }
+        var layout = image.imageLayout ?? NativeRichTextImageLayout()
+        if command.hasPrefix("image-width:") {
+            guard let width = Int(command.dropFirst("image-width:".count)), (20...100).contains(width) else { return nil }
+            layout.widthPercent = width
+        } else if command.hasPrefix("image-align:") {
+            guard let alignment = NativeRichTextImageLayout.Alignment(rawValue: String(command.dropFirst("image-align:".count))) else { return nil }
+            layout.alignment = alignment
+        }
+        let replacement = NativeRichTextImageLayout.imageSyntax(in: token) + layout.marker
+        return Edit(markdown: source.replacingCharacters(in: image.source, with: replacement),
+                    sourceSelection: NSRange(location: image.source.location, length: replacement.utf16.count))
     }
     static func continuedLine(in document: NativeRichTextDocument, selection: NSRange) -> Edit? {
         guard selection.length == 0 else { return nil }
