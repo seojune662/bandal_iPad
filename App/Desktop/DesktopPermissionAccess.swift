@@ -1,4 +1,3 @@
-import AVFAudio
 import EventKit
 import UIKit
 import UserNotifications
@@ -13,13 +12,6 @@ struct DesktopPermissionAccess {
     static func live(calendar: EKEventStore) -> Self {
         Self(state: { id in
             switch id {
-            case "microphone":
-                switch AVAudioApplication.shared.recordPermission {
-                case .granted: return "granted"
-                case .denied: return "denied"
-                case .undetermined: return "not-determined"
-                @unknown default: return "unknown"
-                }
             case "calendar":
                 switch EKEventStore.authorizationStatus(for: .event) {
                 case .fullAccess: return "granted"
@@ -39,7 +31,6 @@ struct DesktopPermissionAccess {
             }
         }, request: { id in
             switch id {
-            case "microphone": _ = await AVAudioApplication.requestRecordPermission()
             case "calendar": _ = try await calendar.requestFullAccessToEvents()
             case "notifications": _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
             default: break

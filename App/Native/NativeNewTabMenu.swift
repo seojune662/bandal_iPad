@@ -33,7 +33,7 @@ enum NativeNewTabCatalog {
             (.init(id: "recording", title: "녹음", hint: "강의 · 실시간 자막", symbol: "waveform", shortcutID: "new-recording-tab", action: .recording), ["녹음", "강의", "실시간 자막", "STT", "recording"])
         ]
         if url != nil { return [all[0].0] }
-        return all.filter { matches($0.1) }.map(\.0)
+        return all.filter { matches($0.1) && (NativeReleaseFlags.showsRecording || $0.0.id != "recording") }.map(\.0)
     }
 }
 

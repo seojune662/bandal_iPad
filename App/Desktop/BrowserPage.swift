@@ -473,14 +473,15 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         alert.addAction(UIAlertAction(title: "확인", style: .default) { [weak alert] _ in completionHandler(alert?.textFields?.first?.text) }); presenter.present(alert, animated: true)
     }
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        let permission = type == .microphone ? "microphone" : type == .camera ? "camera" : "camera-microphone"
-        if type != .microphone && Bundle.main.object(forInfoDictionaryKey: "NSCameraUsageDescription") == nil { decisionHandler(.deny); return }
+        // The iPad app has no microphone access: anything that includes audio is denied.
+        let permission = "camera"
+        if type != .camera || Bundle.main.object(forInfoDictionaryKey: "NSCameraUsageDescription") == nil { decisionHandler(.deny); return }
         let site = "\(origin.protocol)://\(origin.host)" + (origin.port == 0 ? "" : ":\(origin.port)")
         if !isPrivate, let saved = host?.persistence?.state.permissions.first(where: { $0.profileID == profileID && $0.origin == site && $0.permission == permission }) {
             decisionHandler(saved.decision == "granted" ? .grant : .deny); return
         }
         Task {
-            let granted = await host?.confirm(title: origin.host, message: "이 사이트가 \(permission == "microphone" ? "마이크" : "카메라")를 사용하도록 허용할까요?") ?? false
+            let granted = await host?.confirm(title: origin.host, message: "이 사이트가 카메라를 사용하도록 허용할까요?") ?? false
             if !isPrivate { try? host?.savePermission(profile: profileID, origin: site, permission: permission, decision: granted ? "granted" : "denied") }
             decisionHandler(granted ? .grant : .deny)
         }

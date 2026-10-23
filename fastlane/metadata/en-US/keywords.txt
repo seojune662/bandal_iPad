@@ -1,1 +1,1 @@
-pdf,handwriting,notes,markdown,study,lecture,recording,transcript,whiteboard,pencil,planner
+pdf,handwriting,notes,markdown,study,lecture,whiteboard,pencil,planner

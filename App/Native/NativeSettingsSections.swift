@@ -83,7 +83,7 @@ struct NativeSettingsSections: View {
         VStack(alignment: .leading, spacing: 24) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    ForEach([("note", "마크다운"), ("browser", "브라우저"), ("chat", "AI"), ("recording", "녹음"), ("whiteboard", "노트"), ("board", "학업 보드")], id: \.0) { id, title in
+                    ForEach([("note", "마크다운"), ("browser", "브라우저"), ("chat", "AI"), ("recording", "녹음"), ("whiteboard", "노트"), ("board", "학업 보드")].filter { NativeReleaseFlags.showsRecording || $0.0 != "recording" }, id: \.0) { id, title in
                         Button(title) { tab = id }.buttonStyle(NativeToolButtonStyle(primary: tab == id, compact: true)).accessibilityIdentifier("native-settings-tab-" + id)
                     }
                 }
@@ -215,7 +215,7 @@ private struct NativeSettingsGuide: View {
                 Section("1 · 자료와 과목") { Text("왼쪽에서 과목을 만들거나 기존 폴더를 연결하세요. 자료실의 가져오기로 PDF·이미지·영상·음성을 추가합니다.") }
                 Section("2 · 필기와 노트") { Text("PDF를 열고 Apple Pencil로 필기하세요. 새 노트(PDF 필기)와 마크다운을 만들 수 있습니다.") }
                 Section("3 · 여러 창 배치") { Text("탭 메뉴에서 이동·분할을 선택하거나 탭을 끌어 원하는 영역에 놓으세요. 영역의 경계를 끌면 비율을 바꿀 수 있습니다.") }
-                Section("4 · AI와 녹음") { Text("AI 엔진에서 API 키를 연결하면 선택한 과목의 자료로 대화할 수 있습니다. 녹음은 모델을 설치한 뒤 기기에서 자막을 만듭니다.") }
+                Section(NativeReleaseFlags.showsRecording ? "4 · AI와 녹음" : "4 · AI") { Text(NativeReleaseFlags.showsRecording ? "AI 엔진에서 API 키를 연결하면 선택한 과목의 자료로 대화할 수 있습니다. 녹음은 모델을 설치한 뒤 기기에서 자막을 만듭니다." : "AI 엔진에서 API 키를 연결하면 선택한 과목의 자료로 대화할 수 있습니다.") }
                 if NativeReleaseFlags.isLocalOnly { Section("5 · 저장") { Text("편집 내용은 기기에 자동 저장됩니다. 저장에 실패한 편집은 복구 사본으로 보관됩니다.") } }
                 else { Section("5 · 저장과 동기화") { Text("편집 내용은 기기에 자동 저장됩니다. 계정에 로그인하면 다른 기기와 자료를 동기화할 수 있고, 충돌 사본은 계정 설정에서 확인할 수 있습니다.") } }
             }.navigationTitle("반달 둘러보기").toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { dismiss() } } }

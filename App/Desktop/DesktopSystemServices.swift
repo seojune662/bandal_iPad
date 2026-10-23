@@ -79,7 +79,7 @@ final class DesktopSystemServices {
     }
 
     private func permission(_ id: String) async -> [String: Any] {
-        if ["notifications", "microphone", "calendar"].contains(id) {
+        if ["notifications", "calendar"].contains(id) {
             let state = await permissions.state(id)
             return ["id": id, "state": state, "canRequest": state == "not-determined", "canOpenSettings": true]
         }

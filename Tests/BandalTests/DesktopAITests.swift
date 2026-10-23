@@ -35,6 +35,7 @@ final class DesktopAITests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [DesktopAIProtocol.self]
         var value = DesktopAIEnvironment(); value.session = URLSession(configuration: configuration)
         value.readKey = { _ in "fixture-secret-1234" }; value.writeKey = { _, _ in }
+        value.hasConsent = { _ in true }; value.askConsent = { _ in XCTFail("Unexpected consent prompt"); return false }
         return value
     }
     private func event(_ value: [String: Any]) throws -> String { "data: " + String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self) + "\n\n" }
@@ -63,6 +64,28 @@ final class DesktopAITests: XCTestCase {
         let result = try await service.handle(channel: "native:aiRun", request: request()) as? [String: Any]
         XCTAssertEqual(received, "안녕"); XCTAssertEqual(result?["text"] as? String, received)
         XCTAssertEqual(DesktopAIProtocol.requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer fixture-secret-1234")
+    }
+    func testDeclinedConsentSendsNothing() async throws {
+        var fixture = environment("")
+        var asked: [AIProvider] = []
+        fixture.hasConsent = { _ in false }; fixture.askConsent = { provider in asked.append(provider); await Task.yield(); return false }
+        let service = DesktopAIService(environment: fixture)
+        service.onEvent = { _, _ in XCTFail("Declined request emitted output") }; service.onTool = { _, _ in XCTFail("Declined request called tool"); return "" }
+        let first = Task { _ = try await service.handle(channel: "native:aiRun", request: self.request(provider: "claude-code")) }
+        let second = Task { _ = try await service.handle(channel: "native:aiRun", request: self.request(provider: "claude-code")) }
+        for task in [first, second] {
+            if case .success = await task.result { XCTFail("Declined request returned success") }
+        }
+        XCTAssertEqual(asked, [.claude])
+        XCTAssertTrue(DesktopAIProtocol.requests.isEmpty)
+    }
+    func testGrantedConsentStillNeedsAKeyBeforeSending() async throws {
+        var fixture = environment("")
+        fixture.readKey = { _ in nil }; fixture.hasConsent = { _ in false }; fixture.askConsent = { _ in true }
+        let service = DesktopAIService(environment: fixture)
+        service.onEvent = { _, _ in }; service.onTool = { _, _ in "" }
+        do { _ = try await service.handle(channel: "native:aiRun", request: request(provider: "gemini")); XCTFail("Sent without a key") } catch {}
+        XCTAssertTrue(DesktopAIProtocol.requests.isEmpty)
     }
     func testKeyChangeCancelsAnInFlightRequest() async throws {
         let service = DesktopAIService(environment: environment("", hold: true))

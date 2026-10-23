@@ -1,14 +1,28 @@
-반달은 계정 없이 모든 기능을 사용할 수 있습니다. 첫 화면에서 바로 과목을 만들고 자료를 열 수 있습니다.
+1. Screen recording
+Attached to our reply in App Review messages. Recorded on an iPad Pro 11-inch (3rd generation) running iPadOS 27.0.1, starting at app launch. In the file picker, the first seconds are blurred because they showed the tester's own iCloud Drive file names; the rest is unedited.
 
-핵심 기능 확인 순서:
-1. 왼쪽 레일의 자료실에서 "+" → 새 과목을 만듭니다.
-2. 과목 안에서 "+" → 노트를 만들면 종이를 고른 PDF 필기 노트가 열립니다. 하단 팔레트에서 펜·형광펜·올가미·텍스트를 바로 사용할 수 있습니다.
-3. 파일 앱에서 PDF를 가져오거나 공유 시트로 반달에 보내면 같은 팔레트로 필기할 수 있습니다.
-4. "+" → 마크다운으로 노트를 만들어 표와 수식을 입력할 수 있습니다.
-5. "+" → 녹음으로 강의 녹음과 기기 내 자막을 확인할 수 있습니다. 마이크 권한만 필요합니다.
+2. Purpose, audience, problem
+Bandal (store name 반달 노트) is a study app for university students on iPad. Students keep lecture PDFs, handwritten notes and typed notes for each course in one place, instead of switching between separate PDF, note-taking and browser apps.
 
-이 버전에는 계정, 동기화, 구독, 결제가 없습니다. 모든 자료는 iPad 안에 저장되며 반달 서버로 전송되는 데이터가 없습니다. 테스트 계정은 필요 없습니다.
+Version 1.0 works entirely on the device. There is no account creation or login, no syncing, no sharing of user content with other users, and no paid features or in-app purchases. All files are stored on the iPad.
 
-AI 기능은 사용자가 직접 입력한 OpenAI/Anthropic/Google API 키로만 동작하며, 질문은 사용자가 선택한 제공자에게 직접 전송됩니다. 심사에서는 건너뛰셔도 됩니다. 키 없이도 다른 모든 기능이 동작합니다.
+3. How to use the main features (no login needed)
+- Create a course: tap "+" next to the course list (과목) and choose "새 과목 만들기" (New Course), then enter a name.
+- Import a PDF: put any PDF in the Files app (for example On My iPad > 반달), then in the app tap the tray icon "파일 가져오기" (Import Files) above the materials list (자료) and pick the PDF. Tap it in the list to open it.
+- Handwriting: choose the pen, highlighter or eraser in the PDF toolbar and write with Apple Pencil. "+" > "새 노트" in the materials list creates a blank handwriting note (plain, lined, grid or dotted paper).
+- Tabs and panes: "+" in the tab bar opens a new tab (handwriting note, Markdown, browser, AI). The layout button in the tab bar splits the workspace into two columns, two rows or four panes.
+- Typed notes: "+" in the tab bar > "마크다운" creates a Markdown note.
+- Browser: "+" in the tab bar > "브라우저", then enter an address.
+- AI assistant (optional): this needs the user's own API key from OpenAI, Anthropic or Google, entered in Settings > AI 엔진 (AI Engine). Without a key the rest of the app works fully. We do not provide a key.
+- No sample account is needed. Any PDF works as a sample file.
 
-내장 브라우저는 WebKit 기반이며 일반 웹사이트를 열 수 있어 연령 등급을 17+로 설정했습니다.
+4. External services
+- AI assistant (optional, user's own key): when the user asks a question, the question, any attached images and any material or note the user lets the AI read are sent from the iPad directly to the provider the user chose (OpenAI, Anthropic or Google), using the user's own API key stored in the iPad Keychain. Before the first request to each provider, the app shows a consent screen that says what is sent and to whom, with a link to the provider's privacy policy. Nothing is sent without consent, and consent can be withdrawn in Settings > AI 엔진. We run no server for this and never receive these requests or the key.
+- In-app browser: loads the websites the user opens (and their icons) directly from those sites. The sidebar shortcuts to ChatGPT, Claude, Gemini and school websites only open those websites in this browser. Because the browser can open any website, the age rating is 17+.
+- No analytics, advertising, crash-reporting, authentication or payment services are used. There is no server of ours that the app talks to.
+
+5. Regional differences
+The app is not distributed in the European Union. In all regions where it is available, the features are the same.
+
+6. Regulated industry
+Not applicable. The app is a general study and note-taking tool and is not in a regulated industry.
