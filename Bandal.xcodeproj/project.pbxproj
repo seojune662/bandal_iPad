@@ -14,7 +14,6 @@
 		03A5064DD9BEAE5390A4D67F /* NativePDFHostNavigationInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D2E273B0AFBD0553FD7978D /* NativePDFHostNavigationInputTests.swift */; };
 		0488665168A6F9CBD3D31098 /* NativePDFAsynchronousEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF9B9E3F6A7C6DC4F971247 /* NativePDFAsynchronousEditTests.swift */; };
 		049AA5AC7F4AB07F8EE629BD /* NativeSyncArtifacts.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD719244026414BE82EC0E21 /* NativeSyncArtifacts.swift */; };
-		069F38C3D229BA1D34861B81 /* BandalShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C78791BAB2AFD797E9EEC9C3 /* BandalShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		06C31BBD72EB45C6B9670A75 /* NativeDesktopLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F78DB5B684C1B3A444C2128 /* NativeDesktopLayoutTests.swift */; };
 		079D6D03EF9AFF2BB4757CC3 /* DesktopAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3159DC6FCB52C6FB4E33B87 /* DesktopAIService.swift */; };
 		07C5126FB823E6E59C5A2AEC /* NativePDFOpenPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAFDFD71F6786278981B5C5 /* NativePDFOpenPerformanceTests.swift */; };
@@ -81,7 +80,6 @@
 		271B068AAB5A3B13C5CE844B /* LocalSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5866A7018E825050DA9AEADE /* LocalSpeech.swift */; };
 		2A22C907CF9352BD9DC9745A /* NativeBrowserWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2913FBEF8207B5BDB666CC5C /* NativeBrowserWorkspace.swift */; };
 		2AB603008FC52023A2E5D841 /* NativePDFPageNoteDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03F1FD03DB1CCBBCF7C2D556 /* NativePDFPageNoteDocument.swift */; };
-		2D7302A6FBB50ED555C7FD77 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AAE5B0BC54C47E37B83E28C /* ShareViewController.swift */; };
 		2DE33922B2CBD594261CC7A6 /* NativeWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 434FA4AE4A6A5D1A9D3731FF /* NativeWorkspaceView.swift */; };
 		2E303DFC1716516879A1CC28 /* NativeDockTabButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61ABE7B79A5B6C81737BE29C /* NativeDockTabButton.swift */; };
 		2EEB19162846FDABA7B4DA00 /* AppStoreScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E44669BA478AFAE36158A0C /* AppStoreScreenshotTests.swift */; };
@@ -410,7 +408,6 @@
 		D5B92EA76F592A3BA2768447 /* NativePDFInkGeometryV5Cache.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2AFC2C3FDBB15D52D96975B /* NativePDFInkGeometryV5Cache.swift */; };
 		D5EC69478B69F76E1FE8E1DE /* WhiteboardWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 644D4FC4D78D71368E723B98 /* WhiteboardWorkspaceView.swift */; };
 		D5FEB0337A196B0F811EC2A2 /* NativeCourseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C042FA1E0FF0892ACEF4B3B /* NativeCourseManager.swift */; };
-		D88D5459EF353F8A8842E21E /* BandalShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6277C0760F03717479CE2941 /* BandalShareInbox.swift */; };
 		D8AD580BC7E56DD4283DB269 /* NativePDFEditingGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA11CE94AA82D26B81ED7372 /* NativePDFEditingGeometryTests.swift */; };
 		D8F9CAEA16CE35B2F4E3374F /* LocalSaveJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = E581D20C7B7A462C7B3E6D17 /* LocalSaveJournal.swift */; };
 		D9DCDE3670E902ADD0D8F19F /* NativeLegacyMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB81661EF8912C63F02C7802 /* NativeLegacyMigration.swift */; };
@@ -490,13 +487,6 @@
 			remoteGlobalIDString = 2AD3148A76DFCAA193CDB991;
 			remoteInfo = Bandal;
 		};
-		7D7FDF3E0CA305216CFE39F1 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 43E8FB903624A8CDD4E16F53 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = D6AB8218D2669906A53A1D38;
-			remoteInfo = BandalShare;
-		};
 		81A60D266E0981D2CE909F15 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 43E8FB903624A8CDD4E16F53 /* Project object */;
@@ -505,20 +495,6 @@
 			remoteInfo = Bandal;
 		};
 /* End PBXContainerItemProxy section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		34AAE25007B4D0F4B7927156 /* Embed Foundation Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				069F38C3D229BA1D34861B81 /* BandalShare.appex in Embed Foundation Extensions */,
-			);
-			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		00259B4F6C8199734C4A4C0A /* NativePDFFileCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFFileCoordinator.swift; sourceTree = "<group>"; };
@@ -661,7 +637,6 @@
 		480B62EB4A3AEB67E3CFD8F7 /* NativePagedMarkdownUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePagedMarkdownUITests.swift; sourceTree = "<group>"; };
 		4844F482C8CAD46F7CABF86F /* BrowserPopupAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPopupAdmission.swift; sourceTree = "<group>"; };
 		4A2B9BCBC0DF03FC3C21CE81 /* NativeDesktopTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDesktopTheme.swift; sourceTree = "<group>"; };
-		4AAE5B0BC54C47E37B83E28C /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		4B5AD9866DB0F5E454C6184E /* DesktopNativeSurfaceMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNativeSurfaceMask.swift; sourceTree = "<group>"; };
 		4CA765580833E43851772D17 /* NativePDFPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPersistenceTests.swift; sourceTree = "<group>"; };
 		4D8B6B05941B73CA7D07B41A /* NativeSettingsPlatformService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsPlatformService.swift; sourceTree = "<group>"; };
@@ -880,7 +855,6 @@
 		C696794CDD530C377066F0EB /* DesktopCredentialsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCredentialsTests.swift; sourceTree = "<group>"; };
 		C6C8A1B727555C64DB4B5759 /* NativeLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLibraryView.swift; sourceTree = "<group>"; };
 		C785584B53A4BE3CD142F1D6 /* NativeDockRailResizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDockRailResizer.swift; sourceTree = "<group>"; };
-		C78791BAB2AFD797E9EEC9C3 /* BandalShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = BandalShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C89066DD33F7EAD131F57B66 /* NativeSyncJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSyncJournal.swift; sourceTree = "<group>"; };
 		C920CB1A6E87F130E3E94DF5 /* NativePDFInkV5IntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkV5IntegrationTests.swift; sourceTree = "<group>"; };
 		C9C768CF462DA427D7374098 /* NativePDFMetalInk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFMetalInk.swift; sourceTree = "<group>"; };
@@ -1492,14 +1466,6 @@
 			path = Tests/BandalTests;
 			sourceTree = "<group>";
 		};
-		919FB382F443A6EC243C2F8E /* ShareExtension */ = {
-			isa = PBXGroup;
-			children = (
-				4AAE5B0BC54C47E37B83E28C /* ShareViewController.swift */,
-			);
-			path = ShareExtension;
-			sourceTree = "<group>";
-		};
 		97B7362BCD222BBEAF1105A3 /* App */ = {
 			isa = PBXGroup;
 			children = (
@@ -1543,7 +1509,6 @@
 				C56778D1B495CE25D16997A1 /* Packages */,
 				DE479E3DD45309ECFA9269BC /* Resources */,
 				265219186E757C9971807164 /* Shared */,
-				919FB382F443A6EC243C2F8E /* ShareExtension */,
 				E11EE181A019B1B13BA60BCD /* Products */,
 			);
 			sourceTree = "<group>";
@@ -1602,7 +1567,6 @@
 			isa = PBXGroup;
 			children = (
 				E3679A3BBA545B6E0634FFA2 /* Bandal.app */,
-				C78791BAB2AFD797E9EEC9C3 /* BandalShare.appex */,
 				D103D07F0469B501D9737DDF /* BandalTests.xctest */,
 				4745323F72B5360B6C4BF39F /* BandalUITests.xctest */,
 			);
@@ -1662,12 +1626,10 @@
 				F6270EC3F8741BAED3753C89 /* Sources */,
 				0563471F3B475695D258D0F4 /* Resources */,
 				EBAEF98978E0FBD2E5D09DFB /* Frameworks */,
-				34AAE25007B4D0F4B7927156 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				7DB53ECBD9731B6E897623EF /* PBXTargetDependency */,
 			);
 			name = Bandal;
 			packageProductDependencies = (
@@ -1715,23 +1677,6 @@
 			productReference = D103D07F0469B501D9737DDF /* BandalTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		D6AB8218D2669906A53A1D38 /* BandalShare */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 1ABA22014534757745C9DBF9 /* Build configuration list for PBXNativeTarget "BandalShare" */;
-			buildPhases = (
-				43C5A1013F0F45ED9C7CCAE3 /* Sources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = BandalShare;
-			packageProductDependencies = (
-			);
-			productName = BandalShare;
-			productReference = C78791BAB2AFD797E9EEC9C3 /* BandalShare.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -1751,10 +1696,6 @@
 						TestTargetID = 2AD3148A76DFCAA193CDB991;
 					};
 					CD82ACA1504184017EFF62E8 = {
-						DevelopmentTeam = VUZ7Z98BW3;
-						ProvisioningStyle = Automatic;
-					};
-					D6AB8218D2669906A53A1D38 = {
 						DevelopmentTeam = VUZ7Z98BW3;
 						ProvisioningStyle = Automatic;
 					};
@@ -1781,7 +1722,6 @@
 			projectRoot = "";
 			targets = (
 				2AD3148A76DFCAA193CDB991 /* Bandal */,
-				D6AB8218D2669906A53A1D38 /* BandalShare */,
 				CD82ACA1504184017EFF62E8 /* BandalTests */,
 				7FB7B5793E6289DFB85BDC89 /* BandalUITests */,
 			);
@@ -1991,15 +1931,6 @@
 				391B57270D10D4C25851D2D3 /* SaveJournalTests.swift in Sources */,
 				D4E80387253752F3D88B08FA /* SurfaceTextureRecoveryTests.swift in Sources */,
 				E3244A773AB30302BE1C782A /* WorkspacePersistenceTests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		43C5A1013F0F45ED9C7CCAE3 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				D88D5459EF353F8A8842E21E /* BandalShareInbox.swift in Sources */,
-				2D7302A6FBB50ED555C7FD77 /* ShareViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2304,11 +2235,6 @@
 			target = 2AD3148A76DFCAA193CDB991 /* Bandal */;
 			targetProxy = 40721CE3E7667E5451CCB7AC /* PBXContainerItemProxy */;
 		};
-		7DB53ECBD9731B6E897623EF /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = D6AB8218D2669906A53A1D38 /* BandalShare */;
-			targetProxy = 7D7FDF3E0CA305216CFE39F1 /* PBXContainerItemProxy */;
-		};
 		C9B3D22DF2B75EC8C0AD15E4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 2AD3148A76DFCAA193CDB991 /* Bandal */;
@@ -2466,24 +2392,6 @@
 			};
 			name = Release;
 		};
-		3C0A3DDEB19BD03930049CAC /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = ShareExtension/BandalShare.entitlements;
-				INFOPLIST_FILE = ShareExtension/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.bandal.ipad.share;
-				SDKROOT = iphoneos;
-				SKIP_INSTALL = YES;
-				TARGETED_DEVICE_FAMILY = 2;
-			};
-			name = Release;
-		};
 		3C71A03772366C935A9CC3CB /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2588,36 +2496,9 @@
 			};
 			name = Release;
 		};
-		FA5214568DB509F802E6E542 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = ShareExtension/BandalShare.entitlements;
-				INFOPLIST_FILE = ShareExtension/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.bandal.ipad.share;
-				SDKROOT = iphoneos;
-				SKIP_INSTALL = YES;
-				TARGETED_DEVICE_FAMILY = 2;
-			};
-			name = Debug;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		1ABA22014534757745C9DBF9 /* Build configuration list for PBXNativeTarget "BandalShare" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				FA5214568DB509F802E6E542 /* Debug */,
-				3C0A3DDEB19BD03930049CAC /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
 		6534996717377F30EFB2E222 /* Build configuration list for PBXNativeTarget "BandalTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
