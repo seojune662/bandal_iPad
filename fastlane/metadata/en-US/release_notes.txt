@@ -1,1 +1,7 @@
-First release of Bandal for iPad.
+- Organize your work into courses and projects from Home.
+- Use materials and AI side by side in the right panel, with chat, quiz, flashcard and practice-question modes (requires your own API key).
+- Point to part of a PDF, note or web page and attach it to your AI question.
+- Drag images from the Photos & Files tray into PDFs and Markdown, and adjust Markdown image size and alignment.
+- Copy a PDF area as an image with the lasso, or move selected handwriting to another page.
+- View materials as icons, a list or a gallery.
+- PDFs and thumbnails open faster.

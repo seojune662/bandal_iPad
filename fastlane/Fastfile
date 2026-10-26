@@ -12,14 +12,14 @@ platform :ios do
   desc "Upload App Store metadata and screenshots only (no binary, no submission)"
   lane :metadata do
     asc_key
-    deliver(app_identifier: "app.bandal.ipad", app_version: "1.0.0", skip_binary_upload: true,
+    deliver(app_identifier: "app.bandal.ipad", app_version: "1.1.0", skip_binary_upload: true,
             submit_for_review: false, run_precheck_before_submit: false, overwrite_screenshots: true, force: true)
   end
 
   desc "Upload screenshots only"
   lane :screenshots do
     asc_key
-    deliver(app_identifier: "app.bandal.ipad", app_version: "1.0.0", skip_binary_upload: true, skip_metadata: true,
+    deliver(app_identifier: "app.bandal.ipad", app_version: "1.1.0", skip_binary_upload: true, skip_metadata: true,
             submit_for_review: false, run_precheck_before_submit: false, overwrite_screenshots: true, force: true)
   end
 
