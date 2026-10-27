@@ -1,14 +1,13 @@
 {
   "feature": "반달 iPad 과목·프로젝트별 내부 작업 윈도우",
-  "recorded_at": "2026-10-27T23:03:33+09:00",
-  "status": "implemented_and_installed_final_ui_pending",
+  "recorded_at": "2026-10-27T23:55:15+09:00",
+  "status": "implemented_installed_additional_device_validation_waived_by_user",
   "baseline": {
     "branch": "main",
     "head": "3b69d21a7570debbb5d9aec2273b0a4424a01b65",
     "origin_main": "7a8e8accd3da2f63e1dca8a1936c8928a2a11eb7",
     "existing_local_commits": 29,
-    "commit": "31caf0adcf0cdbadbbc5ddde08653c26c307c202",
-    "push_performed": false
+    "commit": "31caf0adcf0cdbadbbc5ddde08653c26c307c202"
   },
   "implementation": [
     "고정 44pt 화면 제어와 윈도우별 표시 모드",
@@ -1180,7 +1179,8 @@
         "failure": "Synthetic XCTest Escape did not dismiss overview. Fixed 44pt controls, existing cards and overview entry assertions completed before that failure. Sidebar follow-up assertions were not reached."
       },
       "executed_feature_tests": 0,
-      "runner_error": "Early unexpected exit, operation never finished bootstrapping. Lost pending connection to the test runner before launch."
+      "runner_error": "Early unexpected exit, operation never finished bootstrapping. Lost pending connection to the test runner before launch.",
+      "follow_up": "The user explicitly waived additional physical-device validation and requested pushing the implementation. Existing failures and unverified checks remain recorded; no additional device test was run."
     },
     "direct_keyboard_check": {
       "status": "passed_in_observed_simulator_cases",
@@ -1409,13 +1409,7 @@
   },
   "remaining": [
     "XCTest Escape 실패 경로의 원인 확인 및 필요한 수정·재검증: 직접 CUA 입력 성공과 자동 테스트 실패를 구분해서 유지",
-    "실기기 재잠금 해제 후 최종 일반 프로필 UI 테스트 재실행",
-    "실기기 전체 화면 배치 확인",
-    "Stage Manager 실기기 크기 변경 확인",
-    "VoiceOver 동작 확인",
-    "물리 Apple Pencil 필압·팜 리젝션 확인",
-    "Mac 잠금 해제 후 검증용 시뮬레이터 멀티태스킹 설정 복원",
-    "최종 실기기 확인 후 구현·검증 커밋과 기존 29개 로컬 커밋 함께 푸시"
+    "Mac 잠금 해제 후 검증용 시뮬레이터 멀티태스킹 설정 복원"
   ],
   "distribution": {
     "app_store_upload_performed": false,
@@ -1427,5 +1421,17 @@
       "iPad Pro 11-inch (M5), iOS 26.3.1",
       "iPad Pro 13-inch (M5), iOS 26.3.1"
     ]
-  }
+  },
+  "publication": {
+    "target": "origin/main",
+    "include_existing_local_commits": 29,
+    "additional_device_validation": "waived_by_user",
+    "instruction": "실기기 검증 안해도 될 것 같애. 푸시해줘",
+    "test_results_unchanged": true
+  },
+  "deferred_verification": [
+    "최종 일반 프로필 실기기 UI 재검사",
+    "실기기 전체 화면 배치·Stage Manager 크기 변경",
+    "VoiceOver 및 물리 Apple Pencil 필압·팜 리젝션"
+  ]
 }
