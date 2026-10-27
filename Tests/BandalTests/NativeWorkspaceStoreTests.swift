@@ -147,6 +147,36 @@ final class NativeWorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(retained.first)), bytes)
     }
 
+    func testCapturedCreationAndImportOwnerSurvivesCourseSelectionChange() async throws {
+        let store = try await started()
+        try await store.createCourse(name: "Original destination")
+        let destination = try XCTUnwrap(store.selectedCourseID)
+        try await store.createCourse(name: "Currently selected")
+        let selected = try XCTUnwrap(store.selectedCourseID)
+        XCTAssertNotEqual(destination, selected)
+
+        try await store.createFolder(name: "Captured folder", courseID: destination, parentPath: "")
+        let note = try await store.createNote(title: "Captured note", paper: "blank", orientation: "portrait", courseID: destination, parentPath: "Captured folder")
+        XCTAssertEqual(note.courseID, destination)
+        XCTAssertTrue(note.relativePath.hasPrefix("Captured folder/"))
+        let source = directory.appendingPathComponent("picked.md")
+        let original = Data("# Preserved import destination\n".utf8)
+        try original.write(to: source)
+        try await store.importFiles([source], courseID: destination, parentPath: "Captured folder")
+        let pathValue = try await store.invokePrivate("nativeMaterial:path", ["courseId": destination, "relPath": "Captured folder/picked.md"])
+        let imported = URL(fileURLWithPath: try XCTUnwrap(pathValue as? String))
+        XCTAssertEqual(try Data(contentsOf: imported), original)
+        XCTAssertEqual(try Data(contentsOf: source), original)
+        XCTAssertEqual(store.selectedCourseID, selected, "Background creation must not change the selected course")
+        XCTAssertFalse(NativeLibraryIndex.flatten(store.materials).contains { $0.relPath.hasPrefix("Captured folder") })
+
+        do {
+            try await store.createFolder(name: "Wrong fallback", courseID: "removed-course", parentPath: "")
+            XCTFail("A missing explicit owner must fail rather than write into the selected course")
+        } catch {}
+        XCTAssertFalse(store.materials.contains { $0.name == "Wrong fallback" })
+    }
+
     func testDocumentScopedMutationRetiresOnlyTheChangedTabAndResumesTheInitiator() async throws {
         let store = NativeWorkspaceStore(storageRoot: directory)
         let edited = NativeDocumentReference(courseID: "a", relativePath: "notes/x.pdf", title: "x", kind: "pdf")

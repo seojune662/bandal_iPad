@@ -10,7 +10,9 @@ struct NativeLibraryView: View {
     @StateObject private var projectLibrary = NativeProjectLibrary()
     @State private var loadedScopeID: String?
     var onClose: (() -> Void)? = nil
+    var captureOpen: (() -> (NativeDocumentReference) -> Void)? = nil
     var onOpen: (NativeDocumentReference) -> Void
+    @State private var importDestination: MaterialDestination?
     @AppStorage("native.library.displayMode") private var storedDisplayMode = NativeLibraryDisplayMode.list.rawValue
     @State private var gallerySelection: String?
     @State private var materialURLs: [String: URL] = [:]
@@ -19,7 +21,7 @@ struct NativeLibraryView: View {
     @State private var expandedFolders = Set<String>()
     @State private var filesExpanded = true
     @State private var importing = false
-    @State private var creation: Creation?
+    @State private var creation: CreationRequest?
     @State private var renaming: NativeMaterial?
     @State private var moving: NativeMaterial?
     @State private var deleting: NativeMaterial?
@@ -31,7 +33,17 @@ struct NativeLibraryView: View {
     @State private var contentError: String?
     @State private var markdownTitlePrefix = "새 마크다운"
 
-    private enum Creation: String, Identifiable { case ink, markdown, folder; var id: String { rawValue } }
+    private enum Creation { case ink, markdown, folder }
+    private struct MaterialDestination { let courseID: String; let folder: String }
+    /// The presented item owns every captured value. Separate sheet state can
+    /// otherwise be read from the presenter before SwiftUI applies its update.
+    private struct CreationRequest: Identifiable {
+        let id = UUID()
+        let kind: Creation
+        let destination: MaterialDestination
+        let markdownTitle: String
+        let open: (NativeDocumentReference) -> Void
+    }
     private var courseID: String? { scope?.courseID ?? store.selectedCourseID }
     private var scopeID: String { scope?.id ?? "course:" + (courseID ?? "") }
     private var rootPath: String { scope?.rootRelPath ?? "" }
@@ -66,32 +78,25 @@ struct NativeLibraryView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 2) {
-                    Text(scope?.title ?? store.courses.first { $0.id == courseID }?.name ?? "자료").font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("자료").font(.system(size: 15, weight: .semibold))
+                        Text(scope?.title ?? store.courses.first { $0.id == courseID }?.name ?? "")
+                            .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
+                    }
                     Spacer(minLength: 0)
                     if working { ProgressView().scaleEffect(0.7).frame(width: 16) }
-                    Menu {
-                        Picker("보기 방식", selection: $storedDisplayMode) {
-                            ForEach(NativeLibraryDisplayMode.allCases) { mode in
-                                Label(mode.title, systemImage: mode.symbol).tag(mode.rawValue)
-                                    .accessibilityIdentifier("native-library-view-" + mode.rawValue)
-                            }
-                        }
-                    } label: { Image(systemName: displayMode.symbol).font(.system(size: 14)).frame(width: 44, height: 44).contentShape(Rectangle()) }
-                        .accessibilityLabel("자료 보기 방식: " + displayMode.title).accessibilityIdentifier("native-library-view-menu")
-                    Button { importing = true } label: { Image(systemName: "tray.and.arrow.down").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("파일 가져오기")
+                    Button { beginImport() } label: { Image(systemName: "tray.and.arrow.down").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("파일 가져오기")
                         .disabled(courseID == nil || working).accessibilityIdentifier("native-library-import")
                     Menu {
-                        Button("새 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { creation = .ink }
-                        Button("새 마크다운", systemImage: "doc.badge.plus") { creation = .markdown }
-                        Button("새 폴더", systemImage: "folder.badge.plus") { creation = .folder }
+                        Button("새 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { beginCreation(.ink) }
+                        Button("새 마크다운", systemImage: "doc.badge.plus") { beginCreation(.markdown) }
+                        Button("새 폴더", systemImage: "folder.badge.plus") { beginCreation(.folder) }
                         if let onOpenAI { Divider(); Button("AI로 만들기", systemImage: "sparkles", action: onOpenAI) }
                     } label: { Image(systemName: "plus").font(.system(size: 15)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                         .disabled(courseID == nil || working).accessibilityLabel("추가").accessibilityIdentifier("native-library-create")
                     Button { Task { await store.refreshMaterials(); await projectLibrary.reload(store: store, scope: scope) } } label: { Image(systemName: "arrow.clockwise").frame(width: 44, height: 44).contentShape(Rectangle()) }
                         .accessibilityLabel("자료 새로고침").accessibilityIdentifier("native-library-refresh")
                 }
-                Label(scope?.kind == .project ? "프로젝트 자료" : "과목 자료", systemImage: "folder")
-                    .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
             }.padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 12)
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass").font(.system(size: 12))
@@ -100,6 +105,16 @@ struct NativeLibraryView: View {
                 if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark").font(.system(size: 10)) }.accessibilityLabel("검색 지우기") }
             }.foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 8).frame(height: 44)
                 .background(NativeDesktopTheme.raised.opacity(0.65), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 12).padding(.bottom, 12)
+            HStack(spacing: 8) {
+                Button { if displayMode == .list { filesExpanded.toggle() } } label: {
+                    HStack(spacing: 8) {
+                        if displayMode == .list { Image(systemName: filesExpanded ? "chevron.down" : "chevron.right").font(.system(size: 10)) }
+                        Text("파일").font(.system(size: 12, weight: .medium))
+                    }.frame(minHeight: 44).contentShape(Rectangle())
+                }.accessibilityLabel(filesExpanded ? "파일 목록 접기" : "파일 목록 펼치기")
+                Spacer(minLength: 0)
+                viewPicker
+            }.padding(.horizontal, 12)
             if displayMode != .list || isSearching { breadcrumbs }
             libraryContent.frame(maxHeight: .infinity)
             NativeLibrarySourceTray(store: store, folderPath: folderPath, model: sourceTrayModel)
@@ -107,11 +122,37 @@ struct NativeLibraryView: View {
         .background(NativeDesktopTheme.surface)
         .buttonStyle(.plain)
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            let destination = importDestination
+            importDestination = nil
             switch result {
-            case .success(let urls): perform { try await store.importFiles(urls, parentPath: folderPath) }
+            case .success(let urls):
+                guard let destination else { operationError = "자료를 가져올 공간을 확인해 주세요."; return }
+                perform { try await store.importFiles(urls, courseID: destination.courseID, parentPath: destination.folder) }
             case .failure(let error): operationError = error.localizedDescription
             }
         }
+    }
+
+    private var viewPicker: some View {
+Menu {
+                        Picker("보기 방식", selection: $storedDisplayMode) {
+                            ForEach(NativeLibraryDisplayMode.allCases) { mode in
+                                Label(mode.title, systemImage: mode.symbol).tag(mode.rawValue)
+                                    .accessibilityIdentifier("native-library-view-" + mode.rawValue)
+                            }
+                        }
+                    } label: { Image(systemName: displayMode.symbol).font(.system(size: 14)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                        .accessibilityLabel("자료 보기 방식: " + displayMode.title).accessibilityIdentifier("native-library-view-menu")
+    }
+    private func beginCreation(_ kind: Creation) {
+        guard let courseID else { return }
+        creation = .init(kind: kind, destination: .init(courseID: courseID, folder: folderPath),
+                         markdownTitle: markdownTitlePrefix, open: captureOpen?() ?? onOpen)
+    }
+    private func beginImport() {
+        guard let courseID else { return }
+        importDestination = .init(courseID: courseID, folder: folderPath)
+        importing = true
     }
 
     private var presentedContent: some View {
@@ -182,18 +223,21 @@ struct NativeLibraryView: View {
         markdownTitlePrefix = (settings["tabs"] as? [String:Any])?["markdownTitlePrefix"] as? String ?? "새 마크다운"
     }
 
-    @ViewBuilder private func creationSheet(_ kind: Creation) -> some View {
-            switch kind {
-            case .ink: NativeNewNoteSheet(store: store, parentPath:folderPath,onCreated: onOpen)
-            case .markdown:
-                NativeNameSheet(title: "새 마크다운", prompt: markdownTitlePrefix, defaultValue: markdownTitlePrefix) { name in
-                    let document = try await store.createMarkdown(title: name, parentPath: folderPath); onOpen(document)
-                }
-            case .folder:
-                NativeNameSheet(title: "새 폴더", prompt: "폴더 이름") { name in
-                    try await store.createFolder(name: name, parentPath: folderPath)
-                }
+    @ViewBuilder private func creationSheet(_ request: CreationRequest) -> some View {
+        let destination = request.destination
+        switch request.kind {
+        case .ink:
+            NativeNewNoteSheet(store: store, courseID: destination.courseID, parentPath: destination.folder, onCreated: request.open)
+        case .markdown:
+            NativeNameSheet(title: "새 마크다운", prompt: request.markdownTitle, defaultValue: request.markdownTitle) { name in
+                let document = try await store.createMarkdown(title: name, courseID: destination.courseID, parentPath: destination.folder)
+                request.open(document)
             }
+        case .folder:
+            NativeNameSheet(title: "새 폴더", prompt: "폴더 이름") { name in
+                try await store.createFolder(name: name, courseID: destination.courseID, parentPath: destination.folder)
+            }
+        }
     }
 
     private struct TreeEntry: Identifiable {
@@ -229,14 +273,6 @@ struct NativeLibraryView: View {
                 }
                 if store.isLoading && scopedMaterials.isEmpty { ProgressView().frame(maxWidth: .infinity).padding(24) }
                 if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button { filesExpanded.toggle() } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: filesExpanded ? "chevron.down" : "chevron.right").font(.system(size: 9))
-                            Text("파일").font(.system(size: 12, weight: .medium))
-                            Spacer()
-                            if !folderPath.isEmpty { Text((folderPath as NSString).lastPathComponent).font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
-                        }.padding(.horizontal, 12).frame(height: 36)
-                    }
                     if filesExpanded {
                         ForEach(treeRows) { entry in materialRow(entry.material, depth: entry.depth) }
                     }

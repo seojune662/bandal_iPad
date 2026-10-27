@@ -21,7 +21,8 @@ struct NativeLearningArticleView: View {
                     }
                     Button("다 읽었어요", systemImage: "checkmark.circle") { Task { _ = await model.mutate("learning:completeArticle", ["articleId": article["id"] ?? ""]) } }.buttonStyle(.borderedProminent).accessibilityIdentifier("native-learning-complete-article")
                 }.padding(28).frame(maxWidth: 760, alignment: .leading).frame(maxWidth: .infinity)
-            }.onAppear {
+            }.nativeLearningPanelScroll(model: model, detail: article["id"] as? String ?? "article").onAppear {
+                guard model.store.panelViewStates.read(NativeLearningPanelScrollState.self, id: model.panelID + ":" + (article["id"] as? String ?? "article"), kind: "learning") == nil else { return }
                 if let row = model.rows("articles").first(where: { $0["id"] as? String == article["id"] as? String }), let progress = row["progress"] as? [String: Any], let paragraph = progress["paragraphId"] as? String { proxy.scrollTo(paragraph, anchor: .top) }
             }
         }.disabled(model.busy || model.frozen)

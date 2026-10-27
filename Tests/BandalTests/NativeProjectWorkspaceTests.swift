@@ -36,7 +36,7 @@ final class NativeProjectWorkspaceTests: XCTestCase {
         XCTAssertNotEqual(first.id, second.id)
         var markdownNamedRoot = first
         markdownNamedRoot.relativePath = "Review.md"
-        XCTAssertFalse(markdownNamedRoot.supportsDuplicate, "A project folder extension must not allow duplicate quiz editors")
+        XCTAssertTrue(markdownNamedRoot.supportsDuplicate, "Generated targets explicitly support independent panels with shared learning content")
         let navigation = NativeWorkspaceNavigation()
         navigation.activateWorkspace(context); navigation.open(first); navigation.open(second); navigation.open(first)
         XCTAssertEqual(navigation.documents.count, 2)
@@ -138,7 +138,10 @@ final class NativeProjectWorkspaceTests: XCTestCase {
         XCTAssertNil(document.learningTarget); XCTAssertEqual(document.id, "course:notes.md")
         let navigation = NativeWorkspaceNavigation(); navigation.open(document)
         let first = project("first"); navigation.activateWorkspace(first); navigation.open(document)
-        navigation.closeTab(document.id)
+        let projectInstance = try XCTUnwrap(navigation.activeID)
+        XCTAssertNotEqual(projectInstance, document.id)
+        navigation.closeTab(projectInstance)
+        XCTAssertTrue(navigation.groups.allSatisfy { $0.tabs.isEmpty })
         navigation.activateCourse("course")
         XCTAssertEqual(navigation.active, document, "Closing a project placement must not remove its course placement")
     }

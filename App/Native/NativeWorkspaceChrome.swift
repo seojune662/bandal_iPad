@@ -73,10 +73,7 @@ struct NativeInspectorHeader: View {
                     .accessibilityAddTraits(selection == tab ? .isSelected : [])
             }
             Spacer(minLength: 0)
-            // The one window-level toggle occupies this slot, including when
-            // this persistent inspector is hidden or the document is split.
-            Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
-        }.padding(.leading, 8).padding(.trailing, 4).padding(.top, 16)
+        }.padding(.leading, 8).padding(.trailing, 4)
             .background(NativeDesktopTheme.surface)
             .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
     }

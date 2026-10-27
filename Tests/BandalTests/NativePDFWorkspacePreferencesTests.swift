@@ -76,4 +76,45 @@ final class NativePDFWorkspacePreferencesTests: XCTestCase {
         XCTAssertNil(saved.restoring(["page": 2, "zoom": 1.75], revision: "revision-a")["progress"])
         XCTAssertNil(saved.restoring(["page": 3, "zoom": 1.5], revision: "revision-a")["progress"])
     }
+
+    func testPendingPageRestoresBeforeSavedViewportAndClampsToDocument() throws {
+        var preferences = NativePDFWorkspacePreferences()
+        preferences.viewport = try XCTUnwrap(.init(revision: "r", values: [
+            "page": 2, "zoom": 1.75, "progress": 0.8, "horizontalProgress": 0.4]))
+        preferences.pendingPage = 9
+        let restored = preferences.restoringViewState(["page": 1, "zoom": 1.0], revision: "r", pageCount: 6)
+        XCTAssertEqual(restored["page"] as? Int, 6)
+        XCTAssertEqual(restored["zoom"] as? Double, 1.75)
+        XCTAssertEqual(restored["progress"] as? Double, 0)
+        XCTAssertEqual(restored["horizontalProgress"] as? Double, 0)
+        XCTAssertEqual(preferences.pendingPage, 9, "Reading a pending jump must not acknowledge an unapplied layout")
+        XCTAssertNil(try JSONDecoder().decode(NativePDFWorkspacePreferences.self, from: Data("{}".utf8)).pendingPage)
+        preferences.pendingPage = 0
+        XCTAssertNil(preferences.validated().pendingPage)
+    }
+
+    @MainActor
+    func testMountedModelsPreserveOnlyTheirOwnPendingPageDuringStyleSave() {
+        let suite = "NativePDFPendingPage.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = NativeWorkspaceStore(storageRoot: root)
+        let first = NativeDocumentReference(courseID: "c", relativePath: "a.pdf", title: "A", kind: "pdf")
+        var second = first; second.instanceID = UUID().uuidString
+        let model = NativePDFWorkspaceModel(document: first, store: store, defaults: defaults)
+        var pending = NativePDFWorkspacePreferences.load(root: root, documentID: first.id, defaults: defaults)
+        pending.pendingPage = 4
+        pending.save(root: root, documentID: first.id, defaults: defaults)
+        model.chooseColor("red")
+        let restored = NativePDFWorkspacePreferences.load(root: root, documentID: first.id, defaults: defaults)
+        XCTAssertEqual(restored.pendingPage, 4)
+        XCTAssertEqual(restored.color, "red")
+        XCTAssertNil(NativePDFWorkspacePreferences.load(root: root, documentID: second.id, defaults: defaults).pendingPage)
+        store.documentDuplicateSourceIDs[second.id] = first.id
+        _ = NativePDFWorkspaceModel(document: second, store: store, defaults: defaults)
+        XCTAssertNil(NativePDFWorkspacePreferences.load(root: root, documentID: second.id, defaults: defaults).pendingPage,
+            "A copied view inherits presentation, not the source window's queued navigation")
+        XCTAssertEqual(NativePDFWorkspacePreferences.load(root: root, documentID: first.id, defaults: defaults).pendingPage, 4)
+    }
 }

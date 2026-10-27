@@ -156,12 +156,19 @@ struct NativePDFPaletteControls: View {
 /// Second docked row: tools · colours · thickness slider + styles button.
 struct NativePDFPaletteQuickControls: View {
     @ObservedObject var model: NativePDFWorkspaceModel
+    var showsHistory = false
     private var highlighter: Bool { model.tool == "highlighter" }
     var body: some View {
         HStack(spacing: 0) {
             // Let the editing controls use the full width, including in split panes.
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
+                    if showsHistory {
+                        Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward").frame(width: 44, height: 44) }
+                            .disabled(!model.canUndo).accessibilityLabel("되돌리기").accessibilityIdentifier("native-pdf-undo")
+                        Button { model.redo() } label: { Image(systemName: "arrow.uturn.forward").frame(width: 44, height: 44) }
+                            .disabled(!model.canRedo).accessibilityLabel("다시 실행").accessibilityIdentifier("native-pdf-redo")
+                    }
                     HStack(spacing: 0) { ForEach(NativePDFToolbar.tools, id: \.0) { NativePDFToolbar.toolButton(model, $0) } }
                     if model.isInkTool {
                         group(leadingDivider: true) {

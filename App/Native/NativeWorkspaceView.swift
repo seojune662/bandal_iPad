@@ -4,6 +4,9 @@ import UIKit
 struct NativeWorkspaceView: View {
     @StateObject private var store: NativeWorkspaceStore
     @StateObject private var navigation = NativeWorkspaceNavigation()
+    @StateObject private var previews = NativeWorkspacePreviewController()
+    @State private var windowsOverviewOpen = false
+    @State private var shortcutContentHeight: CGFloat = 200
     @StateObject private var services: NativePlatformServices
     @ObservedObject private var annotation: NativeAnnotationCoordinator
     @StateObject private var librarySources = NativeLibrarySourceTrayModel()
@@ -60,6 +63,121 @@ struct NativeWorkspaceView: View {
     private var courseTitle: String { workspaceContext?.title ?? "자료실" }
     private var showsWorkspace: Bool { section == .library && auxiliary == nil }
 
+    private var windowsOverview: some View {
+        let scope = navigation.currentWindowRef?.workspaceID ?? ""
+        return NativeWorkspaceWindowsOverview(windows: navigation.windows, activeID: navigation.currentWindowRef?.windowID,
+            image: { previews.image(root: store.root, workspaceID: scope, windowID: $0) },
+            select: { id in changeWindow { _ = navigation.selectWindow(.init(workspaceID: scope, windowID: id)) } },
+            add: { changeWindow { _ = navigation.createWindow() } },
+            rename: { id, name in persistWindowMetadata { _ = navigation.renameWindow(.init(workspaceID: scope, windowID: id), name: name) } },
+            move: { id, index in persistWindowMetadata { _ = navigation.moveWindow(.init(workspaceID: scope, windowID: id), to: index) } },
+            close: { closeWindow(.init(workspaceID: scope, windowID: $0)) },
+            dismiss: { windowsOverviewOpen = false })
+    }
+
+    private func syncNavigationInstances() {
+        store.documentDuplicateSourceIDs.merge(navigation.documentDuplicateSourceIDs) { _, latest in latest }
+        store.pageNoteSourceTabIDs = navigation.pageNoteSourceTabIDs
+    }
+
+    private func persistWindowMetadata(_ change: () -> Void) {
+        do { try navigation.performPersistedChange(to: navigationURL, change) }
+        catch { store.errorMessage = error.localizedDescription }
+    }
+
+    private func setChromeMode(_ mode: NativeWorkspaceChromeMode) {
+        // A removed address/formatting row must not retain keyboard focus.
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        previews.invalidate()
+        persistWindowMetadata { _ = navigation.setChromeMode(mode) }
+    }
+
+    private func toggleInspectorFromControls(width: CGFloat) {
+        guard annotation.request == nil else { return }
+        if !showsWorkspace || boardOverlayOpen {
+            section = .library; auxiliary = nil; boardOverlayOpen = false
+            if width < 900 { compactMaterialsRail = true } else { materialsRailOpen = true }
+        } else { toggleMaterialsRail(width: width) }
+    }
+
+    private func captureCurrentWindow() async {
+        guard !windowsOverviewOpen, showsWorkspace, let ref = navigation.currentWindowRef else { return }
+        _ = await previews.capture(root: store.root, workspaceID: ref.workspaceID, windowID: ref.windowID)
+    }
+
+    private func toggleWindowsOverview() {
+        if windowsOverviewOpen { windowsOverviewOpen = false; return }
+        guard !busy, navigation.currentWindowRef != nil else { return }
+        busy = true
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        Task { @MainActor in
+            defer { finishWorkspaceTransition() }
+            do {
+                try await store.flushDocuments()
+                await captureCurrentWindow()
+                section = .library; auxiliary = nil; boardOverlayOpen = false
+                windowsOverviewOpen = true
+            } catch { store.errorMessage = error.localizedDescription }
+        }
+    }
+
+    private func changeWindow(_ change: @escaping () -> Void) {
+        guard !busy else { return }
+        busy = true
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        Task { @MainActor in
+            defer { finishWorkspaceTransition() }
+            do {
+                try await store.flushDocuments()
+                await captureCurrentWindow()
+                try navigation.performPersistedChange(to: navigationURL, change)
+                syncNavigationInstances()
+                windowsOverviewOpen = false
+            } catch { store.errorMessage = error.localizedDescription }
+        }
+    }
+
+    private func closeWindow(_ ref: NativeWorkspaceWindowRef) {
+        guard !busy, let close = navigation.prepareWindowClose(ref) else { return }
+        busy = true
+        Task { @MainActor in
+            defer { finishWorkspaceTransition() }
+            do {
+                try await store.flushDocuments()
+                var browserPlans: [NativeBrowserScopeClosePlan] = []
+                for document in close.documents where document.kind == "browser" {
+                    guard let plan = try await NativeBrowserSession.prepareScope(workspaceID: document.relativePath, host: services.browser, store: store) else { return }
+                    browserPlans.append(plan)
+                }
+                try await store.flushDocuments()
+                guard navigation.canCommitWindowClose(close) else {
+                    throw DesktopRuntimeError("작업 화면이 변경되었습니다. 윈도우 닫기를 다시 시도해 주세요.")
+                }
+                let before = navigation.checkpoint()
+                // Persist the proposed layout before destroying native browser pages.
+                // There is no suspension between the atomic write and browser commit.
+                do {
+                    try navigation.performPersistedChange(to: navigationURL) {
+                        guard navigation.commitWindowClose(close) else { throw DesktopRuntimeError("윈도우를 닫지 못했습니다.") }
+                    }
+                    guard try NativeBrowserSession.commitScopes(browserPlans, host: services.browser, store: store) else {
+                        throw DesktopRuntimeError("웹페이지가 변경되었습니다. 닫기를 다시 시도해 주세요.")
+                    }
+                } catch {
+                    navigation.restoreCheckpoint(before)
+                    try navigation.save(to: navigationURL)
+                    throw error
+                }
+                for id in close.documentIDs {
+                    store.documentSelections[id] = nil; store.documentDuplicateSourceIDs[id] = nil
+                    store.assistantDocumentIDs.remove(id)
+                }
+                syncNavigationInstances()
+                try previews.remove(root: store.root, workspaceID: ref.workspaceID, windowID: ref.windowID)
+            } catch { store.errorMessage = error.localizedDescription }
+        }
+    }
+
 
     var body: some View {
         GeometryReader { geometry in
@@ -76,15 +194,21 @@ struct NativeWorkspaceView: View {
                 }
                 // Editors and the inspector remain mounted while covered. Navigation
                 // and opening a keyboard must not discard an in-progress draft.
-                let covered = section != .library || auxiliary != nil
+                let covered = section != .library || auxiliary != nil || windowsOverviewOpen
                 ZStack {
+                    NativeWorkspacePreviewContainer(controller: previews, isInteractive: !covered) {
                     NativeDockWorkspace(navigation: navigation, store: store, content: { workspace($0) }, empty: { emptyWorkspace },
                         perform: transition, persist: saveNavigation, closeDocuments: closeDocuments,
                         materialsOpen: rightVisible,
                         toggleMaterials: { toggleMaterialsRail(width: geometry.size.width) },
-                        openNewTab: openNewTab, covered: covered, select: selectTab)
+                        openNewTab: openNewTab, covered: covered, select: selectTab,
+                        chromeMode: navigation.chromeMode, controlInset: chrome.rightPinned ? 0 : NativeWorkspaceWindowControls.width + NativeWorkspaceWindowControls.trailing)
+                        .environment(\.nativeWorkspacePreviewController, previews)
+                    }
                         .opacity(covered ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered)
-                    if section == .settings {
+                    if windowsOverviewOpen {
+                        windowsOverview
+                    } else if section == .settings {
                         NativeSettingsWorkspace(store: store, initialCategory: settingsCategory)
                     } else if let auxiliary {
                         switch auxiliary {
@@ -115,6 +239,7 @@ struct NativeWorkspaceView: View {
                 if compactCourseRail && geometry.size.width < 1200 && showsWorkspace && annotation.request == nil {
                     HStack(spacing: 0) {
                         courseSidebar.frame(width: min(320, geometry.size.width - 48))
+                            .nativeWorkspacePreviewExcluded(occludesContent: true)
                             .background(NativeDesktopTheme.surface).shadow(color: .black.opacity(0.14), radius: 12, x: 4)
                         Color.black.opacity(0.12).onTapGesture { compactCourseRail = false }
                     }.padding(.leading, NativeDesktopTheme.navigationWidth)
@@ -130,7 +255,9 @@ struct NativeWorkspaceView: View {
                     // One stable host, including while hidden, for file browsing and AI.
                     inspectorSidebar
                         .frame(width: chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth,
-                               height: geometry.size.height)
+                               height: max(0, geometry.size.height - NativeWorkspaceWindowControls.inspectorTop))
+                        .padding(.top, NativeWorkspaceWindowControls.inspectorTop)
+                        .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
                         .background(NativeDesktopTheme.surface)
                         .shadow(color: rightVisible && !chrome.rightPinned ? .black.opacity(0.14) : .clear, radius: 12, x: -4)
                         .opacity(rightVisible ? 1 : 0).allowsHitTesting(rightVisible).accessibilityHidden(!rightVisible)
@@ -144,18 +271,16 @@ struct NativeWorkspaceView: View {
                         .position(x: geometry.size.width - chrome.rightWidth - 0.5, y: geometry.size.height / 2)
                 }
             }
-            .overlay(alignment: .topTrailing) {
-                if showsWorkspace && annotation.request == nil {
-                    Button { toggleMaterialsRail(width: geometry.size.width) } label: {
-                        Image(systemName: "sidebar.right").font(.system(size: 17))
-                            .frame(width: 44, height: 44).contentShape(Rectangle())
-                    }.buttonStyle(.plain).background(NativeDesktopTheme.surface)
-                        .padding(.trailing, 4).padding(.top, 16)
-                        .accessibilityLabel(rightVisible ? "오른쪽 패널 접기" : "오른쪽 패널 펼치기")
-                        .accessibilityIdentifier("native-toggle-materials-rail")
-                }
-            }
             .overlay { if boardOverlayOpen { academicBoardOverlay(size: geometry.size) } }
+            .overlay(alignment: .topTrailing) {
+                NativeWorkspaceWindowControls(mode: navigation.chromeMode, overview: windowsOverviewOpen,
+                    rightVisible: rightVisible, enabled: showsWorkspace && !boardOverlayOpen && workspaceContext != nil && !busy && annotation.request == nil,
+                    changeMode: setChromeMode, toggleOverview: toggleWindowsOverview,
+                    toggleInspector: { toggleInspectorFromControls(width: geometry.size.width) })
+                    .padding(.trailing, NativeWorkspaceWindowControls.trailing)
+                    .padding(.top, NativeWorkspaceWindowControls.top)
+                    .nativeWorkspacePreviewExcluded()
+            }
             .overlay(alignment: .top) {
                 if showBusy { ProgressView().padding(10).background(.regularMaterial, in: Capsule()).padding(.top, 48) }
             }
@@ -173,6 +298,7 @@ struct NativeWorkspaceView: View {
         .background(NativeDesktopTheme.surface.ignoresSafeArea())
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         .tint(NativeDesktopTheme.accent)
+        .environment(\.nativeWorkspacePreviewController, previews)
         .disabled(store.isApplyingExternalChanges)
         .background(NativeWorkspaceKeyboardBridge(store: store))
         .background(NativePresentationAnchor(services: services).allowsHitTesting(false))
@@ -203,7 +329,9 @@ struct NativeWorkspaceView: View {
             var projectBindings: [String: NativeLearningBinding] = [:]
             for project in projects { if let id = project.projectId { projectBindings[id] = project.binding } }
             let existingCourseIDs = Set(store.courses.map(\.id))
-            if restoreLastCourse { await navigation.restore(from: navigationURL, projectBindings: projectBindings) { item in
+            // The preference controls the initial selection, never whether the
+            // persisted window collections and overwrite protection are loaded.
+            await navigation.restore(from: navigationURL, projectBindings: projectBindings) { item in
                 guard existingCourseIDs.contains(item.courseID) else { return false }
                 if let target = item.learningTarget {
                     let channel = target.kind == .overview ? "learning:get" : target.kind == .article ? "learning:getArticle" : "learning:getArtifact"
@@ -213,8 +341,14 @@ struct NativeWorkspaceView: View {
                 if item.isWorkspaceTool { return true }
                 if item.kind == "whiteboard" { return (try? await store.invoke("canvas:get",["courseId":item.courseID,"id":item.relativePath])) != nil }
                 return (try? await store.invokePrivate("nativeMaterial:path", ["courseId": item.courseID, "relPath": item.relativePath])) != nil
-            } }
-            store.pageNoteSourceTabIDs = navigation.pageNoteSourceTabIDs
+            }
+            // Commit migrated window identities before previews or per-panel
+            // state can be saved under them. The legacy bytes are backed up first.
+            do { try navigation.persistPendingMigration(to: navigationURL) }
+            catch { store.errorMessage = error.localizedDescription }
+            if !restoreLastCourse { navigation.deactivateWorkspace() }
+            syncNavigationInstances()
+            if let error = navigation.persistenceError { store.errorMessage = error }
             if let saved = navigation.activeWorkspace {
                 await restoreContext(saved)
             } else if let document = navigation.active, document.kind == "learning",
@@ -251,6 +385,11 @@ struct NativeWorkspaceView: View {
             }
         }
         .onChange(of: navigation.activeID) { _, _ in annotation.cancel() }
+        .onChange(of: navigation.currentWindowRef) { _, _ in previews.invalidate(); syncNavigationInstances() }
+        .onChange(of: navigation.documentDuplicateSourceIDs) { _, _ in syncNavigationInstances() }
+        .onChange(of: windowsOverviewOpen) { _, value in
+            services.browser.setPresentation(blocked: value, inputBlocked: value, overlays: [])
+        }
         .onChange(of: annotation.completed?.id) { _, _ in receiveAnnotation() }
         .onChange(of: annotation.request?.id) { old, new in
             if old != nil && new == nil && restoreInspectorAfterAnnotation && showsWorkspace && !boardOverlayOpen { revealInspector(.assistant) }
@@ -297,7 +436,7 @@ struct NativeWorkspaceView: View {
     @ViewBuilder private func workspace(_ document: NativeDocumentReference) -> some View {
         Group {
             if document.learningTarget != nil {
-                NativeLearningDocumentWorkspace(store: store, document: document, onOpenDocument: open, onOpenBrowser: openBrowserURL)
+                NativeLearningDocumentWorkspace(store: store, document: document, onOpenDocument: { openCapturedDocument($0, target: navigation.target(containing: document.id)) }, onOpenBrowser: openBrowserURL)
             } else if document.kind == "assistant" {
                 VStack(spacing: 12) {
                     Image(systemName: "sparkles").font(.title)
@@ -307,7 +446,7 @@ struct NativeWorkspaceView: View {
             } else if document.kind == "learning-home" {
                 NativeProjectSidebar(store: store, selectedID: workspaceContext?.id, onOpen: changeWorkspace).frame(maxWidth: 420)
             } else if document.kind == "learning" {
-                NativeLearningWorkspace(store: store, binding: NativeLearningBinding(courseID: document.courseID, rootRelPath: document.relativePath), onOpenDocument: open, onOpenBrowser: openBrowserURL)
+                NativeLearningWorkspace(store: store, binding: NativeLearningBinding(courseID: document.courseID, rootRelPath: document.relativePath), onOpenDocument: { openCapturedDocument($0, target: navigation.target(containing: document.id)) }, onOpenBrowser: openBrowserURL, panelID: document.id)
             } else if document.isWorkspaceTool, let tool = NativeWorkspaceSection(rawValue: document.kind) {
                 NativeToolsWorkspace(section: tool, store: store, services: services, workspaceID: document.relativePath, courseID: document.courseID)
             } else if document.kind == "pdf" {
@@ -330,7 +469,8 @@ struct NativeWorkspaceView: View {
                     }.buttonStyle(.borderedProminent)
                 }
             }
-        }.allowsHitTesting(annotation.request == nil || annotation.request?.documentID == document.id)
+        }.environment(\.nativeWorkspaceTarget, navigation.target(containing: document.id))
+            .allowsHitTesting(annotation.request == nil || annotation.request?.documentID == document.id)
             .id(store.reloadIdentity(for:document))
     }
 
@@ -384,6 +524,10 @@ struct NativeWorkspaceView: View {
     }
     private var courseSidebar: some View {
         VStack(spacing: 0) {
+            ScrollView {
+                NativeSidebarShortcuts(store: store, settings: workspaceSettings, onOpenSettings: openSettings, onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shortcutContentHeight = $0 }
+            }.frame(height: min(shortcutContentHeight, windowWidth < 900 ? 200 : 260))
             NativeHomeSectionPicker(selection: $leftPanel)
             switch leftPanel {
             case .courses:
@@ -393,7 +537,6 @@ struct NativeWorkspaceView: View {
             case .projects:
                 NativeProjectSidebar(store: store, selectedID: workspaceContext?.id, onOpen: changeWorkspace)
             }
-            NativeSidebarShortcuts(store: store, settings: workspaceSettings, onOpenSettings: openSettings, onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb)
         }.background(NativeDesktopTheme.surface)
     }
     private func toggleAcademicBoard() {
@@ -449,13 +592,13 @@ struct NativeWorkspaceView: View {
             revealInspector(.assistant)
         }
     }
-    private func openSettings(_ category: String) { transition { boardOverlayOpen = false; settingsCategory = category; section = .settings; auxiliary = nil } }
+    private func openSettings(_ category: String) { transition { windowsOverviewOpen = false; boardOverlayOpen = false; settingsCategory = category; section = .settings; auxiliary = nil } }
     private func favoriteDescriptor(_ document: NativeDocumentReference) -> [String: Any]? {
         let url = document.kind == "browser" ? NativeBrowserSession.currentPage(workspaceID: document.relativePath, store: store, host: services.browser)?.url : nil
         return NativeSidebarDescriptor.document(document, browserURL: url, conversationID: NativeToolSelection.conversationID(workspaceID: document.relativePath, root: store.root), recordingID: NativeToolSelection.recordingID(workspaceID: document.relativePath, courseID: document.courseID))
     }
     private func openAIWeb(_ shortcut: NativeAIWebShortcut) {
-        let candidates = navigation.documents.filter { document in
+        let candidates = (navigation.currentWindowRef.map { navigation.documents(in: $0) } ?? []).filter { document in
             guard document.kind == "browser", let page = NativeBrowserSession.currentPage(workspaceID: document.relativePath, store: store, host: services.browser),
                   let host = URL(string: page.url)?.host?.lowercased() else { return false }
             return shortcut.hosts.contains(host)
@@ -467,8 +610,9 @@ struct NativeWorkspaceView: View {
         let payload = favorite.payload
         let course = payload["courseId"] as? String ?? favorite.courseID ?? store.selectedCourseID
         if favorite.kind == "browser", let url = payload["initialUrl"] as? String, NativeSettingsSchema.webURL(url) {
-            let scope = payload["tabId"] as? String ?? UUID().uuidString
-            if let existing = navigation.documents.first(where: { $0.kind == "browser" && $0.relativePath == scope }) { open(existing); return }
+            let favoriteScope = payload["tabId"] as? String ?? ""
+            if let existing = (navigation.currentWindowRef.map { navigation.documents(in: $0) } ?? []).first(where: { $0.kind == "browser" && $0.relativePath == favoriteScope }) { open(existing); return }
+            let scope = UUID().uuidString
             guard let course else { openBrowserURL(url); return }
             let document = NativeDocumentReference(courseID: course, relativePath: scope, title: favorite.label, kind: "browser")
             store.pendingBrowserURLs[scope] = url; open(document); return
@@ -515,6 +659,7 @@ struct NativeWorkspaceView: View {
         if action == .assistant { revealInspector(.assistant); return }
         guard !busy else { return }; busy = true
         let context = workspaceContext
+        let target = navigation.captureTarget(groupID: groupID.isEmpty ? nil : groupID)
         let courseID = context?.courseID ?? store.selectedCourseID
         Task { @MainActor in
             defer { finishWorkspaceTransition() }
@@ -526,23 +671,36 @@ struct NativeWorkspaceView: View {
                 case .markdown(let title): document = try await store.createMarkdown(title: title ?? ((workspaceSettings["tabs"] as? [String: Any])?["markdownTitlePrefix"] as? String ?? "새 마크다운"), courseID: courseID, parentPath: context?.rootRelPath ?? "")
                 case .note:
                     // Notes are PDF notes, like the desktop: same paper, same palette, same sync.
-                    document = try await store.createNote(title: "새 노트", paper: NativePaper.lines.rawValue, orientation: "portrait", parentPath: context?.rootRelPath ?? "")
+                    document = try await store.createNote(title: "새 노트", paper: NativePaper.lines.rawValue, orientation: "portrait", courseID: courseID, parentPath: context?.rootRelPath ?? "")
                 case .browser(let url):
                     document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "브라우저", kind: "browser")
                     if let url { store.pendingBrowserURLs[document.relativePath] = url }
                 case .assistant: document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "AI", kind: "assistant")
                 case .recording: document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "녹음", kind: "recordings")
                 }
-                guard workspaceContext?.id == context?.id else { return }
-                navigation.open(document, inGroup: groupID.isEmpty ? navigation.focusedGroupID : groupID, workspace: context)
-                section = .library; auxiliary = nil; learningHome = false; saveNavigation()
+                if let target {
+                    guard navigation.open(document, target: target) != nil else { return }
+                    syncNavigationInstances()
+                    if navigation.currentWindowRef == target.ref { section = .library; auxiliary = nil; learningHome = false; windowsOverviewOpen = false }
+                } else {
+                    navigation.open(document, inGroup: groupID.isEmpty ? navigation.focusedGroupID : groupID, workspace: context)
+                    section = .library; auxiliary = nil; learningHome = false
+                }
+                saveNavigation()
             } catch { store.errorMessage = error.localizedDescription }
         }
     }
-    private func openBrowserURL(_ url: String) {
+    private func openBrowserURL(_ url: String) { openBrowserURL(url, destination: navigation.captureTarget()) }
+    private func openBrowserURL(_ url: String, destination: NativeWorkspaceTarget?) {
         guard NativeSettingsSchema.webURL(url), let target = URL(string:url) else { return }
         if (workspaceSettings["browser"] as? [String: Any])?["linkRouting"] as? String == "system" {
             UIApplication.shared.open(target); return
+        }
+        if let destination {
+            guard let course = navigation.courseID(for: destination.ref) else { return }
+            let document = NativeDocumentReference(courseID: course, relativePath: UUID().uuidString, title: "브라우저", kind: "browser")
+            store.pendingBrowserURLs[document.relativePath] = url
+            openCapturedDocument(document, target: destination); return
         }
         transition {
             if let course = store.selectedCourseID {
@@ -568,7 +726,11 @@ struct NativeWorkspaceView: View {
                 ZStack {
                     VStack(spacing: 0) {
                         NativeLibraryView(store: store, sourceTrayModel: librarySources, scope: context,
-                            onOpenAI: { revealInspector(.assistant) }, selectedDocumentID: navigation.active?.storageID) { document in
+                            onOpenAI: { revealInspector(.assistant) }, selectedDocumentID: navigation.active?.storageID,
+                            captureOpen: {
+                                let target = navigation.captureTarget()
+                                return { document in openCapturedDocument(document, target: target) }
+                            }) { document in
                             compactMaterialsRail = false; open(document)
                         }.id(context.id).frame(maxHeight: .infinity)
                         NativeSettingsWidgetDock(store: store, services: services, availableHeight: 600)
@@ -578,6 +740,7 @@ struct NativeWorkspaceView: View {
                         attachments: pendingAttachments[context.id] ?? [],
                         onConsumeAttachments: { pendingAttachments[context.id] = nil },
                         onOpenDocument: openWorkspaceResult, onOpenSettings: { openSettings("ai") }, onAnnotate: beginAnnotation)
+                        .environment(\.nativeWorkspaceTarget, navigation.captureTarget())
                         .id(context.id).opacity(inspectorTab == .assistant ? 1 : 0)
                         .allowsHitTesting(inspectorTab == .assistant).accessibilityHidden(inspectorTab != .assistant)
                 }
@@ -636,27 +799,37 @@ struct NativeWorkspaceView: View {
         transition {
             guard let course = store.selectedCourseID else { section = target; return }
             if navigation.activeWorkspace == nil, let value = store.courses.first(where: { $0.id == course }) { navigation.activateWorkspace(.course(value)) }
-            let document = (!new ? navigation.documents.first { $0.courseID == course && $0.kind == target.rawValue } : nil)
+            let document = (!new ? (navigation.currentWindowRef.map { navigation.documents(in: $0) } ?? []).first { $0.courseID == course && $0.kind == target.rawValue } : nil)
                 ?? NativeDocumentReference(courseID: course, relativePath: UUID().uuidString, title: target.title, kind: target.rawValue)
             navigation.open(document, inGroup: navigation.focusedGroupID)
             section = .library; auxiliary = nil; learningHome = false
         }
     }
     private func openBeside(_ document: NativeDocumentReference, sourceID: String?) {
-        transition {
-            var target = document
-            if let sourceID, document.kind == "note" {
-                let matches = navigation.documents.filter { $0.storageID == document.storageID }
-                if let paired = matches.first(where: { navigation.pageNoteSourceTabIDs[$0.id] == sourceID }) { target = paired }
-                else if let unpaired = matches.first(where: { navigation.pageNoteSourceTabIDs[$0.id] == nil }) { target = unpaired }
-                else if let existing = matches.first {
-                    target = document.duplicated(); store.documentDuplicateSourceIDs[target.id] = existing.id
+        guard let destination = sourceID.flatMap({ navigation.target(containing: $0) }) ?? (sourceID == nil ? navigation.captureTarget() : nil) else { return }
+        Task { @MainActor in
+            do {
+                try await store.flushDocuments()
+                guard navigation.window(destination.ref) != nil else { return }
+                try navigation.performPersistedChange(to: navigationURL) {
+                    var requested = document
+                    if let sourceID, document.kind == "note" {
+                        let matches = navigation.documents(in: destination.ref).filter { $0.storageID == document.storageID }
+                        if let paired = matches.first(where: { navigation.pageNoteSourceTabIDs[$0.id] == sourceID }) { requested = paired }
+                        else if let unpaired = matches.first(where: { navigation.pageNoteSourceTabIDs[$0.id] == nil }) { requested = unpaired }
+                        else if let existing = matches.first {
+                            requested = document.duplicated(); store.documentDuplicateSourceIDs[requested.id] = existing.id
+                        }
+                    }
+                    if let opened = navigation.openBeside(requested, sourceID: sourceID, target: destination, reuseExisting: false), let sourceID, opened.kind == "note" {
+                        navigation.pageNoteSourceTabIDs[opened.id] = sourceID
+                    }
+                    syncNavigationInstances()
                 }
-                navigation.pageNoteSourceTabIDs[target.id] = sourceID
-                store.pageNoteSourceTabIDs = navigation.pageNoteSourceTabIDs
-            }
-            navigation.openBeside(target, sourceID: sourceID, reuseExisting: false)
-            section = .library; auxiliary = nil; learningHome = false
+                if navigation.currentWindowRef == destination.ref {
+                    section = .library; auxiliary = nil; learningHome = false; windowsOverviewOpen = false
+                }
+            } catch { store.errorMessage = error.localizedDescription }
         }
     }
     private func saveNavigation() {
@@ -718,6 +891,7 @@ struct NativeWorkspaceView: View {
         if document.kind == "learning-home" { leftPanel = .projects; compactCourseRail = windowWidth < 1200; courseRailOpen = true; return }
         guard !busy else { return }; busy = true
         let current = workspaceContext
+        let target = navigation.captureTarget(groupID: groupID)
         let preserve = preservingWorkspace || document.learningTarget != nil || current?.courseID == document.courseID || current?.linkedCourseID == document.courseID
         Task { @MainActor in
             defer { finishWorkspaceTransition() }
@@ -730,12 +904,35 @@ struct NativeWorkspaceView: View {
                     guard store.selectedCourseID == document.courseID else { return }
                     context = store.courses.first(where: { $0.id == document.courseID }).map(NativeWorkspaceContext.course)
                 }
-                section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false
-                navigation.open(document, inGroup: groupID, workspace: context)
+                if preserve, let target {
+                    guard navigation.open(document, target: target) != nil else { return }
+                } else { navigation.open(document, inGroup: groupID, workspace: context) }
+                syncNavigationInstances()
+                if !preserve || target?.ref == navigation.currentWindowRef {
+                    section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false; windowsOverviewOpen = false
+                }
                 try navigation.save(to: navigationURL)
             } catch { store.errorMessage = error.localizedDescription }
         }
     }
+    /// Long-running creation/import callbacks keep the window chosen at their start.
+    private func openCapturedDocument(_ document: NativeDocumentReference, target: NativeWorkspaceTarget?) {
+        guard let target else { open(document); return }
+        Task { @MainActor in
+            do {
+                try await store.flushDocuments()
+                guard navigation.window(target.ref) != nil else { return }
+                try navigation.performPersistedChange(to: navigationURL) {
+                    _ = navigation.open(document, target: target)
+                    syncNavigationInstances()
+                }
+                if navigation.currentWindowRef == target.ref {
+                    section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false; windowsOverviewOpen = false
+                }
+            } catch { store.errorMessage = error.localizedDescription }
+        }
+    }
+
     private func changeCourse(_ id: String) {
         guard let course = store.courses.first(where: { $0.id == id }) else { return }
         changeWorkspace(.course(course))
@@ -747,6 +944,8 @@ struct NativeWorkspaceView: View {
             defer { finishWorkspaceTransition() }
             do {
                 try await store.flushDocuments()
+                await captureCurrentWindow()
+                windowsOverviewOpen = false
                 await store.selectCourse(context.courseID)
                 guard store.selectedCourseID == context.courseID else { return }
                 navigation.activateWorkspace(context)
@@ -814,7 +1013,7 @@ struct NativeWorkspaceView: View {
 
     private func closeDocuments(_ documentIDs: [String]) {
         guard !busy else { return }
-        let scopeID = workspaceContext?.id
+        let windowRef = navigation.currentWindowRef
         let current = Set(navigation.groups.flatMap(\.tabs))
         var seen = Set<String>()
         let documents = documentIDs.filter { current.contains($0) && seen.insert($0).inserted }.compactMap { navigation.document($0) }
@@ -832,18 +1031,24 @@ struct NativeWorkspaceView: View {
                 // beforeunload can wait for user input while another pane is edited.
                 // Flush again before the synchronous all-or-nothing commit.
                 try await store.flushDocuments()
-                guard workspaceContext?.id == scopeID else { return }
-                guard try NativeBrowserSession.commitScopes(plans, host: services.browser, store: store) else {
-                    throw DesktopRuntimeError("웹페이지가 변경되었습니다. 닫기를 다시 시도해 주세요.")
+                guard navigation.currentWindowRef == windowRef else { return }
+                let before = navigation.checkpoint()
+                do {
+                    try navigation.performPersistedChange(to: navigationURL) {
+                        for document in documents { navigation.closeTab(document.id) }
+                    }
+                    guard try NativeBrowserSession.commitScopes(plans, host: services.browser, store: store) else {
+                        throw DesktopRuntimeError("웹페이지가 변경되었습니다. 닫기를 다시 시도해 주세요.")
+                    }
+                } catch {
+                    navigation.restoreCheckpoint(before); try navigation.save(to: navigationURL); throw error
                 }
                 for document in documents {
-                    navigation.closeTab(document.id)
                     store.documentDuplicateSourceIDs[document.id] = nil
                     store.documentSelections[document.id] = nil
                     store.assistantDocumentIDs.remove(document.id)
                 }
-                store.pageNoteSourceTabIDs = navigation.pageNoteSourceTabIDs
-                try navigation.save(to: navigationURL)
+                syncNavigationInstances()
             } catch { store.errorMessage = error.localizedDescription }
         }
     }
@@ -870,7 +1075,10 @@ struct NativeWorkspaceView: View {
     private func receive(_ event: NativeWorkspaceEvent) {
         if ["learning:changed", "courses:changed"].contains(event.channel) { refreshWorkspaceContext() }
         if event.channel == "nativeWorkspace:openAssistantResult", let payload = event.payload as? [String: Any],
-           let document = payload["document"] as? NativeDocumentReference { openWorkspaceResult(document); return }
+           let document = payload["document"] as? NativeDocumentReference {
+            if let target = payload["nativeWorkspaceTarget"] as? NativeWorkspaceTarget { openCapturedDocument(document, target: target) }
+            else { openWorkspaceResult(document) }; return
+        }
         if event.channel == "nativeWorkspace:updateToolTitle", let payload = event.payload as? [String: Any],
            let workspaceID = payload["workspaceID"] as? String, let title = payload["title"] as? String {
             if navigation.updateToolTitle(workspaceID: workspaceID, title: title) { saveNavigation() }
@@ -880,40 +1088,43 @@ struct NativeWorkspaceView: View {
             workspaceSettings = settings
         }
         if event.channel == "nativeWorkspace:openBrowserURL", let payload = event.payload as? [String: Any], let url = payload["url"] as? String {
-            openBrowserURL(url); return
+            openBrowserURL(url, destination: payload["nativeWorkspaceTarget"] as? NativeWorkspaceTarget ?? navigation.captureTarget()); return
         }
         if event.channel == "nativeWorkspace:openDocument", let value = event.payload as? [String: Any],
            let course = value["courseId"] as? String, let path = value["relPath"] as? String {
             let document = NativeDocumentReference(courseID: course, relativePath: path, title: value["title"] as? String ?? (path as NSString).lastPathComponent, kind: value["kind"] as? String ?? "pdf")
-            guard !busy else { return }; busy = true
-            let current = workspaceContext
+            let sourceID = value["sourcePanelID"] as? String ?? value["besideTabID"] as? String
+            let destination = value["nativeWorkspaceTarget"] as? NativeWorkspaceTarget ?? sourceID.flatMap { navigation.target(containing: $0) } ?? (sourceID == nil ? navigation.captureTarget() : nil)
+            guard let destination else { return }
             Task { @MainActor in
-                defer { finishWorkspaceTransition() }
                 do {
                     try await store.flushDocuments()
-                    let preserve = current?.courseID == course || current?.linkedCourseID == course
-                    if !preserve, store.selectedCourseID != course { await store.selectCourse(course) }
-                    guard preserve || store.selectedCourseID == course else { return }
-                    let context = preserve ? current : store.courses.first(where: { $0.id == course }).map(NativeWorkspaceContext.course)
-                    var target = document
-                    if let targetID = value["targetTabID"] as? String, let existing = navigation.document(targetID), existing.storageID == document.storageID {
-                        target = existing
-                    } else if let existing = navigation.documents.first(where: { $0.storageID == document.storageID }) { target = existing }
-                    if target.kind == "pdf", let page = value["page"] as? Int, page > 0, navigation.document(target.id) == nil {
-                        _ = try await store.invoke("pdf:setViewState", ["courseId": course, "relPath": path, "page": page, "zoom": 1])
+                    guard navigation.window(destination.ref) != nil else { return }
+                    let local = navigation.documents(in: destination.ref)
+                    let requestedID = value["targetTabID"] as? String
+                    let requested = local.first { $0.id == requestedID && $0.storageID == document.storageID }
+                        ?? local.first { $0.storageID == document.storageID } ?? document
+                    var opened: NativeDocumentReference?
+                    try navigation.performPersistedChange(to: navigationURL) {
+                        if let besideID = value["besideTabID"] as? String {
+                            opened = navigation.openBeside(requested, sourceID: besideID, target: destination, reuseExisting: true)
+                            if navigation.document(besideID)?.kind == "note", let opened, opened.kind == "pdf" {
+                                navigation.pageNoteSourceTabIDs[besideID] = opened.id
+                            }
+                        } else { opened = navigation.open(requested, target: destination) }
+                        syncNavigationInstances()
                     }
-                    section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false
-                    if let besideID = value["besideTabID"] as? String, let source = navigation.document(besideID) {
-                        if source.kind == "note" && target.kind == "pdf" {
-                            navigation.pageNoteSourceTabIDs[source.id] = target.id
-                            store.pageNoteSourceTabIDs = navigation.pageNoteSourceTabIDs
-                        }
-                        navigation.openBeside(target, sourceID: besideID, reuseExisting: false)
-                    } else if let group = navigation.group(containing: target.id) { navigation.select(target.id, in: group.id) }
-                    else { navigation.open(target, workspace: context) }
-                    try navigation.save(to: navigationURL)
+                    guard let opened else { return }
                     if let page = value["page"] as? Int, page > 0 {
-                        store.events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:goToPage", payload: ["courseId": course, "relPath": path, "page": page, "tabID": target.id]))
+                        if opened.kind == "pdf" {
+                            var preferences = NativePDFWorkspacePreferences.load(root: store.root, documentID: opened.id)
+                            preferences.pendingPage = page
+                            preferences.save(root: store.root, documentID: opened.id)
+                        }
+                        store.events.send(.init(channel: "nativeWorkspace:goToPage", payload: ["courseId": course, "relPath": path, "page": page, "tabID": opened.id]))
+                    }
+                    if navigation.currentWindowRef == destination.ref {
+                        section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false; windowsOverviewOpen = false
                     }
                 } catch { store.errorMessage = error.localizedDescription }
             }
@@ -942,6 +1153,7 @@ struct NativeWorkspaceView: View {
             return
         }
         if event.channel == "shortcut:passthrough", let payload = event.payload as? [String:Any], let action = payload["action"] as? String {
+            if windowsOverviewOpen { return }
             let browserLocal = ["new-tab", "close-tab", "prev-tab", "previous-tab", "next-tab", "activate-last-tab"].contains(action) || action.hasPrefix("activate-tab-")
             if payload["webContentsId"] != nil && browserLocal { return }
             switch action {

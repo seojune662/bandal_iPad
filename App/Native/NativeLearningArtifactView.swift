@@ -29,7 +29,7 @@ struct NativeLearningArtifactView: View {
                     }
                 }
             }.padding(28).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
-        }.disabled(model.busy || model.frozen)
+        }.nativeLearningPanelScroll(model: model, detail: artifact["id"] as? String ?? "artifact").disabled(model.busy || model.frozen)
             .onChange(of: artifact["id"] as? String) { _, _ in revealed = []; rated = [] }
     }
     private var cards: some View {
@@ -83,6 +83,7 @@ private struct NativeLearningQuizQuestion: View {
             if model.completed || requiresSubmission && model.submitted || (!requiresSubmission && type == "short-answer" && showAnswer) { solution }
             else if type == "short-answer" && !requiresSubmission { Button("모범 답안과 비교") { showAnswer = true }.disabled((model.answers[id] ?? "").isEmpty) }
         }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 10))
+            .onChange(of: model.completed) { old, completed in if old && !completed { showAnswer = false } }
     }
     private var choices: some View {
         VStack(alignment: .leading, spacing: 8) {

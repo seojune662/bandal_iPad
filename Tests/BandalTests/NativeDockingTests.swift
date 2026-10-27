@@ -52,6 +52,32 @@ final class NativeDockingTests: XCTestCase {
         XCTAssertFalse(projection.contains { $0.id == pdf.id && !$0.visible })
     }
 
+    func testOtherWindowRetainsWhiteboardAndLearningPanelIdentityUntilClosed() throws {
+        typealias Dock = NativeDockWorkspace<EmptyView, EmptyView>
+        let navigation = NativeWorkspaceNavigation()
+        let board = NativeDocumentReference(courseID: "a", relativePath: "board", title: "Board", kind: "whiteboard")
+        let learning = NativeLearningDocumentTarget(projectID: "project", binding: .init(courseID: "a", rootRelPath: ""), kind: .artifact, entityID: "quiz").document(title: "Quiz")
+        navigation.open(board); navigation.open(learning)
+        let original = try XCTUnwrap(navigation.currentWindowRef)
+        XCTAssertNotNil(navigation.createWindow())
+        let pdf = NativeDocumentReference(courseID: "a", relativePath: "two.pdf", title: "PDF", kind: "pdf")
+        navigation.open(pdf)
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        func projection() throws -> [Dock.VisibleDocument] {
+            let layout = try XCTUnwrap(navigation.layout)
+            return Dock.projectDocuments(navigation.documents, geometry: layout.geometry(in: bounds), layout: layout, bounds: bounds)
+        }
+        for document in [board, learning] {
+            let hidden = try XCTUnwrap(projection().first { $0.id == document.id })
+            XCTAssertFalse(hidden.visible)
+            XCTAssertFalse(bounds.intersects(hidden.frame), "Hidden panel state stays mounted outside the input area")
+        }
+        XCTAssertTrue(navigation.selectWindow(original))
+        XCTAssertTrue(try XCTUnwrap(projection().first { $0.id == learning.id }).visible)
+        navigation.close(board.id)
+        XCTAssertFalse(try projection().contains { $0.id == board.id }, "An actual tab close ends retained state")
+    }
+
     func testNestedDirectionsKeepIndependentActiveTabsAndStableGroups() throws {
         let nav = NativeWorkspaceNavigation(), a = document("a"), b = document("b"), c = document("c")
         nav.open(a); nav.open(b); nav.open(c)
@@ -143,7 +169,9 @@ final class NativeDockingTests: XCTestCase {
         XCTAssertEqual(nav.groups[0].tabs, [a.id, c.id, b.id])
         nav.open(foreign)
         nav.openBeside(a, sourceID: foreign.id)
-        nav.closeTab(a.id)
+        let localCopy = try XCTUnwrap(nav.groups.flatMap(\.tabs).first { nav.document($0)?.storageID == a.storageID })
+        XCTAssertNotEqual(localCopy, a.id)
+        nav.closeTab(localCopy)
         XCTAssertTrue(nav.documents.contains(a))
         XCTAssertFalse(nav.groups.flatMap(\.tabs).contains(a.id))
         nav.activateCourse("a")

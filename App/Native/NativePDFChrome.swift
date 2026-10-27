@@ -3,15 +3,19 @@ import UniformTypeIdentifiers
 
 struct NativePDFToolbar: View {
     @ObservedObject var model: NativePDFWorkspaceModel
+    var writingOnly = false
     @State private var entry = "1"
     var body: some View {
         VStack(spacing: 0) {
             // Row 1: pages · history · export · view. Row 2: tools · colours · thickness.
-            ViewThatFits(in: .horizontal) {
+            if !writingOnly { ViewThatFits(in: .horizontal) {
                 HStack(spacing: 4) { navigation; divider; history; Spacer(minLength: 0); viewActions }
                 HStack(spacing: 4) { navigationControls(compact: true); divider; history; Spacer(minLength: 0); compactViewActions }
+            } }
+            if writingOnly || model.toolsExpanded {
+                if !writingOnly { Divider() }
+                NativePDFPaletteQuickControls(model: model, showsHistory: writingOnly)
             }
-            if model.toolsExpanded { Divider(); NativePDFPaletteQuickControls(model: model) }
         }
         .padding(.horizontal, 8).background(NativeDesktopTheme.surface)
         .foregroundStyle(NativeDesktopTheme.text)
@@ -23,8 +27,10 @@ struct NativePDFToolbar: View {
     private var navigation: some View { navigationControls(compact: false) }
     private func navigationControls(compact: Bool) -> some View {
         HStack(spacing: 0) {
-            icon("미리보기", "sidebar.left", id: "native-pdf-pages", active: model.showPages) { model.togglePages() }
-            TextField("페이지", text: $entry).keyboardType(.numberPad).multilineTextAlignment(.center)
+            if !compact {
+                icon("미리보기", "sidebar.left", id: "native-pdf-pages", active: model.showPages) { model.togglePages() }
+            }
+            TextField("페이지", text: $entry).keyboardType(.numbersAndPunctuation).submitLabel(.go).multilineTextAlignment(.center)
                 .frame(width: 34, height: 44).font(.system(size: 13).monospacedDigit())
                 .onSubmit { navigate() }.accessibilityIdentifier("native-pdf-page")
                 .toolbar { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("페이지로 이동") { navigate() } } }
@@ -74,6 +80,8 @@ struct NativePDFToolbar: View {
     }
     private var compactViewActions: some View {
         Menu {
+            Button(model.showPages ? "미리보기 접기" : "미리보기", systemImage: "sidebar.left") { model.togglePages() }
+                .accessibilityIdentifier("native-pdf-pages")
             if model.hasPageNoteAction {
                 Button("페이지 필기", systemImage: "doc.text") { model.openPageNote() }.accessibilityIdentifier("native-pdf-page-note")
             }

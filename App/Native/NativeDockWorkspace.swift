@@ -52,6 +52,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     var covered = false
     /// Tab taps that need no global flush (retained editors). nil falls back to `perform`.
     var select: ((String, String) -> Void)? = nil
+    var chromeMode: NativeWorkspaceChromeMode = .all
+    var controlInset: CGFloat = 0
     @StateObject private var drag = NativeDockDragSession()
     @State private var maximizedGroupID: String?
     @State private var newTabGroupID: String?
@@ -59,14 +61,14 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     @AppStorage("native.fontScale") private var fontScale = 1.0
     @AppStorage("native.density") private var density = "comfortable"
 
-    private let headerHeight: CGFloat = 44
+    private var headerHeight: CGFloat { chromeMode.showsTabs ? 44 : 0 }
     var body: some View {
         GeometryReader { proxy in
             if let layout = navigation.layout {
                 let requiresFocus = layout.root.minimumSize.width > proxy.size.width || layout.root.minimumSize.height > proxy.size.height
                 let focusMode = layout.groups.count > 1 && (requiresFocus || maximizedGroupID != nil)
                 let selected = maximizedGroupID.flatMap { id in layout.groups.first { $0.id == id } } ?? layout.focused!
-                let selectorHeight: CGFloat = focusMode ? 44 : 0
+                let selectorHeight: CGFloat = focusMode && chromeMode.showsTabs ? 44 : 0
                 let bounds = CGRect(x: 0, y: selectorHeight, width: proxy.size.width, height: max(0, proxy.size.height - selectorHeight))
                 let geometry = focusMode ? NativeDockGeometry(panes: [.init(group: selected, frame: bounds)]) : layout.geometry(in: bounds)
                 ZStack(alignment: .topLeading) {
@@ -82,6 +84,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     ForEach(visibleDocuments(geometry, layout: layout, bounds: bounds)) { entry in
                         content(entry.document)
                             .environment(\.nativeEditorVisible, entry.visible && !covered)
+                            .environment(\.nativeWorkspaceChromeMode, chromeMode)
+                            .environment(\.nativeWorkspaceControlInset, !chromeMode.showsTabs && entry.frame.minY <= 16.5 && entry.frame.maxX >= bounds.maxX - 1 ? controlInset : 0)
                             .frame(width: entry.frame.width, height: entry.frame.height)
                             .background {
                                 if Self.retainsEditor(entry.document) {
@@ -90,13 +94,13 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                             }
                             .clipped()
                             .opacity(entry.visible ? 1 : 0)
-                            .allowsHitTesting(entry.visible)
-                            .accessibilityHidden(!entry.visible)
+                            .allowsHitTesting(entry.visible && !covered)
+                            .accessibilityHidden(!entry.visible || covered)
                             .simultaneousGesture(TapGesture().onEnded { focus(entry.groupID) })
                             .position(x: entry.frame.midX, y: entry.frame.midY)
                     }
                     ForEach(geometry.panes.filter { $0.group.activeID == nil }) { pane in
-                        let frame = NativeDockHeaderMetrics.contentFrame(for: pane.frame)
+                        let frame = NativeDockHeaderMetrics.contentFrame(for: pane.frame, controlsHeight: headerHeight)
                         emptyPane(pane.group, groupCount: layout.groups.count)
                             .frame(width: frame.width, height: frame.height)
                             .position(x: frame.midX, y: frame.midY)
@@ -107,13 +111,14 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                             .position(x: divider.frame.midX, y: divider.frame.midY)
                     }
                     ForEach(geometry.panes) { pane in
-                        let frame = NativeDockHeaderMetrics.contentFrame(for: pane.frame)
+                        let frame = NativeDockHeaderMetrics.contentFrame(for: pane.frame, controlsHeight: headerHeight)
                         paneDropZones(pane)
                             .frame(width: frame.width, height: frame.height)
                             .position(x: frame.midX, y: frame.midY)
                     }
-                    if focusMode {
+                    if selectorHeight > 0 {
                         paneSelector(layout, compact: requiresFocus)
+                            .padding(.trailing, controlInset)
                             .frame(width: proxy.size.width, height: selectorHeight)
                             .position(x: proxy.size.width / 2, y: selectorHeight / 2)
                     }
@@ -129,7 +134,9 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 }
             } else { empty() }
         }
-        .onChange(of: navigation.activeCourseID) { _, _ in drag.end(); maximizedGroupID = nil }
+        .onChange(of: navigation.currentWindowRef) { _, _ in drag.end(); maximizedGroupID = nil; newTabGroupID = nil; tabListGroupID = nil }
+        .onChange(of: chromeMode) { _, _ in drag.end(); newTabGroupID = nil; tabListGroupID = nil }
+        .allowsHitTesting(!covered).accessibilityHidden(covered)
     }
 
     struct VisibleDocument: Identifiable {
@@ -144,7 +151,10 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         // swallows the UIKit tab drag-drop, so switching PDFs relies on the fast open()
         // path (PDFOriginals + hash cache + deferred page history) instead. Markdown
         // keeps live retention: UIKit owns its selection, composition and per-pane undo.
-        return document.kind == "note" || ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased())
+        // Whiteboard owns local tools/history, and learning owns card disclosure
+        // and answer focus. A window switch must not end those panel sessions.
+        return document.kind == "note" || document.kind == "whiteboard" || document.kind == "learning"
+            || document.learningTarget != nil || ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased())
     }
     static func projectDocuments(_ documents: [NativeDocumentReference], geometry: NativeDockGeometry, layout: NativeDockLayout,
                                  bounds: CGRect, headerHeight: CGFloat = 44) -> [VisibleDocument] {
@@ -160,9 +170,9 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 frame: CGRect(x: frame.minX, y: frame.minY + inset, width: frame.width, height: max(0, frame.height - inset)), visible: visible != nil)
         }
         let activeIDs = Set(result.map(\.id))
-        // UIKit owns Markdown selection, composition and per-pane Undo. Keep
-        // that editor alive until the tab is actually closed, including while
-        // another course is active. PDF retains its existing checkpoint path.
+        // Keep panel-local editor state alive until its tab is actually closed,
+        // including while another window/course is active. Hidden panels cannot
+        // receive UIKit input. PDF retains its existing checkpoint path.
         for document in documents where retainsEditor(document) && !activeIDs.contains(document.id) {
             let original = projected.panes.first { $0.group.tabs.contains(document.id) }
             let inset = NativeDockHeaderMetrics.height(for: original?.frame ?? bounds, controlsHeight: headerHeight)
@@ -177,14 +187,14 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     }
     private func paneChrome(_ pane: NativeDockPaneFrame, focused: Bool, corner: Bool) -> some View {
         VStack(spacing: 0) {
-            tabs(pane.group, topPadding: NativeDockHeaderMetrics.topPadding(for: pane.frame), corner: corner)
+            if chromeMode.showsTabs { tabs(pane.group, topPadding: NativeDockHeaderMetrics.topPadding(for: pane.frame), corner: corner) }
             Spacer(minLength: 0)
         }
         .background(NativeDesktopTheme.bgApp)
     }
     private func tabs(_ group: NativeDockGroup, topPadding: CGFloat, corner: Bool) -> some View {
         GeometryReader { geometry in
-            let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - (corner ? 184 : 140)), count: group.tabs.count,
+            let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - 140 - (corner ? controlInset : 0)), count: group.tabs.count,
                 activeIndex: group.tabs.firstIndex(of: group.activeID ?? "") ?? -1, spacing: density == "compact" ? 0 : 4)
             HStack(alignment: .bottom, spacing: 0) {
                 HStack(spacing: sizing.spacing) {
@@ -217,7 +227,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                             .presentationCompactAdaptation(.popover)
                     }
                 groupMenu(group)
-                if corner { Color.clear.frame(width: 44, height: 44) }
+                if corner && controlInset > 0 { Color.clear.frame(width: controlInset, height: 44) }
             }.frame(height: headerHeight, alignment: .bottom).padding(.horizontal, 4).padding(.top, topPadding)
         }.frame(height: headerHeight + topPadding).clipped().background(NativeDesktopTheme.surface)
             .background { NativeDockTabStripBounds(groupID: group.id) }
@@ -315,9 +325,11 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         }
     }
     private func duplicate(_ document: NativeDocumentReference, group: NativeDockGroup, direction: NativeDockDirection) {
+        let initialURL = document.kind == "browser" ? try? browserURL(document) : nil
         perform {
             guard let copy = navigation.duplicate(document.id, inGroup: group.id, direction: direction) else { return }
             store.documentDuplicateSourceIDs[copy.id] = document.id
+            if let initialURL { store.pendingBrowserURLs[copy.relativePath] = initialURL }
             store.pageNoteSourceTabIDs = navigation.pageNoteSourceTabIDs
         }
     }
@@ -470,7 +482,7 @@ private struct NativeDockTabStripBounds: UIViewRepresentable {
     func updateUIView(_ view: UIView, context: Context) { view.accessibilityIdentifier = "native-dock-tab-strip-" + groupID }
 }
 
-/// Keeping a hidden Markdown editor mounted preserves its local Undo manager.
+/// Keeping a hidden editor mounted preserves its local Undo and disclosure state.
 /// Its keyboard focus must still end when the tab becomes hidden. Track only
 /// responders inside this document's visible rectangle, never another pane.
 private struct NativeDockEditorVisibility: UIViewRepresentable {

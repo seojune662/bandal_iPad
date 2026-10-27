@@ -10,6 +10,7 @@ enum NativePaper: String, CaseIterable, Identifiable {
 
 struct NativeNewNoteSheet: View {
     @ObservedObject var store: NativeWorkspaceStore
+    var courseID: String? = nil
     var parentPath: String = ""
     var onCreated: (NativeDocumentReference) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -86,7 +87,7 @@ struct NativeNewNoteSheet: View {
         Task { @MainActor in
             do {
                 let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                let document = try await store.createNote(title: name.isEmpty ? "새 노트" : name, paper: paper.rawValue, orientation: landscape ? "landscape" : "portrait",parentPath:parentPath)
+                let document = try await store.createNote(title: name.isEmpty ? "새 노트" : name, paper: paper.rawValue, orientation: landscape ? "landscape" : "portrait", courseID: courseID, parentPath: parentPath)
                 onCreated(document)
                 dismiss()
             } catch { self.error = error.localizedDescription; busy = false }

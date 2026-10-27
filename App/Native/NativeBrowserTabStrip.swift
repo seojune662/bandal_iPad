@@ -50,6 +50,7 @@ struct NativeBrowserTabStrip: View {
                     .accessibilityIdentifier("native-browser-close-tab-" + tab.id)
             }
         }.frame(width: sizing.width, height: 44).clipped()
+            .nativeWorkspacePreviewSurface(id: "browser-tab-" + tab.id, privateContent: { tab.isPrivate })
             .background(tab.id == activeID ? NativeDesktopTheme.raised : .clear)
             .overlay(alignment: .trailing) { NativeDesktopTheme.border.frame(width: 1).padding(.vertical, 8) }
             .contextMenu {

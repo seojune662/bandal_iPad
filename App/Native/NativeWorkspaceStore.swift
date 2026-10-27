@@ -29,6 +29,9 @@ final class NativeWorkspaceStore: ObservableObject {
     private lazy var studyService = NativeStudyService(store: self)
     let runtime: DesktopRuntime
     let annotation = NativeAnnotationCoordinator()
+    let whiteboardSessions = NativeWhiteboardSessionRegistry()
+    lazy var learningSessions = NativeLearningSessionRegistry(store: self)
+    lazy var panelViewStates = NativePanelViewStateStore(root: root)
     var root: URL { runtime.root }
     @Published var courses: [NativeCourse] = []
     @Published var selectedCourseID: String?
@@ -110,7 +113,8 @@ final class NativeWorkspaceStore: ObservableObject {
         if storageRoot == nil, !testing {
             do { selectedRoot = try DesktopProfileService.selectedRoot(in: documents) } catch { initializationFailure = error }
         }
-        let folder = storageRoot ?? selectedRoot ?? documents.appendingPathComponent(testing ? "BandalDesktop-Native-UI-Tests" : "BandalDesktop", isDirectory: true)
+        let testingFolder = arguments.contains("--native-ui-testing") && arguments.contains("--native-workspace-windows-ui-suite") ? "BandalDesktop-Native-UI-Tests-WorkspaceWindows" : "BandalDesktop-Native-UI-Tests"
+        let folder = storageRoot ?? selectedRoot ?? documents.appendingPathComponent(testing ? testingFolder : "BandalDesktop", isDirectory: true)
         // An explicit test directory is never reset implicitly, so restart tests
         // and existing course data use exactly the same startup path.
         if storageRoot == nil, testing, arguments.contains("--reset-native-ui-testing") {
@@ -123,7 +127,7 @@ final class NativeWorkspaceStore: ObservableObject {
             #endif
         }
         let legacy = storageRoot != nil ? folder.appendingPathComponent("Legacy", isDirectory: true)
-            : testing ? documents.appendingPathComponent("Bandal-Native-UI-Tests", isDirectory: true)
+            : testing ? documents.appendingPathComponent(testingFolder.hasSuffix("WorkspaceWindows") ? testingFolder + "-Legacy" : "Bandal-Native-UI-Tests", isDirectory: true)
             : DesktopProfileService.legacyRoot(documents: documents, root: folder)
         NativePDFPreferenceScope.registerPreviousRoot(root: folder, documentsRoot: documents)
         runtime = DesktopRuntime(root: folder, legacyRoot: legacy)
@@ -233,8 +237,8 @@ final class NativeWorkspaceStore: ObservableObject {
         try await loadMaterials()
     }
 
-    func importFiles(_ urls: [URL], parentPath: String = "") async throws {
-        let courseID = try await currentCourse()
+    func importFiles(_ urls: [URL], courseID requestedCourseID: String? = nil, parentPath: String = "") async throws {
+        let courseID = try await materialDestinationCourse(requestedCourseID)
         guard !urls.isEmpty else { return }
         // Copy file-provider URLs on a worker while security scope and the
         // coordination lease are held. Only our own staging folder is removed.
@@ -258,8 +262,8 @@ final class NativeWorkspaceStore: ObservableObject {
         }
     }
 
-    func createNote(title: String, paper: String, orientation: String, parentPath: String = "") async throws -> NativeDocumentReference {
-        let courseID = try await currentCourse()
+    func createNote(title: String, paper: String, orientation: String, courseID requestedCourseID: String? = nil, parentPath: String = "") async throws -> NativeDocumentReference {
+        let courseID = try await materialDestinationCourse(requestedCourseID)
         let value = try await invoke("pdfNotes:create", ["courseId": courseID, "title": try nonEmpty(title, label: "노트 제목"), "paper": paper, "orientation": orientation,"dirRelPath":parentPath])
         let reference = try document(value, courseID: courseID, kind: "pdf")
         try await loadMaterials()
@@ -364,8 +368,8 @@ final class NativeWorkspaceStore: ObservableObject {
         }
     }
 
-    func createFolder(name: String, parentPath: String) async throws {
-        let courseID = try await currentCourse()
+    func createFolder(name: String, courseID requestedCourseID: String? = nil, parentPath: String) async throws {
+        let courseID = try await materialDestinationCourse(requestedCourseID)
         _ = try await invoke("materials:createFolder", ["courseId": courseID, "dirRelPath": parentPath, "name": try nonEmpty(name, label: "폴더 이름")])
         try await loadMaterials()
     }
@@ -558,6 +562,16 @@ final class NativeWorkspaceStore: ObservableObject {
         try await ensureStarted()
         guard let selectedCourseID, courses.contains(where: { $0.id == selectedCourseID }) else { throw DesktopRuntimeError("먼저 과목을 선택해 주세요.") }
         return selectedCourseID
+    }
+
+    /// Creation and file pickers may outlive the inspector that launched them.
+    /// An explicit owner must never fall back to the currently selected course.
+    private func materialDestinationCourse(_ requested: String?) async throws -> String {
+        try await ensureStarted()
+        guard let courseID = requested ?? selectedCourseID, courses.contains(where: { $0.id == courseID }) else {
+            throw DesktopRuntimeError(requested == nil ? "먼저 과목을 선택해 주세요." : "자료를 저장할 과목을 찾을 수 없습니다.")
+        }
+        return courseID
     }
 
     private func performNativeChannel(_ channel: String, _ request: [String: Any]) async throws -> Any {

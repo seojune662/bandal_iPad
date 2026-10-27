@@ -6,31 +6,33 @@ struct NativeLearningWorkspace: View {
     let onOpenDocument: (NativeDocumentReference) -> Void
     let onOpenBrowser: (String) -> Void
     @StateObject private var model: NativeLearningWorkspaceModel
-    @Environment(\.nativeEditorVisible) private var editorVisible
+    @Environment(\.nativeWorkspaceTarget) private var workspaceTarget
+    @Environment(\.nativeWorkspaceChromeMode) private var chromeMode
+    @Environment(\.nativeWorkspaceTopInset) private var topInset
+    @Environment(\.nativeWorkspaceControlInset) private var controlInset
     @State private var sourceTask: Task<Void, Never>?
     @State private var tab = "home"
     @State private var articleURL = ""
     @State private var showingAdd = false
-    init(store: NativeWorkspaceStore, binding: NativeLearningBinding, onOpenDocument: @escaping (NativeDocumentReference) -> Void, onOpenBrowser: @escaping (String) -> Void, initialTab: String = "home") {
+    init(store: NativeWorkspaceStore, binding: NativeLearningBinding, onOpenDocument: @escaping (NativeDocumentReference) -> Void, onOpenBrowser: @escaping (String) -> Void, initialTab: String = "home", panelID: String? = nil) {
         _tab = State(initialValue: initialTab)
         self.store = store; self.binding = binding; self.onOpenDocument = onOpenDocument; self.onOpenBrowser = onOpenBrowser
-        _model = StateObject(wrappedValue: NativeLearningWorkspaceModel(store: store, binding: binding))
+        _model = StateObject(wrappedValue: NativeLearningWorkspaceModel(store: store, binding: binding, detailID: panelID))
     }
     var body: some View {
         VStack(spacing: 0) {
-            header
+            if chromeMode != .toolsHidden { header.padding(.trailing, controlInset).padding(.top, topInset) }
             if let error = model.error { NativeToolError(message: error).padding(12) }
             if model.loading { ProgressView("학습 공간 불러오는 중…").frame(maxWidth: .infinity, maxHeight: .infinity) }
             else if let article = model.article { NativeLearningArticleView(model: model, article: article, onOpenBrowser: onOpenBrowser) }
             else if let artifact = model.artifact { NativeLearningArtifactView(model: model, artifact: artifact, onOpenSource: openSource) }
             else { overview }
-        }.background(NativeDesktopTheme.bgApp).accessibilityElement(children: .contain).accessibilityIdentifier("native-learning-workspace")
+        }.padding(.top, chromeMode == .toolsHidden ? (controlInset > 0 ? topInset + 44 : topInset) : 0).background(NativeDesktopTheme.bgApp).accessibilityElement(children: .contain).accessibilityIdentifier("native-learning-workspace")
             .task(id: binding) {
                 await model.rebind(binding); guard model.binding == binding else { return }
                 await model.start()
                 if tab == "words" && model.rows("words").isEmpty { tab = "history" }
-            }.onDisappear { sourceTask?.cancel(); Task { await model.close() } }
-            .onChange(of: editorVisible) { _, visible in if !visible { sourceTask?.cancel() } }.onReceive(store.events) { model.receive($0) }
+            }.onDisappear { Task { await model.close() } }
             .alert("기사 주소", isPresented: $showingAdd) { TextField("https://…", text: $articleURL).textInputAutocapitalization(.never).keyboardType(.URL); Button("취소", role: .cancel) { }; Button("추가") { addArticle() } } message: { Text("기사의 원문을 학습 공간에 보관합니다.") }
     }
     private var header: some View {
@@ -52,7 +54,7 @@ struct NativeLearningWorkspace: View {
                 if tab == "words" { words }
                 if tab == "history" { history }
             }.padding(24).frame(maxWidth: 900, alignment: .leading).frame(maxWidth: .infinity)
-        }.disabled(model.busy || model.frozen)
+        }.nativeLearningPanelScroll(model: model, detail: "overview:" + tab).disabled(model.busy || model.frozen)
     }
     private var statistics: some View {
         HStack(spacing: 16) { stat("읽은 글", model.rows("articles").filter { $0["status"] as? String == "completed" }.count); stat("모은 표현", model.rows("words").count); stat("복습 카드", model.rows("cards").count) }
@@ -111,30 +113,34 @@ struct NativeLearningWorkspace: View {
     private func openSource(_ source: [String: Any]) {
         if source["kind"] as? String == "article", let id = source["articleId"] as? String { openResult(model.rows("articles").first { $0["id"] as? String == id } ?? ["id": id], kind: .article); return }
         sourceTask?.cancel()
+        let target = workspaceTarget, sourcePanelID = model.panelID, sourceBinding = model.binding
         sourceTask = Task {
             do {
-                let value = try await store.invoke("learning:resolveSource", ["binding": binding.request, "sourceRef": source]) as? [String: Any] ?? [:]
+                let value = try await store.invoke("learning:resolveSource", ["binding": sourceBinding.request, "sourceRef": source]) as? [String: Any] ?? [:]
                 try Task.checkCancellation()
-                guard editorVisible else { return }
                 guard value["missing"] as? Bool != true, let path = value["relPath"] as? String else { throw DesktopRuntimeError("원문 자료를 찾을 수 없습니다.") }
-                let course = value["sourceCourseId"] as? String ?? binding.courseID
+                let course = value["sourceCourseId"] as? String ?? sourceBinding.courseID
                 var payload: [String: Any] = ["courseId": course, "relPath": path, "kind": NativeSidebarDescriptor.materialKind(path)]
                 payload["page"] = source["page"]
+                payload["sourcePanelID"] = sourcePanelID
+                if let target { payload["nativeWorkspaceTarget"] = target }
                 store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: payload))
             } catch is CancellationError {} catch { model.error = error.localizedDescription }
         }
     }
 }
 
-/// Each article or generated result owns its detail model and answer state.
-/// Opening another quiz in a split never replaces the first quiz's answers.
+/// Each pane owns its detail selection. Identical quizzes share a durable
+/// attempt while different artifacts remain independent.
 struct NativeLearningDocumentWorkspace: View {
     @ObservedObject var store: NativeWorkspaceStore
     let document: NativeDocumentReference
     let onOpenDocument: (NativeDocumentReference) -> Void
     let onOpenBrowser: (String) -> Void
     @StateObject private var model: NativeLearningWorkspaceModel
-    @Environment(\.nativeEditorVisible) private var editorVisible
+    @Environment(\.nativeWorkspaceTarget) private var workspaceTarget
+    @Environment(\.nativeWorkspaceTopInset) private var topInset
+    @Environment(\.nativeWorkspaceControlInset) private var controlInset
     @State private var sourceTask: Task<Void, Never>?
     init(store: NativeWorkspaceStore, document: NativeDocumentReference, onOpenDocument: @escaping (NativeDocumentReference) -> Void, onOpenBrowser: @escaping (String) -> Void) {
         self.store = store; self.document = document; self.onOpenDocument = onOpenDocument; self.onOpenBrowser = onOpenBrowser
@@ -144,7 +150,7 @@ struct NativeLearningDocumentWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             if let target = document.learningTarget, target.kind == .overview {
-                NativeLearningWorkspace(store: store, binding: target.binding, onOpenDocument: onOpenDocument, onOpenBrowser: onOpenBrowser, initialTab: "words")
+                NativeLearningWorkspace(store: store, binding: target.binding, onOpenDocument: onOpenDocument, onOpenBrowser: onOpenBrowser, initialTab: "words", panelID: document.id)
             } else {
             if let error = model.error { NativeToolError(message: error).padding(12) }
             if model.loading { ProgressView("자료 불러오는 중…").frame(maxWidth: .infinity, maxHeight: .infinity) }
@@ -152,7 +158,7 @@ struct NativeLearningDocumentWorkspace: View {
             else if let artifact = model.artifact { NativeLearningArtifactView(model: model, artifact: artifact, onOpenSource: openSource) }
             else if model.error == nil { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
             }
-        }.background(NativeDesktopTheme.bgApp).accessibilityElement(children: .contain).accessibilityIdentifier("native-learning-document")
+        }.padding(.top, document.learningTarget?.kind == .overview ? 0 : (controlInset > 0 ? topInset + 44 : topInset)).background(NativeDesktopTheme.bgApp).accessibilityElement(children: .contain).accessibilityIdentifier("native-learning-document")
             .task(id: document.learningTarget) {
                 guard document.learningTarget?.kind != .overview else { return }
                 if let binding = document.learningTarget?.binding {
@@ -164,9 +170,7 @@ struct NativeLearningDocumentWorkspace: View {
                 if target.kind == .article { await model.openArticle(target.entityID) }
                 else { await model.openArtifact(target.entityID) }
             }
-            .onReceive(store.events) { if document.learningTarget?.kind != .overview { model.receive($0) } }
-            .onDisappear { sourceTask?.cancel(); Task { await model.close() } }
-            .onChange(of: editorVisible) { _, visible in if !visible { sourceTask?.cancel() } }
+            .onDisappear { Task { await model.close() } }
     }
     private func openSource(_ source: [String: Any]) {
         if source["kind"] as? String == "article", let id = source["articleId"] as? String {
@@ -176,17 +180,19 @@ struct NativeLearningDocumentWorkspace: View {
         }
         if let url = source["url"] as? String { onOpenBrowser(url); return }
         sourceTask?.cancel()
+        let target = workspaceTarget, sourcePanelID = model.panelID, sourceBinding = model.binding
         sourceTask = Task {
             do {
                 var reference = source
                 if reference["kind"] as? String == "annotation" { reference["kind"] = "material"; reference["pathScope"] = "course"; reference.removeValue(forKey: "contentHash") }
-                let value = try await store.invoke("learning:resolveSource", ["binding": model.binding.request, "sourceRef": reference]) as? [String: Any] ?? [:]
+                let value = try await store.invoke("learning:resolveSource", ["binding": sourceBinding.request, "sourceRef": reference]) as? [String: Any] ?? [:]
                 try Task.checkCancellation()
-                guard editorVisible else { return }
                 guard value["missing"] as? Bool != true, let path = value["relPath"] as? String else { throw DesktopRuntimeError("원문 자료를 찾을 수 없습니다.") }
-                let owner = value["sourceCourseId"] as? String ?? model.binding.courseID
+                let owner = value["sourceCourseId"] as? String ?? sourceBinding.courseID
                 var payload: [String: Any] = ["courseId": owner, "relPath": path, "kind": NativeSidebarDescriptor.materialKind(path)]
                 payload["page"] = source["page"]
+                payload["sourcePanelID"] = sourcePanelID
+                if let target { payload["nativeWorkspaceTarget"] = target }
                 store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: payload))
             } catch is CancellationError {} catch { model.error = error.localizedDescription }
         }

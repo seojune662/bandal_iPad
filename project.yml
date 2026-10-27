@@ -88,3 +88,15 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.bandal.ipad.uitests
         TARGETED_DEVICE_FAMILY: "2"
         SWIFT_OBJC_BRIDGING_HEADER: Tests/BandalUITests/BandalUITests-Bridging-Header.h
+schemes:
+  BandalDeviceSmoke:
+    build:
+      targets:
+        Bandal: all
+    run:
+      config: Release
+    test:
+      config: Release
+      targets:
+        - name: BandalUITests
+          selectedTests: [NativeWorkspaceDeviceSmokeUITests]

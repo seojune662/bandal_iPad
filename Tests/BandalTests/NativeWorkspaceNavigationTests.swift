@@ -45,10 +45,11 @@ final class NativeWorkspaceNavigationTests: XCTestCase {
         navigation.rename(courseID: "course-a", from: "unit", to: "renamed", isDirectory: true)
         XCTAssertEqual(navigation.active?.relativePath, "renamed/deep/note.md")
         XCTAssertEqual(navigation.active?.title, "note.md")
-        XCTAssertEqual(navigation.companion, otherCourse)
+        XCTAssertEqual(navigation.companion?.storageID, otherCourse.storageID)
+        XCTAssertNotEqual(navigation.companion?.id, otherCourse.id, "A second workspace placement owns an independent panel")
         XCTAssertTrue(navigation.documents.contains(sibling))
         navigation.remove(courseID: "course-a", path: "renamed", isDirectory: true)
-        XCTAssertEqual(navigation.active, otherCourse)
+        XCTAssertEqual(navigation.active?.storageID, otherCourse.storageID)
         XCTAssertTrue(navigation.documents.contains(sibling))
         XCTAssertFalse(navigation.documents.contains(where: { $0.relativePath.hasPrefix("renamed/") }))
     }

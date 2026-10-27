@@ -79,3 +79,32 @@ final class NativeMediaPlaybackTests: XCTestCase {
         reopened.close()
     }
 }
+
+extension NativeMediaPlaybackTests {
+    func testDuplicatePlayersRestoreSeparatePositionsAndRatesAfterRestart() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-media-windows-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = NativeWorkspaceStore(storageRoot: root); await store.start()
+        try await store.createCourse(name: "Lecture")
+        let course = try XCTUnwrap(store.selectedCourseID)
+        var wav = PCMRecordingWriter.header(samples: 160_000, encoding: .signed16)
+        wav.append(Data(repeating: 0, count: 320_000))
+        let file = try await store.invoke("materials:writeFile", ["courseId": course, "dirRelPath": "", "fileName": "lecture.wav", "encoding": "base64", "data": wav.base64EncodedString()]) as! [String: Any]
+        let path = try XCTUnwrap(file["relPath"] as? String)
+        let original = NativeDocumentReference(courseID: course, relativePath: path, title: "Lecture", kind: "audio"), copy = original.duplicated()
+        let first = NativeMediaPlayback(), second = NativeMediaPlayback()
+        await first.open(original, store: store); await second.open(copy, store: store)
+        let firstPlayer = try XCTUnwrap(first.player), secondPlayer = try XCTUnwrap(second.player)
+        await firstPlayer.seek(to: CMTime(seconds: 2, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        await secondPlayer.seek(to: CMTime(seconds: 6, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        firstPlayer.defaultRate = 1.25; secondPlayer.defaultRate = 1.75
+        try await first.save(); try await second.save(); first.close(); second.close()
+        let restarted = NativeWorkspaceStore(storageRoot: root); await restarted.start()
+        let restoredFirst = NativeMediaPlayback(), restoredSecond = NativeMediaPlayback()
+        await restoredFirst.open(original, store: restarted); await restoredSecond.open(copy, store: restarted)
+        XCTAssertEqual(try XCTUnwrap(restoredFirst.player).currentTime().seconds, 2, accuracy: 0.05)
+        XCTAssertEqual(try XCTUnwrap(restoredSecond.player).currentTime().seconds, 6, accuracy: 0.05)
+        XCTAssertEqual(restoredFirst.player?.defaultRate, 1.25); XCTAssertEqual(restoredSecond.player?.defaultRate, 1.75)
+        restoredFirst.close(); restoredSecond.close()
+    }
+}

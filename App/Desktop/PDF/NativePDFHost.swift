@@ -114,6 +114,21 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
         guard let item = documents[surfaceID], item.generation == generation else { return nil }
         return item.documentLocation(point)
     }
+    struct PreviewGeometry: Equatable {
+        struct Page: Equatable { let number: Int; let frame: CGRect }
+        let size: CGSize
+        let pages: [Page]
+    }
+    func previewGeometry(surfaceID: String, generation: String) -> PreviewGeometry? {
+        guard let item = documents[surfaceID], item.generation == generation, !item.pdfView.isHidden,
+              item.pdfView.bounds.width > 0, item.pdfView.bounds.height > 0 else { return nil }
+        let pdf = item.pdfView
+        let pages = pdf.visiblePages.map { page in
+            PreviewGeometry.Page(number: item.document.index(for: page) + 1,
+                                 frame: pdf.convert(page.bounds(for: .cropBox), from: page))
+        }.sorted { $0.number < $1.number }
+        return PreviewGeometry(size: pdf.bounds.size, pages: pages)
+    }
     func handle(_ channel: String, request: [String: Any]) async throws -> Any {
         if channel == "pdfNative:capabilities" {
             #if DEBUG

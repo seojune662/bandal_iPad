@@ -20,11 +20,13 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
     var showPages = false
     var showAnnotations = false
     var viewport: Viewport?
+    /// A panel-local jump may arrive before its window mounts a PDF model.
+    var pendingPage: Int?
 
     init() {}
     private enum CodingKeys: String, CodingKey {
         case tool, color, width, opacity, previousTool, penColor, highlighterColor, penStyle, highlighterStyle
-        case toolsExpanded, showPages, showAnnotations, viewport, shapeRecognitionEnabled, ballpointStyle, lassoMode
+        case toolsExpanded, showPages, showAnnotations, viewport, pendingPage, shapeRecognitionEnabled, ballpointStyle, lassoMode
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -47,6 +49,15 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
         showPages = try values.decodeIfPresent(Bool.self, forKey: .showPages) ?? showPages
         showAnnotations = try values.decodeIfPresent(Bool.self, forKey: .showAnnotations) ?? showAnnotations
         viewport = try values.decodeIfPresent(Viewport.self, forKey: .viewport)
+        pendingPage = try values.decodeIfPresent(Int.self, forKey: .pendingPage)
+    }
+    func restoringViewState(_ canonical: [String: Any], revision: String, pageCount: Int) -> [String: Any] {
+        var result = viewport?.restoring(canonical, revision: revision, independent: true) ?? canonical
+        if let pendingPage, pendingPage > 0 {
+            result["page"] = min(max(1, pageCount), pendingPage)
+            result["progress"] = 0.0; result["horizontalProgress"] = 0.0
+        }
+        return result
     }
 
     struct Viewport: Codable, Equatable {
@@ -120,6 +131,7 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
         if !Self.lassoModes.contains(lassoMode) { value.lassoMode = "freeform" }
         let style = NativePDFPenPreset(color: value.color, width: width, opacity: opacity).validated(highlighter: value.tool == "highlighter")
         value.width = style.width; value.opacity = style.opacity
+        if let pendingPage, pendingPage < 1 { value.pendingPage = nil }
         if let viewport, !viewport.zoom.isFinite || !(0.4...4).contains(viewport.zoom) || viewport.page < 1 ||
             !viewport.progress.isFinite || !(0...1).contains(viewport.progress) ||
             !viewport.horizontalProgress.isFinite || !(0...1).contains(viewport.horizontalProgress) { value.viewport = nil }

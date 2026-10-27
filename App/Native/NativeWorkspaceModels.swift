@@ -39,9 +39,19 @@ struct NativeDocumentReference: Codable, Hashable, Identifiable {
 
     var storageID: String { learningTarget?.id ?? courseID + ":" + relativePath }
     var id: String { instanceID.map { "instance:" + $0 } ?? storageID }
-    var supportsDuplicate: Bool { learningTarget == nil && kind != "learning" && (kind == "pdf" || kind == "note" || ["md", "markdown"].contains((relativePath as NSString).pathExtension.lowercased())) }
+    /// Each supported renderer separates shared resource data from panel state.
+    /// A file extension on a project root is never used to infer its renderer.
+    var supportsDuplicate: Bool {
+        if learningTarget != nil { return true }
+        if ["pdf", "note", "whiteboard", "learning", "browser", "recordings", "planner", "audio", "video"].contains(kind) { return true }
+        return ["md", "markdown", "mp4", "mov", "m4v", "mp3", "m4a", "wav", "aac"].contains((relativePath as NSString).pathExtension.lowercased())
+    }
     func duplicated() -> NativeDocumentReference {
-        var copy = self; copy.instanceID = UUID().uuidString.lowercased(); return copy
+        var copy = self; copy.instanceID = UUID().uuidString.lowercased()
+        // Tool scopes are sessions, not files. Reusing a browser scope would
+        // attach two independent panels to the same live WKWebView.
+        if isWorkspaceTool { copy.relativePath = UUID().uuidString.lowercased() }
+        return copy
     }
 }
 

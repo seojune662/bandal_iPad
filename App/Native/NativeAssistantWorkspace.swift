@@ -195,7 +195,11 @@ private final class NativeAssistantSession: ObservableObject {
     }
     func send() async throws {
         guard !sending, !running else { return }
+        // Availability and document flushing can suspend while the user changes
+        // workspaces. Keep the resource destination and conversation that began
+        // this request; creating a result does not open a document automatically.
         let id = sessionID, current = generation, captured = draft
+        let destination = context, requestIdentity = identity
         var text = captured.text.trimmingCharacters(in:.whitespacesAndNewlines)
         if text.isEmpty { text = captured.mode.pack == nil ? "첨부한 내용을 설명해 주세요." : "\(captured.mode.title)를 만들어 주세요." }
         sending = true; error = nil; stream = ""; activity = ""
@@ -204,7 +208,7 @@ private final class NativeAssistantSession: ObservableObject {
         guard configured else { throw DesktopRuntimeError("설정에서 API 키를 연결해 주세요. 초안은 보관됩니다.") }
         _ = try NativeAssistantPayload.validatedAttachments(captured.attachments.map(\.request))
         try await store.flushDocuments()
-        var request = identity
+        var request = requestIdentity
         request["content"] = text; request["mode"] = captured.mode.rawValue; request["attachments"] = captured.attachments.map(\.request)
         if let document = captured.document {
             request["documentContext"] = ["courseId":document.courseID,"relPath":document.relativePath,"title":document.title,"kind":document.kind,"selection":captured.selection]
@@ -212,10 +216,10 @@ private final class NativeAssistantSession: ObservableObject {
         lastAttempt = captured
         if let pack = captured.mode.pack {
             let source = try NativeAssistantPayload.generationSource(document:captured.document,selection:captured.selection,attachments:captured.attachments)
-            let sourceCourse = captured.document?.courseID ?? context.courseID
-            var generationRequest: [String: Any] = ["courseId":sourceCourse,"packId":pack,"generationMode":captured.mode.rawValue,"questionCount":captured.count,"difficulty":captured.difficulty,"scope":captured.scope,"source":source,"prompt":text,"attachments":captured.attachments.map(\.request),"chat":identity,"ai":["provider":provider,"model":model.isEmpty ? "default" : model]]
+            let sourceCourse = captured.document?.courseID ?? destination.courseID
+            var generationRequest: [String: Any] = ["courseId":sourceCourse,"packId":pack,"generationMode":captured.mode.rawValue,"questionCount":captured.count,"difficulty":captured.difficulty,"scope":captured.scope,"source":source,"prompt":text,"attachments":captured.attachments.map(\.request),"chat":requestIdentity,"ai":["provider":provider,"model":model.isEmpty ? "default" : model]]
             generationRequest["documentContext"] = request["documentContext"]
-            if let binding = context.binding { generationRequest["binding"] = binding.request }
+            if let binding = destination.binding { generationRequest["binding"] = binding.request }
             let result = try await store.invoke("study:generate",generationRequest) as? [String: Any] ?? [:]
             guard id == sessionID, current == generation else { return }
             draft.studyRunID = result["runId"] as? String

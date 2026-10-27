@@ -6,6 +6,10 @@ import Combine
 struct NativeWhiteboardWorkspace: View {
     @StateObject private var model: NativeWhiteboardModel
     @ObservedObject private var annotation: NativeAnnotationCoordinator
+    @Environment(\.nativeWorkspaceChromeMode) private var chromeMode
+    @Environment(\.nativeWorkspaceTopInset) private var topInset
+    @Environment(\.nativeWorkspaceControlInset) private var controlInset
+    @Environment(\.nativeEditorVisible) private var editorVisible
     init(document: NativeDocumentReference, store: NativeWorkspaceStore) { _model = StateObject(wrappedValue: NativeWhiteboardModel(document: document, store: store)); _annotation = ObservedObject(wrappedValue: store.annotation) }
     var body: some View {
         VStack(spacing: 0) {
@@ -20,14 +24,15 @@ struct NativeWhiteboardWorkspace: View {
                     .accessibilityElement(children: .contain).accessibilityIdentifier("native-ai-annotation-toolbar")
             } else {
             ViewThatFits(in: .horizontal) {
-                HStack { tools; Spacer(); navigation }
+                HStack { tools; Spacer(); if chromeMode != .toolsHidden { navigation } }
                 VStack(spacing: 0) {
                     ScrollView(.horizontal, showsIndicators: false) { tools }.frame(height: 44)
-                    navigation
+                    if chromeMode != .toolsHidden { navigation }
                 }
-            }.padding(.horizontal, 8).background(NativeDesktopTheme.surface)
+            }.padding(.horizontal, 8).padding(.trailing, controlInset).padding(.top, topInset).background(NativeDesktopTheme.surface)
             }
             NativeWhiteboardBody(model: model).accessibilityIdentifier("native-whiteboard-workspace")
+                .nativeWorkspacePreviewSurface(id: model.document.id, capture: { try model.controller?.previewImage() })
                 .overlay {
                     if let request = annotation.request, request.documentID == model.document.id {
                         NativeAnnotationRegionOverlay { bounds in
@@ -44,7 +49,8 @@ struct NativeWhiteboardWorkspace: View {
             if let error = model.error {
                 HStack { Text(error).font(.caption); Spacer(); Button("다시 저장") { model.retry() }.frame(minHeight: 44) }.padding(12).background(.bar)
             }
-        }.onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in model.background() }
+        }.onChange(of: editorVisible, initial: true) { _, visible in model.setVisible(visible) }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in model.background() }
     }
     private var tools: some View {
         HStack(spacing: 4) {
@@ -72,7 +78,7 @@ struct NativeWhiteboardWorkspace: View {
 }
 
 @MainActor
-private final class NativeWhiteboardModel: ObservableObject {
+final class NativeWhiteboardModel: ObservableObject {
     @Published var tool = "pen"
     @Published var color = "ink"
     @Published var loading = true
@@ -85,47 +91,70 @@ private final class NativeWhiteboardModel: ObservableObject {
     @Published var canUndo = false
     @Published var canRedo = false
     let document: NativeDocumentReference, store: NativeWorkspaceStore
-    weak var controller: NativeWhiteboardController?
-    private var writer: NativeWhiteboardPersistence?, opening: Task<Void, Error>?, registration: UUID?
+    fileprivate weak var controller: NativeWhiteboardController?
+    private(set) var editorVisible = true
+    private var session: NativeWhiteboardSession?
+    private var writer: NativeWhiteboardPersistence? { session?.writer }
+    private var opening: Task<Void, Error>?, registration: UUID?
+    private var peerChanges: AnyCancellable?
+    private var mediaTask: Task<Void, Never>?
+    private var restoredView: NativeWhiteboardPanelState?
     private var operationTask: Task<Void, Error>?
     private var rows: [[String: Any]] = [], media: [String: UIImage] = [:], board: [String: Any] = [:]
     private var pageGeometries: [String: [String: Any]] = [:]
     private var width = 0.003, retired = false, closing = false, mutating = false, writesSuspended = false
     private var events: AnyCancellable?
-    private var undoStack: [[[String: Any]]] = [], redoStack: [[[String: Any]]] = [], completed = Set<String>()
+    private var undoStack: [NativeWhiteboardHistoryEntry] = [], redoStack: [NativeWhiteboardHistoryEntry] = [], completed = Set<String>()
     private var strokePages: [String: Int] = [:]
     init(document: NativeDocumentReference, store: NativeWorkspaceStore) {
         self.document = document; self.store = store
+        restoredView = store.panelViewStates.read(NativeWhiteboardPanelState.self, id: document.id, kind: "whiteboard")
+        if let restoredView, restoredView.isValid { page = restoredView.page } else { restoredView = nil }
         events = store.events.sink { [weak self] in self?.receive($0) }
     }
-    func attach(_ controller: NativeWhiteboardController) {
+    fileprivate func attach(_ controller: NativeWhiteboardController) {
         self.controller = controller
+        controller.view.isUserInteractionEnabled = editorVisible
+        start()
+    }
+    func start() {
         guard opening == nil else { return }
-        registration = store.registerDocumentFlush(id: document.id,
+        registration = store.registerDocumentFlush(id: document.id, document: document,
             freeze: { [weak self] in self?.setMutating(true) },
             suspendWrites: { [weak self] in self?.writesSuspended = true },
             resume: { [weak self] in self?.writesSuspended = false; self?.setMutating(false) },
-            retire: { [weak self] in self?.retire() }) { [self] in try await flush() }
+            retire: { [weak self] in self?.retire(invalidateShared: true) }) { [self] in try await flush() }
         let task = Task { @MainActor in
             await self.store.waitForExternalMutation()
             guard !self.retired, !Task.isCancelled else { return }
-            let writer = try NativeWhiteboardPersistence(root: self.store.root, courseID: self.document.courseID, boardID: self.document.relativePath) { [store = self.store] channel, input in try await store.invoke(channel, input) }
-            self.writer = writer
-            writer.onChange = { [weak self] in try await self?.reload() }
-            try await writer.drain(); try await self.reload(); self.loading = false; self.refresh()
+            let session = try self.store.whiteboardSessions.session(root: self.store.root, document: self.document) { [weak store = self.store] channel, input in
+                guard let store else { throw NativePDFError.invalid("노트 저장 연결이 닫혔습니다.") }
+                return try await store.invoke(channel, input)
+            }
+            self.session = session
+            self.peerChanges = session.changes.sink { [weak self] in self?.applySharedSnapshot() }
+            try await session.open(); self.applySharedSnapshot(); self.loading = false; self.refresh()
+            if let view = self.restoredView { self.controller?.restoreViewport(view); self.restoredView = nil }
         }
         opening = task
         Task { do { try await task.value } catch { fail(error) } }
     }
     private var identity: [String: Any] { ["courseId": document.courseID, "boardId": document.relativePath] }
-    private func reload() async throws {
-        guard !retired else { return }
-        guard let result = try await store.invoke("canvas:open", identity) as? [String: Any], let rows = result["shapes"] as? [[String: Any]], let board = result["board"] as? [String: Any] else { throw NativePDFError.invalid("노트를 읽지 못했습니다.") }
-        self.board = board; self.rows = rows; pageCount = board["pageCount"] as? Int ?? 1; page = min(page, pageCount)
-        pageGeometries = result["pageGeometries"] as? [String: [String: Any]] ?? [:]
+    private func reload() async throws { try await session?.reload(); applySharedSnapshot() }
+    private func applySharedSnapshot() {
+        guard let session, !retired else { return }
+        board = session.board; rows = session.rows; pageGeometries = session.pageGeometries
+        if !board.isEmpty { pageCount = board["pageCount"] as? Int ?? 1; page = min(page, pageCount) }
+        refresh()
+        mediaTask?.cancel()
+        mediaTask = Task { [weak self] in await self?.loadMedia(); self?.refresh() }
+    }
+    private func loadMedia() async {
         for row in rows where ["image", "clip"].contains(row["kind"] as? String ?? "") {
+            guard !retired, !Task.isCancelled else { return }
             guard let id = row["id"] as? String, media[id] == nil, let data = row["data"] as? [String: Any], let kind = row["kind"] as? String, let source = data[kind] as? [String: Any], let path = source["relPath"] as? String else { continue }
             if let local = try? await store.invokePrivate("nativeMaterial:path", ["courseId": document.courseID, "relPath": path]) as? String {
+                guard !retired, !Task.isCancelled else { return }
                 if kind == "image" { media[id] = UIImage(contentsOfFile: local) }
                 else if let document = PDFDocument(url: URL(fileURLWithPath: local)), let page = document.page(at: (source["page"] as? Int ?? 1) - 1) {
                     var image = page.thumbnail(of: CGSize(width: 1000, height: 1400), for: .cropBox)
@@ -135,19 +164,8 @@ private final class NativeWhiteboardModel: ObservableObject {
                 }
             }
         }
-        refresh()
     }
-    private func visibleRows() -> [[String: Any]] {
-        var result = rows
-        for record in writer?.pendingRecords ?? [] {
-            for command in record["commands"] as? [[String: Any]] ?? [] {
-                guard let request = command["request"] as? [String: Any] else { continue }
-                if command["channel"] as? String == "canvas:removeShapes", let ids = request["ids"] as? [String] { result.removeAll { ids.contains($0["id"] as? String ?? "") } }
-                else if let id = request["id"] as? String, var shape = request["shape"] as? [String: Any] { result.removeAll { $0["id"] as? String == id }; shape["id"] = id; shape["page"] = request["page"] ?? 1; result.append(shape) }
-            }
-        }
-        return result
-    }
+    private func visibleRows() -> [[String: Any]] { session?.visibleRows ?? rows }
     private func refresh() {
         let geometry = pageGeometries[String(page)] ?? [:]
         let rotated = (geometry["rotation"] as? Int ?? 0) % 180 != 0
@@ -162,52 +180,72 @@ private final class NativeWhiteboardModel: ObservableObject {
             return row
         }
         controller?.configure(rows: values, images: media, size: size, tool: tool, color: color, width: tool == "highlighter" ? max(0.014, self.width * 4) : self.width,
-            loading: loading || blocked || error != nil || retired || closing, background: board["background"] as? String ?? "grid", dark: board["surface"] as? String == "dark")
+            loading: loading || blocked || error != nil || retired || closing || !editorVisible, background: board["background"] as? String ?? "grid", dark: board["surface"] as? String == "dark")
+    }
+    func setVisible(_ visible: Bool) {
+        guard editorVisible != visible else { return }
+        if !visible { do { try controller?.surface.flush() } catch { fail(error) } }
+        editorVisible = visible
+        controller?.view.isUserInteractionEnabled = visible
+        refresh()
+        if !visible { Task { do { try await flush() } catch { fail(error) } } }
     }
     func stroke(_ stroke: NativePDFCompletedStroke, provisional: Bool) throws {
-        guard let writer, !retired else { throw NativePDFError.invalid("노트 저장 연결이 닫혔습니다.") }
+        guard let session, !retired else { throw NativePDFError.invalid("노트 저장 연결이 닫혔습니다.") }
         let capturedPage = strokePages[stroke.mutationID] ?? page
         strokePages[stroke.mutationID] = capturedPage
         var canonicalStyle = stroke.style
         if canonicalStyle.color == "canvasLightInk" { canonicalStyle.color = "ink" }
         let points = try DesktopJSON.decode(JSONEncoder().encode(stroke.points)), style = try DesktopJSON.decode(JSONEncoder().encode(canonicalStyle))
         let shape: [String: Any] = ["kind": stroke.kind, "data": ["inkVersion": stroke.inkVersion, "points": points], "style": style]
-        try writer.enqueue(id: stroke.mutationID, commands: [["channel": "canvas:putShape", "request": ["id": stroke.mutationID, "page": capturedPage, "shape": shape]]])
-        if !provisional, completed.insert(stroke.mutationID).inserted { undoStack.append([["channel": "canvas:removeShapes", "request": ["ids": [stroke.mutationID]]]]); redoStack.removeAll() }
+        try session.enqueue(id: stroke.mutationID, commands: [["channel": "canvas:putShape", "request": ["id": stroke.mutationID, "page": capturedPage, "shape": shape]]])
+        if !provisional {
+            let commands: [[String: Any]] = [["channel": "canvas:removeShapes", "request": ["ids": [stroke.mutationID]]]]
+            let entry = NativeWhiteboardHistoryEntry(commands: commands, rows: visibleRows())
+            if completed.insert(stroke.mutationID).inserted { undoStack.append(entry); redoStack.removeAll() }
+            else if let index = undoStack.lastIndex(where: { $0.expected.keys.contains(stroke.mutationID) }) { undoStack[index] = entry }
+        }
         store.markDocumentChanged(); refresh(); drain()
     }
     func erase(_ targets: [NativePDFEraseTarget]) throws {
-        guard let writer, !retired else { throw NativePDFError.invalid("노트 저장 연결이 닫혔습니다.") }
+        guard let session, !retired else { throw NativePDFError.invalid("노트 저장 연결이 닫혔습니다.") }
         let ids = Set(targets.compactMap { $0.drawingID ?? $0.mutationID }), removed = visibleRows().filter { ids.contains($0["id"] as? String ?? "") }
         guard !ids.isEmpty else { return }
-        try writer.enqueue(commands: [["channel": "canvas:removeShapes", "request": ["ids": ids.sorted()]]])
-        undoStack.append(removed.map(restore)); redoStack.removeAll(); store.markDocumentChanged(); refresh(); drain()
+        try session.enqueue(commands: [["channel": "canvas:removeShapes", "request": ["ids": ids.sorted()]]])
+        undoStack.append(NativeWhiteboardHistoryEntry(commands: removed.map(restore), rows: visibleRows())); redoStack.removeAll(); store.markDocumentChanged(); refresh(); drain()
     }
     private func restore(_ row: [String: Any]) -> [String: Any] { ["channel": "canvas:putShape", "request": ["id": row["id"]!, "page": row["page"] ?? 1, "restore": true, "shape": ["kind": row["kind"]!, "data": row["data"]!, "style": row["style"]!]]] }
-    private func drain() { guard error == nil else { return }; Task { do { try await writer?.drain(); refresh() } catch { fail(error) } } }
+    private func drain() { guard error == nil else { return }; Task { do { try await session?.drain(); refresh() } catch { fail(error) } } }
     func chooseTool(_ name: String) { do { try controller?.surface.flush(); tool = name; if name == "highlighter", color == "ink" { color = "yellow" }; refresh() } catch { fail(error) } }
     func chooseColor(_ name: String) { color = name; refresh() }
     func setWidth(_ value: Double) { width = value; refresh() }
     func undo() { history(undo: true) }; func redo() { history(undo: false) }
     private func history(undo: Bool) {
-        guard !blocked, error == nil, let commands = undo ? undoStack.last : redoStack.last else { return }
+        guard editorVisible, !blocked, error == nil, let entry = undo ? undoStack.last : redoStack.last else { return }
         perform { [self] in
+                guard entry.matches(visibleRows()) else {
+                    if undo { undoStack.removeLast() } else { redoStack.removeLast() }
+                    store.errorMessage = "다른 윈도우에서 변경한 필기는 되돌리지 않았어요."
+                    return
+                }
+                let commands = entry.commands
                 var inverse: [[String: Any]] = []
                 for command in commands {
                     let request = command["request"] as! [String: Any]
                     if command["channel"] as? String == "canvas:removeShapes", let ids = request["ids"] as? [String] { inverse += visibleRows().filter { ids.contains($0["id"] as? String ?? "") }.map(restore) }
                     else if let id = request["id"] as? String { inverse.append(["channel": "canvas:removeShapes", "request": ["ids": [id]]]) }
                 }
-                try self.writer?.enqueue(commands: commands); self.store.markDocumentChanged()
-                if undo { undoStack.removeLast(); redoStack.append(inverse) } else { redoStack.removeLast(); undoStack.append(inverse) }
-                try await self.writer?.drain()
+                try self.session?.enqueue(commands: commands); self.store.markDocumentChanged()
+                let inverseEntry = NativeWhiteboardHistoryEntry(commands: inverse, rows: visibleRows())
+                if undo { undoStack.removeLast(); redoStack.append(inverseEntry) } else { redoStack.removeLast(); undoStack.append(inverseEntry) }
+                try await self.session?.drain()
         }
     }
     func go(_ delta: Int) {
         perform { self.page = min(self.pageCount, max(1, self.page + delta)); self.controller?.fit() }
     }
     func addPage() {
-        perform { _ = try await self.store.invoke("canvas:setPageCount", self.identity.merging(["pageCount": self.pageCount + 1]) { _, n in n }); try await self.reload(); self.page = self.pageCount; self.controller?.fit() }
+        perform { try await self.session?.addPage(); self.applySharedSnapshot(); self.page = self.pageCount; self.controller?.fit() }
     }
     func flush() async throws {
         if let operationTask { try await operationTask.value }
@@ -217,7 +255,7 @@ private final class NativeWhiteboardModel: ObservableObject {
         if writesSuspended { await store.waitForExternalMutation() }
         guard !retired else { return }
         if let opening { do { try await opening.value } catch { if writer?.pendingCount == 0 || writer == nil { return }; throw error } }
-        guard !retired else { return }; try controller?.surface.flush(); try await writer?.drain(); refresh()
+        guard !retired else { return }; try controller?.surface.flush(); try await session?.drain(); try saveViewState(); refresh()
     }
     private func perform(_ body: @escaping @MainActor () async throws -> Void) {
         guard !blocked, operationTask == nil, !retired else { return }
@@ -229,14 +267,14 @@ private final class NativeWhiteboardModel: ObservableObject {
         operationTask = task
         Task { do { try await task.value; blocked = mutating || closing; refresh() } catch { blocked = mutating || closing; fail(error) } }
     }
-    func close() {
+    func close() async {
         guard !closing, !retired else { return }; closing = true; blocked = true; refresh()
-        Task { do { try await flush(); retire() } catch { closing = false; fail(error) } }
+        do { try await flush(); retire() } catch { closing = false; fail(error) }
     }
     func retry() {
         Task { do {
             await store.waitForExternalMutation(); guard !retired else { return }
-            try await writer?.drain(); try await reload(); opening = nil; error = nil; loading = false; blocked = mutating || closing; refresh()
+            try await session?.drain(); try await reload(); opening = nil; error = nil; loading = false; blocked = mutating || closing; refresh()
         } catch { fail(error) } }
     }
     func background() {
@@ -245,13 +283,20 @@ private final class NativeWhiteboardModel: ObservableObject {
     }
     func fail(_ failure: Error) { error = failure.localizedDescription; loading = false; refresh() }
     private func setMutating(_ value: Bool) { mutating = value; blocked = value || closing || operationTask != nil; refresh() }
-    private func retire() { retired = true; writesSuspended = false; blocked = true; refresh(); if let registration { store.unregisterDocumentFlush(registration); self.registration = nil } }
+    private func retire(invalidateShared: Bool = false) { if invalidateShared { session?.retire() }; peerChanges = nil; mediaTask?.cancel(); retired = true; writesSuspended = false; blocked = true; refresh(); if let registration { store.unregisterDocumentFlush(registration); self.registration = nil } }
+    private func saveViewState() throws {
+        guard let state = controller?.viewportState(page: page) else { return }
+        try store.panelViewStates.write(state, id: document.id, kind: "whiteboard")
+    }
     private func receive(_ event: NativeWorkspaceEvent) {
+        if event.channel == "canvas:changed", let value = event.payload as? [String: Any], value["courseId"] as? String == document.courseID, value["boardId"] as? String == document.relativePath {
+            Task { do { try await reload() } catch { fail(error) } }; return
+        }
         guard let value = event.payload as? [String: Any], value["courseId"] as? String == document.courseID, (value["relPath"] ?? value["fromRelPath"]) as? String == document.relativePath else { return }
         switch event.channel {
         case "nativeWorkspace:materialWillMutate": setMutating(true)
         case "nativeWorkspace:materialMutationCancelled": writesSuspended = false; setMutating(false)
-        case "nativeWorkspace:materialReplaced", "nativeWorkspace:materialDeleted": retire()
+        case "nativeWorkspace:materialReplaced", "nativeWorkspace:materialDeleted": retire(invalidateShared: true)
         default: break
         }
     }
@@ -261,7 +306,7 @@ private struct NativeWhiteboardBody: UIViewControllerRepresentable {
     let model: NativeWhiteboardModel
     func makeUIViewController(context: Context) -> NativeWhiteboardController { NativeWhiteboardController(model: model) }
     func updateUIViewController(_ uiViewController: NativeWhiteboardController, context: Context) {}
-    static func dismantleUIViewController(_ controller: NativeWhiteboardController, coordinator: ()) { controller.model.close() }
+    static func dismantleUIViewController(_ controller: NativeWhiteboardController, coordinator: ()) { Task { await controller.model.close() } }
 }
 @MainActor
 private final class NativeWhiteboardController: UIViewController, UIScrollViewDelegate {
@@ -269,6 +314,7 @@ private final class NativeWhiteboardController: UIViewController, UIScrollViewDe
     let surface: NativePDFInkSurface
     private let scroll = UIScrollView(), paper = UIImageView()
     private var paperKey = "", lastSize = CGSize.zero, fitted = false
+    private var pendingViewport: NativeWhiteboardPanelState?
     private let pencil: NativePDFPencilGestureRecognizer
     init(model: NativeWhiteboardModel) {
         self.model = model
@@ -306,7 +352,8 @@ private final class NativeWhiteboardController: UIViewController, UIScrollViewDe
     }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews(); scroll.frame = view.bounds
-        if lastSize != view.bounds.size { lastSize = view.bounds.size; fit() }
+        if lastSize != view.bounds.size { lastSize = view.bounds.size; if !fitted { fit() } else { center() } }
+        applyPendingViewport()
         surface.refreshViewport()
     }
     func configure(rows: [[String: Any]], images: [String: UIImage], size: CGSize, tool: String, color: String, width: Double, loading: Bool, background: String, dark: Bool) {
@@ -353,10 +400,36 @@ private final class NativeWhiteboardController: UIViewController, UIScrollViewDe
             }
         }
     }
+    func viewportState(page: Int) -> NativeWhiteboardPanelState {
+        if var pendingViewport { pendingViewport.page = page; return pendingViewport }
+        return .init(page: page, zoom: Double(scroll.zoomScale), offsetX: Double(scroll.contentOffset.x), offsetY: Double(scroll.contentOffset.y))
+    }
+    func restoreViewport(_ state: NativeWhiteboardPanelState) { pendingViewport = state; applyPendingViewport() }
+    private func applyPendingViewport() {
+        guard let state = pendingViewport, scroll.bounds.width > 0, scroll.bounds.height > 0 else { return }
+        pendingViewport = nil; fitted = true
+        scroll.setZoomScale(min(scroll.maximumZoomScale, max(scroll.minimumZoomScale, CGFloat(state.zoom))), animated: false)
+        center(); scroll.setContentOffset(CGPoint(x: state.offsetX, y: state.offsetY), animated: false); surface.refreshViewport()
+    }
+    func previewImage() throws -> UIImage? {
+        try surface.flush()
+        guard view.bounds.width > 0, view.bounds.height > 0 else { return nil }
+        let format = UIGraphicsImageRendererFormat(); format.opaque = true; format.scale = min(2, 1600 / max(view.bounds.width, view.bounds.height))
+        return UIGraphicsImageRenderer(size: view.bounds.size, format: format).image { renderer in
+            UIColor.secondarySystemBackground.setFill(); renderer.fill(view.bounds)
+            let paperRect = paper.convert(paper.bounds, to: view)
+            renderer.cgContext.saveGState(); renderer.cgContext.translateBy(x: paperRect.minX, y: paperRect.minY)
+            renderer.cgContext.scaleBy(x: paperRect.width / paper.bounds.width, y: paperRect.height / paper.bounds.height)
+            paper.image?.draw(in: paper.bounds)
+            let mapper = InkCoordinateMapper.whiteboard(size: paper.bounds.size)
+            for row in surface.objects { NativePDFObjectRenderer.draw(row, in: renderer.cgContext, mapper: mapper, image: surface.imageForObject?(row)) }
+            renderer.cgContext.restoreGState()
+        }
+    }
     func fit() {
         guard scroll.bounds.width > 0, scroll.bounds.height > 0 else { return }
         let scale = min((scroll.bounds.width - 24) / paper.bounds.width, (scroll.bounds.height - 24) / paper.bounds.height)
-        scroll.setZoomScale(max(0.15, scale), animated: false); center(); surface.refreshViewport()
+        fitted = true; scroll.setZoomScale(max(0.15, scale), animated: false); center(); surface.refreshViewport()
     }
     private func center() { scroll.contentInset = UIEdgeInsets(top: max(0, (scroll.bounds.height - scroll.contentSize.height) / 2), left: max(0, (scroll.bounds.width - scroll.contentSize.width) / 2), bottom: 0, right: 0) }
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { paper }

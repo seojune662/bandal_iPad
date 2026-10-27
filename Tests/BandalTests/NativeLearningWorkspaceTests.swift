@@ -163,3 +163,98 @@ extension NativeLearningWorkspaceTests {
         await restored.close()
     }
 }
+
+extension NativeLearningWorkspaceTests {
+    func testSameQuizSharesDraftAttemptCompletionAndRetryAcrossWindowInstances() async throws {
+        let first = NativeLearningWorkspaceModel(store: store, binding: binding, detailID: "instance:first")
+        let second = NativeLearningWorkspaceModel(store: store, binding: binding, detailID: "instance:second")
+        await first.start(); await first.openArtifact("quiz-a")
+        await second.start(); await second.openArtifact("quiz-a")
+        first.answer("short", text: "First draft", check: true)
+        XCTAssertEqual(second.answers["short"], "First draft")
+        XCTAssertEqual(second.selfChecks["short"], true)
+        second.answer("short", text: "Peer correction")
+        XCTAssertEqual(first.answers["short"], "Peer correction")
+        XCTAssertNil(first.selfChecks["short"])
+        try await first.flush()
+        let saved = try await store.invoke("learning:get", ["binding": binding.request]) as! [String: Any]
+        let attempts = (saved["quizAttempts"] as! [[String: Any]]).filter { $0["artifactId"] as? String == "quiz-a" }
+        XCTAssertEqual(attempts.count, 1, "Two windows must not create separate attempts for the same quiz")
+        first.answer("short", text: "Peer correction", check: true)
+        await second.finishQuiz()
+        XCTAssertTrue(first.completed); XCTAssertTrue(second.completed)
+        let oldAttempt = first.attempt?["id"] as? String
+        first.retryQuiz()
+        XCTAssertFalse(second.completed); XCTAssertTrue(second.answers.isEmpty)
+        second.answer("short", text: "Shared retry", check: false)
+        try await first.flush()
+        XCTAssertNotEqual(first.attempt?["id"] as? String, oldAttempt)
+        XCTAssertEqual(second.attempt?["id"] as? String, first.attempt?["id"] as? String)
+        XCTAssertEqual(first.answers["short"], "Shared retry")
+        await first.close(); await second.close()
+    }
+
+    func testSameExamSharesSubmissionAndRejectsPostSubmissionEditsFromOtherPane() async throws {
+        let source: [String: Any] = ["kind": "material", "pathScope": "course", "sourceCourseId": binding.courseID, "relPath": "source.md", "quote": "A vector has magnitude and direction."]
+        _ = try await store.invokePrivate("nativeLearning:putArtifact", ["binding": binding.request, "artifact": ["id": "shared-exam", "kind": "quiz", "title": "Exam", "generationMode": "expected-exam", "sourceRefs": [source], "questions": [["id": "short", "type": "short-answer", "prompt": "Explain a vector", "answer": "Magnitude and direction", "explanation": "Both parts matter."]]]])
+        let first = NativeLearningWorkspaceModel(store: store, binding: binding, detailID: "exam-first")
+        let second = NativeLearningWorkspaceModel(store: store, binding: binding, detailID: "exam-second")
+        await first.start(); await first.openArtifact("shared-exam")
+        await second.start(); await second.openArtifact("shared-exam")
+        first.answer("short", text: "Magnitude and direction")
+        await second.submitExam()
+        XCTAssertTrue(first.submitted); XCTAssertTrue(second.submitted)
+        first.answer("short", text: "Must not replace a submitted answer")
+        XCTAssertEqual(second.answers["short"], "Magnitude and direction")
+        first.answer("short", text: "Magnitude and direction", check: true)
+        await second.finishQuiz(); XCTAssertTrue(first.completed)
+        await first.close(); await second.close()
+    }
+
+    func testOpenArticleRefreshesPeerDetailsWithoutChangingPaneIdentity() async throws {
+        _ = try await store.invokePrivate("nativeLearning:putArticle", ["binding": binding.request, "article": ["id": "shared-article", "title": "Vectors", "sourceUrl": "https://example.com/vectors", "paragraphs": [["id": "p1", "text": "A vector has direction.", "sentences": []]]]])
+        let first = NativeLearningWorkspaceModel(store: store, binding: binding, detailID: "article-first")
+        let second = NativeLearningWorkspaceModel(store: store, binding: binding, detailID: "article-second")
+        await first.start(); await first.openArticle("shared-article")
+        await second.start(); await second.openArticle("shared-article")
+        XCTAssertNotEqual(first.panelID, second.panelID)
+        let completed = await first.mutate("learning:completeArticle", ["articleId": "shared-article"])
+        XCTAssertTrue(completed)
+        await second.reload()
+        XCTAssertEqual(second.article?["status"] as? String, "completed")
+        XCTAssertEqual(second.article?["id"] as? String, "shared-article")
+        await first.close(); await second.close()
+    }
+}
+
+extension NativeLearningWorkspaceTests {
+    func testPeerEditDuringSaveKeepsNewestAnswerAndRejectsStaleReload() async throws {
+        let backend = HeldQuizWriter()
+        let artifact: [String: Any] = ["id": "quiz", "kind": "quiz"]
+        let session = NativeLearningQuizSession(store: store, binding: binding, artifact: artifact,
+            snapshot: ["revision": 0, "quizAttempts": []], invoke: backend.invoke)
+        session.answer("question", text: "first", check: nil)
+        let saving = Task { @MainActor in try await session.flush() }
+        while backend.waiting == nil { await Task.yield() }
+        session.answer("question", text: "peer typed during first save", check: nil)
+        backend.waiting?.resume(); backend.waiting = nil
+        try await saving.value
+        XCTAssertEqual(backend.answers, ["first", "peer typed during first save"])
+        XCTAssertTrue(session.saved)
+        XCTAssertEqual(session.answers["question"], "peer typed during first save")
+        session.update(artifact: artifact, snapshot: ["revision": 1, "quizAttempts": [["id": session.attemptID, "answers": [["questionId": "question", "answer": "stale first snapshot"]]]]])
+        XCTAssertEqual(session.answers["question"], "peer typed during first save", "An older peer reload must not undo an acknowledged later save")
+    }
+
+    @MainActor
+    private final class HeldQuizWriter {
+        var waiting: CheckedContinuation<Void, Never>?
+        var answers: [String] = []
+        func invoke(_ channel: String, _ request: [String: Any]) async throws -> Any {
+            let answer = request["answer"] as! String
+            answers.append(answer)
+            if answers.count == 1 { await withCheckedContinuation { waiting = $0 } }
+            return ["revision": answers.count, "quizAttempts": [["id": request["attemptId"]!, "artifactId": request["artifactId"]!, "answers": [["questionId": request["questionId"]!, "answer": answer]]]]]
+        }
+    }
+}

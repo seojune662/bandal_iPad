@@ -7,6 +7,9 @@ import Combine
 struct NativePDFWorkspace: View {
     @StateObject private var model: NativePDFWorkspaceModel
     @Environment(\.nativeEditorVisible) private var visible
+    @Environment(\.nativeWorkspaceChromeMode) private var chromeMode
+    @Environment(\.nativeWorkspaceControlInset) private var controlInset
+    @Environment(\.nativeWorkspaceTopInset) private var topInset
     private let tabID: String
 
     init(document: NativeDocumentReference, store: NativeWorkspaceStore, onOpenDocument: ((NativeDocumentReference) -> Void)? = nil) {
@@ -22,7 +25,11 @@ struct NativePDFWorkspace: View {
                     NativeAnnotationToolbar(coordinator: model.annotationCoordinator,
                         regionMode: Binding(get: { model.assistantRegionMode }, set: { model.setAssistantRegionMode($0) }),
                         busy: model.assistantCapturing, attachText: model.attachAssistantText)
-                } else { NativePDFToolbar(model: model) }
+                        .padding(.trailing, controlInset).padding(.top, topInset)
+                } else {
+                    NativePDFToolbar(model: model, writingOnly: chromeMode == .toolsHidden)
+                        .padding(.trailing, controlInset).padding(.top, topInset)
+                }
             }
             if !model.sourceQuote.isEmpty, visible, model.assistantAnnotation == nil {
                 HStack(spacing: 12) {
@@ -51,6 +58,7 @@ struct NativePDFWorkspace: View {
                     }
                     ZStack {
                         NativePDFBody(model: model, visible: visible).accessibilityIdentifier(visible ? "native-pdf-workspace" : "").allowsHitTesting(!model.showStyle)
+                            .nativeWorkspacePreviewSurface(id: tabID, capture: { try await model.workspacePreview() })
                         if model.isLoading {
                             ProgressView("문서 여는 중…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                         }
@@ -273,6 +281,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
     private var pageWidths: [Double] = []
     private var viewport: [String: Any] = ["page": 1, "zoom": 1.0]
     private var pendingViewportRestore: [String: Any]?
+    private var pendingPageToAcknowledge: Int?
     private var layoutRevision = 0
     private var bounds = CGRect.zero
     private var opened = false, retired = false, writesSuspended = false
@@ -318,7 +327,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         }
         saved.shapeRecognitionEnabled = palette.drawAndHold
         favorites = palette.favorites; shapeRecognitionEnabled = palette.drawAndHold
-        if preferenceID != document.id { saved.save(root: store.root, documentID: document.id, defaults: defaults) }
+        if preferenceID != document.id { saved.pendingPage = nil; saved.save(root: store.root, documentID: document.id, defaults: defaults) }
         preferences = saved
         tool = saved.tool; color = saved.color; width = saved.width; opacity = saved.opacity
         previousTool = saved.previousTool; savedPenStyle = saved.penStyle; savedHighlighterStyle = saved.highlighterStyle; savedBallpointStyle = saved.ballpointStyle
@@ -434,11 +443,15 @@ final class NativePDFWorkspaceModel: ObservableObject {
             self.store.events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:pdfContentChanged", payload: ["courseId": self.document.courseID, "relPath": self.document.relativePath]))
         }
         try await DesktopSignpost.measure(DesktopSignpost.open, "publishSnapshot") { try await publishSnapshot() }
-        if let saved = try await savedViewState as? [String: Any] {
-            viewport = preferences.viewport?.restoring(saved, revision: revision, independent: true) ?? saved
+        do {
+            let saved = try await savedViewState as? [String: Any] ?? [:]
+            preferences.pendingPage = NativePDFWorkspacePreferences.load(root: store.root, documentID: document.id, defaults: defaults).pendingPage
+            viewport = preferences.restoringViewState(saved, revision: revision, pageCount: pageCount)
             zoom = (viewport["zoom"] as? NSNumber)?.doubleValue ?? 1
+            viewport["zoom"] = zoom
             viewport["page"] = min(pageCount, max(1, viewport["page"] as? Int ?? 1))
             pendingViewportRestore = viewport
+            pendingPageToAcknowledge = preferences.pendingPage
             page = viewport["page"] as? Int ?? 1
         }
         try await DesktopSignpost.measure(DesktopSignpost.open, "first.layout") { try await publishLayout() }
@@ -492,11 +505,15 @@ final class NativePDFWorkspaceModel: ObservableObject {
         // intermediate pages that the user will never see.
         // A suspended (hidden) host has no document to navigate; keep the restore pending.
         let saved = visible ? pendingViewportRestore : nil
+        let requestedPage = saved == nil ? nil : pendingPageToAcknowledge
         if let saved {
             pendingViewportRestore = nil
             request["restoreViewport"] = saved
         }
-        do { _ = try await call("layout", request) }
+        do {
+            _ = try await call("layout", request)
+            if let saved, let requestedPage { acknowledgePendingPage(requestedPage, viewport: saved) }
+        }
         catch { if let saved { pendingViewportRestore = saved }; throw error }
         if setupComplete { restoreInput() }
     }
@@ -732,7 +749,17 @@ final class NativePDFWorkspaceModel: ObservableObject {
     private func savePreferences() {
         guard assistantOriginalTool == nil else { return }
         preferences = currentPreferences
+        // A router can queue a jump while an already-mounted model is flushing.
+        preferences.pendingPage = NativePDFWorkspacePreferences.load(root: store.root, documentID: document.id, defaults: defaults).pendingPage
         preferences.save(root: store.root, documentID: document.id, defaults: defaults)
+    }
+    private func acknowledgePendingPage(_ requested: Int, viewport: [String: Any]) {
+        var stored = NativePDFWorkspacePreferences.load(root: store.root, documentID: document.id, defaults: defaults)
+        guard stored.pendingPage == requested else { return }
+        stored.pendingPage = nil; stored.viewport = .init(revision: pageRevision, values: viewport)
+        stored.save(root: store.root, documentID: document.id, defaults: defaults)
+        preferences.pendingPage = nil; preferences.viewport = stored.viewport
+        if pendingPageToAcknowledge == requested { pendingPageToAcknowledge = nil }
     }
     private func updateStyle() {
         savePreferences()
@@ -1057,6 +1084,44 @@ final class NativePDFWorkspaceModel: ObservableObject {
             let crop = CGRect(x: min(first.point.x, last.point.x), y: min(first.point.y, last.point.y),
                               width: abs(last.point.x - first.point.x), height: abs(last.point.y - first.point.y))
             self.captureAssistantRegion(crop, page: first.page, text: nil)
+        }
+    }
+    /// Replays the visible pages and their saved/live drawing snapshot rather
+    /// than relying on UIKit to read pixels out of Metal's drawable.
+    func workspacePreview() async throws -> UIImage? {
+        guard opened, !retired, visible else { return nil }
+        try await flush()
+        await layoutTask?.value
+        guard let host, let geometry = host.previewGeometry(surfaceID: surfaceID, generation: generation),
+              !geometry.pages.isEmpty else { return nil }
+        let capturedGeneration = generation, capturedRevision = pageRevision, capturedDrawing = drawingRevision
+        let rows = persistence?.rows ?? displayRows, marks = annotations
+        let original = store.root.appendingPathComponent("PDFOriginals/" + pageRevision + ".pdf")
+        var images: [String: UIImage] = [:]
+        let pages = Set(geometry.pages.map(\.number)), budget = NativeEditorMediaImport.Budget()
+        for row in rows where row["kind"] as? String == "image" && pages.contains((row["page"] as? NSNumber)?.intValue ?? 0) {
+            guard let id = row["id"] as? String, let data = row["data"] as? [String: Any],
+                  let image = data["image"] as? [String: Any], let path = image["relPath"] as? String else { continue }
+            let url = try await NativeLibraryMaterialAccess.url(store: store, courseID: document.courseID, relativePath: path)
+            let captured = try await Task.detached(priority: .userInitiated) { try NativeEditorMediaImport.readFile(url, imagesOnly: true, budget: budget) }.value
+            guard let bitmap = captured.image else { return nil }; images[id] = bitmap
+        }
+        var rendered: [(CGRect, UIImage)] = []
+        for page in geometry.pages {
+            guard let image = await NativePDFRegionCapture.annotatedImage(url: original, page: page.number,
+                bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                rows: rows.filter { ($0["page"] as? NSNumber)?.intValue == page.number },
+                annotations: marks.filter { ($0["page"] as? NSNumber)?.intValue == page.number }, images: images) else { return nil }
+            rendered.append((page.frame, image))
+        }
+        guard !Task.isCancelled, !retired, visible, generation == capturedGeneration,
+              pageRevision == capturedRevision, drawingRevision == capturedDrawing,
+              host.previewGeometry(surfaceID: surfaceID, generation: generation) == geometry else { return nil }
+        let format = UIGraphicsImageRendererFormat(); format.opaque = true
+        format.scale = min(1, 1200 / max(geometry.size.width, geometry.size.height))
+        return UIGraphicsImageRenderer(size: geometry.size, format: format).image { renderer in
+            UIColor.secondarySystemBackground.setFill(); renderer.fill(CGRect(origin: .zero, size: geometry.size))
+            for (frame, image) in rendered { image.draw(in: frame) }
         }
     }
     func attachAssistantText() {
@@ -1751,7 +1816,17 @@ final class NativePDFWorkspaceModel: ObservableObject {
             if let tabID = payload["tabID"] as? String, tabID != document.id { return }
             guard let requested = payload["page"] as? Int, requested > 0 else { return }
             Task { @MainActor in
-                do { if let opening { try await opening.value }; try await flush(); go(to: requested) }
+                do {
+                    if let opening { try await opening.value }
+                    try await flush()
+                    guard !retired else { return }
+                    let latest = NativePDFWorkspacePreferences.load(root: store.root, documentID: document.id, defaults: defaults).pendingPage
+                    guard latest == nil || latest == requested else { return }
+                    pendingViewportRestore = ["page": min(pageCount, max(1, requested)), "zoom": zoom,
+                                              "progress": 0.0, "horizontalProgress": 0.0]
+                    pendingPageToAcknowledge = latest
+                    try await publishLayout()
+                }
                 catch { fail(error) }
             }
         case "nativeWorkspace:materialWillMutate":

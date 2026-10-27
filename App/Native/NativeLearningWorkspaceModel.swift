@@ -16,57 +16,111 @@ final class NativeLearningWorkspaceModel: ObservableObject {
     @Published var selfChecks: [String: Bool] = [:]
     @Published var completed = false
     @Published var saved = true
-    private var attemptID = UUID().uuidString.lowercased()
-    private var dirty: Set<String> = []
+    private var quizSession: NativeLearningQuizSession?
+    private var quizChanges: AnyCancellable?
+    private var events: AnyCancellable?
+    private var eventReload: Task<Void, Never>?
+    private var eventReloadID: UUID?
+    private var eventReloadPending = false
+    private var acceptsEvents = false
     private var flushToken: UUID?
-    private var flushTask: Task<Void, Error>?
-    private var debounce: Task<Void, Never>?
     private var readRevision = 0
     private var detailRevision = 0
+    private var lifecycleRevision = 0
     private var retired = false
     private let detailID: String?
-    init(store: NativeWorkspaceStore, binding: NativeLearningBinding, detailID: String? = nil) { self.store = store; self.binding = binding; self.detailID = detailID }
+    init(store: NativeWorkspaceStore, binding: NativeLearningBinding, detailID: String? = nil) {
+        self.store = store; self.binding = binding; self.detailID = detailID
+        events = store.events.sink { [weak self] in self?.receive($0) }
+    }
     func rebind(_ binding: NativeLearningBinding) async {
         guard self.binding != binding else { return }
-        debounce?.cancel()
+        lifecycleRevision += 1; readRevision += 1; detailRevision += 1
         do { if !retired { try await flush() } }
         catch { self.error = error.localizedDescription; store.errorMessage = error.localizedDescription; return }
         if let flushToken { store.unregisterDocumentFlush(flushToken); self.flushToken = nil }
+        quizChanges = nil; quizSession = nil; article = nil; artifact = nil; snapshot = [:]
+        readRevision += 1; detailRevision += 1
         self.binding = binding; retired = false; frozen = false
     }
+    var panelID: String { detailID ?? binding.id + ":learning" }
     func rows(_ key: String) -> [[String: Any]] { snapshot[key] as? [[String: Any]] ?? [] }
     var name: String { snapshot["name"] as? String ?? "학습 공간" }
-    var attempt: [String: Any]? { rows("quizAttempts").first { $0["id"] as? String == attemptID } }
+    var attempt: [String: Any]? { quizSession?.attempt }
     var submitted: Bool { attempt?["submittedAt"] as? String != nil }
     func start() async {
+        lifecycleRevision += 1; acceptsEvents = true
         if flushToken == nil {
-            flushToken = store.registerDocumentFlush(id: detailID ?? binding.id + ":learning", document: .init(courseID: binding.courseID, relativePath: binding.rootRelPath, title: name, kind: "learning"), freeze: { [weak self] in self?.frozen = true }, resume: { [weak self] in self?.frozen = false }, retire: { [weak self] in self?.retired = true; self?.frozen = true }, flush: { [self] in try await flush() })
+            flushToken = store.registerDocumentFlush(id: detailID ?? binding.id + ":learning", document: .init(courseID: binding.courseID, relativePath: binding.rootRelPath, title: name, kind: "learning"), freeze: { [weak self] in self?.frozen = true }, resume: { [weak self] in self?.frozen = false }, retire: { [weak self] in self?.retired = true; self?.frozen = true; self?.quizSession?.retire() }, flush: { [self] in try await flush() })
         }
         await store.waitForExternalMutation()
         guard !retired, !Task.isCancelled else { return }
         await reload()
     }
     func reload() async {
-        guard !retired else { return }; readRevision += 1; let revision = readRevision; loading = snapshot.isEmpty
+        guard !retired, !Task.isCancelled else { return }; readRevision += 1; let revision = readRevision; loading = snapshot.isEmpty
         defer { if readRevision == revision { loading = false } }
         do {
             let value = try await store.invoke("learning:get", ["binding": binding.request]) as? [String: Any] ?? [:]
-            guard revision == readRevision, !retired else { return }
+            guard revision == readRevision, !retired, !Task.isCancelled else { return }
             snapshot = value; error = nil
+            await reloadDetail()
         } catch { if revision == readRevision { self.error = error.localizedDescription } }
     }
     func receive(_ event: NativeWorkspaceEvent) {
-        guard event.channel == "learning:changed" else { return }
+        guard event.channel == "learning:changed", acceptsEvents, !retired else { return }
         if let payload = event.payload as? [String: Any], let raw = payload["binding"] as? [String: Any], let course = raw["courseId"] as? String,
            course != binding.courseID || raw["rootRelPath"] as? String != binding.rootRelPath { return }
-        Task { await reload() }
+        eventReloadPending = true
+        guard eventReload == nil else { return }
+        let id = UUID(); eventReloadID = id
+        eventReload = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { if eventReloadID == id { eventReload = nil; eventReloadID = nil } }
+            repeat {
+                eventReloadPending = false
+                guard acceptsEvents, !retired, !Task.isCancelled else { return }
+                await reload()
+            } while eventReloadPending
+        }
+    }
+    private func reloadDetail() async {
+        guard !Task.isCancelled else { return }
+        let revision = detailRevision, read = readRevision
+        do {
+            if let id = article?["id"] as? String {
+                let value = try await store.invoke("learning:getArticle", ["binding": binding.request, "id": id]) as? [String: Any]
+                guard revision == detailRevision, read == readRevision, !retired, !Task.isCancelled else { return }; article = value.map(articleWithProgress)
+            } else if let id = artifact?["id"] as? String {
+                let value = try await store.invoke("learning:getArtifact", ["binding": binding.request, "id": id]) as? [String: Any]
+                guard revision == detailRevision, read == readRevision, !retired, !Task.isCancelled else { return }; artifact = value
+                if let value { quizSession?.update(artifact: value, snapshot: snapshot) }
+            }
+        } catch { if revision == detailRevision, !retired { self.error = error.localizedDescription } }
+    }
+    private func articleWithProgress(_ value: [String: Any]) -> [String: Any] {
+        let reference = rows("articles").first { $0["id"] as? String == value["id"] as? String } ?? [:]
+        return value.merging(reference) { _, current in current }
+    }
+    private func bindQuiz(_ artifact: [String: Any]) {
+        quizChanges = nil
+        quizSession = artifact["kind"] as? String == "quiz" ? store.learningSessions.quiz(binding: binding, artifact: artifact, snapshot: snapshot) : nil
+        if let quizSession {
+            quizChanges = quizSession.changes.sink { [weak self] in self?.applyQuiz() }
+        }
+        applyQuiz()
+    }
+    private func applyQuiz() {
+        answers = quizSession?.answers ?? [:]; selfChecks = quizSession?.selfChecks ?? [:]
+        completed = quizSession?.completed ?? false; saved = quizSession?.saved ?? true
+        if let quizSession { busy = quizSession.busy; error = quizSession.error }
     }
     func openArticle(_ id: String) async {
         detailRevision += 1; let revision = detailRevision
         do {
             try await flush()
             let value = try await store.invoke("learning:getArticle", ["binding": binding.request, "id": id]) as? [String: Any]
-            guard revision == detailRevision, !retired else { return }; article = value; artifact = nil; error = nil
+            guard revision == detailRevision, !retired else { return }; quizChanges = nil; quizSession = nil; article = value.map(articleWithProgress); artifact = nil; error = nil
         } catch { self.error = error.localizedDescription }
     }
     func openArtifact(_ id: String) async {
@@ -75,66 +129,45 @@ final class NativeLearningWorkspaceModel: ObservableObject {
             try await flush()
             let value = try await store.invoke("learning:getArtifact", ["binding": binding.request, "id": id]) as? [String: Any]
             guard revision == detailRevision, !retired else { return }
-            artifact = value; article = nil; answers = [:]; selfChecks = [:]; dirty = []; saved = true
-            let prior = rows("quizAttempts").filter { $0["artifactId"] as? String == id }.sorted { ($0["startedAt"] as? String ?? "") > ($1["startedAt"] as? String ?? "") }.first
-            attemptID = prior?["id"] as? String ?? UUID().uuidString.lowercased(); completed = prior?["completedAt"] as? String != nil
-            for row in prior?["answers"] as? [[String: Any]] ?? [] { if let question = row["questionId"] as? String { answers[question] = row["answer"] as? String ?? ""; selfChecks[question] = row["selfCheck"] as? Bool } }
+            artifact = value; article = nil
+            if let value { bindQuiz(value) }
             error = nil
         } catch { self.error = error.localizedDescription }
     }
-    func clearDetail() { Task { do { try await flush(); detailRevision += 1; article = nil; artifact = nil } catch { self.error = error.localizedDescription } } }
+    func clearDetail() { Task { do { try await flush(); detailRevision += 1; quizChanges = nil; quizSession = nil; article = nil; artifact = nil } catch { self.error = error.localizedDescription } } }
     func answer(_ question: String, text: String, check: Bool? = nil) {
-        guard !completed, !frozen, !retired else { return }
-        if artifact?["generationMode"] as? String == "expected-exam" {
-            if submitted && (check == nil || answers[question] != text) { return }
-            if !submitted && check != nil { return }
-        }
-        if answers[question] != text && check == nil { selfChecks[question] = nil }; answers[question] = text; if let check { selfChecks[question] = check }; dirty.insert(question); saved = false; store.markDocumentChanged()
-        debounce?.cancel(); debounce = Task { [weak self] in try? await Task.sleep(for: .milliseconds(350)); guard !Task.isCancelled else { return }; do { try await self?.flush() } catch { self?.error = error.localizedDescription } }
+        guard !frozen, !retired else { return }
+        quizSession?.answer(question, text: text, check: check)
     }
-    func flush() async throws {
-        if let current = flushTask { try await current.value; if !dirty.isEmpty { try await flush() }; return }
-        guard !dirty.isEmpty else { return }
-        guard !retired, let artifactID = artifact?["id"] as? String else { throw DesktopRuntimeError("답안을 저장할 학습 자료를 확인해 주세요.") }
-        let task = Task { @MainActor [self] in
-            defer { flushTask = nil }
-            while let question = dirty.sorted().first {
-                let text = answers[question] ?? "", check = selfChecks[question]
-                var request: [String: Any] = ["binding": binding.request, "artifactId": artifactID, "attemptId": attemptID, "questionId": question, "answer": text]
-                if let check { request["selfCheck"] = check }
-                let value = try await store.invoke("learning:saveQuizAnswer", request) as? [String: Any] ?? [:]
-                if answers[question] == text && selfChecks[question] == check { dirty.remove(question) }
-                readRevision += 1; snapshot = value
-            }
-            saved = true
-        }
-        flushTask = task
-        try await task.value
-    }
+    func flush() async throws { try await quizSession?.flush() }
     func mutate(_ channel: String, _ input: [String: Any] = [:]) async -> Bool {
         guard !busy, !frozen, !retired else { return false }; busy = true
         defer { busy = false }
         do {
             try await flush()
             let result = try await store.invoke(channel, ["binding": binding.request].merging(input) { _, new in new })
-            if let state = result as? [String: Any], state["binding"] != nil { readRevision += 1; snapshot = state } else { await reload() }
+            if let state = result as? [String: Any], state["binding"] != nil { readRevision += 1; snapshot = state; await reloadDetail() } else { await reload() }
             error = nil; return true
         } catch { self.error = error.localizedDescription; return false }
     }
-    func finishQuiz() async {
-        guard let id = artifact?["id"] as? String else { return }
-        if await mutate("learning:finishQuiz", ["artifactId": id, "attemptId": attemptID]) { completed = true }
-    }
-    func submitExam() async {
-        guard let id = artifact?["id"] as? String,
-              await mutate("learning:submitQuiz", ["artifactId": id, "attemptId": attemptID]) else { return }
-        let questions = artifact?["questions"] as? [[String: Any]] ?? []
-        if !questions.contains(where: { $0["type"] as? String == "short-answer" }) { await finishQuiz() }
-    }
-    func retryQuiz() { completed = false; attemptID = UUID().uuidString.lowercased(); answers = [:]; selfChecks = [:]; dirty = []; saved = true }
+    func finishQuiz() async { guard !frozen, !retired else { return }; await quizSession?.finish() }
+    func submitExam() async { guard !frozen, !retired else { return }; await quizSession?.submit() }
+    func retryQuiz() { guard !frozen, !retired else { return }; quizSession?.retry() }
     func close() async {
-        debounce?.cancel()
-        do { if !retired { try await flush() }; if let flushToken { store.unregisterDocumentFlush(flushToken); self.flushToken = nil } }
+        let lifecycle = lifecycleRevision
+        acceptsEvents = false; eventReloadPending = false
+        let pendingRead = eventReload
+        eventReload = nil; eventReloadID = nil
+        pendingRead?.cancel()
+        // Cancellation does not interrupt an in-flight SQLite read. Await its
+        // completion before the pane and its profile can be released.
+        if let pendingRead { await pendingRead.value }
+        do {
+            if !retired { try await flush() }
+            // A retained pane may become visible again while its old close is
+            // awaiting a shared answer save. Its new registration must survive.
+            if lifecycle == lifecycleRevision, let flushToken { store.unregisterDocumentFlush(flushToken); self.flushToken = nil }
+        }
         catch { self.error = error.localizedDescription; store.errorMessage = error.localizedDescription }
     }
 }

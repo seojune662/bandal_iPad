@@ -315,6 +315,9 @@ final class NativeBrowserSession: ObservableObject {
 }
 
 struct NativeBrowserWorkspace: View {
+    @Environment(\.nativeWorkspaceChromeMode) private var chromeMode
+    @Environment(\.nativeWorkspaceControlInset) private var controlInset
+    @Environment(\.nativeWorkspaceTopInset) private var topInset
     @ObservedObject private var annotation: NativeAnnotationCoordinator
     @State private var annotationRegionMode = true
     @State private var annotationBusy = false
@@ -337,19 +340,26 @@ struct NativeBrowserWorkspace: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            if session.workspaceID == nil || session.tabs.count > 1 { tabs }
-            GeometryReader { geometry in toolbar(width: geometry.size.width) }.frame(height: 44).zIndex(3)
-            if !session.favoriteLinks.isEmpty && !addressFocused { bookmarks }
+            if chromeMode == .all && (session.workspaceID == nil || session.tabs.count > 1) { tabs }
+            if chromeMode != .toolsHidden {
+                GeometryReader { geometry in toolbar(width: geometry.size.width) }.frame(height: 44).zIndex(3)
+                    .padding(.trailing, controlInset).padding(.top, topInset)
+                if !session.favoriteLinks.isEmpty && !addressFocused { bookmarks }
+            }
             if let error = session.error {
                 HStack { NativeToolError(message: error); Button("닫기", systemImage: "xmark") { session.error = nil }.buttonStyle(NativeBrowserIconStyle()) }
             }
-            if session.findState.visible { NativeBrowserFindBar(session: session) }
+            if session.findState.visible && chromeMode != .toolsHidden { NativeBrowserFindBar(session: session) }
             if annotationRequest != nil {
                 NativeAnnotationToolbar(coordinator: annotation, regionMode: $annotationRegionMode,
                     supportsElement: true, busy: annotationBusy, attachText: { captureAnnotation() })
+                    .padding(.trailing, chromeMode == .toolsHidden ? controlInset : 0)
+                    .padding(.top, chromeMode == .toolsHidden ? topInset : 0)
             }
             page
+                .padding(.top, chromeMode == .toolsHidden && annotationRequest == nil ? (controlInset > 0 ? topInset + 44 : topInset) : 0)
         }.background(NativeDesktopTheme.bgApp).foregroundStyle(NativeDesktopTheme.text)
+        .nativeWorkspacePreviewSurface(id: "browser-private-" + (session.workspaceID ?? "global"), privateContent: { session.active?.isPrivate == true })
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { workspaceHeight = $0 }
         .sheet(item: $credentialContext) { context in NativeBrowserCredentialsPanel(session: session, context: context) }
         .sheet(isPresented: $showingHistory) { NativeBrowserHistoryPanel(session: session, navigate: navigate) }
@@ -376,6 +386,7 @@ struct NativeBrowserWorkspace: View {
             else { updateAddress() }
         }
         .onChange(of: address) { _, _ in suggestionSelection = .init() }
+        .onChange(of: chromeMode) { _, mode in if mode == .toolsHidden { addressFocused = false } }
         .onReceive(annotation.$request) { request in
             guard request?.documentID == annotationDocumentID else { annotationPageID = nil; return }
             annotationPageID = session.activeID; annotationRegionMode = true; addressFocused = false
@@ -545,6 +556,8 @@ struct NativeBrowserWorkspace: View {
     @ViewBuilder private var page: some View {
         if session.activeID != nil {
             NativeBrowserSurface(host: session.host, selectedID: session.activeID)
+                .nativeWorkspacePreviewSurface(id: "browser-page-" + (session.workspaceID ?? "global"),
+                    privateContent: { session.active?.isPrivate == true }, capture: previewCapture)
                 .overlay {
                     if annotationRequest != nil, annotationRegionMode {
                         NativeAnnotationRegionOverlay(selected: { captureAnnotation(bounds: $0) }, tapped: { captureAnnotation(element: $0) })
@@ -558,6 +571,22 @@ struct NativeBrowserWorkspace: View {
                 Button("새 탭 열기") { perform { try await session.add() } }.buttonStyle(NativeToolButtonStyle(primary: true)).padding(.bottom, 32)
             }
         }
+    }
+    private var previewCapture: NativeWorkspacePreviewController.Capture? {
+        guard session.active?.url != "about:blank" else { return nil }
+        return { try await workspacePreview() }
+    }
+    private func workspacePreview() async throws -> UIImage? {
+        guard let id = session.activeID, let page = session.host.pages[id], !page.isPrivate,
+              let webView = page.liveWebView, webView.bounds.width > 0, webView.bounds.height > 0 else { return nil }
+        let document = page.state["authDocumentId"] as? String, url = webView.url, bounds = webView.bounds
+        let configuration = WKSnapshotConfiguration(); configuration.rect = bounds
+        configuration.snapshotWidth = NSNumber(value: min(1200, bounds.width))
+        let image = try await webView.takeSnapshot(configuration: configuration)
+        guard session.activeID == id, session.host.pages[id] === page, !page.isPrivate,
+              page.liveWebView === webView, webView.bounds == bounds, webView.url == url,
+              page.state["authDocumentId"] as? String == document else { return nil }
+        return image
     }
     private var reloadButton: some View {
         Button(session.active?.loading == true ? "중지" : "새로고침", systemImage: session.active?.loading == true ? "xmark" : "arrow.clockwise") {

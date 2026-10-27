@@ -35,6 +35,10 @@ struct NativeMarkdownWorkspace: View {
     @AppStorage("native.fontScale") private var fontScale = 1.0
     @AppStorage("native.editorFont") private var editorFont = "sans"
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.nativeWorkspaceChromeMode) private var chromeMode
+    @Environment(\.nativeWorkspaceControlInset) private var controlInset
+    @Environment(\.nativeWorkspaceTopInset) private var topInset
+    @Environment(\.nativeWorkspaceTarget) private var workspaceTarget
 
     init(document: NativeDocumentReference, store: NativeWorkspaceStore) {
         self.document = document; self.store = store
@@ -58,7 +62,10 @@ struct NativeMarkdownWorkspace: View {
         VStack(spacing: 0) {
             if annotation.request?.documentID == document.id {
                 NativeAnnotationToolbar(coordinator: annotation, regionMode: $annotation.regionMode, attachText: attachAnnotatedText)
-            } else { formattingToolbar }
+                    .padding(.trailing, controlInset).padding(.top, topInset)
+            } else if chromeMode != .toolsHidden {
+                formattingToolbar.padding(.trailing, controlInset).padding(.top, topInset)
+            }
             if let error = session.errorMessage {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(error, systemImage: "exclamationmark.triangle").font(.callout)
@@ -94,6 +101,7 @@ struct NativeMarkdownWorkspace: View {
                 ContentUnavailableView("노트를 열지 못했어요", systemImage: "doc.badge.ellipsis", description: Text("저장된 파일은 그대로 보관되어 있습니다."))
             }
         }
+        .padding(.top, chromeMode == .toolsHidden && annotation.request?.documentID != document.id ? (controlInset > 0 ? topInset + 44 : topInset) : 0)
         .background(NativeDesktopTheme.bgApp)
         .task {
             session.onContentChanged = { [weak store] in store?.markDocumentChanged() }
@@ -325,7 +333,7 @@ struct NativeMarkdownWorkspace: View {
         var payload: [String: Any] = ["courseId": pageSourceCourseID ?? document.courseID, "relPath": path,
             "title": (path as NSString).lastPathComponent, "kind": "pdf", "page": pageIndex + 1, "besideTabID": document.id]
         if let tabID = store.pageNoteSourceTabIDs[document.id] { payload["targetTabID"] = tabID }
-        store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: payload))
+        store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: openingPayload(payload, target: workspaceTarget)))
     }
 
     private func requestInsertion(_ kind: String) {
@@ -336,6 +344,7 @@ struct NativeMarkdownWorkspace: View {
         else { editingLink = kind.hasPrefix("link:"); linkAddress = editingLink ? String(kind.dropFirst(5)) : "https://"; linkPrompt = true }
     }
     private func createLinkedPage() {
+        let destination = workspaceTarget
         Task { @MainActor in
             do {
                 guard session.canEdit, !session.frozen, !session.retired else { return }
@@ -345,7 +354,7 @@ struct NativeMarkdownWorkspace: View {
                 let target = (created.relativePath as NSString).deletingPathExtension
                 session.applyFormat?("insert:[[" + target + "]]")
                 try await session.flush()
-                store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: ["courseId": created.courseID, "relPath": created.relativePath, "title": created.title, "kind": created.kind]))
+                store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: openingPayload(["courseId": created.courseID, "relPath": created.relativePath, "title": created.title, "kind": created.kind], target: destination)))
             } catch { copyMessage = error.localizedDescription }
         }
     }
@@ -390,6 +399,7 @@ struct NativeMarkdownWorkspace: View {
         return session.retired || Task.isCancelled ? nil : image
     }
     private func openLink(_ raw: String) {
+        let destination = workspaceTarget
         if raw.hasPrefix("bandal-wiki:") {
             let target = String(raw.dropFirst(12)).removingPercentEncoding ?? String(raw.dropFirst(12))
             let name = target.components(separatedBy: "#").first ?? target
@@ -398,7 +408,7 @@ struct NativeMarkdownWorkspace: View {
                    let data = try? JSONSerialization.data(withJSONObject: value),
                    let nodes = try? JSONDecoder().decode([NativeMaterial].self, from: data),
                    let match = NativeLibraryIndex.flatten(nodes).first(where: { $0.relPath == name || ($0.relPath as NSString).deletingPathExtension == name || ($0.name as NSString).deletingPathExtension == name }) {
-                    store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: ["courseId": document.courseID, "relPath": match.relPath, "title": match.name, "kind": match.kind]))
+                    store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: openingPayload(["courseId": document.courseID, "relPath": match.relPath, "title": match.name, "kind": match.kind], target: destination)))
                 } else { copyMessage = "연결된 노트를 찾지 못했습니다: " + name }
             }
         } else if let url = URL(string: raw), url.scheme == nil {
@@ -410,15 +420,21 @@ struct NativeMarkdownWorkspace: View {
                     guard let material = NativeLibraryIndex.flatten(nodes).first(where: { $0.relPath == path && !$0.isDirectory }) else {
                         throw DesktopRuntimeError("첨부 파일을 찾지 못했습니다.")
                     }
-                    store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: ["courseId": document.courseID,
-                        "relPath": material.relPath, "title": material.name, "kind": material.kind]))
+                    store.events.send(.init(channel: "nativeWorkspace:openDocument", payload: openingPayload(["courseId": document.courseID,
+                        "relPath": material.relPath, "title": material.name, "kind": material.kind], target: destination)))
                 } catch { copyMessage = error.localizedDescription }
             }
         } else if let url = URL(string: raw) {
             if ["https", "http"].contains(url.scheme?.lowercased() ?? "") {
-                store.events.send(.init(channel: "nativeWorkspace:openBrowserURL", payload: ["url": url.absoluteString]))
+                store.events.send(.init(channel: "nativeWorkspace:openBrowserURL", payload: openingPayload(["url": url.absoluteString], target: destination)))
             } else if ["mailto", "tel"].contains(url.scheme?.lowercased() ?? "") { UIApplication.shared.open(url) }
         }
+    }
+    private func openingPayload(_ values: [String: Any], target: NativeWorkspaceTarget?) -> [String: Any] {
+        var payload = values
+        payload["sourcePanelID"] = document.id
+        if let target { payload["nativeWorkspaceTarget"] = target }
+        return payload
     }
 
     private func save() { Task { do { try await session.flush() } catch { /* Session owns visible errors. */ } } }
