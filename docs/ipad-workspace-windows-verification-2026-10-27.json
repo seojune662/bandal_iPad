@@ -1,0 +1,1431 @@
+{
+  "feature": "반달 iPad 과목·프로젝트별 내부 작업 윈도우",
+  "recorded_at": "2026-10-27T23:03:33+09:00",
+  "status": "implemented_and_installed_final_ui_pending",
+  "baseline": {
+    "branch": "main",
+    "head": "3b69d21a7570debbb5d9aec2273b0a4424a01b65",
+    "origin_main": "7a8e8accd3da2f63e1dca8a1936c8928a2a11eb7",
+    "existing_local_commits": 29,
+    "commit": "31caf0adcf0cdbadbbc5ddde08653c26c307c202",
+    "push_performed": false
+  },
+  "implementation": [
+    "고정 44pt 화면 제어와 윈도우별 표시 모드",
+    "과목·프로젝트별 내부 윈도우 생성·선택·이름·순서·닫기",
+    "원본 백업을 포함한 v2 배치 이전과 원자적 저장",
+    "비동기 작업의 윈도우·분할 대상 유지",
+    "자료 내용 공유와 탭별 보기 상태",
+    "화이트보드 단일 저장 큐 및 퀴즈 공통 풀이",
+    "네이티브 미리보기 합성·비공개 가림·프로필별 캐시",
+    "관리 화면의 숨은 편집기·브라우저 입력 차단"
+  ],
+  "validation": {
+    "method": "Latest finishTime per target + test identifier; physical runner failures and iOS18 precondition probe excluded. Earlier tests count as latest available evidence, not a single final-source full rerun.",
+    "totals": [
+      {
+        "target": "BandalTests",
+        "result": "Passed",
+        "count": 134
+      },
+      {
+        "target": "BandalUITests",
+        "result": "Failed",
+        "count": 2
+      },
+      {
+        "target": "BandalUITests",
+        "result": "Passed",
+        "count": 6
+      }
+    ],
+    "suites": [
+      {
+        "target": "BandalTests",
+        "suite": "NativeDockingTests",
+        "results": {
+          "Passed": 13
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeDuplicateDocumentTests",
+        "results": {
+          "Passed": 8
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeLearningWorkspaceTests",
+        "results": {
+          "Passed": 11
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeMediaPlaybackTests",
+        "results": {
+          "Passed": 3
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativePDFWorkspacePreferencesTests",
+        "results": {
+          "Passed": 6
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativePanelViewStateTests",
+        "results": {
+          "Passed": 1
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeProjectWorkspaceTests",
+        "results": {
+          "Passed": 9
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeSettingsParityTests",
+        "results": {
+          "Passed": 8
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeWhiteboardTests",
+        "results": {
+          "Passed": 8
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeWorkspaceChromeTests",
+        "results": {
+          "Passed": 5
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeWorkspaceKeyboardTests",
+        "results": {
+          "Passed": 3
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeWorkspaceNavigationTests",
+        "results": {
+          "Passed": 9
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeWorkspacePreviewTests",
+        "results": {
+          "Passed": 7
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeWorkspaceStoreTests",
+        "results": {
+          "Passed": 25
+        }
+      },
+      {
+        "target": "BandalTests",
+        "suite": "NativeWorkspaceWindowTests",
+        "results": {
+          "Passed": 18
+        }
+      },
+      {
+        "target": "BandalUITests",
+        "suite": "NativeDockingUITests",
+        "results": {
+          "Passed": 1
+        }
+      },
+      {
+        "target": "BandalUITests",
+        "suite": "NativePDFWritingUITests",
+        "results": {
+          "Passed": 1
+        }
+      },
+      {
+        "target": "BandalUITests",
+        "suite": "NativeWorkspaceWindowsUITests",
+        "results": {
+          "Passed": 4,
+          "Failed": 2
+        }
+      }
+    ],
+    "latest_tests": [
+      {
+        "id": "NativeDockingTests/testAdjacentPreferenceAndClosingCurrentTabDoNotDestroyOtherCoursePlacement()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testDesktopRailLimitsKeepEditorUsableAfterWindowResize()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testDividerClampAndGeometryDoNotCreateNegativeOrOverlappingPanes()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testDocumentProjectionMatchesTopAndLowerPaneHeadersAndFocusSelector()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testInactiveMarkdownStaysMountedOffscreenWhilePDFIsNotRetained()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testLateToolTitleUpdatesOnlyMatchingWorkspaceAndPreservesLayoutIdentity()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testLocalTabDragCannotBeConsumedAsEditorText()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testNestedDirectionsKeepIndependentActiveTabsAndStableGroups()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testOtherWindowRetainsWhiteboardAndLearningPanelIdentityUntilClosed()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testPerCourseLayoutAndResizeSurvivePersistenceWithMissingDocument()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testPresetGridUsesBalancedVisualRowOrderAndMergePreservesEveryTab()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testRenameAndCloseOthersKeepAllGroupReferencesValid()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDockingTests/testReorderUsesDestinationIndexBeforeRemovalAndMoveRetainsEmptyPane()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeDuplicateDocumentTests/testDockRetainsInactiveMarkdownInstancesUntilClosedWithoutRetainingInactivePDFs()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeDuplicateDocumentTests/testDuplicateRenameAndRestartRetainBothInstancesAndDeleteRemovesBoth()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeDuplicateDocumentTests/testExplicitDuplicateAlwaysFollowsSourceRegardlessOfGeneralOpenPreferenceOrActiveTab()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeDuplicateDocumentTests/testExplicitDuplicateHasIndependentTabIdentityAndOrdinaryOpenReusesActiveStorage()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeDuplicateDocumentTests/testOriginalClosedStillReusesDuplicateAndLegacyDocumentJSONKeepsCanonicalID()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeDuplicateDocumentTests/testPageNotePairsRestorePerSourceInstanceAndFollowRename()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeDuplicateDocumentTests/testTabAssistantTargetsSelectedInstanceAndPreservesItsExistingContext()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeDuplicateDocumentTests/testTypedDuplicateFlushBarrierUsesCanonicalPathAndRetiresEveryPane()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeLearningWorkspaceTests/testChangingSelfCheckedTextRequiresNewCheckBeforeCompletionAndFreezeRejectsTyping()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeLearningWorkspaceTests/testDeleteAfterFlushAndRestorePreservesPendingQuizDraft()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeLearningWorkspaceTests/testFailedCourseRefreshDoesNotPoisonQueuedRetry()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeLearningWorkspaceTests/testIndependentArtifactTabsFlushBothAnswersWithoutReplacingEachOther()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeLearningWorkspaceTests/testNewStandaloneLearningCanBeSelectedBeforeCourseNotificationRefresh()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeLearningWorkspaceTests/testOpenArticleRefreshesPeerDetailsWithoutChangingPaneIdentity()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeLearningWorkspaceTests/testOverlappingCourseRefreshWaitsForSelectionSnapshotBeforePublishingNext()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeLearningWorkspaceTests/testPeerEditDuringSaveKeepsNewestAnswerAndRejectsStaleReload()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeLearningWorkspaceTests/testSameExamSharesSubmissionAndRejectsPostSubmissionEditsFromOtherPane()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeLearningWorkspaceTests/testSameQuizSharesDraftAttemptCompletionAndRetryAcrossWindowInstances()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeLearningWorkspaceTests/testSwitchingQuizFlushesDraftAndReopeningKeepsExactAnswerAndSelfCheck()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeMediaPlaybackTests/testDuplicatePlayersRestoreSeparatePositionsAndRatesAfterRestart()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeMediaPlaybackTests/testNativePlayerRestoresPositionRateAndFlushesBeforeReplacement()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeMediaPlaybackTests/testPlayerOpeningDuringReplacementWaitsAndCannotOverwriteRemoteProgress()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativePDFWorkspacePreferencesTests/testDocumentSwitchRestoresIndependentToolStylesAndPanelState()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativePDFWorkspacePreferencesTests/testDuplicateCopiesPresentationOnceThenKeepsItsOwnToolAndViewport()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativePDFWorkspacePreferencesTests/testExactScrollRestoreRequiresMatchingRevisionAndCanonicalViewState()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativePDFWorkspacePreferencesTests/testHighlighterMatchesDesktopOpacityAndInvalidPresentationValuesCannotReachInk()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativePDFWorkspacePreferencesTests/testMountedModelsPreserveOnlyTheirOwnPendingPageDuringStyleSave()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativePDFWorkspacePreferencesTests/testPendingPageRestoresBeforeSavedViewportAndClampsToDocument()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativePanelViewStateTests/testSameResourceInstancesRestoreIndependentMediaBoardAndLearningState()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeProjectWorkspaceTests/testBrowsingStateDoesNotLeakAcrossProjectsOrEscapeRoot()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeProjectWorkspaceTests/testCourseScopeKeepsLinkedReviewArtifactInItsCurrentLayout()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeProjectWorkspaceTests/testGeneratedTargetsHaveIndependentStableIDsAndSurviveFolderRename()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeProjectWorkspaceTests/testInactiveProjectMoveRestoresOrdinaryDocumentsSplitAndLinkedSource()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeProjectWorkspaceTests/testLegacyDocumentDecodingAndCourseLayoutsStayCompatible()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeProjectWorkspaceTests/testLegacySnapshotsRelocateFilesUsingActiveContextOrLearningTarget()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeProjectWorkspaceTests/testProjectKeepsSourceCourseSeparateAndRestoresSplitAcrossRestart()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeProjectWorkspaceTests/testProjectLibraryOpensArticleAndArtifactsWithoutExposingJSON()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeProjectWorkspaceTests/testRestorationRelocatesProjectTargetsBeforeCheckingTheirExistence()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeSettingsParityTests/testBrowserScopesNeverAdoptEachOthersPagesAndSurviveScopeReopen()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeSettingsParityTests/testClosingBrowserScopesCancelsAtomicallyAndInvalidatesChangedPlans()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeSettingsParityTests/testDesktopCategoryOrderAndSearchRetainThePortableDestinations()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeSettingsParityTests/testPortableAppearancePreferencesPopulateOnlyValidatedRenderingValues()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeSettingsParityTests/testSearchEngineSelectionOnlyChangesSearchRequests()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeSettingsParityTests/testShortcutImportRejectsReservedTypingAndPreservesOtherDesktopActions()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeSettingsParityTests/testTwoNativeWebViewportsRetainIndependentDOMAndDetachOnlyTheirOwnPage()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeSettingsParityTests/testUniversityOverridesPreserveHiddenSitesAndApplyExplicitOrder()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeWhiteboardTests/testCanonicalWhiteboardShapesRestartAndTombstonesDoNotResurrect()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeWhiteboardTests/testDuplicateBoardInstancesShareOneRecoveryQueueAndPublishPendingPeers()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeWhiteboardTests/testHiddenPanelKeepsToolsUndoAndPeerContentOnReturn()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeWhiteboardTests/testInterruptedQueuedEraseReplaysAfterRestartWithStableShapeIdentity()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeWhiteboardTests/testLateEstimatedCorrectionCannotBeRemovedByEarlierAcknowledgement()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeWhiteboardTests/testPageTruncationAndCrossBoardDeleteValidateBeforeMutation()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeWhiteboardTests/testPaneHistoryRejectsPeerChangedObjectsAndDoesNotRejectUnrelatedEdits()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeWhiteboardTests/testRetainedBoardSessionReloadsAfterAllPanesWereClosed()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-input13.xcresult",
+        "finished": 1793102894.34
+      },
+      {
+        "id": "NativeWorkspaceChromeTests/testCoveredWorkspaceReservesNoPanelWidth()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeWorkspaceChromeTests/testLargeWindowKeepsBothPanelsAndReadableEditor()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeWorkspaceChromeTests/testMediumWindowUsesOnlyPinnedInspector()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeWorkspaceChromeTests/testPortraitAndSplitViewUseDrawerAndFullWidthRespectively()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeWorkspaceChromeTests/testResizedPanelsCannotConsumeDocumentMinimumWidth()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeWorkspaceKeyboardTests/testFunctionKeysCannotCreateInactiveGlobalRemapsButExistingBrowserBindingsRemainCompatible()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeWorkspaceKeyboardTests/testNamedRemapsAcceptedBySettingsReachNativeKeyboardRegistration()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeWorkspaceKeyboardTests/testUnknownKeysAreNotRegisteredAndCharacterRemapsSurvive()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-verification.xcresult",
+        "finished": 1793100711.122
+      },
+      {
+        "id": "NativeWorkspaceNavigationTests/testClosingActivePromotesCompanionAndClosingCompanionKeepsActive()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceNavigationTests/testCompanionMustBelongToOpenDocuments()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceNavigationTests/testCourseSwitchRestoresItsOwnLastDocumentAndEmptyCourseHasNoForeignEditor()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceNavigationTests/testExactFileRenameAndDeleteDoNotModifyPrefixMatches()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceNavigationTests/testFolderRenameUsesWholePathComponentsAndPreservesOtherCourses()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceNavigationTests/testOpeningCompanionSwapsPanesWithoutDuplicatingDocument()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceNavigationTests/testRenameIntoStaleOpenTargetDeduplicatesBothPanes()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceNavigationTests/testRestoreFiltersUnavailableAndDuplicateDocumentsAndInvalidPaneIDs()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceNavigationTests/testUserNavigationWinsOverSuspendedRestoration()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspacePreviewTests/testCacheNamesContainNoDocumentAddressOrWindowNameAndDoNotCollide()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-corrected13.xcresult",
+        "finished": 1793102456.229
+      },
+      {
+        "id": "NativeWorkspacePreviewTests/testCompositeCropsDockAndRestoresLatestImageWithoutOtherProfileOrWindow()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-corrected13.xcresult",
+        "finished": 1793102456.229
+      },
+      {
+        "id": "NativeWorkspacePreviewTests/testFailedStaleAndOccludedCapturesKeepPreviousBytes()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-corrected13.xcresult",
+        "finished": 1793102456.229
+      },
+      {
+        "id": "NativeWorkspacePreviewTests/testIsolatedDockCapturesUnderOpenDrawerWithoutHidingOrMovingIt()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-corrected13.xcresult",
+        "finished": 1793102456.229
+      },
+      {
+        "id": "NativeWorkspacePreviewTests/testOneSecondDeadlineKeepsCacheAndDiscardsLateNativeSnapshot()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-corrected13.xcresult",
+        "finished": 1793102456.229
+      },
+      {
+        "id": "NativeWorkspacePreviewTests/testPrivateSurfaceNeverCallsCaptureAndMasksPixelsBeforeCache()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-corrected13.xcresult",
+        "finished": 1793102456.229
+      },
+      {
+        "id": "NativeWorkspacePreviewTests/testRealPDFWorkspacePreviewCompositesSavedInkAndSurvivesHideRestore()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-corrected13.xcresult",
+        "finished": 1793102456.229
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testCapturedCreationAndImportOwnerSurvivesCourseSelectionChange()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testDocumentScopedMutationRetiresOnlyTheChangedTabAndResumesTheInitiator()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testEditorRegisteredByCompletionNotificationStartsUnfrozen()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testExternalMutationCommitsCompositionBeforeOverwriteAndRetiresOldMarkdownOwner()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testExternalMutationFlushFailureKeepsDraftAndNeverRunsReplacement()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testFailedExternalMutationResumesSameMarkdownSessionAndItsExpectedVersion()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testFailedPendingSavePreventsLibraryShare()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testFlushBarrierIncludesEditsToAnEarlierDocumentWhileAnotherSaveIsAwaiting()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testFlushBarrierJoinsConcurrentCallsAndStillFlushesAfterOneFailure()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testFolderRenameFlushesAndReloadsContainedPDFPageNote()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testImportCopiesExternalBytesAndReportsMaterialTreeWithoutDeletingSource()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testLateRegisteredMarkdownWaitsForReplacementAndCannotAutosaveItsRecoveredDraft()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testMarkdownRenameAndSelectionPersistAcrossNativeWorkspaceRestart()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testMaterialShareAndExportWaitForPendingDocumentEdits()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testMutationLeaseRejectsNestedCallsAndReleasesCancelledQueuedTurns()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testNativeFacadeReusesExistingDesktopDatabaseAndPreservesPDFAndInk()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testNoOpAndUnrelatedCourseImportPreserveTheLoadedMarkdownSession()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testOneCourseReplacementPreservesCompanionViewIdentityAndUndoOwner()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testPDFMoveFlushesAndReloadsOpenConnectedPageNote()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testPDFRenameFlushesAndReloadsOpenConnectedPageNote()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testPDFRewriteReachesValidatedNativeRepository()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testPaperCreationAndDeleteRetainRecoverableOriginal()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testPartiallyCommittedImportRetiresChangedEditorWhileReportingFailure()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testRegistrationDuringInitialFlushParticipatesWithoutDeadlockingTheOpenGate()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceStoreTests/testRenameAwaitingLocalFlushFinishesBeforeAnExternalReplacementCanStart()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-recheck.xcresult",
+        "finished": 1793101082.008
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testBrowserCopyGetsIndependentStableScopeAndRepeatedOpenReusesIt()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testCapturedWindowOwnerSurvivesEmptyInactiveAndForeignDocumentWindows()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testClosePlanRejectsLastWindowAndStalePlans()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testClosedAsyncTargetDoesNotResurrectWindowOrRegisterOrphanDocument()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testCorruptCurrentSnapshotRestoresPreviousAndFutureFormatIsNeverOverwritten()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testCourseAndProjectWindowSelectionsAreIndependent()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testDefaultNamesSkipRenamedNamesAndDoNotRecycleClosedNumbers()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testDelayedOpenTargetsOriginalWindowWithoutStealingCurrentFocus()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testDisablingInitialSelectionRestorePreservesAllWindowCollections()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testLegacyMigrationBacksUpOriginalAndSeparatesSharedPlacements()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testMissingCapturedPaneFallsBackOnlyInsideOriginalWindow()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testPendingMigrationFailurePreservesOriginalAndCanRetryWithSameWindowIDs()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testPendingMigrationPersistsImmediatelyWithOriginalBackupAndStableWindowIDs()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testPersistFailureRollsBackWindowCloseAndLeavesOriginalDiskState()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testRenameAndDeleteAffectEveryWindowWithoutChangingSelection()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testRenameIntoStaleTargetInAnotherWindowKeepsDistinctPanels()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testSupportedResourcesHaveDistinctPanelsInDifferentWindows()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeWorkspaceWindowTests/testWindowsKeepIndependentLayoutsChromeAndFocusAfterRestart()",
+        "target": "BandalTests",
+        "result": "Passed",
+        "bundle": "bandal-windows-startup-migration.xcresult",
+        "finished": 1793107121.978
+      },
+      {
+        "id": "NativeDockingUITests/testNestedDockingDragResizeMergeAndRestorePreserveAllNotes()",
+        "target": "BandalUITests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-regression13.xcresult",
+        "finished": 1793102225.326
+      },
+      {
+        "id": "NativePDFWritingUITests/testPaletteFavoritesIndependentToolsAndNarrowPanesPersist()",
+        "target": "BandalUITests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-corrected13.xcresult",
+        "finished": 1793102456.229
+      },
+      {
+        "id": "NativeWorkspaceWindowsUITests/testBrowserOverviewEscapePreservesLiveForm()",
+        "target": "BandalUITests",
+        "result": "Failed",
+        "bundle": "bandal-windows-typed-escape.xcresult",
+        "finished": 1793108464.999
+      },
+      {
+        "id": "NativeWorkspaceWindowsUITests/testBrowserOverviewRetainsFormsAndMasksPrivatePreview()",
+        "target": "BandalUITests",
+        "result": "Passed",
+        "bundle": "bandal-windows-browser-final.xcresult",
+        "finished": 1793107300.736
+      },
+      {
+        "id": "NativeWorkspaceWindowsUITests/testEmptyOverviewEscapeReturnsWithoutOpeningAnEditor()",
+        "target": "BandalUITests",
+        "result": "Failed",
+        "bundle": "bandal-windows-targeted-escape.xcresult",
+        "finished": 1793108577.67
+      },
+      {
+        "id": "NativeWorkspaceWindowsUITests/testSameNoteSharesContentButKeepsIndependentPanelModeAcrossWindows()",
+        "target": "BandalUITests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui11.xcresult",
+        "finished": 1793103312.211
+      },
+      {
+        "id": "NativeWorkspaceWindowsUITests/testThreeChromeModesRecoverSpaceKeepPencilToolsAndFixedControls()",
+        "target": "BandalUITests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui11.xcresult",
+        "finished": 1793103312.211
+      },
+      {
+        "id": "NativeWorkspaceWindowsUITests/testWindowManagementCourseProjectIsolationAndRestartKeepSidebarState()",
+        "target": "BandalUITests",
+        "result": "Passed",
+        "bundle": "bandal-windows-ui-regression13.xcresult",
+        "finished": 1793102225.326
+      }
+    ],
+    "known_expected_failures": {
+      "definitions_unchanged": 3,
+      "executed_in_selected_runs": 0
+    },
+    "physical_ui": {
+      "status": "final_run_failed_before_test_launch_device_relocked",
+      "bundle": "bandal-windows-device-final-ui.xcresult",
+      "note": "Final split core/Escape run waited for the locked iPad in Xcode destination preflight, then failed before test launch with a lost pending test-runner connection. No feature test body executed in that final run. Mac also relocked during remaining CUA checks. Both devices need unlocking before retry.",
+      "final_counts": null,
+      "previous_completed_run": {
+        "bundle": "bandal-windows-device-unlocked.xcresult",
+        "executed": 1,
+        "failed": 1,
+        "failure": "Synthetic XCTest Escape did not dismiss overview. Fixed 44pt controls, existing cards and overview entry assertions completed before that failure. Sidebar follow-up assertions were not reached."
+      },
+      "executed_feature_tests": 0,
+      "runner_error": "Early unexpected exit, operation never finished bootstrapping. Lost pending connection to the test runner before launch."
+    },
+    "direct_keyboard_check": {
+      "status": "passed_in_observed_simulator_cases",
+      "method": "CUA direct Escape key input into Simulator, separate from XCTest typeKey",
+      "device_scope": "11-inch iPad simulator, portrait",
+      "mac_lock_resolved": true,
+      "checks": [
+        "Escape closes an empty window overview while the inspector overlay remains available.",
+        "Escape closes the overview with the material-search text field focused and its caret visible.",
+        "A browser form filled using the touch keyboard remains unchanged after showing its actual web preview and returning with Escape."
+      ],
+      "automated_failures_preserved": true,
+      "automation_diagnosis": "XCTest typeKey Escape uses synthesized U+001B text; observations suggest this path is not reaching the app key handler. The exact cause is not established. Typed and targeted diagnostic reruns still failed, and direct CUA success does not convert those XCTest results to passes.",
+      "physical_keyboard_check_performed": false
+    },
+    "visual_review": {
+      "status": "passed_in_observed_simulator_cases",
+      "scope": "CUA screenshots of the 11-inch simulator in portrait: empty overview, inspector overlay, and browser overview/return.",
+      "note": "The observed portrait layout was intact. Earlier exported XCTest screenshots had rotation/cropping artifacts (PNG EXIF orientation 8); these were not established as app layout defects. Geometry assertions and private-preview pixel checks remain separate automated evidence.",
+      "physical_device_full_visual_review_complete": false
+    },
+    "manual_checks": {
+      "stage_manager_physical_resize": {
+        "status": "not_verified"
+      },
+      "voice_over": {
+        "status": "not_verified"
+      },
+      "physical_apple_pencil_pressure_and_palm_rejection": {
+        "status": "not_verified"
+      }
+    },
+    "temporary_simulator_settings": {
+      "original": "Windowed Apps",
+      "attempted": "Stage Manager",
+      "resize_verified": false,
+      "restore_pending": true,
+      "reason": "CUA corner drag did not resize the app; documented Globe/Fn shortcut cannot be sent because CUA reports keyNotFound(fn). Mac relocked before restoring the original setting."
+    }
+  },
+  "device": {
+    "model": "iPad Pro 11-inch (3rd generation)",
+    "os": "27.0.1",
+    "version": "1.1.0",
+    "build": "8",
+    "configuration": "Release",
+    "final_build_install_status": "installed",
+    "normal_process_launch_confirmed": true,
+    "normal_launch_arguments": [],
+    "ui_interaction_verified": false,
+    "strict_code_signature_verified": true,
+    "test_artifacts_in_app": 0,
+    "app_binary_sha256": "8225a7fb5ee9375cca4082b458343694160a18481fabd821d8aeea313ca80b3a",
+    "build_log": "bandal-ipad-windows-final2-release-build.log"
+  },
+  "data_conservation": {
+    "final_backup_status": "complete",
+    "source_receipt": "2026-10-27-post-windows-final/verification-summary.json",
+    "scope": "Copied Documents and Preferences from the ordinary device profile; aggregate values only, no material names or contents.",
+    "navigation_format_after": 2,
+    "backup_complete": true,
+    "content_or_user_state_tables_compared": 45,
+    "content_tables_preserved": true,
+    "copy_success": {
+      "documents": true,
+      "preferences": true
+    },
+    "database_count": 2,
+    "database_quick_check_passed": 2,
+    "database_table_summary": {
+      "canonical_equal": 64,
+      "container_relocation_only": 4,
+      "content_tables_changed": 0,
+      "runtime_or_sync_tables_changed": 5,
+      "tables_compared": 73
+    },
+    "file_backed_validation_scope": {
+      "learning_files": 0,
+      "limitation": "No learning/quiz files or recording rows are present in this device backup; those formats have no populated physical-device preservation sample. External linked folders remain outside the copied Documents scope.",
+      "note_or_text_files": 7
+    },
+    "format": "bandal-final-install-data-verification",
+    "material_added": 0,
+    "material_byte_identical": 140,
+    "material_files": 141,
+    "material_json_canonical_identical": 1,
+    "material_removed": 0,
+    "navigation_after_counts": {
+      "document_placements": 18,
+      "documents": 18,
+      "groups": 5,
+      "windows": 3,
+      "workspace_collections": 3
+    },
+    "navigation_comparison": {
+      "existing_windows_missing": 0,
+      "first_window_default_mode_mismatches": 0,
+      "first_window_default_name_mismatches": 0,
+      "first_window_layout_mismatches": 0,
+      "first_windows_converted": 3,
+      "migration_backups_exact": 1,
+      "migration_backups_hash_mismatch": 0,
+      "migration_backups_missing": 0,
+      "missing_original_document_resources": 0,
+      "original_layouts_missing": 0,
+      "profiles_missing_after": 0,
+      "profiles_not_migrated_to_v2": 0,
+      "profiles_requiring_migration": 1,
+      "ungrouped_legacy_layouts_require_manual_review": 0,
+      "unreadable_or_missing_snapshots": 0
+    },
+    "navigation_migration_verified": true,
+    "pdf_active_ink_count": 18198,
+    "pdf_active_ink_identical": true,
+    "pdf_drawings_count": 24582,
+    "pdf_drawings_identical": true,
+    "populated_content_examples": {
+      "agent_sessions": {
+        "after_rows": 6,
+        "before_rows": 6,
+        "canonical_rows_equal": true
+      },
+      "message_blocks": {
+        "after_rows": 0,
+        "before_rows": 0,
+        "canonical_rows_equal": true
+      },
+      "messages": {
+        "after_rows": 0,
+        "before_rows": 0,
+        "canonical_rows_equal": true
+      },
+      "native_pdf_page_history": {
+        "after_rows": 19,
+        "before_rows": 19,
+        "canonical_rows_equal": true
+      },
+      "recording_anchors": {
+        "after_rows": 0,
+        "before_rows": 0,
+        "canonical_rows_equal": true
+      },
+      "recording_segments": {
+        "after_rows": 0,
+        "before_rows": 0,
+        "canonical_rows_equal": true
+      },
+      "recording_sessions": {
+        "after_rows": 0,
+        "before_rows": 0,
+        "canonical_rows_equal": true
+      },
+      "whiteboard_local_shapes": {
+        "after_rows": 43,
+        "before_rows": 43,
+        "canonical_rows_equal": true
+      },
+      "whiteboards": {
+        "after_rows": 1,
+        "before_rows": 1,
+        "canonical_rows_equal": true
+      }
+    },
+    "preferences": {
+      "existing_keys_changed": 2,
+      "existing_keys_unchanged": 58,
+      "files_added": 0,
+      "files_after": 1,
+      "files_before": 1,
+      "files_missing": 0,
+      "keys_added": 0,
+      "keys_after": 60,
+      "keys_before": 60,
+      "keys_missing": 0
+    },
+    "preferences_keys_preserved": true,
+    "raw_byte_comparison_note": "One JSON file was reserialized; its canonical JSON content is identical. All 141 existing material file contents are conserved.",
+    "raw_byte_comparison_passed": false,
+    "runtime_metadata_changes": [
+      {
+        "rows_added": 3,
+        "rows_removed": 0,
+        "shared_row_changed_column_counts": {},
+        "table": "ipad_storage_locations"
+      },
+      {
+        "rows_added": 0,
+        "rows_removed": 0,
+        "shared_row_changed_column_counts": {
+          "updated_at": 8
+        },
+        "table": "materials_index"
+      },
+      {
+        "rows_added": 4,
+        "rows_removed": 0,
+        "shared_row_changed_column_counts": {},
+        "table": "native_file_hashes"
+      },
+      {
+        "rows_added": 0,
+        "rows_removed": 0,
+        "shared_row_changed_column_counts": {
+          "identity": 7
+        },
+        "table": "native_search_files"
+      },
+      {
+        "rows_added": 0,
+        "rows_removed": 0,
+        "shared_row_changed_column_counts": {
+          "updated_at": 1
+        },
+        "table": "pdf_view_state"
+      }
+    ],
+    "settings": {
+      "data_root_container_relocations": 1,
+      "existing_keys_unchanged": 25,
+      "files_before": 1,
+      "keys_added": 0,
+      "keys_missing": 0
+    },
+    "total_bytes": 2242743594,
+    "total_files": 208
+  },
+  "remaining": [
+    "XCTest Escape 실패 경로의 원인 확인 및 필요한 수정·재검증: 직접 CUA 입력 성공과 자동 테스트 실패를 구분해서 유지",
+    "실기기 재잠금 해제 후 최종 일반 프로필 UI 테스트 재실행",
+    "실기기 전체 화면 배치 확인",
+    "Stage Manager 실기기 크기 변경 확인",
+    "VoiceOver 동작 확인",
+    "물리 Apple Pencil 필압·팜 리젝션 확인",
+    "Mac 잠금 해제 후 검증용 시뮬레이터 멀티태스킹 설정 복원",
+    "최종 실기기 확인 후 구현·검증 커밋과 기존 29개 로컬 커밋 함께 푸시"
+  ],
+  "distribution": {
+    "app_store_upload_performed": false,
+    "release_restrictions_unchanged": true
+  },
+  "environment": {
+    "xcode": "26.2",
+    "simulators": [
+      "iPad Pro 11-inch (M5), iOS 26.3.1",
+      "iPad Pro 13-inch (M5), iOS 26.3.1"
+    ]
+  }
+}
