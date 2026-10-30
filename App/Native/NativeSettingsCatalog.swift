@@ -20,8 +20,8 @@ enum NativeSettingsCatalog {
         ("courses", "과목"),
         ("info", "정보"),
     ]
-    /// The account category (login, profile, delete account) is hidden while 1.0 ships local-only.
-    static var categories: [NativeSettingsCategory] { allCategories.filter { !NativeReleaseFlags.isLocalOnly || $0.id != "account" } }
+    /// The account category (optional login, nickname, delete account) follows the account switch.
+    static var categories: [NativeSettingsCategory] { allCategories.filter { NativeReleaseFlags.showsAccount || $0.id != "account" } }
     private static let allCategories: [NativeSettingsCategory] = [
         .init(id: "ai", title: "AI 엔진", description: "학습을 도와줄 AI 도구의 연결 상태를 확인합니다.", keywords: "에이전트 AI API 키 OpenAI Anthropic Google", icon: "sparkles", group: "ai"),
         .init(id: "assistant", title: "화면 도우미", description: "AI의 화면 도우미 동작을 관리합니다.", keywords: "화면 도우미 읽기 클릭 입력 screen assistant", icon: "rectangle.and.hand.point.up.left", group: "ai"),

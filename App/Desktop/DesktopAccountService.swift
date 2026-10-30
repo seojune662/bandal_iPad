@@ -2,7 +2,6 @@ import Foundation
 import AuthenticationServices
 import CryptoKit
 import Security
-import Darwin
 
 /// Authentication effects are injected in tests; no fixture touches Keychain,
 /// a real provider account, or the user's existing database.
@@ -11,6 +10,9 @@ struct DesktopAccountEnvironment {
     var configuration: () -> (url: String, key: String) = {
         (UserDefaults.standard.string(forKey: "sync.url") ?? "", UserDefaults.standard.string(forKey: "sync.publishableKey") ?? "")
     }
+    /// Token `iss`. A custom domain (auth.bandal.io) still issues the project's
+    /// supabase.co issuer, so it cannot be derived from the URL. Nil means `<url>/auth/v1`.
+    var issuer: () -> String? = { UserDefaults.standard.string(forKey: "sync.issuer") }
     var readCredential: () -> String? = { KeychainStore.read("sync.session") }
     var writeCredential: (String) throws -> Void = { try KeychainStore.write($0, account: "sync.session") }
     var request: (URLRequest) async throws -> (Data, URLResponse) = { request in
@@ -38,7 +40,6 @@ private final class DesktopAccountRedirectPolicy: NSObject, URLSessionTaskDelega
 @MainActor
 final class DesktopAccountService {
     var emit: ((String, Any) -> Void)?
-    private let root: URL
     private let environment: DesktopAccountEnvironment
     private var session: CloudSession?
     private var metadata: [String: Any] = [:]
@@ -54,42 +55,23 @@ final class DesktopAccountService {
     private var browser: OAuthSession?
     private var apple: DesktopAppleAuthorization?
     private var appleInProgress = false
-    private(set) var localAccessAllowed = false
-    private var accessReceipt: AccessReceipt?
-    private var invalidAccessReceipt = false
-    private var pendingUserID: String?
-    private struct AccessReceipt: Codable { let userID: String; let projectURL: String; let allowed: Bool }
     private var refreshing: (id: UUID, generation: Int, task: Task<String, Error>)?
     private var nicknameOperation: UUID?
-    private struct Context { let generation: Int; let url: String; let key: String }
-    private struct Binding: Codable { let version: Int; let userID: String; let projectURL: String }
+    private struct Context { let generation: Int; let url: String; let key: String; let issuer: String }
 
+    /// Login is optional and never locks local files. Files that older builds wrote
+    /// to bind the data folder to one account (account-binding.json,
+    /// account-access.json) are left on disk untouched and ignored.
     init(root: URL, environment: DesktopAccountEnvironment? = nil) {
-        self.root = root; self.environment = environment ?? .live(root: root)
-        let receiptURL = root.appendingPathComponent("account-access.json")
-        invalidAccessReceipt = FileManager.default.fileExists(atPath: receiptURL.path)
-        if let data = try? Data(contentsOf: receiptURL),
-           let receipt = try? JSONDecoder().decode(AccessReceipt.self, from: data),
-           UUID(uuidString: receipt.userID) != nil,
-           FileManager.default.fileExists(atPath: root.appendingPathComponent("account-binding.json").path),
-           receipt.projectURL == context().url, (try? checkBinding(receipt.userID, context: context())) != nil {
-            accessReceipt = receipt; localAccessAllowed = receipt.allowed; invalidAccessReceipt = false
-        }
+        self.environment = environment ?? .live(root: root)
         if configuredURL() == nil { phase = "unconfigured" }
     }
-    func canHandle(_ channel: String) -> Bool { ["auth:getState", "auth:signIn", "auth:signOut", "auth:setNickname", "auth:linkProvider", "auth:confirmProfile"].contains(channel) }
+    func canHandle(_ channel: String) -> Bool { ["auth:getState", "auth:signIn", "auth:signOut", "auth:setNickname", "auth:linkProvider"].contains(channel) }
     func handle(channel: String, request: [String: Any]) async throws -> Any {
         switch channel {
         case "auth:getState":
-            if localAccessAllowed { Task { await self.restore() }; return state }
-            await restore(); return state
-        case "auth:confirmProfile":
-            await restore()
-            guard let user = pendingUserID, request["userID"] as? String == user, session?.user.id.lowercased() == user else { throw DesktopRuntimeError("연결할 계정을 다시 확인해 주세요.") }
-            let expected = context()
-            _ = try await currentToken(context: expected)
-            try bind(user, context: expected); try saveAccess(userID: user, allowed: true, context: expected)
-            pendingUserID = nil; publish(); return state
+            // Restoring may refresh over the network; the result arrives as auth:changed.
+            Task { await self.restore() }; return state
         case "auth:linkProvider":
             return await signIn(provider: request["provider"] as? String ?? "", linking: true)
         case "auth:signIn": return await signIn(provider: request["provider"] as? String ?? "")
@@ -100,15 +82,14 @@ final class DesktopAccountService {
     }
     private var state: [String: Any] {
         ["phase": phase, "profile": profile ?? NSNull() as Any, "email": session?.user.email ?? NSNull() as Any,
-         "avatarUrl": avatarURL ?? NSNull() as Any, "online": online, "errorCode": errorCode ?? NSNull() as Any,
-         "localAccess": ["allowed": localAccessAllowed, "requiresLogin": !localAccessAllowed,
-                         "boundUserID": accessReceipt?.userID as Any? ?? NSNull(), "profileID": root.lastPathComponent,
-                         "requiresBindingConfirmation": pendingUserID != nil, "pendingUserID": pendingUserID as Any? ?? NSNull()]]
+         "avatarUrl": avatarURL ?? NSNull() as Any, "online": online, "errorCode": errorCode ?? NSNull() as Any]
     }
     private func publish() { emit?("auth:changed", state) }
     private func context() -> Context {
         let value = environment.configuration()
-        return Context(generation: generation, url: value.url.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/")), key: value.key)
+        let url = value.url.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let issuer = environment.issuer()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return Context(generation: generation, url: url, key: value.key, issuer: issuer.isEmpty ? url + "/auth/v1" : issuer)
     }
     private func validate(_ expected: Context) throws {
         try Task.checkCancellation()
@@ -116,7 +97,7 @@ final class DesktopAccountService {
     }
     private func matches(_ expected: Context) -> Bool {
         let current = context()
-        return expected.generation == current.generation && expected.url == current.url && expected.key == current.key
+        return expected.generation == current.generation && expected.url == current.url && expected.key == current.key && expected.issuer == current.issuer
     }
     private func configuredURL() -> URL? {
         let value = context()
@@ -125,7 +106,7 @@ final class DesktopAccountService {
         return url
     }
     private func reset(error: String? = nil) {
-        session = nil; profile = nil; metadata = [:]; avatarURL = nil; online = false; pendingUserID = nil
+        session = nil; profile = nil; metadata = [:]; avatarURL = nil; online = false
         phase = configuredURL() == nil ? "unconfigured" : "signed-out"; errorCode = error
     }
     private func restore() async {
@@ -134,24 +115,19 @@ final class DesktopAccountService {
         restored = true
         let expected = context()
         let task = Task { [weak self] in
-            guard let self, !self.invalidAccessReceipt, self.accessReceipt?.allowed != false, self.configuredURL() != nil, let raw = self.environment.readCredential(), !raw.isEmpty else { return }
+            guard let self, self.configuredURL() != nil, let raw = self.environment.readCredential(), !raw.isEmpty else { return }
             do {
                 let restored = try self.decodeSession(Data(raw.utf8), context: expected)
-                try self.checkBinding(restored.value.user.id, context: expected)
                 self.session = restored.value; self.metadata = restored.metadata
-                // A previously persisted native session has already completed
-                // server authentication. Expiry limits cloud access, not files.
-                if self.accessReceipt == nil {
-                    try self.acceptLocalAccess(restored.value.user.id, context: expected)
-                }
                 _ = try await self.currentToken(context: expected)
                 try self.validate(expected)
-                if let session = self.session { try self.acceptLocalAccess(session.user.id, context: expected) }
                 await self.loadProfile(context: expected)
             } catch {
                 guard self.generation == expected.generation else { return }
                 self.online = false
-                if self.localAccessAllowed, let session = self.session {
+                // A stored session already passed server authentication; an
+                // expired or offline refresh asks for a new login, nothing more.
+                if let session = self.session {
                     self.profile = Self.profile(nil, userID: session.user.id)
                     self.phase = "signed-in"; self.errorCode = "reauthentication-required"
                 } else { self.reset() }
@@ -164,7 +140,7 @@ final class DesktopAccountService {
     private func signIn(provider: String, linking: Bool = false) async -> [String: Any] {
         guard configuredURL() != nil else { reset(); publish(); return ["ok": false, "reason": "not-configured"] }
         if provider == "apple" { return await signInApple(linking: linking) }
-        guard ["google", "kakao"].contains(provider) else { return ["ok": false, "reason": "provider"] }
+        guard provider == "google" else { return ["ok": false, "reason": "provider"] }
         await restore()
         if !linking, errorCode == "reauthentication-required" { session = nil }
         guard linking || session == nil else { return ["ok": false, "reason": "already-signed-in"] }
@@ -210,9 +186,7 @@ final class DesktopAccountService {
                     let data = try await self.request(path: "/auth/v1/token", query: [URLQueryItem(name: "grant_type", value: "pkce")], method: "POST", body: ["auth_code": code, "code_verifier": verifier], context: expected)
                     let result = try self.decodeSession(data, context: expected)
                     if let linkedUser, result.value.user.id != linkedUser { throw DesktopRuntimeError("연결할 계정이 현재 반달 계정과 일치하지 않습니다.") }
-                    try self.checkBinding(result.value.user.id, context: expected)
                     try self.save(result.value, metadata: result.metadata, context: expected)
-                    try self.acceptLocalAccess(result.value.user.id, context: expected)
                     await self.loadProfile(context: expected)
                 } catch {
                     if !answered { answered = true; started.resume(returning: ["ok": false, "reason": "network"]) }
@@ -248,9 +222,7 @@ final class DesktopAccountService {
             let data = try await request(path: "/auth/v1/token", query: [URLQueryItem(name: "grant_type", value: "id_token")], method: "POST", body: body, token: token, context: expected)
             let result = try decodeSession(data, context: expected)
             guard !linking || result.value.user.id == linkedUser else { throw DesktopRuntimeError("연결한 계정이 기존 계정과 다릅니다.") }
-            try checkBinding(result.value.user.id, context: expected)
             try save(result.value, metadata: result.metadata, context: expected)
-            try acceptLocalAccess(result.value.user.id, context: expected)
             await loadProfile(context: expected)
             if let authorizationCode = appleCredential.authorizationCode {
                 do { _ = try await request(path: "/functions/v1/account-delete", method: "POST", body: ["action": "registerAppleAuthorization", "authorizationCode": authorizationCode], token: result.value.access_token, context: expected) }
@@ -267,41 +239,6 @@ final class DesktopAccountService {
         }
     }
 
-    private func acceptLocalAccess(_ user: String, context expected: Context) throws {
-        try validate(expected); try checkBinding(user, context: expected)
-        let binding = root.appendingPathComponent("account-binding.json")
-        if !FileManager.default.fileExists(atPath: binding.path), try containsExistingContent() {
-            pendingUserID = user.lowercased(); localAccessAllowed = false; return
-        }
-        try bind(user, context: expected)
-        try saveAccess(userID: user, allowed: true, context: expected)
-        pendingUserID = nil
-    }
-
-    private func containsExistingContent() throws -> Bool {
-        let current = root.appendingPathComponent("bandal.db")
-        if FileManager.default.fileExists(atPath: current.path) {
-            let database = try DesktopSQLite(url: current, readOnly: true)
-            if !(try database.query("SELECT 1 FROM courses LIMIT 1", params: nil)).isEmpty { return true }
-        }
-        if root.lastPathComponent == "BandalDesktop" {
-            let legacy = root.deletingLastPathComponent().appendingPathComponent("Bandal/bandal.sqlite")
-            if FileManager.default.fileExists(atPath: legacy.path) {
-                let database = try DesktopSQLite(url: legacy, readOnly: true)
-                return !(try database.query("SELECT 1 FROM records LIMIT 1", params: nil)).isEmpty
-            }
-        }
-        return false
-    }
-
-    private func saveAccess(userID: String, allowed: Bool, context expected: Context) throws {
-        try validate(expected); try checkBinding(userID, context: expected)
-        let receipt = AccessReceipt(userID: userID.lowercased(), projectURL: expected.url, allowed: allowed)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try DesktopProfileService.writeDurably(JSONEncoder().encode(receipt), to: root.appendingPathComponent("account-access.json"))
-        accessReceipt = receipt; localAccessAllowed = allowed; invalidAccessReceipt = false
-    }
-
     /// Native-only authenticated API. The response and fixed error code never
     /// contain an access token, raw request body, or arbitrary server text.
     func serviceRequest(path: String, body: [String: Any] = [:]) async throws -> [String: Any] {
@@ -313,24 +250,19 @@ final class DesktopAccountService {
     }
 
     func deleteAccount() async throws -> [String: Any] {
-        let identity = try await syncIdentity(), expected = context(), token = try await accessToken()
-        // A successful remote deletion must never leave an offline-unlock
-        // receipt behind if the subsequent Keychain/logout step fails.
-        try saveAccess(userID: identity.userID, allowed: false, context: expected)
+        let expected = context(), token = try await accessToken()
         let data: Data
         do { data = try await request(path: "/functions/v1/account-delete", method: "POST", body: ["confirm": true], token: token, context: expected) }
         catch {
-            if matches(expected) {
-                if let failure = error as? DesktopRuntimeError, ["account_deletion_pending_transactions", "reauthentication_required"].contains(failure.code) {
-                    try saveAccess(userID: identity.userID, allowed: true, context: expected)
-                } else { reset() }
-                publish()
-            }
+            // An HTTP error status always carries a specific code: the server refused and the
+            // account is intact. A dropped connection or an unreadable reply may have deleted it,
+            // so that session is signed out instead of being restored on the next launch.
+            let uncertain = error is URLError || (error as? DesktopRuntimeError)?.code == "ERR_DESKTOP_RUNTIME"
+            if matches(expected), uncertain { try? await signOut() }
             throw error
         }
-        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any], result["ok"] as? Bool == true else {
-            // An ambiguous server response stays locked until reauthentication.
-            reset(); publish(); throw DesktopRuntimeError("계정 삭제 상태를 확인하지 못했습니다. 다시 로그인하여 확인해 주세요.")
+        guard let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], result["ok"] as? Bool == true else {
+            try? await signOut(); throw DesktopRuntimeError("계정 삭제 상태를 확인하지 못했습니다. 다시 로그인하여 확인해 주세요.")
         }
         try await signOut()
         return result
@@ -341,7 +273,6 @@ final class DesktopAccountService {
         generation += 1; restored = true
         login?.cancel(); login = nil; browser?.cancel(); browser = nil; apple?.cancel(); apple = nil; appleInProgress = false
         restoring?.cancel(); restoring = nil; refreshing?.task.cancel(); refreshing = nil; nicknameOperation = nil
-        if let user = accessReceipt?.userID ?? old?.user.id { try saveAccess(userID: user, allowed: false, context: context()) }
         reset(); publish()
         // Do not claim success if the local credential could not be removed.
         try environment.writeCredential("")
@@ -358,7 +289,6 @@ final class DesktopAccountService {
     /// Native sync identity; never included in the renderer's account state.
     func syncIdentity() async throws -> DesktopSyncIdentity {
         _ = try await accessToken()
-        guard localAccessAllowed else { throw DesktopRuntimeError("이 기기의 자료를 연결할 계정을 먼저 확인해 주세요.", code: "PROFILE_CONFIRMATION_REQUIRED") }
         let expected = context()
         guard let session, let url = configuredURL() else { throw DesktopRuntimeError("계정 로그인이 필요합니다.") }
         try validate(expected)
@@ -367,7 +297,6 @@ final class DesktopAccountService {
     private func currentToken(context expected: Context) async throws -> String {
         try validate(expected)
         guard let value = session else { throw DesktopRuntimeError("계정 로그인이 필요합니다.") }
-        try checkBinding(value.user.id, context: expected)
         if (value.expires_at ?? 0) > Date().timeIntervalSince1970 + 90 { return value.access_token }
         if let refreshing, refreshing.generation == expected.generation {
             let token = try await refreshing.task.value; try validate(expected); return token
@@ -378,7 +307,6 @@ final class DesktopAccountService {
             let data = try await self.request(path: "/auth/v1/token", query: [URLQueryItem(name: "grant_type", value: "refresh_token")], method: "POST", body: ["refresh_token": value.refresh_token], context: expected)
             let result = try self.decodeSession(data, context: expected)
             guard result.value.user.id.lowercased() == value.user.id.lowercased() else { throw DesktopRuntimeError("로그인 계정이 변경되어 다시 연결해야 합니다.") }
-            try self.checkBinding(result.value.user.id, context: expected)
             try self.save(result.value, metadata: result.metadata, context: expected)
             return result.value.access_token
         }
@@ -459,7 +387,7 @@ final class DesktopAccountService {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard UUID(uuidString: value.user.id) != nil, !value.refresh_token.isEmpty,
               let claims = Self.jwtClaims(value.access_token), (claims["sub"] as? String)?.lowercased() == value.user.id.lowercased(),
-              claims["iss"] as? String == context.url + "/auth/v1" else { throw DesktopRuntimeError("계정 토큰의 서버와 사용자를 확인하지 못했습니다.") }
+              claims["iss"] as? String == context.issuer else { throw DesktopRuntimeError("계정 토큰의 서버와 사용자를 확인하지 못했습니다.") }
         if value.expires_at == nil { value.expires_at = claims["exp"] as? Double ?? (object?["expires_in"] as? Double).map { Date().timeIntervalSince1970 + $0 } }
         return (value, (object?["user"] as? [String: Any])?["user_metadata"] as? [String: Any] ?? [:])
     }
@@ -470,37 +398,6 @@ final class DesktopAccountService {
         let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         try environment.writeCredential(String(decoding: data, as: UTF8.self)); session = value; self.metadata = metadata
     }
-    private func checkBinding(_ user: String, context expected: Context) throws {
-        let file = root.appendingPathComponent("account-binding.json")
-        if FileManager.default.fileExists(atPath: file.path) {
-            let binding = try JSONDecoder().decode(Binding.self, from: Data(contentsOf: file))
-            guard binding.version == 1, binding.userID.lowercased() == user.lowercased(), binding.projectURL == expected.url else { throw DesktopRuntimeError("이 기기의 자료는 다른 계정에 연결되어 있습니다. 기존 계정으로 로그인해 주세요.") }
-        }
-        guard ["BandalDesktop", "BandalDesktop-UI-Tests"].contains(root.lastPathComponent) else { return }
-        let legacyName = root.lastPathComponent == "BandalDesktop-UI-Tests" ? "Bandal-UI-Tests" : "Bandal"
-        let legacy = root.deletingLastPathComponent().appendingPathComponent(legacyName).appendingPathComponent("bandal.sqlite")
-        if FileManager.default.fileExists(atPath: legacy.path) {
-            let database = try DesktopSQLite(url: legacy, readOnly: true)
-            let bound = try database.query("SELECT value FROM metadata WHERE key='sync_account'", params: nil).first?["value"] as? String
-            guard bound == nil || bound?.lowercased() == user.lowercased() else { throw DesktopRuntimeError("이전 반달 자료가 다른 계정에 연결되어 있습니다. 기존 계정으로 로그인해 주세요.") }
-        }
-    }
-    private func bind(_ user: String, context expected: Context) throws {
-        try validate(expected); try checkBinding(user, context: expected)
-        let target = root.appendingPathComponent("account-binding.json")
-        if FileManager.default.fileExists(atPath: target.path) { return }
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let temporary = root.appendingPathComponent(".account-binding-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        let data = try JSONEncoder().encode(Binding(version: 1, userID: user, projectURL: expected.url))
-        try data.write(to: temporary)
-        let handle = try FileHandle(forWritingTo: temporary); try handle.synchronize(); try handle.close()
-        try FileManager.default.moveItem(at: temporary, to: target)
-        let directory = Darwin.open(root.path, O_RDONLY)
-        guard directory >= 0 else { throw DesktopRuntimeError("계정 연결을 안전하게 저장하지 못했습니다.") }
-        defer { Darwin.close(directory) }
-        guard Darwin.fsync(directory) == 0 else { throw DesktopRuntimeError("계정 연결 저장을 확인하지 못했습니다.") }
-    }
     private static func profile(_ row: [String: Any]?, userID: String) -> [String: Any] {
         let name = row?["nickname"] as? String
         let nickname = name.flatMap { $0.range(of: "^user_[0-9a-f]{8}$", options: .regularExpression) == nil ? $0 : nil }
@@ -509,7 +406,7 @@ final class DesktopAccountService {
     private static func avatar(_ metadata: [String: Any]) -> String? {
         for key in ["avatar_url", "picture", "profile_image"] {
             guard let raw = metadata[key] as? String, var url = URLComponents(string: raw), let host = url.host?.lowercased(),
-                  ["googleusercontent.com", "kakaocdn.net"].contains(where: { host == $0 || host.hasSuffix("." + $0) }),
+                  ["googleusercontent.com"].contains(where: { host == $0 || host.hasSuffix("." + $0) }),
                   url.user == nil, url.password == nil, url.port == nil || url.port == 443, ["http", "https"].contains(url.scheme ?? "") else { continue }
             url.scheme = "https"; return url.url?.absoluteString
         }

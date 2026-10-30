@@ -46,7 +46,6 @@ struct NativeWorkspaceView: View {
     @State private var showBusy = false
     @State private var restored = false
     @State private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
-    @State private var loginRequired = false
 
     init() {
         let store = NativeWorkspaceStore()
@@ -310,7 +309,6 @@ struct NativeWorkspaceView: View {
         }
         .sheet(isPresented: $showingCourseSheet) { courseSheet }
         .sheet(isPresented: $showingCourseManager) { NativeCourseManager(store: store) }
-        .fullScreenCover(isPresented: $loginRequired) { NativeLoginGate(store: store).interactiveDismissDisabled() }
         .alert("작업을 완료하지 못했어요", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("확인", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
@@ -319,7 +317,6 @@ struct NativeWorkspaceView: View {
             // Sync, auth and settings can wait for the restored tabs; the first screen cannot.
             defer { Task { @MainActor in
                 await services.start()
-                if store.isReady, let state = try? await store.invoke("auth:getState") as? [String: Any] { loginRequired = NativeLoginGate.requiresLogin(state) }
                 workspaceSettings = (try? await store.invoke("settings:get")) as? [String: Any] ?? [:]
             } }
             guard store.isReady, !restored else { return }
@@ -398,7 +395,6 @@ struct NativeWorkspaceView: View {
         .onChange(of: store.courses) { _, _ in refreshShareDestinations(); refreshWorkspaceContext() }
         .onChange(of: store.materials) { _, _ in refreshShareDestinations() }
         .onReceive(store.events) { event in
-            if event.channel == "auth:changed", let state = event.payload as? [String: Any] { loginRequired = NativeLoginGate.requiresLogin(state) }
             receive(event)
         }
         .onChange(of: scenePhase) { _, phase in
@@ -508,12 +504,12 @@ struct NativeWorkspaceView: View {
                 }
             }.accessibilityIdentifier("native-section-library")
             NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
-            if !NativeReleaseFlags.isLocalOnly {
+            if NativeReleaseFlags.showsMarketplace {
                 NativeChromeButton(title: "마켓플레이스", symbol: "storefront", selected: auxiliary == .marketplace) { transition { section = .library; auxiliary = .marketplace; learningHome = false } }.accessibilityIdentifier("native-section-marketplace")
             }
             NativeChromeButton(title: "도움말", symbol: "questionmark.circle", selected: auxiliary == .help) { transition { section = .library; auxiliary = .help; learningHome = false } }.accessibilityIdentifier("native-section-help")
             Spacer(minLength: 8)
-            if !NativeReleaseFlags.isLocalOnly {
+            if NativeReleaseFlags.showsAccount {
                 NativeAccountRailButton(store: store, selected: auxiliary == .account,
                     openAccount: { transition { section = .library; auxiliary = .account; learningHome = false } },
                     openSettings: { openSettings("appearance") })

@@ -104,18 +104,21 @@ final class NativePlatformServices: ObservableObject {
     }
     private func connectAccount() {
         guard let store else { return }
-        do { sync = try DesktopSyncService(runtime:store.runtime,account:account); syncError = nil }
-        catch { sync = nil; syncError = error }
-        sync?.flushOpenDocuments = { [weak store] in try await store?.flushDocuments() }
-        sync?.mutateOpenDocuments = { [weak store] action in
-            guard let store else { throw CancellationError() }
-            return try await store.withExternalMutation(action)
+        // Both legacy services upload to Supabase, so neither is created unless the legacy switch is on.
+        if NativeReleaseFlags.legacyCloudSync {
+            do { sync = try DesktopSyncService(runtime:store.runtime,account:account); syncError = nil }
+            catch { sync = nil; syncError = error }
+            sync?.flushOpenDocuments = { [weak store] in try await store?.flushDocuments() }
+            sync?.mutateOpenDocuments = { [weak store] action in
+                guard let store else { throw CancellationError() }
+                return try await store.withExternalMutation(action)
+            }
+            sync?.emit = { [weak store] channel,value in store?.runtime.onEmit?(channel,value) }
+            let billing = DesktopBillingService(account:account)
+            billing.emit = { [weak store] channel,value in store?.runtime.onEmit?(channel,value) }
+            billing.entitlementChanged = { [weak self] in self?.sync?.requestSync(force:true) }
+            self.billing = billing
         }
-        sync?.emit = { [weak store] channel,value in store?.runtime.onEmit?(channel,value) }
-        let billing = DesktopBillingService(account:account)
-        billing.emit = { [weak store] channel,value in store?.runtime.onEmit?(channel,value) }
-        billing.entitlementChanged = { [weak self] in self?.sync?.requestSync(force:true) }
-        self.billing = billing
         account.emit = { [weak self, weak store] channel,value in
             store?.runtime.onEmit?(channel,value)
             if let state = value as? [String:Any] { self?.sync?.accountChanged(state); self?.billing?.accountChanged() }
@@ -136,8 +139,11 @@ final class NativePlatformServices: ObservableObject {
     }
     private func handle(_ channel: String,_ request: [String:Any]) async throws -> Any {
         if channel == "native:extractArticle" { return try await articles.extract(request) }
-        if channel == "studyMarket:request" { return try await marketplace.request(request) }
-        if cloud.canHandle(channel) { return try await cloud.handle(channel: channel, request: request) }
+        if channel == "studyMarket:request" || cloud.canHandle(channel) {
+            guard NativeReleaseFlags.showsMarketplace else { throw DesktopRuntimeError("이 버전에서는 마켓플레이스를 사용할 수 없습니다.", code: "MARKETPLACE_DISABLED") }
+            if channel == "studyMarket:request" { return try await marketplace.request(request) }
+            return try await cloud.handle(channel: channel, request: request)
+        }
         if channel.hasPrefix("nativeSettings:") { return try await settingsService.handle(channel,request) }
         if files.canHandle(channel) { return try await files.handle(channel:channel,request:request) }
         if credentials.canHandle(channel) { return try await credentials.handle(channel:channel,request:request) }
@@ -149,6 +155,7 @@ final class NativePlatformServices: ObservableObject {
         if channel == "profile:backup" || channel == "profile:new" { return try await profile.handle(channel) }
         if ["chat:send","chat:cancel","chat:close","nativeChat:open"].contains(channel) { return try await assistant.handle(channel,request) }
         if channel.hasPrefix("sync:") {
+            guard NativeReleaseFlags.legacyCloudSync else { throw DesktopRuntimeError("이 버전에서는 이전 계정 동기화를 사용할 수 없습니다.", code: "LEGACY_SYNC_DISABLED") }
             guard let sync else { throw syncError ?? DesktopRuntimeError("동기화 저장소를 열지 못했습니다.") }
             switch channel {
             case "sync:status":return try await sync.status()
@@ -160,17 +167,6 @@ final class NativePlatformServices: ObservableObject {
             case "sync:exportConflict":return try await sync.exportConflict(NativeValue.string(request["id"],"충돌"))
             default:break
             }
-        }
-        if channel == "native:configureAccount" {
-            let state = try await account.handle(channel:"auth:getState",request:[:]) as? [String:Any]
-            guard ["signed-out","unconfigured"].contains(state?["phase"] as? String ?? "") else { throw DesktopRuntimeError("로그아웃한 뒤 계정 서버를 변경해 주세요.") }
-            let raw = try NativeValue.string(request["url"],"서버 주소"), key = try NativeValue.string(request["publishableKey"],"공개 키")
-            guard let url = URL(string:raw), url.scheme == "https", url.host != nil, url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else { throw DesktopRuntimeError("올바른 HTTPS 서버 주소를 입력해 주세요.") }
-            await sync?.stop()
-            UserDefaults.standard.set(raw,forKey:"sync.url"); UserDefaults.standard.set(key,forKey:"sync.publishableKey")
-            guard let store else { throw CancellationError() }
-            account = DesktopAccountService(root:store.root); connectAccount(); sync?.start()
-            return try await account.handle(channel:"auth:getState",request:[:])
         }
         throw DesktopRuntimeError("이 기기 작업을 열 수 없습니다: \(channel)",code:"ENOSYS")
     }

@@ -216,7 +216,7 @@ private struct NativeSettingsGuide: View {
                 Section("2 · 필기와 노트") { Text("PDF를 열고 Apple Pencil로 필기하세요. 새 노트(PDF 필기)와 마크다운을 만들 수 있습니다.") }
                 Section("3 · 여러 창 배치") { Text("탭 메뉴에서 이동·분할을 선택하거나 탭을 끌어 원하는 영역에 놓으세요. 영역의 경계를 끌면 비율을 바꿀 수 있습니다.") }
                 Section(NativeReleaseFlags.showsRecording ? "4 · AI와 녹음" : "4 · AI") { Text(NativeReleaseFlags.showsRecording ? "AI 엔진에서 API 키를 연결하면 선택한 과목의 자료로 대화할 수 있습니다. 녹음은 모델을 설치한 뒤 기기에서 자막을 만듭니다." : "AI 엔진에서 API 키를 연결하면 선택한 과목의 자료로 대화할 수 있습니다.") }
-                if NativeReleaseFlags.isLocalOnly { Section("5 · 저장") { Text("편집 내용은 기기에 자동 저장됩니다. 저장에 실패한 편집은 복구 사본으로 보관됩니다.") } }
+                if !NativeReleaseFlags.legacyCloudSync { Section("5 · 저장") { Text("편집 내용은 기기에 자동 저장됩니다. 저장에 실패한 편집은 복구 사본으로 보관됩니다.") } }
                 else { Section("5 · 저장과 동기화") { Text("편집 내용은 기기에 자동 저장됩니다. 계정에 로그인하면 다른 기기와 자료를 동기화할 수 있고, 충돌 사본은 계정 설정에서 확인할 수 있습니다.") } }
             }.navigationTitle("반달 둘러보기").toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { dismiss() } } }
         }

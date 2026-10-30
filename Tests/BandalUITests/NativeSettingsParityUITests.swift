@@ -26,6 +26,20 @@ final class NativeSettingsParityUITests: XCTestCase {
         XCTAssertTrue(heading.label.contains("서울대학교"))
     }
 
+    /// Login is optional: the workspace opens without it and only Apple and Google remain.
+    @MainActor
+    func testAccountIsOptionalAndOffersOnlyAppleAndGoogle() {
+        let app = launch()
+        let account = app.buttons["native-section-account"]
+        XCTAssertTrue(account.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.buttons["native-section-library"].isHittable)
+        account.tap()
+        XCTAssertTrue(app.buttons["Apple로 로그인"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["Google로 로그인"].exists)
+        XCTAssertFalse(app.buttons["카카오로 로그인"].exists)
+        capture("Optional account sign-in")
+    }
+
     @MainActor
     func testSettingsSearchFindsDesktopCategoriesAndKeepsControlsUsableAfterRotation() {
         let app = launch()

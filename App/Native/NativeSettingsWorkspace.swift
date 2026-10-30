@@ -58,8 +58,6 @@ struct NativeSettingsWorkspace: View {
   @State private var keys: [String: String] = [:]
   @State private var modelCatalog: [String: [String]] = [:]
   @State private var nickname = ""
-  @State private var serverURL = ""
-  @State private var publicKey = ""
   @State private var loading = false
   @State private var busy = false
   @State private var error: String?
@@ -168,7 +166,7 @@ struct NativeSettingsWorkspace: View {
         }
       }
     }
-    .confirmationDialog(NativeReleaseFlags.isLocalOnly ? "계정을 삭제할까요? 서버의 계정 정보가 삭제됩니다. 이 기기의 파일은 남습니다." : "계정을 삭제할까요? 서버의 동기화 자료와 구독 연결이 삭제됩니다. 이 기기의 파일은 남습니다.", isPresented: $deleteAccountConfirmation, titleVisibility: .visible) {
+    .confirmationDialog(NativeReleaseFlags.legacyCloudSync ? "계정을 삭제할까요? 서버의 동기화 자료와 구독 연결이 삭제됩니다. 이 기기의 파일은 남습니다." : "계정을 삭제할까요? 서버의 계정 정보가 삭제됩니다. 이 기기의 파일은 남습니다.", isPresented: $deleteAccountConfirmation, titleVisibility: .visible) {
       Button("계정 삭제", role: .destructive) {
         run {
           _ = try await store.invoke("auth:deleteAccount")
@@ -270,7 +268,7 @@ struct NativeSettingsWorkspace: View {
   @ViewBuilder private var settingsPanel: some View {
     switch category {
     case "ai": aiPanel
-    case "account": VStack(alignment: .leading, spacing: 24) { accountPanel; if !NativeReleaseFlags.isLocalOnly { subscriptionPanel; syncPanel }; profilePanel }
+    case "account": VStack(alignment: .leading, spacing: 24) { accountPanel; if NativeReleaseFlags.legacyCloudSync { subscriptionPanel; syncPanel; profilePanel } }
     case "browser": expandedPanel("browser")
     case "advanced": VStack(spacing: 24) { expandedPanel("advanced"); storagePanel }
     case "appearance": appearancePanel
@@ -441,17 +439,11 @@ struct NativeSettingsWorkspace: View {
           Text("안전을 위해 다시 로그인해 주세요. 기기의 자료는 계속 사용할 수 있어요.").font(.caption).foregroundStyle(.red)
           Button("Apple로 다시 로그인") { signIn("apple") }
           Button("Google로 다시 로그인") { signIn("google") }
-          Button("카카오로 다시 로그인") { signIn("kakao") }
-        }
-        if let pending = (account["localAccess"] as? [String: Any])?["pendingUserID"] as? String {
-          Text("이 기기의 자료를 지금 계정에 연결해야 열 수 있어요.").font(.caption).foregroundStyle(.secondary)
-          Button("이 계정에 자료 연결") { run { _ = try await store.invoke("auth:confirmProfile", ["userID": pending]); try await loadAccount() } }
         }
         DisclosureGroup("다른 로그인 방법 연결") {
           Text("같은 반달 계정에 다른 로그인 수단을 추가합니다.").font(.caption).foregroundStyle(.secondary)
           Button("Apple 연결") { linkProvider("apple") }
           Button("Google 연결") { linkProvider("google") }
-          Button("카카오 연결") { linkProvider("kakao") }
         }
         Button("로그아웃", role: .destructive) { signOutConfirmation = true }
         Button("계정 삭제", role: .destructive) { deleteAccountConfirmation = true }
@@ -460,16 +452,6 @@ struct NativeSettingsWorkspace: View {
         Button("Apple로 로그인") { signIn("apple") }.disabled(account["phase"] as? String == "signing-in")
         Button("Google로 로그인") { signIn("google") }.disabled(
           account["phase"] as? String == "signing-in")
-        Button("카카오로 로그인") { signIn("kakao") }.disabled(account["phase"] as? String == "signing-in")
-        DisclosureGroup("서버 설정") {
-          TextField("https://project.supabase.co", text: $serverURL).keyboardType(.URL)
-            .textInputAutocapitalization(.never).autocorrectionDisabled()
-          TextField("공개 키", text: $publicKey).textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-          Text("동기화 서버의 공개 키를 사용하세요. 서비스 역할 비밀키는 입력하지 마세요.").font(.caption).foregroundStyle(
-            .secondary)
-          Button("서버 설정 저장") { configureAccount() }
-        }
       }
     }
   }
@@ -503,7 +485,7 @@ struct NativeSettingsWorkspace: View {
   }
   private var profilePanel: some View {
     settingsCard("기기 프로필") {
-      LabeledContent("프로필", value: (account["localAccess"] as? [String: Any])?["profileID"] as? String ?? store.root.lastPathComponent)
+      LabeledContent("프로필", value: store.root.lastPathComponent)
       Button("현재 자료 백업", systemImage: "externaldrive") {
         run {
           let result = try await store.invoke("profile:backup") as? [String: Any]
@@ -597,10 +579,10 @@ struct NativeSettingsWorkspace: View {
   }
   private var accountPhase: String {
     switch account["phase"] as? String {
-    case "unconfigured": "동기화 서버 설정이 필요합니다."
+    case "unconfigured": "계정 서버 설정이 필요합니다."
     case "signing-in": "로그인하는 중…"
     case "error": "로그인을 완료하지 못했습니다. 다시 시도하세요."
-    default: NativeReleaseFlags.isLocalOnly ? "로그인은 선택 사항이에요. 계정 프로필을 쓰고 싶을 때만 로그인하세요." : "로그인하면 다른 기기와 자료를 동기화할 수 있어요."
+    default: NativeReleaseFlags.legacyCloudSync ? "로그인하면 다른 기기와 자료를 동기화할 수 있어요." : "로그인은 선택 사항이에요. 계정 프로필을 쓰고 싶을 때만 로그인하세요."
     }
   }
   private var syncPhase: String {
@@ -624,8 +606,6 @@ struct NativeSettingsWorkspace: View {
       }
       try await loadAccount()
       try await loadSync()
-      serverURL = UserDefaults.standard.string(forKey: "sync.url") ?? ""
-      publicKey = UserDefaults.standard.string(forKey: "sync.publishableKey") ?? ""
     } catch { self.error = error.localizedDescription }
   }
   private func loadAccount() async throws {
@@ -636,6 +616,7 @@ struct NativeSettingsWorkspace: View {
     nickname = (account["profile"] as? [String: Any])?["nickname"] as? String ?? ""
   }
   private func loadSync() async throws {
+    guard NativeReleaseFlags.legacyCloudSync else { return }
     sync = try await store.invoke("sync:status") as? [String: Any] ?? [:]
     conflicts = try await store.invoke("sync:conflicts") as? [[String: Any]] ?? []
     if signedIn { billing = (try? await store.invoke("billing:getState")) as? [String: Any] ?? billing }
@@ -667,18 +648,6 @@ struct NativeSettingsWorkspace: View {
         throw DesktopRuntimeError("로그인을 시작하지 못했습니다. 서버 설정과 연결을 확인하세요.")
       }
       try await loadAccount()
-    }
-  }
-  private func configureAccount() {
-    run {
-      _ = try await store.invoke(
-        "native:configureAccount",
-        [
-          "url": serverURL.trimmingCharacters(in: .whitespacesAndNewlines),
-          "publishableKey": publicKey.trimmingCharacters(in: .whitespacesAndNewlines),
-        ])
-      try await loadAccount()
-      notice = "서버 설정을 저장했어요."
     }
   }
   private func saveKey(_ provider: NativeAIProvider) {
