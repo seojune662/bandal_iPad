@@ -103,6 +103,10 @@ enum NativePDFRepositoryValidation {
         if let image = source["image"] {
             let image = try object(image, "data.image")
             var value: [String: Any] = ["relPath": try string(image["relPath"], "image.relPath"), "label": try string(image["label"], "image.label")]
+            // Course images keep their pixel size too when it is a positive integer pair; sync spec v2.1 carries it.
+            if let width = try? integer(image["widthPx"], "image.widthPx"), let height = try? integer(image["heightPx"], "image.heightPx") {
+                value["widthPx"] = width; value["heightPx"] = height
+            }
             if image["storage"] != nil || image["assetId"] != nil {
                 guard image["storage"] as? String == "shared" else { throw error("Invalid shared image storage") }
                 value["storage"] = "shared"; value["assetId"] = try string(image["assetId"], "image.assetId")

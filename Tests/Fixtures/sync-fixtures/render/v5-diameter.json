@@ -1,0 +1,228 @@
+{
+  "about": "inkVersion 5 per-point diameter factors. Diameter in page-width units = style.width x factor. Source of truth: bandal src/shared/inkV5.ts diameterFactorsV5. iPad compares NativePDFInkGeometryV5 within tolerance.",
+  "aspect": "displayed page height / width (A4 portrait)",
+  "tolerance": 0.000001,
+  "cases": [
+    {
+      "name": "ink-pressure-ramp-no-time",
+      "kind": "ink",
+      "width": 0.003,
+      "highlighter": false,
+      "points": [
+        {
+          "x": 0.2,
+          "y": 0.5,
+          "p": 0.1
+        },
+        {
+          "x": 0.25,
+          "y": 0.5,
+          "p": 0.2
+        },
+        {
+          "x": 0.3,
+          "y": 0.5,
+          "p": 0.3
+        },
+        {
+          "x": 0.35,
+          "y": 0.5,
+          "p": 0.4
+        },
+        {
+          "x": 0.4,
+          "y": 0.5,
+          "p": 0.5
+        },
+        {
+          "x": 0.45,
+          "y": 0.5,
+          "p": 0.6
+        },
+        {
+          "x": 0.5,
+          "y": 0.5,
+          "p": 0.7
+        },
+        {
+          "x": 0.55,
+          "y": 0.5,
+          "p": 0.8
+        },
+        {
+          "x": 0.6,
+          "y": 0.5,
+          "p": 0.9
+        }
+      ],
+      "aspect": 1.414276,
+      "expectedFactors": [
+        0.26083,
+        0.398726,
+        0.451311,
+        0.505378,
+        0.572221,
+        0.635834,
+        0.696976,
+        0.756131,
+        0.260363
+      ]
+    },
+    {
+      "name": "ink-timed-ipad-like",
+      "kind": "ink",
+      "width": 0.003,
+      "highlighter": false,
+      "points": [
+        {
+          "x": 0.2,
+          "y": 0.3,
+          "p": 0.25,
+          "t": 0
+        },
+        {
+          "x": 0.204,
+          "y": 0.301,
+          "p": 0.4,
+          "t": 4
+        },
+        {
+          "x": 0.208,
+          "y": 0.302,
+          "p": 0.55,
+          "t": 8
+        },
+        {
+          "x": 0.212,
+          "y": 0.303,
+          "p": 0.7,
+          "t": 12
+        },
+        {
+          "x": 0.216,
+          "y": 0.304,
+          "p": 0.85,
+          "t": 16
+        },
+        {
+          "x": 0.22,
+          "y": 0.305,
+          "p": 1,
+          "t": 20
+        },
+        {
+          "x": 0.224,
+          "y": 0.306,
+          "p": 1,
+          "t": 24
+        },
+        {
+          "x": 0.228,
+          "y": 0.307,
+          "p": 0.8,
+          "t": 28
+        },
+        {
+          "x": 0.232,
+          "y": 0.308,
+          "p": 0.5,
+          "t": 32
+        }
+      ],
+      "aspect": 1.414276,
+      "expectedFactors": [
+        0.348237,
+        0.465649,
+        0.525998,
+        0.58895,
+        0.667563,
+        0.742909,
+        0.782846,
+        0.607846,
+        0.214371
+      ]
+    },
+    {
+      "name": "ink-constant-p05",
+      "kind": "ink",
+      "width": 0.004,
+      "highlighter": false,
+      "points": [
+        {
+          "x": 0.1,
+          "y": 0.7,
+          "p": 0.5
+        },
+        {
+          "x": 0.2,
+          "y": 0.7,
+          "p": 0.5
+        },
+        {
+          "x": 0.3,
+          "y": 0.7,
+          "p": 0.5
+        },
+        {
+          "x": 0.4,
+          "y": 0.7,
+          "p": 0.5
+        },
+        {
+          "x": 0.5,
+          "y": 0.7,
+          "p": 0.5
+        }
+      ],
+      "aspect": 1.414276,
+      "expectedFactors": [
+        0.472918,
+        0.630557,
+        0.630557,
+        0.630557,
+        0.201778
+      ]
+    },
+    {
+      "name": "highlighter-constant",
+      "kind": "highlighter",
+      "width": 0.02,
+      "highlighter": true,
+      "points": [
+        {
+          "x": 0.1,
+          "y": 0.7,
+          "p": 0.5
+        },
+        {
+          "x": 0.2,
+          "y": 0.7,
+          "p": 0.5
+        },
+        {
+          "x": 0.3,
+          "y": 0.7,
+          "p": 0.5
+        },
+        {
+          "x": 0.4,
+          "y": 0.7,
+          "p": 0.5
+        },
+        {
+          "x": 0.5,
+          "y": 0.7,
+          "p": 0.5
+        }
+      ],
+      "aspect": 1.414276,
+      "expectedFactors": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  ]
+}
