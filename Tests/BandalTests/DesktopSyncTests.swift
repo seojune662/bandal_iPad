@@ -326,13 +326,12 @@ private final class DesktopSyncRecoveryFixture {
         let token = "fixture." + claims.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") + ".fixture"
         let credential = String(decoding: try JSONSerialization.data(withJSONObject: ["access_token": token, "refresh_token": "fixture-refresh", "expires_at": Date().timeIntervalSince1970 + 3600, "user": ["id": user]]), as: UTF8.self)
         var environment = DesktopAccountEnvironment()
-        environment.configuration = { (url, "fixture-key") }; environment.readCredential = { credential }; environment.writeCredential = { _ in }
+        environment.configuration = { (url, "fixture-key") }; environment.issuer = { nil }; environment.readCredential = { credential }; environment.writeCredential = { _ in }
         environment.request = { request in (Data("[]".utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!) }
         account = DesktopAccountService(root: root, environment: environment)
         store = try RecordStore(url: root.appendingPathComponent("CommonSync/bandal.sqlite"))
         try await store.setPreference("syncEnabled", value: "true")
-        _ = try await account.handle(channel: "auth:getState", request: [:])
-        _ = try await account.handle(channel: "auth:confirmProfile", request: ["userID": user])
+        _ = try await account.accessToken()
     }
     func close() { try? FileManager.default.removeItem(at: root) }
 }

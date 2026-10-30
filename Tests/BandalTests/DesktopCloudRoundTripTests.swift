@@ -47,13 +47,11 @@ final class DesktopCloudRoundTripTests: XCTestCase {
         try await runtime.start()
         var accountEnvironment = DesktopAccountEnvironment()
         accountEnvironment.configuration = { (projectURL, publicKey) }
+        accountEnvironment.issuer = { nil }
         accountEnvironment.readCredential = { credential }
         accountEnvironment.writeCredential = { _ in }
         let account = DesktopAccountService(root: root, environment: accountEnvironment)
-        let state = try await account.handle(channel: "auth:getState", request: [:]) as? [String: Any]
-        if (state?["localAccess"] as? [String: Any])?["requiresBindingConfirmation"] as? Bool == true {
-            _ = try await account.handle(channel: "auth:confirmProfile", request: ["userID": userID])
-        }
+        _ = try await account.accessToken()
         let store = try RecordStore(url: root.appendingPathComponent("CommonSync/bandal.sqlite"))
         try await store.setPreference("syncEnabled", value: "true")
         let sync = try DesktopSyncService(runtime: runtime, account: account)

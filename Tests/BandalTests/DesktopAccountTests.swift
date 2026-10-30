@@ -61,7 +61,10 @@ final class DesktopAccountTests: XCTestCase {
         fixture.completeOAuth()
         try await waitUntil { fixture.requests.contains { $0.url?.path == "/auth/v1/token" } }
         for _ in 0..<20 { await Task.yield() }
-        XCTAssertEqual(fixture.credential, original); XCTAssertTrue(service.localAccessAllowed)
+        XCTAssertEqual(fixture.credential, original)
+        let stored = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(original).utf8)) as? [String: Any])
+        let token = try await service.accessToken()
+        XCTAssertEqual(token, stored["access_token"] as? String, "The in-memory session must stay the original account")
     }
     func testUnconfiguredStateDoesNotOpenNetworkOrWriteCredentials() async throws {
         let fixture = try DesktopAccountFixture(); defer { fixture.close() }
@@ -72,6 +75,15 @@ final class DesktopAccountTests: XCTestCase {
         let result = try await service.handle(channel: "auth:signIn", request: ["provider": "google"]) as? [String: Any]
         XCTAssertEqual(result?["reason"] as? String, "not-configured")
         XCTAssertTrue(fixture.requests.isEmpty); XCTAssertTrue(fixture.writes.isEmpty); XCTAssertNil(fixture.oauthURL)
+    }
+    func testKakaoIsNoLongerASignInOrLinkProvider() async throws {
+        let fixture = try DesktopAccountFixture(); defer { fixture.close() }
+        let service = DesktopAccountService(root: fixture.root, environment: fixture.environment)
+        for channel in ["auth:signIn", "auth:linkProvider"] {
+            let result = try await service.handle(channel: channel, request: ["provider": "kakao"]) as? [String: Any]
+            XCTAssertEqual(result?["ok"] as? Bool, false); XCTAssertEqual(result?["reason"] as? String, "provider")
+        }
+        XCTAssertNil(fixture.oauthURL); XCTAssertTrue(fixture.requests.isEmpty); XCTAssertTrue(fixture.writes.isEmpty)
     }
     func testSignInWaitsForActualBrowserStartAndIgnoresCallbackAfterSignOut() async throws {
         let fixture = try DesktopAccountFixture(); defer { fixture.close() }
@@ -92,22 +104,23 @@ final class DesktopAccountTests: XCTestCase {
         XCTAssertNil(fixture.credential); XCTAssertTrue(fixture.requests.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("account-binding.json").path))
     }
-    func testProfileProjectionBindingAndNicknameUseDesktopContract() async throws {
+    func testProfileProjectionAndNicknameUseDesktopContractWithoutBindingTheDataFolder() async throws {
         let fixture = try DesktopAccountFixture(); defer { fixture.close() }
         let service = DesktopAccountService(root: fixture.root, environment: fixture.environment)
         var events: [[String: Any]] = []
         service.emit = { channel, value in if channel == "auth:changed", let state = value as? [String: Any] { events.append(state) } }
         try await start(service, fixture: fixture)
         fixture.completeOAuth(); try await waitUntil { fixture.requests.count == 1 }
-        fixture.reply(0, object: fixture.session(user: fixture.user, metadata: ["picture": "http://example.kakaocdn.net/photo.png"]))
+        fixture.reply(0, object: fixture.session(user: fixture.user, metadata: ["picture": "http://lh3.googleusercontent.com/photo.png"]))
         try await waitUntil { fixture.requests.count == 2 }
-        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("account-binding.json").path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.root.path), [], "Signing in must not write into the data folder")
         XCTAssertNotNil(fixture.credential)
         fixture.reply(1, object: [["id": fixture.user, "nickname": "user_1234abcd", "avatar_color": "moon", "avatar_emoji": "🌙"]])
         try await waitUntil { events.last?["phase"] as? String == "signed-in" }
         let state = try XCTUnwrap(events.last)
+        XCTAssertNil(state["localAccess"])
         XCTAssertTrue((state["profile"] as? [String: Any])?["nickname"] is NSNull)
-        XCTAssertEqual(state["avatarUrl"] as? String, "https://example.kakaocdn.net/photo.png")
+        XCTAssertEqual(state["avatarUrl"] as? String, "https://lh3.googleusercontent.com/photo.png")
         let eventData = try JSONSerialization.data(withJSONObject: events)
         XCTAssertFalse(String(decoding: eventData, as: UTF8.self).contains("access_token"))
         XCTAssertFalse(String(decoding: eventData, as: UTF8.self).contains("refresh_token"))
@@ -139,125 +152,128 @@ final class DesktopAccountTests: XCTestCase {
         let other = try DesktopAccountFixture(); defer { other.close() }
         other.credential = String(decoding: try JSONSerialization.data(withJSONObject: other.session(user: other.user, issuer: "https://wrong.invalid/auth/v1")), as: UTF8.self)
         let wrong = DesktopAccountService(root: other.root, environment: other.environment)
+        _ = try? await wrong.accessToken()
         let state = try await wrong.handle(channel: "auth:getState", request: [:]) as? [String: Any]
         XCTAssertEqual(state?["phase"] as? String, "signed-out")
         XCTAssertTrue(other.requests.isEmpty); XCTAssertTrue(other.writes.isEmpty)
     }
-    func testLegacyAccountBindingBlocksNewAccountWithoutChangingLegacyDatabase() async throws {
+    /// auth.bandal.io is a custom domain: requests go there, but tokens keep the
+    /// project's supabase.co issuer (measured from its OIDC discovery on 2026-10-30).
+    func testCustomAuthDomainChecksTheConfiguredIssuerNotTheRequestHost() async throws {
         let fixture = try DesktopAccountFixture(); defer { fixture.close() }
-        let legacyURL = fixture.directory.appendingPathComponent("Bandal/bandal.sqlite")
-        let legacy = try DesktopSQLite(url: legacyURL)
+        fixture.configuration = ("https://auth.custom.invalid", "fixture-public-key")
+        fixture.issuer = "https://project.custom.invalid/auth/v1"
+        fixture.credential = String(decoding: try JSONSerialization.data(withJSONObject: fixture.session(user: fixture.user)), as: UTF8.self)
+        var environment = fixture.environment
+        environment.request = { request in
+            fixture.requests.append(request)
+            return (Data("[]".utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let service = DesktopAccountService(root: fixture.root, environment: environment)
+        _ = try await service.accessToken()
+        let state = try await service.handle(channel: "auth:getState", request: [:]) as? [String: Any]
+        XCTAssertEqual(state?["phase"] as? String, "signed-in")
+        XCTAssertEqual(fixture.requests.compactMap { $0.url?.host }, ["auth.custom.invalid"])
+
+        let derived = try DesktopAccountFixture(); defer { derived.close() }
+        derived.configuration = fixture.configuration; derived.issuer = fixture.issuer
+        derived.credential = String(decoding: try JSONSerialization.data(withJSONObject: derived.session(user: derived.user, issuer: "https://auth.custom.invalid/auth/v1")), as: UTF8.self)
+        let rejecting = DesktopAccountService(root: derived.root, environment: derived.environment)
+        _ = try? await rejecting.accessToken()
+        let rejected = try await rejecting.handle(channel: "auth:getState", request: [:]) as? [String: Any]
+        XCTAssertEqual(rejected?["phase"] as? String, "signed-out")
+        XCTAssertTrue(derived.requests.isEmpty)
+    }
+    /// Builds before 2026-10-30 bound the data folder to the first account. Those
+    /// files stay on disk untouched; they no longer block sign-in or restore.
+    func testLegacyBindingFilesAndReceiptsNoLongerLockSignInOrRestore() async throws {
+        let fixture = try DesktopAccountFixture(); defer { fixture.close() }
+        let otherUser = "22222222-2222-4222-8222-222222222222"
+        let binding = try JSONSerialization.data(withJSONObject: ["version": 1, "userID": otherUser, "projectURL": fixture.configuration.url])
+        let receipt = try JSONSerialization.data(withJSONObject: ["userID": otherUser, "projectURL": fixture.configuration.url, "allowed": false])
+        try binding.write(to: fixture.root.appendingPathComponent("account-binding.json"))
+        try receipt.write(to: fixture.root.appendingPathComponent("account-access.json"))
+        let legacy = try DesktopSQLite(url: fixture.directory.appendingPathComponent("Bandal/bandal.sqlite"))
         try legacy.exec("CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
-        _ = try legacy.run("INSERT INTO metadata(key,value) VALUES('sync_account',?)", params: ["22222222-2222-4222-8222-222222222222"])
+        _ = try legacy.run("INSERT INTO metadata(key,value) VALUES('sync_account',?)", params: [otherUser])
+
         let service = DesktopAccountService(root: fixture.root, environment: fixture.environment)
-        var failed = false
-        service.emit = { _, value in failed = (value as? [String: Any])?["phase"] as? String == "error" }
+        var signedIn = false
+        service.emit = { _, value in signedIn = (value as? [String: Any])?["phase"] as? String == "signed-in" }
         try await start(service, fixture: fixture)
         fixture.completeOAuth(); try await waitUntil { fixture.requests.count == 1 }
         fixture.reply(0, object: fixture.session(user: fixture.user))
-        try await waitUntil { failed }
-        XCTAssertNil(fixture.credential); XCTAssertTrue(fixture.writes.isEmpty)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("account-binding.json").path))
-        XCTAssertEqual(try legacy.query("SELECT value FROM metadata WHERE key='sync_account'", params: nil).first?["value"] as? String, "22222222-2222-4222-8222-222222222222")
+        try await waitUntil { fixture.requests.count == 2 }
+        fixture.reply(1, object: [])
+        try await waitUntil { signedIn }
+        XCTAssertNotNil(fixture.credential)
+
+        var environment = fixture.environment
+        environment.request = { request in (Data("[]".utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!) }
+        let reopened = DesktopAccountService(root: fixture.root, environment: environment)
+        _ = try await reopened.accessToken()
+        let state = try await reopened.handle(channel: "auth:getState", request: [:]) as? [String: Any]
+        XCTAssertEqual(state?["phase"] as? String, "signed-in")
+        XCTAssertNil(state?["localAccess"]); XCTAssertFalse(reopened.canHandle("auth:confirmProfile"))
+
+        XCTAssertEqual(try Data(contentsOf: fixture.root.appendingPathComponent("account-binding.json")), binding)
+        XCTAssertEqual(try Data(contentsOf: fixture.root.appendingPathComponent("account-access.json")), receipt)
+        XCTAssertEqual(try legacy.query("SELECT value FROM metadata WHERE key='sync_account'", params: nil).first?["value"] as? String, otherUser)
     }
-    func testExpiredOfflineSessionKeepsPreviouslyAuthorizedLocalAccess() async throws {
+    func testExpiredOfflineSessionAsksForLoginAndSignsOutCleanly() async throws {
         let fixture = try DesktopAccountFixture(); defer { fixture.close() }
         fixture.credential = String(decoding: try JSONSerialization.data(withJSONObject: fixture.session(user: fixture.user, expires: Date().timeIntervalSince1970 - 60)), as: UTF8.self)
         var environment = fixture.environment
         environment.request = { _ in throw URLError(.notConnectedToInternet) }
         let service = DesktopAccountService(root: fixture.root, environment: environment)
+        _ = try? await service.accessToken()
         let state = try await service.handle(channel: "auth:getState", request: [:]) as? [String: Any]
-        XCTAssertTrue((state?["localAccess"] as? [String: Any])?["allowed"] as? Bool == true)
+        XCTAssertEqual(state?["phase"] as? String, "signed-in")
+        XCTAssertEqual(state?["errorCode"] as? String, "reauthentication-required")
         XCTAssertEqual(state?["online"] as? Bool, false)
-        let reopened = DesktopAccountService(root: fixture.root, environment: environment)
-        XCTAssertTrue(reopened.localAccessAllowed)
-        _ = try await reopened.handle(channel: "auth:signOut", request: [:])
-        XCTAssertFalse(reopened.localAccessAllowed)
-        XCTAssertFalse(DesktopAccountService(root: fixture.root, environment: environment).localAccessAllowed)
+        _ = try await service.handle(channel: "auth:signOut", request: [:])
+        let after = try await service.handle(channel: "auth:getState", request: [:]) as? [String: Any]
+        XCTAssertEqual(after?["phase"] as? String, "signed-out"); XCTAssertNil(fixture.credential)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("account-access.json").path))
     }
-    func testExistingContentRequiresExplicitOwnershipConfirmation() async throws {
-        let fixture = try DesktopAccountFixture(); defer { fixture.close() }
-        let db = try DesktopSQLite(url: fixture.root.appendingPathComponent("bandal.db"))
-        try db.exec("CREATE TABLE courses(id TEXT PRIMARY KEY); INSERT INTO courses VALUES('existing-course')")
-        fixture.credential = String(decoding: try JSONSerialization.data(withJSONObject: fixture.session(user: fixture.user)), as: UTF8.self)
-        var environment = fixture.environment
-        environment.request = { request in (Data("[]".utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!) }
-        let service = DesktopAccountService(root: fixture.root, environment: environment)
-        let state = try await service.handle(channel: "auth:getState", request: [:]) as? [String: Any]
-        XCTAssertFalse(service.localAccessAllowed)
-        XCTAssertTrue((state?["localAccess"] as? [String: Any])?["requiresBindingConfirmation"] as? Bool == true)
-        do { _ = try await service.handle(channel: "auth:confirmProfile", request: ["userID": "other-account"]); XCTFail("Wrong identity") } catch { }
-        _ = try await service.handle(channel: "auth:confirmProfile", request: ["userID": fixture.user])
-        XCTAssertTrue(service.localAccessAllowed)
-        XCTAssertEqual(try db.query("SELECT id FROM courses", params: nil).count, 1)
-    }
-
-    func testCorruptReceiptCannotRestoreOfflineAccessFromExistingCredential() async throws {
-        let receipts: [[String: Any]] = [
-            ["userID": "11111111-1111-4111-8111-111111111111", "projectURL": "https://account-fixture.invalid"],
-            ["userID": "", "projectURL": "https://account-fixture.invalid", "allowed": true],
-            ["userID": "11111111-1111-4111-8111-111111111111", "projectURL": "https://account-fixture.invalid", "allowed": true]
+    /// A refusal (any HTTP error status) leaves the account intact, so the session stays.
+    /// A dropped connection or an unreadable success reply may have deleted the account,
+    /// so the session is signed out instead of being restored on the next launch.
+    func testDeletionKeepsTheSessionWhenRefusedAndSignsOutWhenTheOutcomeIsUncertain() async throws {
+        let pending: [String: Any] = ["error": "account_deletion_pending_transactions", "pendingTransactions": ["orders": [["count": 2]], "payouts": [["count": 1]], "cases": [["count": 3]], "unsettledBalance": -4500]]
+        let cases: [(name: String, status: Int, body: Data?, keepsSession: Bool)] = [
+            ("pending transactions", 409, try JSONSerialization.data(withJSONObject: pending), true),
+            ("reauthentication", 401, try JSONSerialization.data(withJSONObject: ["error": "reauthentication_required"]), true),
+            ("server error", 500, Data("{}".utf8), true),
+            ("dropped connection", 0, nil, false),
+            ("empty success body", 200, Data(), false),
+            ("success without ok", 200, try JSONSerialization.data(withJSONObject: ["ok": false]), false),
         ]
-        for receipt in receipts {
+        for scenario in cases {
             let fixture = try DesktopAccountFixture(); defer { fixture.close() }
-            fixture.credential = String(decoding: try JSONSerialization.data(withJSONObject: fixture.session(user: fixture.user)), as: UTF8.self)
-            let original = try JSONSerialization.data(withJSONObject: receipt)
-            let file = fixture.root.appendingPathComponent("account-access.json")
-            try original.write(to: file)
-            let service = DesktopAccountService(root: fixture.root, environment: fixture.environment)
-            _ = try await service.handle(channel: "auth:getState", request: [:])
-            XCTAssertFalse(service.localAccessAllowed)
-            XCTAssertTrue(fixture.requests.isEmpty)
-            XCTAssertEqual(try Data(contentsOf: file), original)
-        }
-    }
-
-    func testReceiptWriteFailureDoesNotUnlockCurrentOrReopenedProfile() async throws {
-        let fixture = try DesktopAccountFixture(); defer { fixture.close() }
-        let receipt = fixture.root.appendingPathComponent("account-access.json")
-        try FileManager.default.createDirectory(at: receipt, withIntermediateDirectories: false)
-        var environment = fixture.environment
-        environment.authorizeApple = { _ in DesktopAppleCredential(identityToken: "fixture-identity", authorizationCode: nil) }
-        environment.request = { request in
-            (try JSONSerialization.data(withJSONObject: fixture.session(user: fixture.user)), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
-        }
-        let service = DesktopAccountService(root: fixture.root, environment: environment)
-        let response = try await service.handle(channel: "auth:signIn", request: ["provider": "apple"]) as? [String: Any]
-        XCTAssertEqual(response?["ok"] as? Bool, false)
-        XCTAssertFalse(service.localAccessAllowed)
-        let reopened = DesktopAccountService(root: fixture.root, environment: environment)
-        _ = try await reopened.handle(channel: "auth:getState", request: [:])
-        XCTAssertFalse(reopened.localAccessAllowed)
-    }
-
-    func testDeletionLocksBeforeRemoteRequestAndExplainsPendingSettlement() async throws {
-        let fixture = try DesktopAccountFixture(); defer { fixture.close() }
-        var environment = fixture.environment, uncertain = false
-        environment.authorizeApple = { _ in DesktopAppleCredential(identityToken: "fixture-identity", authorizationCode: nil) }
-        environment.request = { request in
-            let deleting = request.url!.path == "/functions/v1/account-delete"
-            if deleting {
-                let receipt = try JSONSerialization.jsonObject(with: Data(contentsOf: fixture.root.appendingPathComponent("account-access.json"))) as? [String: Any]
-                XCTAssertEqual(receipt?["allowed"] as? Bool, false)
-                if uncertain { throw URLError(.networkConnectionLost) }
+            var environment = fixture.environment
+            environment.authorizeApple = { _ in DesktopAppleCredential(identityToken: "fixture-identity", authorizationCode: nil) }
+            environment.request = { request in
+                guard request.url!.path == "/functions/v1/account-delete" else {
+                    let body: Any = request.url!.path == "/auth/v1/token" ? fixture.session(user: fixture.user) : []
+                    return (try JSONSerialization.data(withJSONObject: body), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+                }
+                guard let body = scenario.body else { throw URLError(.networkConnectionLost) }
+                return (body, HTTPURLResponse(url: request.url!, statusCode: scenario.status, httpVersion: nil, headerFields: nil)!)
             }
-            let body: Any = deleting ? ["error": "account_deletion_pending_transactions", "pendingTransactions": ["orders": [["count": 2]], "payouts": [["count": 1]], "cases": [["count": 3]], "unsettledBalance": -4500]] : request.url!.path == "/auth/v1/token" ? fixture.session(user: fixture.user) : []
-            return (try JSONSerialization.data(withJSONObject: body), HTTPURLResponse(url: request.url!, statusCode: deleting ? 409 : 200, httpVersion: nil, headerFields: nil)!)
+            let service = DesktopAccountService(root: fixture.root, environment: environment)
+            _ = try await service.handle(channel: "auth:signIn", request: ["provider": "apple"])
+            do { _ = try await service.deleteAccount(); XCTFail("\(scenario.name) must throw") }
+            catch where scenario.name == "pending transactions" {
+                XCTAssertTrue(error.localizedDescription.contains("거래 2건")); XCTAssertTrue(error.localizedDescription.contains("정산 1건"))
+                XCTAssertTrue(error.localizedDescription.contains("처리 3건")); XCTAssertTrue(error.localizedDescription.contains("-4500원"))
+            } catch { }
+            let state = try await service.handle(channel: "auth:getState", request: [:]) as? [String: Any]
+            XCTAssertEqual(state?["phase"] as? String, scenario.keepsSession ? "signed-in" : "signed-out", scenario.name)
+            XCTAssertEqual(fixture.credential != nil, scenario.keepsSession, scenario.name)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.root.path), [], scenario.name)
         }
-        let service = DesktopAccountService(root: fixture.root, environment: environment)
-        _ = try await service.handle(channel: "auth:signIn", request: ["provider": "apple"])
-        do { _ = try await service.deleteAccount(); XCTFail("Pending transactions") }
-        catch {
-            XCTAssertTrue(error.localizedDescription.contains("거래 2건")); XCTAssertTrue(error.localizedDescription.contains("정산 1건"))
-            XCTAssertTrue(error.localizedDescription.contains("처리 3건")); XCTAssertTrue(error.localizedDescription.contains("-4500원"))
-        }
-        XCTAssertTrue(service.localAccessAllowed)
-        uncertain = true
-        do { _ = try await service.deleteAccount(); XCTFail("Uncertain remote outcome") } catch { }
-        XCTAssertFalse(service.localAccessAllowed)
-        XCTAssertFalse(DesktopAccountService(root: fixture.root, environment: environment).localAccessAllowed)
     }
-
 }
 
 @MainActor
@@ -266,6 +282,8 @@ private final class DesktopAccountFixture {
     let root: URL
     let user = "11111111-1111-4111-8111-111111111111"
     var configuration = (url: "https://account-fixture.invalid", key: "fixture-public-key")
+    /// Nil keeps the default `<url>/auth/v1`; set explicitly so a simulator's stored defaults never leak in.
+    var issuer: String?
     var credential: String?
     var writes: [String] = []
     var requests: [URLRequest] = []
@@ -281,6 +299,7 @@ private final class DesktopAccountFixture {
     var environment: DesktopAccountEnvironment {
         var environment = DesktopAccountEnvironment()
         environment.configuration = { self.configuration }
+        environment.issuer = { self.issuer }
         environment.readCredential = { self.credential }
         environment.writeCredential = { value in self.writes.append(value); self.credential = value.isEmpty ? nil : value }
         environment.request = { request in
@@ -299,7 +318,7 @@ private final class DesktopAccountFixture {
     }
     func session(user: String, expires: Double = Date().timeIntervalSince1970 + 3600, issuer: String? = nil, metadata: [String: String] = [:]) -> [String: Any] {
         func encode(_ value: Any) -> String { try! JSONSerialization.data(withJSONObject: value).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") }
-        let token = encode(["alg": "fixture"]) + "." + encode(["sub": user, "iss": issuer ?? configuration.url + "/auth/v1", "exp": expires]) + ".fixture"
+        let token = encode(["alg": "fixture"]) + "." + encode(["sub": user, "iss": issuer ?? self.issuer ?? configuration.url + "/auth/v1", "exp": expires]) + ".fixture"
         return ["access_token": token, "refresh_token": "fixture-refresh", "expires_at": expires, "user": ["id": user, "email": "student@example.invalid", "user_metadata": metadata]]
     }
     func close() {
