@@ -1,6 +1,6 @@
 # sync-fixtures
 
-반달 동기화 공통 스펙의 적합성 예제다. 스펙 본문은 [SPEC.md](SPEC.md)(v2.1)에 있다.
+반달 동기화 공통 스펙의 적합성 예제다. 스펙 본문은 [SPEC.md](SPEC.md)(v2.2)에 있다.
 
 - 각 폴더의 `root/`는 클라우드 루트를 그대로 옮긴 것이다.
 - `expected.json`은 `root/` 전체를 파싱·머지한 뒤의 상태다. 데스크톱과 iPad 파서는 같은 결과를 내야 한다.
@@ -15,11 +15,19 @@
 | `02-same-id-both-edited` | 같은 획을 양쪽에서 고친 경우. 필기는 개체 전체 기준으로 t가 큰 쪽이 이긴다(iPad의 이동 < 데스크톱의 색 변경). t가 같으면 device_id가 큰 쪽이 이긴다. 과목은 필드마다 승자를 따로 정한다(이름은 iPad, 색은 데스크톱) |
 | `03-delete-then-edit` | 삭제 뒤에 더 큰 t의 수정이 오면 복구된다(문서 D1, 획 S1). 수정 뒤에 더 큰 t의 삭제가 오면 삭제가 남는다(문서 D3, 획 S2). S2의 묘비는 최소형 `{id, page, t, del}`이다 |
 | `04-note-both-edited` | `md_base`로 노트 충돌을 판정한다. 차례로 고친 경우(N1)에는 충돌이 없다. 동시에 고친 경우(N2)에는 본문 하나와 결정적 충돌 사본 하나가 남는다 |
+| `05-note-attachments` | 노트 첨부. 링크한 asset이 있는 노트는 반영하고, 없는 노트는 `waiting.docs`에 둔다. 기기 파일(`devices/cccc…0003.json`)이 없는 기기가 진 버전의 충돌 사본은 device_id 앞 8자로 이름을 짓는다. 진 버전의 노트 파일이 없는 사본은 `waiting.copies`에 둔다 |
+| `06-path-collision` | 경로 충돌. `1주차.pdf`, `1주차.PDF`, NFD로 쓴 `1주차.pdf`는 한 이름이다. `Lecture/Notes.md`와 `lecture/notes.md`도 한 이름이다. 삭제된 문서는 id가 가장 작아도 빠진다. `renames`가 결과다. 충돌 사본도 넣는다: 살아 있는 문서와 이름이 겹친 사본은 id 앞 4자를 붙이고, 겹친 사본끼리는 id가 작은 쪽이 이름을 쓴다. 그리스 문자 `ΟΔΥΣΣΕΥΣ 1.pdf`는 코드 포인트 단위로 바꾸면 `οδυσσευσ 1.pdf`와 겹치고 `οδυσσευς 1.pdf`와는 겹치지 않는다(문자열 전체를 바꾸면 반대가 된다) |
+| `07-out-of-range-coordinates` | 페이지를 조금 벗어난 좌표(-0.0012, 1.0034, 페이지 밖으로 나간 상자)를 거부하지 않고 쓴 그대로 둔다. 클램프는 각 앱이 저장할 때 한다 |
+| `08-format-not-2` | `bandal.json`의 format이 3이면 아무것도 읽지 않는다. 깨진 log가 있어도 `errors`는 비어 있다 |
+| `09-invalid-input` | 잘못된 입력과 파서 경계. 읽을 수 없는 파일은 `errors`다: JSON·gzip 오류, 배열 아님, `1e999`, 해시 불일치, BOM, 잘못된 UTF-8, 짝 없는 서로게이트, 깊이 65, gzip 뒤 쓰레기 바이트. 값이 틀린 이벤트와 개체(경로 탈출, `/`가 든 이름, 대문자 id, 2100년 이후 t, page 0, 잘못된 asset 참조, `del: false`)는 그것만 버리고, 같은 파일의 올바른 이벤트는 반영한다. 깊이 64, 중복 키(마지막 값), gzip 멤버 여러 개, gzip 뒤 0 바이트는 받는다 |
+| `10-same-stamp` | `(t, device_id)`까지 같은 경우. seq가 큰 파일이 이기고, 같은 파일이면 뒤에 있는 것이 이긴다. device_id 비교가 seq보다 먼저다 |
+| `11-note-revert` | head 규칙. A가 H1을 H0으로 되돌리는 동안 B가 H1에서 H2를 만들고 더 늦으면, 본문은 H2이고 A의 되돌리기(H0)는 충돌 사본으로 남는다. 오프라인 C가 원래 H0에서 H3을 만들었고 A의 되돌리기보다 늦으면, H3 하나만 남고 사본은 없다 |
 | `render/v5-diameter.json` | inkVersion 5의 점별 지름 계수. 두 렌더러의 굵기가 같은지 본다. 계수는 데스크톱 `src/shared/inkV5.ts`로 계산했다. 허용오차는 1e-6이다 |
 
 ## 고정 값
 
-- **기기**: `aaaaaaaa-…0001`은 "MacBook Air"(데스크톱), `bbbbbbbb-…0002`는 "iPad Pro"다. 사전순으로는 iPad가 더 크다.
+- **기기**: `aaaaaaaa-…0001`은 "MacBook Air"(데스크톱), `bbbbbbbb-…0002`는 "iPad Pro"다. 사전순으로는 iPad가 더 크다. `cccccccc-…0003`은 기기 파일이 아직 없는 기기다(05).
+- **파일 이름**: 대소문자만 다른 두 경로를 두지 않는다. APFS와 NTFS는 둘을 같은 파일로 본다.
 - **시각**: `t`는 ms epoch이고, 기준은 `T0 = 1793318400000`(2026-10-30T00:00:00Z)이다.
 - **충돌 사본 id**: `uuidv5(namespace = 9b1f6a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b, name = "<document_id>:<진 쪽 md_hash>")`
 - **해시**: `pdf_sha256`, `md_hash`, `assets/<sha256>.<ext>`는 모두 바이트의 SHA-256(소문자 hex)이다.
@@ -30,17 +38,21 @@
 
 ```text
 fixture           폴더 이름
-spec              "2.1"
+spec              "2.2"
+blocked           null | "missing-root" | "update-required" | "unsupported-format"   format 검사 결과. null이 아니면 나머지는 모두 비어 있다
 courses           {id: {name, sort, color, archived, alive}}
 docs              {id: {course_id, type, name, rel_path, pdf_sha256 | md_hash, alive}}
 ink               {document_id: {page: {object_id: 이긴 버전의 개체 전체}}}
 notes             {document_id: {md_hash, file}}  file은 그 내용을 담은 root 안 경로
-conflict_copies   [{id, of, course_id, rel_path, name, md_hash, file}]  id 순
+conflict_copies   [{id, of, course_id, rel_path, name, md_hash, file}]  지금 만들 사본, id 순
+renames           [{id, name}]  경로 충돌로 내야 할 이름 바꾸기, id 순
+waiting           {docs: [id], ink: [id], copies: [id]}  참조 대상이 아직 없어 반영을 미룬 문서·필기·충돌 사본, 각각 사전순
 ignored           [root 기준 경로]  패턴 밖이라 무시한 파일, 사전순
 errors            [root 기준 경로]  파싱하지 못한 파일, 사전순
 ```
 
 - 삭제된 과목·문서·필기도 머지된 값 그대로 남긴다(`alive: false`, `del: true`). 나중에 복구될 때 이 값을 쓴다.
+- v2.2에서 `blocked`, `renames`, `waiting`을 더했다. 01–04의 `root/`는 그대로이고 `expected.json`에 빈 값으로 들어 있다.
 - 필기 개체는 해시가 아니라 개체 전체를 담는다. 두 플랫폼 사이에 정규 JSON(숫자 표기) 규칙을 맞추지 않아도 되도록 JSON 값으로 비교한다.
 
 ## 보는 방법

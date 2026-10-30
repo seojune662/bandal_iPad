@@ -1,6 +1,7 @@
 {
   "fixture": "04-note-both-edited",
-  "spec": "2.1",
+  "spec": "2.2",
+  "blocked": null,
   "courses": {
     "c0000000-0000-4000-8000-000000000001": {
       "name": "선형대수학",
@@ -50,6 +51,12 @@
       "file": "notes/d0000000-0000-4000-8000-000000000005/aaaaaaaa-0000-4000-8000-000000000001-00000006.md"
     }
   ],
+  "renames": [],
+  "waiting": {
+    "docs": [],
+    "ink": [],
+    "copies": []
+  },
   "ignored": [],
   "errors": []
 }

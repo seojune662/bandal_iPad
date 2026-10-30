@@ -1,6 +1,6 @@
 import Foundation
 
-/// SyncAdapter mappings between local rows and spec v2.1 values, mirroring the
+/// SyncAdapter mappings between local rows and spec v2.2 values, mirroring the
 /// desktop's `src/main/features/sync/adapter.ts`. Pure: the engine supplies
 /// timestamps, asset hashes and image paths.
 enum SyncAdapter {
@@ -33,7 +33,16 @@ enum SyncAdapter {
         return value < 0 && rounded != 0 ? -rounded : rounded
     }
 
-    /// The iPad keeps its own course colour tokens; spec v2.1 (gold green blue pink violet
+    /// `assets/<sha>.<ext>` extension: the file's own extension in lower case, or `bin` when it has
+    /// none or one outside `[a-z0-9]{1,16}`.
+    static func assetExt(_ fileName: String) -> String {
+        let scalars = fileName.unicodeScalars
+        let base = scalars.lastIndex(of: "/").map { scalars[scalars.index(after: $0)...] } ?? scalars[...]
+        guard let dot = base.lastIndex(of: "."), dot > base.startIndex else { return "bin" }
+        return SyncFormat.ext(String(base[base.index(after: dot)...]).lowercased()) ?? "bin"
+    }
+
+    /// The iPad keeps its own course colour tokens; spec v2.2 (gold green blue pink violet
     /// orange red) names two of them differently. Anything else passes through.
     static func specCourseColor(_ local: String) -> String { ["purple": "violet", "yellow": "gold"][local] ?? local }
     static func localCourseColor(_ spec: String) -> String { ["violet": "purple", "gold": "yellow"][spec] ?? spec }

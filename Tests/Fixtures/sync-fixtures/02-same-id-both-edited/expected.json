@@ -1,6 +1,7 @@
 {
   "fixture": "02-same-id-both-edited",
-  "spec": "2.1",
+  "spec": "2.2",
+  "blocked": null,
   "courses": {
     "c0000000-0000-4000-8000-000000000001": {
       "name": "선형대수학 (2학기)",
@@ -136,6 +137,12 @@
   },
   "notes": {},
   "conflict_copies": [],
+  "renames": [],
+  "waiting": {
+    "docs": [],
+    "ink": [],
+    "copies": []
+  },
   "ignored": [],
   "errors": []
 }

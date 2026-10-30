@@ -1,6 +1,7 @@
 {
   "fixture": "03-delete-then-edit",
-  "spec": "2.1",
+  "spec": "2.2",
+  "blocked": null,
   "courses": {
     "c0000000-0000-4000-8000-000000000001": {
       "name": "선형대수학",
@@ -118,6 +119,12 @@
     }
   },
   "conflict_copies": [],
+  "renames": [],
+  "waiting": {
+    "docs": [],
+    "ink": [],
+    "copies": []
+  },
   "ignored": [],
   "errors": []
 }

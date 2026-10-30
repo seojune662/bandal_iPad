@@ -1,0 +1,18 @@
+{
+  "fixture": "08-format-not-2",
+  "spec": "2.2",
+  "blocked": "update-required",
+  "courses": {},
+  "docs": {},
+  "ink": {},
+  "notes": {},
+  "conflict_copies": [],
+  "renames": [],
+  "waiting": {
+    "docs": [],
+    "ink": [],
+    "copies": []
+  },
+  "ignored": [],
+  "errors": []
+}
