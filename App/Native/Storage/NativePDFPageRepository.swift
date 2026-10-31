@@ -162,6 +162,7 @@ final class NativePDFPageRepository {
         let url = try context.materialURL(courseID: course, relativePath: path), bytes = try Data(contentsOf: url)
         guard F.hash(bytes) == from else { throw C.conflict("PDF가 다른 작업에서 변경되었습니다.") }
         let document = try D.open(bytes), pages = try D.recipe(request["pages"], count: document.pageCount), map = D.map(pages, count: document.pageCount)
+        if try syncLocked(course), !NativePDFPageEditing.appends(pages, count: document.pageCount) { throw Self.syncBlocked }
         if pages == Array(1...document.pageCount) {
             let result: [String: Any] = ["documentRevision": from, "fingerprint": D.fingerprint(bytes), "pageCount": pages.count, "pageMap": map, "changedCourseIDs": [String](), "changedDocuments": [[String: Any]]()]
             try context.transaction { try saveReceipt(operation, canonical, result) }; return result
@@ -241,10 +242,23 @@ final class NativePDFPageRepository {
         if let token = head.1.last { let row = try eligibilityRow(token, material: material, variant: "before"); result["redoToken"] = token; result["canRedo"] = try eligible(row, course: course, path: path, revision: revision, variant: "before"); if result["recoverToken"] == nil { result["recoverToken"] = token } }
         if result["recoverToken"] == nil { result["recoverToken"] = try context.query("SELECT id FROM native_pdf_page_history WHERE material_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1", [material]).first?["id"] }
         if result["recoverToken"] != nil { result["recoverVariant"] = "before"; result["reason"] = "변경 뒤 필기나 연결 노트를 수정했다면 원본에 덮어쓰지 않고 변경 전 사본으로 복구할 수 있습니다." }
+        if try syncLocked(course) {
+            result["canAppend"] = result["canRestructure"]; result["canRestructure"] = false
+            result["canUndo"] = false; result["canRedo"] = false
+            result["restructureReason"] = Self.syncMessage
+        }
         return result
     }
+    /// Other devices place ink by page number, so while sync is on a PDF of a synced (managed)
+    /// course only grows at the end; undo and redo of a page change are off too (design §4.6).
+    private func syncLocked(_ course: String) throws -> Bool {
+        try SyncStore.provider(context) != nil && !context.query("SELECT 1 FROM courses WHERE id=? AND source='managed'", [course]).isEmpty
+    }
+    private static let syncMessage = "동기화 중인 문서는 페이지 순서를 바꾸거나 지울 수 없어요."
+    private static var syncBlocked: DesktopRuntimeError { DesktopRuntimeError(syncMessage, code: "SYNC_RESTRUCTURE_BLOCKED") }
     private func restore(_ request: [String: Any], operation: String, canonical: [String: Any]) throws -> [String: Any] {
         let (course, path, binding) = try identity(request), material = binding["materialID"] as! String, current = binding["documentRevision"] as! String, head = try cursor(material)
+        if try syncLocked(course) { throw Self.syncBlocked }
         guard let token = request["historyToken"] as? String, let direction = request["direction"] as? String, ["undo", "redo"].contains(direction), token == (direction == "undo" ? head.0 : head.1.last) else { throw C.conflict("현재 페이지 변경 기록과 복원 요청이 다릅니다.") }
         let record = try row(token, material: material), fromVariant = direction == "undo" ? "after" : "before", toVariant = direction == "undo" ? "before" : "after"
         guard try eligible(record, course: course, path: path, revision: current, variant: fromVariant) else { throw C.conflict("페이지 변경 이후 수정된 필기·노트가 있습니다. 변경 전 사본으로 복구해 주세요.") }

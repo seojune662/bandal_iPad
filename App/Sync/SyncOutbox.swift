@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 
 /// Local changes → spec files (spec "동기화 루프" 1, design §1.6 and §1.8). `prepare` compares
 /// courses, course folders and drawings with what was last exchanged and returns the files
@@ -179,7 +180,7 @@ final class SyncOutbox {
                 guard var event = Self.event("doc", id, registers, fields, alive: true) else { continue }
                 if pdf, event.fields?["pdf_sha256"] != nil {
                     // Spec v2.3: always sent with pdf_sha256, so the two never come from different writes.
-                    fields = event.fields!; fields["pdf_prev_sha256"] = try carried(from: registers.text("pdf_sha256"), to: hash, course: local, rel: rel) ?? NSNull()
+                    fields = event.fields!; fields["pdf_prev_sha256"] = try appended(from: registers.text("pdf_sha256"), to: hash, course: local, rel: rel) ?? NSNull()
                     event = Event(op: event.op, id: id, fields: fields, registers: registers)
                 }
                 if let note, event.fields?["md_hash"] != nil {
@@ -199,14 +200,29 @@ final class SyncOutbox {
         }
     }
 
-    /// The PDF last exchanged, when the ink here followed the change to `sha`: a page change in
-    /// the app or a rebinding by sync moves the binding along. Bytes replaced outside the app
-    /// leave it behind, so devices with ink on the old PDF keep that ink protected.
-    private func carried(from previous: String?, to sha: String, course: String, rel: String) throws -> String? {
-        guard let previous, previous != sha,
-              let binding = try context.query("SELECT b.bound_sha,b.evidence FROM pdf_document_aliases a JOIN pdf_document_bindings b ON b.material_id=a.material_id WHERE a.course_id=? AND a.rel_path=?", [course, rel]).first,
-              binding["bound_sha"] as? String == sha, ["page-history", "sync"].contains(binding["evidence"] as? String) else { return nil }
-        return previous
+    /// The PDF last exchanged, when the PDF here grew from it only by pages added at the end (spec
+    /// v2.3 `pdf_prev_sha256`): the page history leads from it to `sha` through steps that each keep
+    /// every page in order and only add after them, and the ink here is bound to `sha`. Bytes
+    /// replaced outside the app, or pages moved or removed (even while sync was off), send null,
+    /// so other devices keep the ink they have on the old PDF protected.
+    private func appended(from previous: String?, to sha: String, course: String, rel: String) throws -> String? {
+        guard let previous, previous != sha, try context.tableExists("native_pdf_revision_lineage"),
+              let material = try context.query("SELECT b.material_id FROM pdf_document_aliases a JOIN pdf_document_bindings b ON b.material_id=a.material_id WHERE a.course_id=? AND a.rel_path=? AND b.bound_sha=?",
+                                                [course, rel, sha]).first?["material_id"] as? String else { return nil }
+        let steps = try context.query("SELECT from_sha,to_sha,pages_json FROM native_pdf_revision_lineage WHERE material_id=?", [material])
+        var reached: Set<String> = [previous], frontier = [previous]
+        while let from = frontier.popLast() {
+            // Every page change keeps both PDFs in PDFOriginals.
+            guard let count = PDFDocument(url: context.root.appendingPathComponent("PDFOriginals/\(from).pdf"))?.pageCount else { continue }
+            for step in steps where step["from_sha"] as? String == from {
+                guard let to = step["to_sha"] as? String, !reached.contains(to), let text = step["pages_json"] as? String,
+                      let recipe = try? C.jsonObject(text) as? [[String: Any]],
+                      NativePDFPageEditing.appends(recipe.map { ($0["source"] as? NSNumber)?.intValue ?? 0 }, count: count) else { continue }
+                if to == sha { return previous }
+                reached.insert(to); frontier.append(to)
+            }
+        }
+        return nil
     }
 
     /// A PDF keeps its binding id (as the desktop does); a note gets a new UUID.

@@ -537,6 +537,17 @@ final class NativeWorkspaceStore: ObservableObject {
     /// A transition already awaiting another editor must include that content.
     func markDocumentChanged() { documentRevision &+= 1 }
 
+    /// Documents open in an editor, as `courseId\0relPath`; nil when an editor does not name its
+    /// document. Sync applies their remote changes only inside `withExternalMutation`.
+    var openDocuments: Set<String>? {
+        var open = Set<String>()
+        for entry in flushers.values {
+            guard let mutation = entry.mutation, let course = mutation["courseId"] as? String, let path = mutation["relPath"] as? String else { return nil }
+            open.insert(course + "\u{0}" + path)
+        }
+        return open
+    }
+
     func flushDocuments() async throws {
         markDocumentChanged()
         if let activeFlush { return try await activeFlush.value }

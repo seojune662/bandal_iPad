@@ -94,10 +94,13 @@ final class SyncStoreTests: XCTestCase {
         }
         /// A blank page added at the end in the app, which moves the PDF binding along.
         func appendPage(_ course: String, _ path: String) throws {
+            try restructure(course, path, Array(1...(try XCTUnwrap(PDFDocument(data: try bytes(course, path))).pageCount)) + [0])
+        }
+        /// A page change in the app (`pdf:restructure` recipe, 0 = a new page).
+        func restructure(_ course: String, _ path: String, _ pages: [Int]) throws {
             let revision = (try pdf.handle("nativePDF:binding", ["courseId": course, "relPath": path]) as! [String: Any])["documentRevision"]!
-            let count = try XCTUnwrap(PDFDocument(data: try bytes(course, path))).pageCount
             _ = try NativePDFPageRepository(context: context, pdf: pdf).handle("pdf:restructure", ["courseId": course, "relPath": path, "documentRevision": revision,
-                                                                                                    "clientMutationId": UUID().uuidString, "pages": Array(1...count) + [0]])
+                                                                                                    "clientMutationId": UUID().uuidString, "pages": pages])
         }
         /// The same bytes with one more page, written outside the app.
         func replaceOutside(_ course: String, _ path: String) throws -> Data {
@@ -300,16 +303,18 @@ final class SyncStoreTests: XCTestCase {
             let device = try Device("iPad"), folder = SyncConformanceTests.fixtures.appendingPathComponent("\(name)/root")
             let state = SyncMerge.merge(try SyncConformanceTests.readRoot(name).files)
             let apply = SyncApply(store: device.store, library: device.library, read: { try Data(contentsOf: folder.appendingPathComponent($0)) })
-            // 06 holds names that differ only by case from another in the same folder (QnA/qna, Lecture/lecture, Σ/ς).
+            // 06 holds names that differ only by case from another in the same folder (QnA/qna, Lecture/lecture);
+            // since v2.3 the Σ/ς pair collides in the merge and is renamed instead.
             let refused: Set<String> = name == "06-path-collision" && Self.caseVariantsRefused
-                ? ["d1b00000-0000-4000-8000-000000000012", "db000000-0000-4000-8000-000000000007", "d2c00000-0000-4000-8000-000000000015", "2f323a7c-51a2-542e-a2bf-b054768c84d0"] : []
+                ? ["d1b00000-0000-4000-8000-000000000012", "db000000-0000-4000-8000-000000000007", "2f323a7c-51a2-542e-a2bf-b054768c84d0"] : []
             let report = try apply.apply(state)
             XCTAssertEqual(Set(report.skipped.map(\.id)), refused, "\(name) \(report.skipped)")
             let renames = Dictionary(state.renames.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
             for (id, doc) in state.docs where doc.isAlive && !state.waitingDocs.contains(id) && !refused.contains(id) {
                 guard let course = state.courses[doc.text("course_id") ?? ""], course.isAlive, let folder = doc.text("rel_path"), let docName = renames[id] ?? doc.text("name") else { continue }
                 let local = try device.courseID(course.text("name") ?? "")
-                XCTAssertNotNil(try device.text(local, folder.isEmpty ? docName : folder + "/" + docName) ?? (doc.text("type") == "pdf" ? "pdf" : nil), "\(name) \(id)")
+                let placed = try device.context.materialURL(courseID: local, relativePath: folder.isEmpty ? docName : folder + "/" + docName, allowMissing: true)
+                XCTAssertTrue(FileManager.default.fileExists(atPath: placed.path), "\(name) \(id)")
             }
             for (id, entry) in state.ink where entry.object.value["del"] == nil && !state.waitingInk.contains(id) {
                 XCTAssertFalse(try device.context.query("SELECT 1 FROM pdf_drawings WHERE id=? AND deleted_at IS NULL", [id]).isEmpty, "\(name) \(id)")
@@ -367,6 +372,27 @@ final class SyncStoreTests: XCTestCase {
         XCTAssertEqual(binding["documentRevision"] as? String, SyncFormat.sha256(longer))
         XCTAssertNotNil(try a.drawings(course, paper)[first])
         XCTAssertNoThrow(try a.stroke(course, paper, x: 0.7))
+    }
+
+    /// Pages moved or removed in the app (here while sync was off) are not an append: the PDF goes
+    /// out with pdf_prev_sha256 null and other devices keep their ink protected (spec v2.3).
+    func testReorderedPagesCarryNoPreviousPDF() throws {
+        let cloud = Cloud(), a = try Device("iPad A"), b = try Device("iPad B")
+        let course = try a.course("물리"), paper = try a.paper(course, "1주차")
+        try a.sync(cloud)
+        let first = try a.stroke(course, paper)
+        try a.sync(cloud); try b.sync(cloud)
+        let other = try b.courseID("물리")
+        try b.appendPage(other, paper)
+        try b.sync(cloud); try a.sync(cloud)
+        XCTAssertNoThrow(try a.pdf.handle("nativePDF:binding", ["courseId": course, "relPath": paper]))
+        try b.restructure(other, paper, [2, 1])
+        let moved = try b.bytes(other, paper)
+        try b.sync(cloud); try a.sync(cloud)
+        XCTAssertTrue(try XCTUnwrap(Self.upsert(cloud, pdf: SyncFormat.sha256(moved)))["pdf_prev_sha256"] is NSNull)
+        XCTAssertEqual(try a.bytes(course, paper), moved)
+        XCTAssertThrowsError(try a.pdf.handle("nativePDF:binding", ["courseId": course, "relPath": paper]))
+        XCTAssertNotNil(try a.drawings(course, paper)[first])
     }
 
     /// Bytes replaced outside the app carry no ink over (pdf_prev_sha256 null): ink here stays

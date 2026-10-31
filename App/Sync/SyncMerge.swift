@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// Pure merge of a parsed cloud root (spec v2.2 "머지"), mirroring the desktop's
+/// Pure merge of a parsed cloud root (spec v2.3 "머지"), mirroring the desktop's
 /// `src/main/features/sync/merge.ts`. The result depends only on the set of
 /// files, never on their order or on reading one twice.
 enum SyncMerge {
@@ -139,7 +139,7 @@ enum SyncMerge {
             }
         }
 
-        var byPath: [String: [String]] = [:]
+        var byPath: [[Unicode.Scalar]: [String]] = [:]
         for (id, entity) in state.docs where entity.isAlive {
             if let place = place(entity) { byPath[pathKey(place.course, place.folder, place.name), default: []].append(id) }
         }
@@ -193,14 +193,17 @@ enum SyncMerge {
         return (String(scalars[..<dot]), String(scalars[dot...]))
     }
 
-    /// Path-collision key (spec v2.2): folder and name lower-cased one code point at a time, as APFS and
-    /// NTFS compare them. Whole-string lower-casing turns a word-final Σ into ς in JavaScript, never in Swift.
-    /// Validated names and folders hold no control characters, so NUL separates the parts.
-    private static func pathKey(_ course: String, _ folder: String, _ name: String) -> String {
-        [course, foldCase(folder), foldCase(name)].joined(separator: "\u{0}")
+    /// Path-collision key (spec v2.3): folder and name upper- then lower-cased one code point at a time
+    /// (desktop: `c.toUpperCase().toLowerCase()`), so Σ, σ and ς are one letter as on APFS and NTFS,
+    /// and ß becomes ss. Validated names and folders hold no control characters, so NUL separates the parts.
+    /// Scalars, not a String: Swift strings compare canonically equivalent text as equal, JavaScript does not.
+    private static func pathKey(_ course: String, _ folder: String, _ name: String) -> [Unicode.Scalar] {
+        Array(course.unicodeScalars) + ["\u{0}"] + foldCase(folder) + ["\u{0}"] + foldCase(name)
     }
 
-    private static func foldCase(_ text: String) -> String { text.unicodeScalars.map(\.properties.lowercaseMapping).joined() }
+    private static func foldCase(_ text: String) -> [Unicode.Scalar] {
+        text.unicodeScalars.flatMap { $0.properties.uppercaseMapping.unicodeScalars.flatMap(\.properties.lowercaseMapping.unicodeScalars) }
+    }
 
     /// Device names are user text; keep the copy's name one valid path segment.
     private static func nameSafe(_ text: String) -> String {

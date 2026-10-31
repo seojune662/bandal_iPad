@@ -171,6 +171,8 @@ final class NativePDFWorkspaceModel: ObservableObject {
         }
     }
     @Published private(set) var pageCanRestructure = true
+    /// New pages at the end only: a synced PDF that cannot be restructured (design §4.6).
+    @Published private(set) var pageCanAppend = true
     @Published private(set) var pageHistoryCanUndo = false
     @Published private(set) var pageHistoryCanRedo = false
     @Published private(set) var pageHistoryCanRecover = false
@@ -1702,7 +1704,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         restructure(recipe, goTo: number + 1)
     }
     private func restructure(_ pages: [Int], goTo: Int? = nil) {
-        guard !isBusy, !isLoading, pageCanRestructure, !pageRevision.isEmpty else { return }
+        guard !isBusy, !isLoading, pageCanRestructure || pageCanAppend && NativePDFPageEditing.appends(pages, count: pageCount), !pageRevision.isEmpty else { return }
         performPageOperation("pdf:restructure", request: ["courseId": document.courseID, "relPath": document.relativePath,
             "documentRevision": pageRevision, "clientMutationId": UUID().uuidString, "pages": pages], goTo: goTo)
     }
@@ -1721,6 +1723,7 @@ final class NativePDFWorkspaceModel: ObservableObject {
         guard let result = try await store.invoke("pdf:pageHistory", ["courseId": document.courseID, "relPath": document.relativePath]) as? [String: Any] else { throw NativePDFError.invalid("페이지 복구 기록을 확인하지 못했습니다.") }
         guard !retired else { return }
         pageCanRestructure = result["canRestructure"] as? Bool ?? true
+        pageCanAppend = result["canAppend"] as? Bool ?? pageCanRestructure
         pageUndoToken = result["undoToken"] as? String; pageRedoToken = result["redoToken"] as? String
         pageHistoryCanUndo = result["canUndo"] as? Bool == true; pageHistoryCanRedo = result["canRedo"] as? Bool == true
         pageHistoryReason = result["restructureReason"] as? String ?? result["reason"] as? String

@@ -22,6 +22,7 @@ final class NativePlatformServices: ObservableObject {
     private lazy var marketplace = NativeStudyMarketClient(cloud: cloud)
     private var account: DesktopAccountService
     private var sync: DesktopSyncService?
+    private var cloudSync: CloudSyncEngine?, identityObserver: NSObjectProtocol?, startingCloudSync = false
     private var billing: DesktopBillingService?
     private let profile: DesktopProfileService
     private var syncError: Error?
@@ -48,9 +49,10 @@ final class NativePlatformServices: ObservableObject {
         connectAccount()
         profile.prepare = { [weak self, weak store] in
             await self?.sync?.suspendForProfileOperation()
+            await self?.cloudSync?.suspend()
             try await store?.flushDocuments()
         }
-        profile.resume = { [weak self] in self?.sync?.resumeAfterProfileOperation() }
+        profile.resume = { [weak self] in self?.sync?.resumeAfterProfileOperation(); self?.cloudSync?.resume() }
         profile.activate = { NotificationCenter.default.post(name:DesktopProfileService.didActivate,object:nil) }
         browser.emit = { [weak runtime] channel,payload in runtime?.onEmit?(channel,payload) }
         browser.onCourseForURL = { [weak store] _ in store?.selectedCourseID }
@@ -136,6 +138,49 @@ final class NativePlatformServices: ObservableObject {
             _ = try await account.handle(channel:"auth:getState",request:[:])
             sync?.start()
         } catch { store.errorMessage = error.localizedDescription }
+        await startCloudSync()
+    }
+    /// Spec v2 sync with iCloud Drive while this profile has it on (design §1). Until the settings
+    /// screen comes, `-BandalCloudSync icloud` (or `off`) at launch turns it on (or off).
+    private func startCloudSync() async {
+        // One start at a time: two identity notifications must not each start an engine.
+        guard let store, cloudSync == nil, !startingCloudSync else { return }
+        startingCloudSync = true
+        defer { startingCloudSync = false }
+        let runtime = store.runtime, requested = UserDefaults.standard.string(forKey: "BandalCloudSync")
+        func pause(_ reason: String) { runtime.onEmit?("runtime:cloudSyncChanged", ["phase": "paused", "reason": reason]) }
+        do {
+            let provider = try await runtime.withSyncStorage { context, _ -> String? in
+                if let requested { try SyncStore(context: context).setProvider(requested == "icloud" ? "icloud" : nil) }
+                return try SyncStore.provider(context)
+            }
+            guard provider == "icloud" else { return }
+            if identityObserver == nil {
+                // Signing out or into another Apple ID pauses sync until it is checked again (design §4.4).
+                identityObserver = NotificationCenter.default.addObserver(forName: .NSUbiquityIdentityDidChange, object: nil, queue: .main) { [weak self] _ in
+                    Task { @MainActor in await self?.cloudSync?.stop(); self?.cloudSync = nil; await self?.startCloudSync() }
+                }
+            }
+            let (root, account) = await Task.detached { (ICloudProvider.locate(), ICloudProvider.identity()?.base64EncodedString() ?? "") }.value
+            guard let root else { return pause("signed-out") }
+            let sameAccount = try await runtime.withSyncStorage { context, _ -> Bool in
+                let state = try SyncStore(context: context)
+                guard let known = try state.value("icloud_account") else { try state.set("icloud_account", account); return true }
+                return known == account
+            }
+            guard sameAccount else { return pause("account-changed") }
+            let engine = CloudSyncEngine(runtime: runtime, provider: ICloudProvider(root: root))
+            engine.mutateOpenDocuments = { [weak store] action in
+                guard let store else { throw CancellationError() }
+                return try await store.withExternalMutation(action)
+            }
+            engine.openDocuments = { [weak store] in store?.openDocuments }
+            engine.emit = { [weak runtime] channel, value in runtime?.onEmit?(channel, value) }
+            // Read on the storage queue, so it is set there too.
+            try await runtime.withSyncStorage { _, _ in runtime.onLocalChange = { [weak engine] in Task { @MainActor in engine?.localChanged() } } }
+            cloudSync = engine
+            engine.start()
+        } catch { runtime.onEmit?("runtime:cloudSyncChanged", ["phase": "error", "message": error.localizedDescription]) }
     }
     private func handle(_ channel: String,_ request: [String:Any]) async throws -> Any {
         if channel == "native:extractArticle" { return try await articles.extract(request) }

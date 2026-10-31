@@ -161,9 +161,13 @@ struct NativePDFPagesPanel: View {
             HStack {
                 Text("페이지").font(.system(size: 12, weight: .semibold)); Spacer(); Text("\(model.pageCount)쪽").font(.system(size: 10))
                 Button { model.addPage(after: model.pageCount) } label: { Image(systemName: "plus").frame(width: 32, height: 32).contentShape(Rectangle()) }
-                    .disabled(!model.pageCanRestructure).accessibilityLabel("페이지 추가").accessibilityIdentifier("native-pdf-page-add")
+                    .disabled(!model.pageCanAppend).accessibilityLabel("페이지 추가").accessibilityIdentifier("native-pdf-page-add")
             }
                 .foregroundStyle(NativeDesktopTheme.muted).padding(.leading, 12).padding(.trailing, 4).frame(height: 40)
+            if !model.pageCanRestructure, model.pageCanAppend, let reason = model.pageHistoryReason {
+                Text(reason).font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 12).padding(.bottom, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading).accessibilityIdentifier("native-pdf-pages-sync-note")
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 4) {
@@ -213,7 +217,7 @@ struct NativePDFPagesPanel: View {
                 Text(String(number)).font(.system(size: 11).monospacedDigit()).foregroundStyle(NativeDesktopTheme.muted)
                 Spacer()
                 Menu {
-                    Button("아래에 페이지 추가") { model.addPage(after: number) }.disabled(!model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-insert-below")
+                    Button("아래에 페이지 추가") { model.addPage(after: number) }.disabled(!(model.pageCanRestructure || model.pageCanAppend && number == model.pageCount)).accessibilityIdentifier("native-pdf-page-insert-below")
                     Button("위로 이동") { model.movePage(number, to: number - 1) }.disabled(number == 1 || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-move-up")
                     Button("아래로 이동") { model.movePage(number, to: number + 1) }.disabled(number == model.pageCount || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-move-down")
                     Button("페이지 삭제", role: .destructive) { model.requestDeletePage(number) }.disabled(model.pageCount == 1 || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-delete")
