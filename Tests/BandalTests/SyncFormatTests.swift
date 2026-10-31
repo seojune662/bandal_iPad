@@ -2,8 +2,8 @@ import XCTest
 import zlib
 @testable import Bandal
 
-/// Sync rules the shared fixtures do not cover yet: parser boundaries, the desktop
-/// PR #4 proposals, naming rules and the SyncAdapter's clamping.
+/// Sync rules beyond the shared fixtures: Foundation-specific parser boundaries, reading
+/// a root without `bandal.json`, naming rules and the SyncAdapter's mappings.
 final class SyncFormatTests: XCTestCase {
     private let course = "c0000000-0000-4000-8000-000000000001", doc = "d0000000-0000-4000-8000-000000000001"
     private let deviceA = "aaaaaaaa-0000-4000-8000-000000000001", deviceB = "bbbbbbbb-0000-4000-8000-000000000002"
@@ -16,7 +16,7 @@ final class SyncFormatTests: XCTestCase {
         XCTAssertNil(parse([0xEF, 0xBB, 0xBF] + Array("[1]".utf8)))
         XCTAssertNil(parse(Array("[1]".utf16).flatMap { [UInt8($0 & 0xFF), UInt8($0 >> 8)] }))
         for text in ["[1,]", #"{"a":1,}"#, "[01]", "[1.]", "[1e999]", "[NaN]", "[1]\u{A0}", "[\"a\tb\"]"] { XCTAssertNil(parse(text), text) }
-        // Proposed on desktop PR #4 (item 3): invalid UTF-8, unpaired surrogates and deep nesting are unreadable.
+        // Spec v2.2: invalid UTF-8, unpaired surrogates and nesting deeper than 64 are unreadable.
         XCTAssertNil(parse([0x5B, 0x22, 0xFF, 0x22, 0x5D]))
         XCTAssertNil(parse([0x5B, 0x22, 0xED, 0xA0, 0x80, 0x22, 0x5D]))
         XCTAssertNil(parse(#"["\ud800"]"#))
@@ -32,6 +32,7 @@ final class SyncFormatTests: XCTestCase {
     func testOnlySpecPathsAreRead() {
         let sha = String(repeating: "a", count: 64)
         let root = SyncFormat.readRoot([
+            ("bandal.json", Data(#"{"format":2}"#.utf8)),
             ("log/\(deviceA.uppercased())/00000001.json", Data("[]".utf8)),
             ("log/\(deviceA)/0000001.json", Data("[]".utf8)),
             ("log/\(deviceA)/٠٠٠٠٠٠٠١.json", Data("[]".utf8)),
@@ -46,10 +47,24 @@ final class SyncFormatTests: XCTestCase {
         XCTAssertEqual(root.ignored.count, 7)
         XCTAssertEqual(root.errors, ["ink/\(doc)/100001/\(deviceA)-00000001.json.gz", "log/\(deviceA)/00000002.json"])
         XCTAssertEqual(root.pending, ["notes/\(doc)/\(deviceA)-00000002.md"])
-        XCTAssertTrue(root.files.isEmpty)
+        XCTAssertEqual(root.files.map(\.path), ["bandal.json"])
         XCTAssertEqual(SyncFormat.placeholderTarget("a/.b/.c.icloud"), "a/.b/c")
         XCTAssertEqual(SyncFormat.placeholderTarget(".a/b.json.icloud"), "a/b.json")
         XCTAssertNil(SyncFormat.placeholderTarget("a/..icloud"))
+    }
+
+    func testNothingIsReadWithoutAFormat2Root() {
+        let log = ("log/\(deviceA)/00000001.json", Data("[".utf8))
+        func read(_ files: [(String, Data)]) -> SyncFormat.Root { SyncFormat.readRoot(files.map { (path: $0.0, bytes: $0.1) }) }
+        let missing = read([log])
+        XCTAssertEqual([missing.files.count, missing.ignored.count, missing.errors.count, missing.pending.count], [0, 0, 0, 0])
+        XCTAssertEqual(read([log, (".bandal.json.icloud", Data())]).pending, ["bandal.json"])
+        XCTAssertEqual(read([("bandal.json", Data("{".utf8)), log]).errors, ["bandal.json"])
+        let newer = read([("bandal.json", Data(#"{"format":3}"#.utf8)), log])
+        XCTAssertEqual(newer.files.map(\.path), ["bandal.json"])
+        XCTAssertTrue(newer.errors.isEmpty)
+        XCTAssertEqual(SyncMerge.merge(newer.files).blocked, .updateRequired)
+        XCTAssertEqual(SyncMerge.merge(missing.files).blocked, .missingRoot)
     }
 
     func testOneBadEventIsDroppedAlone() throws {
@@ -82,34 +97,30 @@ final class SyncFormatTests: XCTestCase {
         XCTAssertNil(count(Data()))
     }
 
-    /// Desktop PR #4 item 8 (proposal): a repeated (t, device_id) goes to the later write.
-    func testSameStampGoesToTheLaterWrite() throws {
-        let older = try log(deviceA, seq: 1, [["t": t0, "op": "course.upsert", "id": course, "fields": ["name": "앞", "sort": 0]]])
-        let newer = try log(deviceA, seq: 2, [["t": t0, "op": "course.upsert", "id": course, "fields": ["name": "뒤"]],
-                                               ["t": t0, "op": "course.upsert", "id": course, "fields": ["name": "마지막"]]])
-        for files in [[try root(), older, newer], [try root(), newer, older]] {
-            XCTAssertEqual(SyncMerge.merge(files).courses[course]?.text("name"), "마지막")
-        }
-    }
-
     func testPathCollisionAndConflictCopyNames() throws {
-        let other = "d0000000-0000-4000-8000-000000000009", h0 = String(repeating: "0", count: 64)
-        let h1 = String(repeating: "1", count: 64), h2 = String(repeating: "2", count: 64)
+        let other = "d0000000-0000-4000-8000-000000000009", text = Data("A의 수정".utf8), h0 = String(repeating: "0", count: 64)
+        let h1 = SyncFormat.sha256(text), h2 = String(repeating: "2", count: 64)
         let place: [String: Any] = ["course_id": course, "type": "md", "rel_path": "노트", "name": "강의.md"]
-        let state = SyncMerge.merge([
+        let files = [
             try root(),
             try log(deviceA, seq: 1, [["t": t0, "op": "course.upsert", "id": course, "fields": ["name": "물리", "sort": 0]],
                                       ["t": t0 + 1, "op": "doc.upsert", "id": doc, "fields": place.merging(["md_hash": h0, "md_base": NSNull()]) { $1 }],
                                       ["t": t0 + 2, "op": "doc.upsert", "id": other, "fields": place.merging(["md_hash": h0, "md_base": NSNull()]) { $1 }],
                                       ["t": t0 + 3, "op": "doc.upsert", "id": doc, "fields": ["md_hash": h1, "md_base": h0]]]),
             try log(deviceB, seq: 1, [["t": t0 + 4, "op": "doc.upsert", "id": doc, "fields": ["md_hash": h2, "md_base": h0]]]),
-        ])
+        ]
+        let state = SyncMerge.merge(files), copy = SyncMerge.uuidV5("\(doc):\(h1)")
         XCTAssertEqual(state.renames.map(\.id), [other])
         XCTAssertEqual(state.renames.first?.name, "강의 (d000).md")
         XCTAssertEqual(state.notes[doc]?.hash, h2)
+        // The losing text has not arrived, so the copy waits.
+        XCTAssertTrue(state.conflictCopies.isEmpty)
+        XCTAssertEqual(state.waitingCopies, [copy])
         // No devices/ file yet: the copy names the writer by the first 8 characters of its id.
-        XCTAssertEqual(state.conflictCopies.map(\.name), ["강의 (충돌 사본 aaaaaaaa).md"])
-        XCTAssertEqual(state.conflictCopies.first?.id, SyncMerge.uuidV5("\(doc):\(h1)"))
+        let made = SyncMerge.merge(files + [try XCTUnwrap(SyncFormat.parse(path: "notes/\(doc)/\(deviceA)-00000002.md", bytes: text))])
+        XCTAssertEqual(made.conflictCopies.map(\.name), ["강의 (충돌 사본 aaaaaaaa).md"])
+        XCTAssertEqual(made.conflictCopies.map(\.id), [copy])
+        XCTAssertTrue(made.waitingCopies.isEmpty)
         XCTAssertEqual(SyncMerge.splitName(".md").stem, ".md")
         XCTAssertEqual(SyncMerge.splitName("a.b.pdf").ext, ".pdf")
     }
@@ -138,6 +149,8 @@ final class SyncFormatTests: XCTestCase {
         XCTAssertEqual(SyncAdapter.specCourseColor("red"), "red")
         XCTAssertEqual(SyncAdapter.localCourseColor("violet"), "purple")
         XCTAssertEqual(SyncAdapter.localCourseColor("gold"), "yellow")
+        XCTAssertEqual(["칠판.PNG", "images/scan.JPEG", "첨부-1f2e", ".png", "a.", "a.tar.gz", "x.ＰＮＧ", "a.verylongextension1", "x.\u{212A}"].map(SyncAdapter.assetExt),
+                       ["png", "jpeg", "bin", "bin", "bin", "gz", "bin", "bin", "k"])
         XCTAssertEqual(SyncAdapter.courseFields(name: "물리", sortOrder: 2, color: "purple", archived: false)["color"] as? String, "violet")
         let location = SyncAdapter.docLocation("1주차/강의.pdf".decomposedStringWithCanonicalMapping)
         XCTAssertEqual(Array(location.relPath.unicodeScalars), Array("1주차".unicodeScalars))

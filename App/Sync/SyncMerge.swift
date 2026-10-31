@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// Pure merge of a parsed cloud root (spec v2.1 "머지"), mirroring the desktop's
+/// Pure merge of a parsed cloud root (spec v2.2 "머지"), mirroring the desktop's
 /// `src/main/features/sync/merge.ts`. The result depends only on the set of
 /// files, never on their order or on reading one twice.
 enum SyncMerge {
@@ -32,12 +32,11 @@ enum SyncMerge {
 
     struct ConflictCopy {
         let id, of, courseID, relPath, name, mdHash: String
-        /// Root path of the losing version's content, nil until it arrives. Create the copy
-        /// only once this is set: an existing document with the copy's id is never made again.
-        let file: String?
+        /// Root path of the losing version's content.
+        let file: String
     }
 
-    enum Blocked { case missingRoot, updateRequired, unsupportedFormat }
+    enum Blocked: String { case missingRoot = "missing-root", updateRequired = "update-required", unsupportedFormat = "unsupported-format" }
 
     struct State {
         /// Set when `bandal.json` is missing or not format 2: nothing else is read.
@@ -53,7 +52,8 @@ enum SyncMerge {
         /// `doc.upsert` renames that settle path collisions; every device computes the same list.
         var renames: [(id: String, name: String)] = []
         /// Not appliable yet: a referenced course, document, PDF, asset or note file is missing.
-        var waitingDocs: [String] = [], waitingInk: [String] = []
+        /// A copy waits for its text only; it already holds its name.
+        var waitingDocs: [String] = [], waitingInk: [String] = [], waitingCopies: [String] = []
     }
 
     private struct NoteVersion { let hash: String; let base: String?; let stamp: Stamp }
@@ -113,7 +113,7 @@ enum SyncMerge {
             }
         }
 
-        var waiting = Set<String>()
+        var waiting = Set<String>(), copies: [(id: String, of: String, course: String, folder: String, name: String, hash: String, file: String?)] = []
         for (doc, entity) in state.docs {
             guard let body = entity.text("md_hash") else { continue }
             let own = versions[doc] ?? []
@@ -124,24 +124,24 @@ enum SyncMerge {
             if entity.isAlive, bodyFile.map({ $0.assets.contains { !present.contains($0) } }) ?? true { waiting.insert(doc) }
 
             guard let place = place(entity) else { continue }
-            let bases = Set(own.compactMap { $0.base == $0.hash ? nil : $0.base })
-            var seen = Set<String>()
-            for hash in own.map(\.hash) where seen.insert(hash).inserted && hash != body && !bases.contains(hash) {
+            // A version stops being a head only when a later version (larger t) started from its text, so a revert
+            // to an old hash stays a head and the LWW winner always is one. Each base's latest t is collected once.
+            var latestFrom: [String: Int64] = [:]
+            for version in own { if let base = version.base { latestFrom[base] = max(latestFrom[base] ?? .min, version.stamp.t) } }
+            for hash in Set(own.filter { (latestFrom[$0.hash] ?? .min) <= $0.stamp.t }.map(\.hash)) where hash != body {
                 let id = uuidV5("\(doc):\(hash)")
                 guard state.docs[id] == nil else { continue }
+                // Until the writer's device file arrives its id stands in; a derived copy's name is recomputed on every merge.
                 let writer = author(of: hash)
                 let device = nameSafe((state.devices[writer] ?? String(writer.prefix(8))).precomposedStringWithCanonicalMapping)
-                state.conflictCopies.append(ConflictCopy(id: id, of: doc, courseID: place.course, relPath: place.folder,
-                                                         name: "\(splitName(place.name).stem) (충돌 사본 \(device)).md", mdHash: hash,
-                                                         file: contentFile(doc, hash, author: writer)?.path))
+                copies.append((id, doc, place.course, place.folder, "\(splitName(place.name).stem) (충돌 사본 \(device)).md", hash,
+                               contentFile(doc, hash, author: writer)?.path))
             }
         }
-        state.conflictCopies.sort { $0.id < $1.id }
 
         var byPath: [String: [String]] = [:]
         for (id, entity) in state.docs where entity.isAlive {
-            // Validated names and folders hold no control characters, so NUL separates the key.
-            if let place = place(entity) { byPath[[place.course, place.folder, place.name].joined(separator: "\u{0}"), default: []].append(id) }
+            if let place = place(entity) { byPath[pathKey(place.course, place.folder, place.name), default: []].append(id) }
         }
         for ids in byPath.values {
             for id in ids.sorted().dropFirst() {
@@ -150,6 +150,17 @@ enum SyncMerge {
             }
         }
         state.renames.sort { $0.id < $1.id }
+
+        // Copies join the collision rule: a live document keeps its name, and among copies the smallest id does.
+        // Copies still waiting for their text take part too, so a late note file never renames a made copy.
+        var taken = Set(byPath.keys)
+        for copy in copies.sorted(by: { $0.id < $1.id }) {
+            let key = pathKey(copy.course, copy.folder, copy.name), (stem, ext) = splitName(copy.name)
+            let name = taken.contains(key) ? "\(stem) (\(copy.id.prefix(4)))\(ext)" : copy.name
+            taken.insert(key)
+            guard let file = copy.file else { state.waitingCopies.append(copy.id); continue }
+            state.conflictCopies.append(ConflictCopy(id: copy.id, of: copy.of, courseID: copy.course, relPath: copy.folder, name: name, mdHash: copy.hash, file: file))
+        }
 
         for (id, entity) in state.docs where entity.isAlive {
             let missingCourse = entity.text("course_id").map { state.courses[$0] == nil } ?? true
@@ -181,6 +192,15 @@ enum SyncMerge {
         guard let dot = scalars.lastIndex(of: "."), dot > scalars.startIndex else { return (name, "") }
         return (String(scalars[..<dot]), String(scalars[dot...]))
     }
+
+    /// Path-collision key (spec v2.2): folder and name lower-cased one code point at a time, as APFS and
+    /// NTFS compare them. Whole-string lower-casing turns a word-final Σ into ς in JavaScript, never in Swift.
+    /// Validated names and folders hold no control characters, so NUL separates the parts.
+    private static func pathKey(_ course: String, _ folder: String, _ name: String) -> String {
+        [course, foldCase(folder), foldCase(name)].joined(separator: "\u{0}")
+    }
+
+    private static func foldCase(_ text: String) -> String { text.unicodeScalars.map(\.properties.lowercaseMapping).joined() }
 
     /// Device names are user text; keep the copy's name one valid path segment.
     private static func nameSafe(_ text: String) -> String {

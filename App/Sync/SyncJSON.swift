@@ -5,15 +5,16 @@ import Foundation
 /// whitespace is space, tab, CR and LF only), every number a double, and a
 /// repeated key keeps its last value. Foundation's parser differs on each of
 /// these. Invalid UTF-8, unpaired surrogates and nesting deeper than `maxDepth`
-/// are rejected, as proposed for the spec on desktop PR #4 (item 3).
+/// are rejected, as spec v2.2 requires.
 enum SyncJSON {
     static let maxDepth = 64
 
     struct Invalid: Error {}
 
-    static func parse(_ data: Data) throws -> Any {
+    /// A larger `maxDepth` is for trusted data only, such as a fixture's `expected.json` that embeds a 64-deep drawing.
+    static func parse(_ data: Data, maxDepth: Int = SyncJSON.maxDepth) throws -> Any {
         try data.withUnsafeBytes { raw in
-            var reader = Reader(bytes: raw.bindMemory(to: UInt8.self))
+            var reader = Reader(bytes: raw.bindMemory(to: UInt8.self), maxDepth: maxDepth)
             let value = try reader.value(depth: 0)
             reader.skipSpace()
             guard reader.index == reader.bytes.count else { throw Invalid() }
@@ -22,7 +23,7 @@ enum SyncJSON {
     }
 
     private struct Reader {
-        let bytes: UnsafeBufferPointer<UInt8>
+        let bytes: UnsafeBufferPointer<UInt8>, maxDepth: Int
         var index = 0
 
         mutating func skipSpace() {
@@ -58,7 +59,7 @@ enum SyncJSON {
         }
 
         mutating func object(depth: Int) throws -> [String: Any] {
-            guard depth <= SyncJSON.maxDepth else { throw Invalid() }
+            guard depth <= maxDepth else { throw Invalid() }
             index += 1
             var result: [String: Any] = [:]
             skipSpace()
@@ -77,7 +78,7 @@ enum SyncJSON {
         }
 
         mutating func array(depth: Int) throws -> [Any] {
-            guard depth <= SyncJSON.maxDepth else { throw Invalid() }
+            guard depth <= maxDepth else { throw Invalid() }
             index += 1
             var result: [Any] = []
             skipSpace()

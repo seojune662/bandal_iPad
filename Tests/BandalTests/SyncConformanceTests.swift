@@ -1,13 +1,14 @@
 import XCTest
 @testable import Bandal
 
-/// Spec v2.1 conformance against the desktop's `sync-fixtures/` (pinned copy, see
+/// Spec v2.2 conformance against the desktop's `sync-fixtures/` (pinned copy, see
 /// `Tests/Fixtures/sync-fixtures/SOURCE`): every `root/` must parse and merge to its
 /// `expected.json` exactly as the desktop's `tests/main/sync/conformance.test.ts` does.
 final class SyncConformanceTests: XCTestCase {
     static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Fixtures/sync-fixtures")
-    private static let names = ["01-basic", "02-same-id-both-edited", "03-delete-then-edit", "04-note-both-edited"]
+    private static let names = ["01-basic", "02-same-id-both-edited", "03-delete-then-edit", "04-note-both-edited", "05-note-attachments",
+                                "06-path-collision", "07-out-of-range-coordinates", "08-format-not-2", "09-invalid-input", "10-same-stamp", "11-note-revert"]
 
     func testEveryFixtureFolderIsChecked() throws {
         let folders = try FileManager.default.contentsOfDirectory(atPath: Self.fixtures.path)
@@ -18,12 +19,10 @@ final class SyncConformanceTests: XCTestCase {
     func testRootsParseAndMergeToExpectedJSON() throws {
         for name in Self.names {
             let root = try Self.readRoot(name)
-            var expected = try XCTUnwrap(SyncJSON.parse(Data(contentsOf: Self.fixtures.appendingPathComponent("\(name)/expected.json"))) as? [String: Any])
+            var expected = try XCTUnwrap(SyncJSON.parse(Data(contentsOf: Self.fixtures.appendingPathComponent("\(name)/expected.json")), maxDepth: .max) as? [String: Any])
             XCTAssertEqual(expected.removeValue(forKey: "fixture") as? String, name)
-            XCTAssertEqual(expected.removeValue(forKey: "spec") as? String, "2.1")
-            let state = SyncMerge.merge(root.files)
-            XCTAssertNil(state.blocked, name)
-            var actual = Self.project(state)
+            XCTAssertEqual(expected.removeValue(forKey: "spec") as? String, "2.2")
+            var actual = Self.project(SyncMerge.merge(root.files))
             actual["ignored"] = root.ignored; actual["errors"] = root.errors
             Self.assertJSONEqual(actual, expected, name)
         }
@@ -41,24 +40,18 @@ final class SyncConformanceTests: XCTestCase {
     }
 
     func testSyncAdapterRoundTripsEveryWinningDrawing() throws {
+        let known: Set = ["id", "kind", "page", "t", "created", "data", "style", "del"]
         for name in Self.names {
             for entry in SyncMerge.merge(try Self.readRoot(name).files).ink.values {
-                let object = entry.object
-                switch try SyncAdapter.importInkObject(object, imagePath: { "images/\($0.sha256).\($0.ext)" }) {
-                case .delete(let deletedAt):
-                    let row = SyncAdapter.DrawingRow(id: object.id, kind: "ink", page: object.page, dataJSON: "{}", styleJSON: "{}",
-                                                     createdAt: deletedAt, updatedAt: deletedAt, deletedAt: deletedAt)
-                    Self.assertJSONEqual(try XCTUnwrap(SyncAdapter.inkObject(row, t: object.t)), object.value, object.id)
-                case let .upsert(kind, page, data, style, createdAt, updatedAt):
-                    let row = SyncAdapter.DrawingRow(id: object.id, kind: kind, page: page,
-                                                     dataJSON: try NativePDFRepositoryValidation.json(data), styleJSON: try NativePDFRepositoryValidation.json(style),
-                                                     createdAt: createdAt, updatedAt: updatedAt, deletedAt: nil)
-                    let image = ((object.value["data"] as? [String: Any])?["image"] as? [String: Any]).map {
-                        SyncAdapter.AssetRef(sha256: $0["sha256"] as! String, ext: $0["ext"] as! String)
-                    }
-                    Self.assertJSONEqual(try XCTUnwrap(SyncAdapter.inkObject(row, t: object.t, image: image)), object.value, object.id)
-                case .hold(let reason):
-                    XCTFail("\(object.id) was not imported: \(reason)")
+                let object = entry.object, once = try Self.roundTrip(object)
+                // Import only ever clamps into the page, and that settles in one pass, so nothing is re-exported for it.
+                let again = try Self.roundTrip(SyncFormat.InkObject(id: object.id, page: object.page, t: object.t, index: object.index, value: once))
+                Self.assertJSONEqual(again, once, object.id)
+                // Unknown top-level keys are not written back (spec: rewrite with known keys only).
+                if name != "07-out-of-range-coordinates" {
+                    Self.assertJSONEqual(once, object.value.filter { known.contains($0.key) }, object.id)
+                } else {
+                    XCTAssertTrue(Self.geometry(once).allSatisfy { (0...1).contains($0) }, object.id)
                 }
             }
         }
@@ -88,6 +81,38 @@ final class SyncConformanceTests: XCTestCase {
         return SyncFormat.readRoot(try paths.map { ($0, try Data(contentsOf: root.appendingPathComponent($0))) })
     }
 
+    /// Import into a local row, then export it again, as the engine would on the next change.
+    static func roundTrip(_ object: SyncFormat.InkObject) throws -> [String: Any] {
+        switch try SyncAdapter.importInkObject(object, imagePath: { "images/\($0.sha256).\($0.ext)" }) {
+        case .delete(let deletedAt):
+            let row = SyncAdapter.DrawingRow(id: object.id, kind: "ink", page: object.page, dataJSON: "{}", styleJSON: "{}",
+                                             createdAt: deletedAt, updatedAt: deletedAt, deletedAt: deletedAt)
+            return try XCTUnwrap(SyncAdapter.inkObject(row, t: object.t))
+        case let .upsert(kind, page, data, style, createdAt, updatedAt):
+            let row = SyncAdapter.DrawingRow(id: object.id, kind: kind, page: page,
+                                             dataJSON: try NativePDFRepositoryValidation.json(data), styleJSON: try NativePDFRepositoryValidation.json(style),
+                                             createdAt: createdAt, updatedAt: updatedAt, deletedAt: nil)
+            let image = ((object.value["data"] as? [String: Any])?["image"] as? [String: Any]).map {
+                SyncAdapter.AssetRef(sha256: $0["sha256"] as! String, ext: $0["ext"] as! String)
+            }
+            return try XCTUnwrap(SyncAdapter.inkObject(row, t: object.t, image: image))
+        case .hold(let reason):
+            return try XCTUnwrap(nil, "\(object.id) was not imported: \(reason)")
+        }
+    }
+
+    /// Every page coordinate an object reaches, box edges included.
+    static func geometry(_ object: [String: Any]) -> [Double] {
+        func number(_ value: Any?) -> Double { (value as? NSNumber)?.doubleValue ?? .nan }
+        let data = object["data"] as? [String: Any], points = data?["points"] as? [[String: Any]] ?? []
+        var values = points.flatMap { [number($0["x"]), number($0["y"])] }
+        if let box = data?["box"] as? [String: Any] {
+            let x = number(box["x"]), y = number(box["y"])
+            values += [x, y, x + number(box["width"]), y + number(box["height"])]
+        }
+        return values
+    }
+
     /// The `expected.json` shape described in sync-fixtures/README.md.
     static func project(_ state: SyncMerge.State) -> [String: Any] {
         func pick(_ entity: SyncMerge.Entity, _ keys: [String]) -> [String: Any] {
@@ -99,13 +124,16 @@ final class SyncConformanceTests: XCTestCase {
         var ink: [String: [String: [String: Any]]] = [:]
         for (id, entry) in state.ink { ink[entry.doc, default: [:]][String(entry.object.page), default: [:]][id] = entry.object.value }
         return [
+            "blocked": nullable(state.blocked?.rawValue),
             "courses": state.courses.mapValues { pick($0, ["name", "sort", "color", "archived"]) },
             "docs": state.docs.mapValues { pick($0, ["course_id", "type", "name", "rel_path", "pdf_sha256", "md_hash"]) },
             "ink": ink,
             "notes": state.notes.mapValues { ["md_hash": $0.hash, "file": nullable($0.file)] },
             "conflict_copies": state.conflictCopies.map {
-                ["id": $0.id, "of": $0.of, "course_id": $0.courseID, "rel_path": $0.relPath, "name": $0.name, "md_hash": $0.mdHash, "file": nullable($0.file)]
+                ["id": $0.id, "of": $0.of, "course_id": $0.courseID, "rel_path": $0.relPath, "name": $0.name, "md_hash": $0.mdHash, "file": $0.file]
             },
+            "renames": state.renames.map { ["id": $0.id, "name": $0.name] },
+            "waiting": ["docs": state.waitingDocs, "ink": state.waitingInk, "copies": state.waitingCopies],
         ]
     }
 

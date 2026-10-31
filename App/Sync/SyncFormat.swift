@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import zlib
 
-/// Common sync spec v2.1 (`Tests/Fixtures/sync-fixtures/SPEC.md`): which cloud-root
+/// Common sync spec v2.2 (`Tests/Fixtures/sync-fixtures/SPEC.md`): which cloud-root
 /// paths are Bandal's, and validation of each file as untrusted input. Mirrors the
 /// desktop's `src/main/features/sync/format.ts` so both apps read a root alike.
 ///
@@ -17,7 +17,7 @@ enum SyncFormat {
     static let mib = 1 << 20
     private static let knownOps: Set<String> = ["course.upsert", "course.delete", "doc.upsert", "doc.delete"]
 
-    /// `index` is the position in the file's array; it settles a same-stamp tie in the merge.
+    /// `index` is the position among the file's kept entries; it settles a same-stamp tie in the merge.
     struct Event { let t: Int64; let op: String; let id: String; let fields: [String: Any]; let index: Int }
     /// One `pdf_drawings` row in spec form, kept whole. A minimal tombstone is `{id, page, t, del}`.
     struct InkObject { let id: String; let page: Int; let t: Int64; let index: Int; let value: [String: Any] }
@@ -36,14 +36,24 @@ enum SyncFormat {
     struct File { let path: String; let content: Content }
 
     /// Root files sorted into parsed files, ignored paths, unreadable paths and iCloud
-    /// placeholders (`pending`, listed by the path they stand for).
+    /// placeholders (`pending`, listed by the path they stand for). Without a format-2
+    /// `bandal.json` nothing else is read.
     struct Root { let files: [File]; let ignored: [String]; let errors: [String]; let pending: [String] }
 
     struct Unreadable: Error { let reason: String }
 
     static func readRoot(_ files: [(path: String, bytes: Data)]) -> Root {
-        var parsed: [File] = [], ignored: [String] = [], errors: [String] = [], pending: [String] = []
-        for file in files {
+        let rootIndex = files.firstIndex { $0.path == "bandal.json" }
+        let root: File?
+        do { root = try rootIndex.flatMap { try parse(path: files[$0].path, bytes: files[$0].bytes) } } catch {
+            return Root(files: [], ignored: [], errors: ["bandal.json"], pending: [])
+        }
+        guard let root, case .root(Self.version) = root.content else {
+            let waiting = files.contains { placeholderTarget($0.path) == "bandal.json" }
+            return Root(files: root.map { [$0] } ?? [], ignored: [], errors: [], pending: waiting ? ["bandal.json"] : [])
+        }
+        var parsed = [root], ignored: [String] = [], errors: [String] = [], pending: [String] = []
+        for (index, file) in files.enumerated() where index != rootIndex {
             if let target = placeholderTarget(file.path), pattern(target) != nil { pending.append(target); continue }
             do {
                 if let result = try parse(path: file.path, bytes: file.bytes) { parsed.append(result) } else { ignored.append(file.path) }
@@ -165,11 +175,12 @@ enum SyncFormat {
 
     private enum Item<T> { case keep(T), drop, skip }
 
+    /// `check` gets the position the item takes among the kept ones, as the desktop numbers them.
     private static func items<T>(_ value: Any, _ check: (Any, Int) -> Item<T>) throws -> ([T], Int) {
         guard let array = value as? [Any] else { throw Unreadable(reason: "not an array") }
         var kept: [T] = [], dropped = 0
-        for (index, item) in array.enumerated() {
-            switch check(item, index) {
+        for item in array {
+            switch check(item, kept.count) {
             case .keep(let value): kept.append(value)
             case .drop: dropped += 1
             case .skip: break
