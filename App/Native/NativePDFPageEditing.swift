@@ -19,6 +19,10 @@ enum NativePDFPageEditing {
         guard count > 0, (0...count).contains(page) else { return nil }
         return Array(1...count).prefix(page) + [0] + Array(1...count).dropFirst(page)
     }
+    /// Every page stays where it is and new pages come only after the last: the one change a synced PDF allows.
+    static func appends(_ pages: [Int], count: Int) -> Bool {
+        count > 0 && pages.count >= count && Array(pages.prefix(count)) == Array(1...count) && !pages.dropFirst(count).contains { $0 != 0 }
+    }
     static func deleted(count: Int, page: Int) -> [Int]? {
         guard count > 1, (1...count).contains(page) else { return nil }
         return (1...count).filter { $0 != page }

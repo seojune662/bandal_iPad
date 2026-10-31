@@ -1,6 +1,6 @@
 {
   "fixture": "06-path-collision",
-  "spec": "2.2",
+  "spec": "2.3",
   "blocked": null,
   "courses": {
     "c0000000-0000-4000-8000-000000000001": {
@@ -18,6 +18,7 @@
       "name": "1주차.pdf",
       "rel_path": "강의",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
       "alive": false
     },
     "d6000000-0000-4000-8000-000000000001": {
@@ -26,6 +27,7 @@
       "name": "1주차.pdf",
       "rel_path": "강의",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
       "alive": true
     },
     "d9000000-0000-4000-8000-000000000004": {
@@ -34,6 +36,7 @@
       "name": "1주차.pdf",
       "rel_path": "실습",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
       "alive": true
     },
     "da000000-0000-4000-8000-000000000006": {
@@ -50,6 +53,7 @@
       "name": "1주차.PDF",
       "rel_path": "강의",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
       "alive": true
     },
     "d8000000-0000-4000-8000-000000000003": {
@@ -58,6 +62,7 @@
       "name": "1주차.pdf",
       "rel_path": "강의",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
       "alive": true
     },
     "db000000-0000-4000-8000-000000000007": {
@@ -106,6 +111,7 @@
       "name": "ΟΔΥΣΣΕΥΣ 1.pdf",
       "rel_path": "그리스어",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
       "alive": true
     },
     "d2b00000-0000-4000-8000-000000000014": {
@@ -114,6 +120,7 @@
       "name": "οδυσσευσ 1.pdf",
       "rel_path": "그리스어",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
       "alive": true
     },
     "d2c00000-0000-4000-8000-000000000015": {
@@ -122,6 +129,7 @@
       "name": "οδυσσευς 1.pdf",
       "rel_path": "그리스어",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
       "alive": true
     }
   },
@@ -189,6 +197,10 @@
     {
       "id": "d2b00000-0000-4000-8000-000000000014",
       "name": "οδυσσευσ 1 (d2b0).pdf"
+    },
+    {
+      "id": "d2c00000-0000-4000-8000-000000000015",
+      "name": "οδυσσευς 1 (d2c0).pdf"
     },
     {
       "id": "d7000000-0000-4000-8000-000000000002",
