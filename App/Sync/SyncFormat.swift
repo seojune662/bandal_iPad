@@ -103,6 +103,31 @@ enum SyncFormat {
 
     static func sha256(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 
+    /// Writer and seq of a log, ink or note path; nil for any other path.
+    static func writer(of path: String) -> (device: String, seq: Int)? {
+        switch pattern(path) {
+        case .log(let author, let seq)?, .ink(_, _, let author, let seq)?, .note(_, let author, let seq)?: return (author, seq)
+        default: return nil
+        }
+    }
+
+    /// One gzip member, as ink files are written.
+    static func gzip(_ data: Data) throws -> Data {
+        var stream = z_stream(), input = [UInt8](data)
+        guard deflateInit2_(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else { throw Unreadable(reason: "gzip") }
+        defer { deflateEnd(&stream) }
+        var output = [UInt8](repeating: 0, count: Int(deflateBound(&stream, uLong(input.count))) + 32)
+        let status = input.withUnsafeMutableBufferPointer { source in
+            output.withUnsafeMutableBufferPointer { target in
+                stream.next_in = source.baseAddress; stream.avail_in = uInt(source.count)
+                stream.next_out = target.baseAddress; stream.avail_out = uInt(target.count)
+                return deflate(&stream, Z_FINISH)
+            }
+        }
+        guard status == Z_STREAM_END else { throw Unreadable(reason: "gzip") }
+        return Data(output.prefix(output.count - Int(stream.avail_out)))
+    }
+
     static func uuid(_ value: Any?) -> String? { (value as? String).flatMap { isUUID(Array($0.utf8)[...]) ? $0 : nil } }
     static func sha(_ value: Any?) -> String? { (value as? String).flatMap { isSHA(Array($0.utf8)[...]) ? $0 : nil } }
     static func ext(_ value: Any?) -> String? { (value as? String).flatMap { isExt(Array($0.utf8)[...]) ? $0 : nil } }

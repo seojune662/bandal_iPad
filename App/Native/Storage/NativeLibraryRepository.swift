@@ -694,7 +694,7 @@ final class NativeLibraryRepository {
         let now = C.nowISO
         // Include inactive/tombstoned rows: undo and immutable create receipts
         // must still address their original drawing after a file move.
-        let tables = ["annotations", "pdf_drawings", "media_progress", "pdf_view_state", "materials_index", "material_added_state", "pdf_document_aliases"]
+        let tables = ["annotations", "pdf_drawings", "media_progress", "pdf_view_state", "materials_index", "material_added_state", "pdf_document_aliases", "cloud_sync_docs"]
         for table in tables where try context.tableExists(table) {
             let columns = try context.columns(table)
             for row in try context.query("SELECT rowid AS native_row,rel_path FROM \(table) WHERE course_id=?", [course]) {
@@ -704,7 +704,9 @@ final class NativeLibraryRepository {
                 let occupied = try context.query("SELECT rowid AS native_row FROM \(table) WHERE course_id=? AND rel_path=?", [course, next])
                 if ["materials_index", "pdf_document_aliases", "media_progress", "pdf_view_state"].contains(table), !occupied.isEmpty { throw C.conflict("이전 자료 기록이 대상 경로를 사용하고 있습니다: \(next)") }
                 if table == "material_added_state" { try context.run("DELETE FROM material_added_state WHERE course_id=? AND rel_path=?", [course, next]) }
-                try context.run("UPDATE \(table) SET rel_path=?\(columns.contains("updated_at") ? ",updated_at=?" : "") WHERE rowid=?", columns.contains("updated_at") ? [next, now, row["native_row"]!] : [next, row["native_row"]!])
+                // Ink moving with its PDF is not an edit: the stroke keeps its updated_at.
+                let touch = columns.contains("updated_at") && table != "pdf_drawings"
+                try context.run("UPDATE \(table) SET rel_path=?\(touch ? ",updated_at=?" : "") WHERE rowid=?", touch ? [next, now, row["native_row"]!] : [next, row["native_row"]!])
             }
         }
         func rewrite(_ value: Any, assumedCourse: String?) -> Any {
