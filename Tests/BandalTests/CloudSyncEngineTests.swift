@@ -14,7 +14,7 @@ final class CloudSyncEngineTests: XCTestCase {
         override func list() async throws -> [String: SyncRemoteFile] {
             try await super.list().reduce(into: [:]) { files, file in
                 guard !unlisted(file.key) else { return }
-                files[file.key] = pending.contains(file.key) ? SyncRemoteFile(version: file.value.version, local: false) : file.value
+                files[file.key] = pending.contains(file.key) ? SyncRemoteFile(version: file.value.version, local: false, size: file.value.size) : file.value
             }
         }
         override func read(_ path: String) throws -> Data {

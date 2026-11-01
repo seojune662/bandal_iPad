@@ -12,7 +12,6 @@ final class CloudSyncEngine {
     var mutateOpenDocuments: ((@escaping @MainActor () async throws -> Any) async throws -> Any)?
     /// Documents open in an editor, as `course\0path`; nil when an editor does not say.
     var openDocuments: (() -> Set<String>?)?
-    var deviceName = "iPad"
     private(set) var status: [String: Any] = ["phase": "idle"]
 
     let provider: SyncProvider
@@ -105,19 +104,25 @@ final class CloudSyncEngine {
             (listing, state) = (files, merged)
         }
         guard let state else { return }
+        let empty = !files.keys.contains(where: SyncFormat.isSpecFile)
         // An empty root is started here; a root of any other format is never written (spec "원격 입력 검증").
-        if let blocked = state.blocked, !(blocked == .missingRoot && !files.keys.contains(where: SyncFormat.isSpecFile)) {
-            return publish("paused", ["reason": blocked.rawValue])
-        }
+        if let blocked = state.blocked, !(blocked == .missingRoot && empty) { return publish("paused", ["reason": blocked.rawValue]) }
         let (me, session) = (try await storage { store, _, _ in try store.deviceID() }, newSession)
+        let flags = try await storage { store, _, _ in (exportFirst: try store.value("export_first") != nil, rootSeen: try store.value("root_seen") != nil, name: try store.value("device_label") ?? "iPad") }
+        // This iPad's devices file stays in a root it wrote to. Once seen, its absence means the folder
+        // was removed or replaced (Files app, another device): not every document deleted, and not a
+        // root that holds what this iPad sent. It is filled again only when the user says so (design §4.4).
+        let mine = files["devices/\(me).json"] != nil
+        if flags.rootSeen, !mine { return publish("paused", ["reason": "root-missing"]) }
         // Other devices' files, and PDFs or assets arriving or finishing their download, are applied
         // in full. This device's own log and notes can only add conflict copies and renames, so a
         // change there applies documents without ink.
         let remote = files.filter { !Self.own($0.key, me) }.mapValues { "\($0.version):\($0.local)" }
         let own = files.filter { Self.own($0.key, me) && !$0.key.hasPrefix("ink/") }.mapValues(\.version)
         let full = remote != appliedRemote || retryAt.map { Date() >= $0 } == true
-        var skipped = 0, waiting = false
-        if full || own != appliedOwn {
+        var skipped = 0, waiting: String?
+        // After an overwrite the first export goes out before anything is applied (design §4.2).
+        if !flags.exportFirst, full || own != appliedOwn {
             do {
                 let report = try await apply(state, ink: full)
                 skipped = report.skipped.count
@@ -125,24 +130,46 @@ final class CloudSyncEngine {
             } catch {
                 // An editor that cannot save now (a note in conflict) holds back the change to its
                 // document only; this device's own changes still go out below.
-                waiting = true
+                waiting = error.localizedDescription
                 retryAt = Date().addingTimeInterval(60)
                 publish("waiting", ["message": error.localizedDescription])
             }
             if full { appliedRemote = remote }
             appliedOwn = own
         }
-        let name = deviceName
         let batch = try await storage { store, library, _ in
             let outbox = SyncOutbox(store: store, library: library)
-            outbox.deviceName = name
+            outbox.deviceName = flags.name
             if session { try outbox.endSession() }
             return try outbox.prepare(remote: Set(files.keys))
         }
         newSession = newSession && !session
+        if !batch.writes.isEmpty { publish("syncing", ["remaining": batch.writes.count]) }
         for write in batch.writes { try await provider.write(write.content, to: write.path) }
-        try await storage { store, library, _ in try SyncOutbox(store: store, library: library).commit(batch) }
-        if !waiting { publish("idle", ["lastSuccessAt": Date().timeIntervalSince1970 * 1000, "skipped": skipped + batch.skipped.count]) }
+        let finished = Int64(Date().timeIntervalSince1970 * 1000)
+        try await storage { store, library, _ in
+            try SyncOutbox(store: store, library: library).commit(batch)
+            if mine { try store.set("root_seen", "1") }
+            try store.set("last_success_at", String(finished))
+        }
+        if let waiting { return publish("waiting", ["message": waiting]) }
+        // iCloud uploads in the background after a write; what has not gone up yet is shown apart (design §4.5).
+        publish("idle", ["lastSuccessAt": finished, "uploads": files.values.filter { !$0.uploaded }.count, "skipped": skipped + batch.skipped.count])
+    }
+
+    /// The removed root is filled again with everything this iPad holds (design §4.4). A root that
+    /// holds this iPad's files again (restored from Recently Deleted) just resumes.
+    func recreateRoot() async throws {
+        let me = try await storage { store, _, _ in try store.deviceID() }
+        if try await provider.list()["devices/\(me).json"] == nil { try await storage { store, _, _ in try store.resetExchange() } }
+        (listing, state, appliedRemote, appliedOwn, retryAt, cache) = (nil, nil, nil, nil, nil, [:])
+        await syncNow()
+    }
+
+    /// The root as it is now, for the connection sheet; no state while a text file is still downloading.
+    nonisolated static func peek(_ provider: SyncProvider) async throws -> (files: [String: SyncRemoteFile], state: SyncMerge.State?, downloading: Int) {
+        let files = try await provider.list(), result = await read(files, cache: [:], provider: provider)
+        return (files, result.state, result.downloading)
     }
 
     /// Reading and merging the root is the heavy part of a cycle, so it runs off the main actor and

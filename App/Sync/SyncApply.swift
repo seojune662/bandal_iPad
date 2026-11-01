@@ -136,8 +136,8 @@ final class SyncApply {
         return known.isAlive == (row["deleted_at"] is NSNull) && local.allSatisfy { key, value in known.fields[key].map { SyncStore.same($0.value, value) } ?? true }
     }
 
-    /// True when a value changed.
-    private func bring(_ local: String, to target: Entity, known: Entity) throws -> Bool {
+    /// True when a value changed. Also used to adopt the cloud's values for a course joined on connection.
+    func bring(_ local: String, to target: SyncMerge.Entity, known: SyncMerge.Entity) throws -> Bool {
         func changed(_ key: String) -> Any? { target.fields[key].flatMap { SyncStore.same($0.value, known.fields[key]?.value) ? nil : $0.value } }
         var brought = false
         if let name = changed("name") as? String, !name.isEmpty { _ = try library.handle("courses:rename", ["courseId": local, "name": name]); brought = true }
