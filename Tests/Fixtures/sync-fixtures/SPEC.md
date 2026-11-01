@@ -1,10 +1,19 @@
-# 반달 동기화 공통 스펙 v2.4 (2026-11-01)
+# 반달 동기화 공통 스펙 v2.5 (2026-11-01)
 
 iPad와 데스크톱이 함께 쓰는 스펙이다.
 
 - 바꿀 때는 두 저장소에 같은 날 반영한다.
 - 원본은 데스크톱 저장소의 `sync-fixtures/`다. iPad는 커밋을 고정해 사본을 둔다.
 - 적합성 예제는 같은 폴더에 있다.
+
+## v2.4 → v2.5 변경
+
+| # | 변경 | 출처 |
+|---|---|---|
+| 1 | Drive 루트를 만들 때 `appProperties`와 함께 `properties`에도 `bandalRoot = "2"`를 붙인다. `properties`는 같은 Cloud 프로젝트의 모든 클라이언트에 보인다 | 사용자 결정. iPad가 `appProperties`는 그것을 쓴 클라이언트에만 보인다고 확인 |
+| 2 | Drive 루트는 표시로 찾고 위치와 이름은 보지 않는다. 표시가 보이는 폴더가 없을 때만 이름이 "Bandal"이고 `bandal.json`이 있는 폴더를 찾는다. 후보가 여럿이면 `bandal.json`, `createdTime`, id 순으로 고른다 | 사용자 결정. id 순은 두 앱이 이미 쓰던 것을 적었다 |
+| 3 | Drive 연결 해제는 그 기기의 토큰만 지우고 revoke하지 않는다. 같은 프로젝트를 쓰는 다른 Google 연결(Gmail)도 마찬가지다 | 사용자 결정 |
+| 4 | 예제는 그대로다. `expected.json`의 `spec`은 "2.4"로 둔다 | 데스크톱 |
 
 ## v2.3 → v2.4 변경
 
@@ -72,9 +81,13 @@ iPad와 데스크톱이 함께 쓰는 스펙이다.
 - **iCloud**: 컨테이너 `iCloud.app.bandal`의 `Documents/`. 파일 앱에는 "반달"로 보인다.
   - mac: `~/Library/Mobile Documents/iCloud~app~bandal/Documents`
   - Windows: `%USERPROFILE%\iCloudDrive\iCloud~app~bandal\` (실험적)
-- **Google Drive**: 앱이 만든 "Bandal" 폴더. 스코프는 `drive.file`이다.
-  - 폴더를 만들 때 `appProperties.bandalRoot = "2"`를 붙인다.
-  - 이런 폴더가 여러 개면 `bandal.json`이 있고 `createdTime`이 가장 이른 것을 쓴다.
+- **Google Drive**: 반달 클라이언트가 루트로 표시해 만든 폴더. 처음에는 내 드라이브 맨 위에 "Bandal"이라는 이름으로 만든다. 스코프는 `drive.file`이다.
+  - **표시(v2.5)**: 폴더를 만들 때 `properties.bandalRoot = "2"`와 `appProperties.bandalRoot = "2"`를 함께 붙인다.
+    - `properties`는 같은 Cloud 프로젝트의 모든 클라이언트에 보인다. `appProperties`는 그것을 쓴 클라이언트에만 보인다.
+  - **찾기(v2.5)**: 휴지통에 없는 폴더 가운데 두 표시 중 하나가 보이는 것이 후보다. 사용자가 옮기거나 이름을 바꿔도 찾는다.
+    - 그런 폴더가 하나도 없을 때만 이름이 "Bandal"이고 `bandal.json`이 있는 폴더가 후보다. v2.5 전에 다른 클라이언트가 만든 루트는 표시가 그 클라이언트에만 보이기 때문이다.
+  - 후보가 여럿이면 `bandal.json`이 있는 것, `createdTime`이 이른 것, id가 작은 것 순으로 하나를 쓴다. 비교는 문자열 순서다.
+  - **연결 해제(v2.5)**: 그 기기의 토큰만 지운다. revoke하지 않는다. revoke는 같은 Cloud 프로젝트의 모든 클라이언트에서 그 계정의 권한을 끊어, 다른 기기의 동기화와 같은 프로젝트의 Gmail 연결까지 멈춘다.
 - 동기화 묶음 하나 = 데스크톱 프로필 하나 = iPad 데이터셋 하나다. 한 루트에는 묶음 하나만 둔다.
 
 ## 디렉터리

@@ -52,14 +52,14 @@ final class DesktopMailTests: XCTestCase {
         XCTAssertFalse(wrote); XCTAssertFalse(fetched)
     }
     func testExpiredSessionRefreshAndDisconnectDoNotReturnTokens() async throws {
-        var saved = "", refreshed = 0
+        var saved = "", refreshed = 0, revoked = false
         var environment = DesktopMailEnvironment()
         environment.configuration = { (self.client, self.scheme, false) }
         environment.read = { _ in #"{"accessToken":"old","refreshToken":"refresh","expiresAt":0,"email":"fixture@example.invalid"}"# }
         environment.write = { _, value in saved = value }
         environment.request = { request in
             if request.url!.path == "/token" { refreshed += 1; return try self.response(request, ["access_token": "new-private", "expires_in": 3600]) }
-            if request.url!.path == "/revoke" { return try self.response(request, [:]) }
+            if request.url!.path == "/revoke" { revoked = true; return try self.response(request, [:]) }
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer new-private")
             return try self.response(request, ["messages": []])
         }
@@ -68,6 +68,7 @@ final class DesktopMailTests: XCTestCase {
         XCTAssertEqual(refreshed, 1); XCTAssertTrue(saved.contains("new-private"))
         _ = try await service.handle(channel: "native:mailDisconnect", request: [:])
         XCTAssertEqual(saved, "")
+        XCTAssertFalse(revoked, "a revoke ends the grant for every client of the project, Drive sync too")
         let state = try await service.handle(channel: "native:mailState", request: [:]) as! [String: Any]
         XCTAssertEqual(state["status"] as? String, "disconnected")
     }
