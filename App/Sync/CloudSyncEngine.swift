@@ -52,6 +52,9 @@ final class CloudSyncEngine {
         observers.forEach(NotificationCenter.default.removeObserver); observers = []
         listening?.cancel(); idle?.cancel()
         suspended = true
+        // A cycle may be waiting on the network or a provider's upload window; nothing is committed
+        // before every write is done, so stopping it midway is safe.
+        running?.cancel()
         await running?.value
     }
 
@@ -84,12 +87,12 @@ final class CloudSyncEngine {
         await running?.value
     }
 
-    func suspend() async { suspended = true; await running?.value }
+    func suspend() async { suspended = true; running?.cancel(); await running?.value }
     func resume() { suspended = false; requestSync() }
 
     private func cycleReportingErrors() async {
         do { try await cycle() }
-        catch { publish("error", ["message": error.localizedDescription]) }
+        catch { if !Task.isCancelled { publish("error", ["message": error.localizedDescription]) } }
     }
 
     private func cycle() async throws {
