@@ -29,7 +29,8 @@ final class SyncStoreTests: XCTestCase {
 
         /// Paths written this round.
         @discardableResult func sync(_ cloud: Cloud) throws -> [String] {
-            let batch = try outbox.prepare(remote: Set(cloud.files.keys))
+            let root = SyncMerge.merge(SyncFormat.readRoot(cloud.files.map { ($0.key, $0.value) }).files)
+            let batch = try outbox.prepare(remote: Set(cloud.files.keys), deletedCourses: Set(root.courses.filter { !$0.value.isAlive }.keys))
             for write in batch.writes {
                 switch write.content {
                 case .data(let data): cloud.files[write.path] = data
@@ -454,6 +455,209 @@ final class SyncStoreTests: XCTestCase {
         try a.sync(cloud)
         XCTAssertEqual(try a.bytes(course, paper), third)
         XCTAssertThrowsError(try a.pdf.handle("nativePDF:binding", ["courseId": course, "relPath": paper]))
+    }
+
+    /// Spec v2.4: a device that missed several appends still carries its ink over along the
+    /// prev→sha chain of every append, and pages added between two syncs go out as one step
+    /// from the PDF last exchanged.
+    func testMissedAppendsRebindThroughTheChain() throws {
+        let cloud = Cloud(), a = try Device("iPad A"), b = try Device("iPad B")
+        let course = try a.course("물리"), paper = try a.paper(course, "1주차")
+        let first = try a.stroke(course, paper)
+        try a.sync(cloud); try b.sync(cloud)
+        let other = try b.courseID("물리")
+        try b.appendPage(other, paper)
+        try b.sync(cloud)
+        let middle = SyncFormat.sha256(try b.bytes(other, paper))
+        try b.appendPage(other, paper); try b.appendPage(other, paper)
+        try b.sync(cloud)
+        let longest = try b.bytes(other, paper)
+        XCTAssertEqual(try Self.upsert(cloud, pdf: SyncFormat.sha256(longest))?["pdf_prev_sha256"] as? String, middle)
+        try a.sync(cloud)
+        XCTAssertEqual(try a.bytes(course, paper), longest)
+        let binding = try a.pdf.handle("nativePDF:binding", ["courseId": course, "relPath": paper]) as! [String: Any]
+        XCTAssertEqual(binding["documentRevision"] as? String, SyncFormat.sha256(longest))
+        XCTAssertNotNil(try a.drawings(course, paper)[first])
+    }
+
+    /// A replacement (no pdf_prev_sha256) breaks the chain: pages appended after it do not lead
+    /// back to the PDF the ink here is bound to, so that ink stays protected (spec v2.4).
+    func testAReplacementBreaksTheAppendChain() throws {
+        let cloud = Cloud(), a = try Device("iPad A")
+        let course = try a.course("물리"), paper = try a.paper(course, "1주차")
+        let first = try a.stroke(course, paper)
+        try a.sync(cloud)
+        let id = try XCTUnwrap(a.context.query("SELECT sync_id FROM cloud_sync_docs").first?["sync_id"] as? String)
+        func grown(_ bytes: Data, by pages: Int) throws -> Data {
+            let document = try XCTUnwrap(PDFDocument(data: bytes))
+            for _ in 0..<pages { document.insert(try XCTUnwrap(document.page(at: 0)?.copy() as? PDFPage), at: document.pageCount) }
+            return try XCTUnwrap(document.dataRepresentation())
+        }
+        let original = try a.bytes(course, paper)
+        let appended = try grown(original, by: 1), replaced = try grown(original, by: 2), last = try grown(replaced, by: 1)
+        for bytes in [appended, replaced, last] { cloud.files["pdf/\(SyncFormat.sha256(bytes)).pdf"] = bytes }
+        try Self.remote(cloud, seq: 1, [
+            ["t": Self.time + 1_000, "op": "doc.upsert", "id": id, "fields": ["pdf_sha256": SyncFormat.sha256(appended), "pdf_prev_sha256": SyncFormat.sha256(original)]],
+            ["t": Self.time + 2_000, "op": "doc.upsert", "id": id, "fields": ["pdf_sha256": SyncFormat.sha256(replaced)]],
+            ["t": Self.time + 3_000, "op": "doc.upsert", "id": id, "fields": ["pdf_sha256": SyncFormat.sha256(last), "pdf_prev_sha256": SyncFormat.sha256(replaced)]],
+        ])
+        try a.sync(cloud)
+        XCTAssertEqual(try a.bytes(course, paper), last)
+        XCTAssertThrowsError(try a.pdf.handle("nativePDF:binding", ["courseId": course, "relPath": paper]))
+        XCTAssertNotNil(try a.drawings(course, paper)[first])
+    }
+
+    /// Spec v2.4: deleting a course deletes its documents too. A device that changed one of them
+    /// meanwhile keeps the course and brings it back with that document only; the device that
+    /// deleted it gets the course back and removes the rest.
+    func testACourseDeletedElsewhereComesBackWithWhatChangedHere() throws {
+        let cloud = Cloud(), a = try Device("iPad A"), b = try Device("iPad B")
+        let course = try a.course("물리")
+        try a.note(course, "요약.md", "# 힘\n"); try a.note(course, "공식.md", "F = ma\n")
+        try a.sync(cloud); try b.sync(cloud)
+        let other = try b.courseID("물리")
+        _ = try b.library.handle("courses:delete", ["courseId": other])
+        try b.sync(cloud)
+        let deletes = try cloud.files.filter { $0.key.hasPrefix("log/") }.values.flatMap { try JSONSerialization.jsonObject(with: $0) as? [[String: Any]] ?? [] }
+            .filter { ($0["op"] as? String)?.hasSuffix(".delete") == true }.compactMap { $0["op"] as? String }
+        XCTAssertEqual(deletes.sorted(), ["course.delete", "doc.delete", "doc.delete"])
+        try a.note(course, "요약.md", "# 힘과 운동\n")
+        // As the engine does: the root is read before anything is sent.
+        try a.apply(cloud); try a.sync(cloud)
+        XCTAssertEqual(try a.courseID("물리"), course)
+        XCTAssertEqual(try a.files(course), ["요약.md"])
+        XCTAssertEqual(try a.text(course, "요약.md"), "# 힘과 운동\n")
+        try b.sync(cloud)
+        XCTAssertEqual(try b.courseID("물리"), other)
+        XCTAssertEqual(try b.files(other), ["요약.md"])
+        XCTAssertEqual(try b.text(other, "요약.md"), "# 힘과 운동\n")
+        XCTAssertEqual(try a.sync(cloud), [])
+        XCTAssertEqual(try b.sync(cloud), [])
+    }
+
+    /// Erased strokes are no ink (spec v2.4 "필기 없음"): a PDF whose strokes here were all erased
+    /// follows new bytes, whatever wrote them.
+    func testAPDFWithOnlyErasedInkFollowsNewBytes() throws {
+        let cloud = Cloud(), a = try Device("iPad A"), b = try Device("iPad B")
+        let course = try a.course("물리"), paper = try a.paper(course, "1주차")
+        let first = try a.stroke(course, paper)
+        try a.sync(cloud); try b.sync(cloud)
+        try a.context.run("UPDATE pdf_drawings SET deleted_at=?,updated_at=? WHERE id=?", [NativeRepositoryContext.nowISO, NativeRepositoryContext.nowISO, first])
+        try a.sync(cloud)
+        let longer = try b.replaceOutside(try b.courseID("물리"), paper)
+        try b.sync(cloud); try a.sync(cloud)
+        XCTAssertEqual(try a.bytes(course, paper), longer)
+        XCTAssertNoThrow(try a.pdf.handle("nativePDF:binding", ["courseId": course, "relPath": paper]))
+    }
+
+    /// A course deleted elsewhere and brought back here comes back with its documents: their
+    /// deletes were recorded here, so they go out again (spec v2.4).
+    func testACourseBroughtBackHereSendsItsDocumentsAgain() throws {
+        let cloud = Cloud(), a = try Device("iPad A"), b = try Device("iPad B")
+        let course = try a.course("물리")
+        try a.note(course, "요약.md", "# 힘\n")
+        try a.sync(cloud); try b.sync(cloud)
+        let other = try b.courseID("물리")
+        _ = try a.library.handle("courses:delete", ["courseId": course])
+        try a.sync(cloud); try b.sync(cloud)
+        XCTAssertTrue(try b.context.query("SELECT 1 FROM courses WHERE id=? AND deleted_at IS NULL", [other]).isEmpty)
+        _ = try b.library.handle("courses:restore", ["courseId": other])
+        try b.sync(cloud); try a.sync(cloud)
+        XCTAssertEqual(try a.courseID("물리"), course)
+        XCTAssertEqual(try a.files(course), ["요약.md"])
+        XCTAssertEqual(try b.files(other), ["요약.md"])
+        XCTAssertEqual(try b.sync(cloud), [])
+    }
+
+    /// A document written into a course the root deleted brings the course back in the same flush,
+    /// even when nothing was applied first (the desktop's reviveCourse; review MEDIUM).
+    func testWritingIntoACourseDeletedElsewhereBringsItBackInTheSameFlush() throws {
+        let cloud = Cloud(), a = try Device("iPad A"), b = try Device("iPad B")
+        let course = try a.course("물리")
+        try a.note(course, "요약.md", "# 힘\n")
+        try a.sync(cloud); try b.sync(cloud)
+        _ = try b.library.handle("courses:delete", ["courseId": try b.courseID("물리")])
+        try b.sync(cloud)
+        try a.note(course, "요약.md", "# 힘과 운동\n")
+        // Sent before anything is applied, as when the workspace barrier could not run this round.
+        try a.sync(cloud)
+        XCTAssertEqual(try a.courseID("물리"), course)
+        XCTAssertEqual(try a.text(course, "요약.md"), "# 힘과 운동\n")
+        try b.sync(cloud)
+        XCTAssertEqual(try b.text(try b.courseID("물리"), "요약.md"), "# 힘과 운동\n")
+    }
+
+    /// A course kept here because it holds unsent work takes what other devices changed before
+    /// they deleted it, so bringing it back does not undo a rename (review LOW).
+    func testAKeptCourseTakesTheRenameMadeBeforeItsDelete() throws {
+        let cloud = Cloud(), a = try Device("iPad A"), b = try Device("iPad B")
+        let course = try a.course("물리")
+        try a.note(course, "요약.md", "# 힘\n")
+        try a.sync(cloud); try b.sync(cloud)
+        let other = try b.courseID("물리")
+        _ = try b.library.handle("courses:rename", ["courseId": other, "name": "역학"])
+        try b.sync(cloud)
+        _ = try b.library.handle("courses:delete", ["courseId": other])
+        try b.sync(cloud)
+        try a.note(course, "요약.md", "# 힘과 운동\n")
+        try a.apply(cloud); try a.sync(cloud)
+        XCTAssertEqual(try a.courseID("역학"), course)
+        try b.sync(cloud)
+        XCTAssertEqual(try b.courseID("역학"), other)
+    }
+
+    /// Ink drawn here and not sent yet keeps a PDF whose course another device deleted, and brings
+    /// both back everywhere (review MEDIUM).
+    func testUnsentInkKeepsAPDFWhoseCourseWasDeletedElsewhere() throws {
+        let cloud = Cloud(), a = try Device("iPad A"), b = try Device("iPad B")
+        let course = try a.course("물리"), paper = try a.paper(course, "1주차")
+        try a.sync(cloud); try b.sync(cloud)
+        _ = try b.library.handle("courses:delete", ["courseId": try b.courseID("물리")])
+        try b.sync(cloud)
+        let stroke = try a.stroke(course, paper)
+        try a.apply(cloud); try a.sync(cloud)
+        XCTAssertEqual(try a.files(course), [paper])
+        XCTAssertNotNil(try a.drawings(course, paper)[stroke])
+        try b.sync(cloud)
+        let other = try b.courseID("물리")
+        XCTAssertEqual(try b.files(other), [paper])
+        XCTAssertNotNil(try b.drawings(other, paper)[stroke])
+    }
+
+    /// A course deleted here takes along only the documents it holds as its own: one moved to another
+    /// course elsewhere (a move v1 does not apply) stays alive (review HIGH).
+    func testDeletingACourseLeavesADocumentMovedToAnotherCourse() throws {
+        let cloud = Cloud(), a = try Device("iPad A")
+        let course = try a.course("물리"), other = try a.course("화학")
+        try a.note(course, "요약.md", "# 힘\n")
+        try a.sync(cloud)
+        let ids = Dictionary(uniqueKeysWithValues: try a.context.query("SELECT local_id,sync_id FROM cloud_sync_courses").map { ($0["local_id"] as! String, $0["sync_id"] as! String) })
+        let doc = try XCTUnwrap(a.context.query("SELECT sync_id FROM cloud_sync_docs").first?["sync_id"] as? String)
+        try Self.remote(cloud, seq: 1, [["t": Self.time + 1_000, "op": "doc.upsert", "id": doc, "fields": ["course_id": ids[other]!]]])
+        try a.sync(cloud)
+        _ = try a.library.handle("courses:delete", ["courseId": course])
+        try a.sync(cloud)
+        let state = SyncMerge.merge(SyncFormat.readRoot(cloud.files.map { ($0.key, $0.value) }).files)
+        XCTAssertEqual(state.courses[ids[course]!]?.isAlive, false)
+        XCTAssertEqual(state.docs[doc]?.isAlive, true)
+    }
+
+    /// A PDF removed here and brought back under another name finds its strokes again (the
+    /// desktop's fuzz find for spec v2.4).
+    func testStrokesFollowAPDFBroughtBackUnderAnotherName() throws {
+        let cloud = Cloud(), a = try Device("iPad A"), b = try Device("iPad B")
+        let course = try a.course("물리"), paper = try a.paper(course, "1주차")
+        let first = try a.stroke(course, paper)
+        try a.sync(cloud); try b.sync(cloud)
+        _ = try b.library.handle("materials:delete", ["courseId": try b.courseID("물리"), "relPath": paper])
+        try b.sync(cloud); try a.sync(cloud)
+        XCTAssertEqual(try a.files(course), [])
+        let id = try XCTUnwrap(a.context.query("SELECT sync_id FROM cloud_sync_docs").first?["sync_id"] as? String)
+        try Self.remote(cloud, seq: 1, [["t": Self.time + 1_000, "op": "doc.upsert", "id": id, "fields": ["name": "복구.pdf"]]])
+        try a.sync(cloud)
+        let back = paper.replacingOccurrences(of: "1주차.pdf", with: "복구.pdf")
+        XCTAssertEqual(try a.files(course), [back])
+        XCTAssertNotNil(try a.drawings(course, back)[first])
     }
 
     /// A new PDF where a removed one was does not show the removed one's ink (review MEDIUM).

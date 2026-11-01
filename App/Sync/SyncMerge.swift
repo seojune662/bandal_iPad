@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// Pure merge of a parsed cloud root (spec v2.3 "머지"), mirroring the desktop's
+/// Pure merge of a parsed cloud root (spec v2.4 "머지"), mirroring the desktop's
 /// `src/main/features/sync/merge.ts`. The result depends only on the set of
 /// files, never on their order or on reading one twice.
 enum SyncMerge {
@@ -54,6 +54,8 @@ enum SyncMerge {
         /// Not appliable yet: a referenced course, document, PDF, asset or note file is missing.
         /// A copy waits for its text only; it already holds its name.
         var waitingDocs: [String] = [], waitingInk: [String] = [], waitingCopies: [String] = []
+        /// PDF documents: the bytes from which end-page appends lead to the winning pdf_sha256, sorted (spec v2.4).
+        var rebindFrom: [String: [String]] = [:]
     }
 
     private struct NoteVersion { let hash: String; let base: String?; let stamp: Stamp }
@@ -67,6 +69,8 @@ enum SyncMerge {
         guard format == SyncFormat.version else { state.blocked = format > SyncFormat.version ? .updateRequired : .unsupportedFormat; return state }
 
         var present = Set<String>(), versions: [String: [NoteVersion]] = [:], noteFiles: [String: [NoteFile]] = [:]
+        /// Appends per document: the bytes before → the bytes after, from every event, winning or not.
+        var appends: [String: [(from: String, to: String)]] = [:]
         for file in files {
             switch file.content {
             case .root: break
@@ -89,6 +93,9 @@ enum SyncMerge {
                         for (key, value) in event.fields where entity.fields[key].map({ stamp > $0.stamp }) ?? true {
                             entity.fields[key] = Register(value: value, stamp: stamp)
                         }
+                        if event.op == "doc.upsert", let pdf = event.fields["pdf_sha256"] as? String, let prev = event.fields["pdf_prev_sha256"] as? String {
+                            appends[event.id, default: []].append((prev, pdf))
+                        }
                         if event.op == "doc.upsert", let hash = event.fields["md_hash"] as? String {
                             // A missing md_base reads as a fresh start (null): writers send md_hash and md_base together.
                             versions[event.id, default: []].append(NoteVersion(hash: hash, base: event.fields["md_base"] as? String, stamp: stamp))
@@ -97,6 +104,25 @@ enum SyncMerge {
                     if isCourse { state.courses[event.id] = entity } else { state.docs[event.id] = entity }
                 }
             }
+        }
+
+        // v2.4: a document under a deleted course counts as deleted. Its deletion takes the later stamp of its own and its
+        // course's, so a course brought back brings back the documents that have no tombstone of their own.
+        for (id, entity) in state.docs {
+            guard let course = entity.text("course_id").flatMap({ state.courses[$0]?.deleted }) else { continue }
+            let later = entity.deleted.map { course.stamp > $0.stamp ? course.stamp : $0.stamp } ?? course.stamp
+            state.docs[id]!.deleted = (entity.deleted?.value == true || course.value, later)
+        }
+        // v2.4: bytes that appends lead to the winner can be rebound to it; a replacement (prev null) breaks the chain.
+        for (doc, edges) in appends {
+            guard let winner = state.docs[doc]?.text("pdf_sha256") else { continue }
+            var from = Set<String>(), queue = [winner]
+            while let next = queue.popLast() {
+                for edge in edges where edge.to == next && edge.from != winner && !from.contains(edge.from) {
+                    from.insert(edge.from); queue.append(edge.from)
+                }
+            }
+            state.rebindFrom[doc] = from.sorted()
         }
 
         /// Course, folder and name are all known; until then a document takes part in no naming rule.
@@ -123,7 +149,8 @@ enum SyncMerge {
             state.notes[doc] = (body, bodyFile?.path)
             if entity.isAlive, bodyFile.map({ $0.assets.contains { !present.contains($0) } }) ?? true { waiting.insert(doc) }
 
-            guard let place = place(entity) else { continue }
+            // A copy would sit in its document's course: none under a deleted one (v2.4).
+            guard let place = place(entity), state.courses[place.course]?.isAlive != false else { continue }
             // A version stops being a head only when a later version (larger t) started from its text, so a revert
             // to an old hash stays a head and the LWW winner always is one. Each base's latest t is collected once.
             var latestFrom: [String: Int64] = [:]

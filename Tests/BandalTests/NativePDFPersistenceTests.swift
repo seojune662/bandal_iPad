@@ -254,6 +254,25 @@ final class NativePDFPersistenceTests: XCTestCase {
         XCTAssertFalse(a.canUndo, "History for the peer-modified second stroke was removed")
     }
 
+    /// Rows sync stored for the file arrive like a peer pane's write: the view hears which strokes
+    /// changed, and undo that touched them is gone while the rest stays.
+    func testStoredRowsArriveLikeAPeerSnapshot() async throws {
+        let backend = Repository(), writer = makeWriter(backend, Bridge())
+        try writer.accept(stroke(sequence: 1), type: "stroke"); try await writer.drain()
+        try writer.accept(stroke(sequence: 2), type: "stroke"); try await writer.drain()
+        let kept = try XCTUnwrap(writer.rows.first?["id"] as? String), edited = try XCTUnwrap(writer.rows.last?["id"] as? String)
+        var changed = Set<String>(); writer.onPeerChanged = { changed.formUnion($0) }
+        backend.rows[backend.rows.count - 1]["style"] = ["color": "red", "width": 0.01, "opacity": 1.0]
+        let arrived = try XCTUnwrap(fixtureRows(count: 1).first); backend.rows.append(arrived)
+        try await writer.receiveStoredRows()
+        XCTAssertEqual(changed, [edited, try XCTUnwrap(arrived["id"] as? String)])
+        XCTAssertEqual(writer.rows.count, 3)
+        try await writer.undo()
+        XCTAssertFalse(backend.rows.contains { $0["id"] as? String == kept }, "the untouched stroke's undo stays")
+        XCTAssertTrue(backend.rows.contains { $0["id"] as? String == edited })
+        XCTAssertFalse(writer.canUndo, "undo for the stroke changed elsewhere is gone")
+    }
+
     func testAnnotationsMirrorAcrossPanesWithoutSharingUndoOwnership() async throws {
         let backend = Repository(), file = NativePDFFileCoordinator()
         let a = makeWriter(backend, Bridge(), coordinator: file), b = makeWriter(backend, Bridge(), coordinator: file)

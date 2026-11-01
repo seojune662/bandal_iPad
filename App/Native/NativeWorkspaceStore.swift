@@ -90,6 +90,8 @@ final class NativeWorkspaceStore: ObservableObject {
         let suspendWrites: (@MainActor () -> Void)?
         let resume: (@MainActor () -> Void)?
         let retire: (@MainActor () -> Void)?
+        /// A PDF editor taking ink another writer stored (sync) without reopening.
+        let refreshDrawings: (@MainActor () async throws -> Void)?
         let flush: @MainActor () async throws -> Void
         var storageID: String { document?.storageID ?? id }
         var mutation: [String: Any]? {
@@ -377,9 +379,11 @@ final class NativeWorkspaceStore: ObservableObject {
     func registerDocumentFlush(id: String, document: NativeDocumentReference? = nil, freeze: (@MainActor () -> Void)? = nil,
                                suspendWrites: (@MainActor () -> Void)? = nil,
                                resume: (@MainActor () -> Void)? = nil, retire: (@MainActor () -> Void)? = nil,
+                               refreshDrawings: (@MainActor () async throws -> Void)? = nil,
                                flush: @escaping @MainActor () async throws -> Void) -> UUID {
         let token = UUID()
-        let entry = DocumentFlush(id: id, document: document, freeze: freeze, suspendWrites: suspendWrites, resume: resume, retire: retire, flush: flush)
+        let entry = DocumentFlush(id: id, document: document, freeze: freeze, suspendWrites: suspendWrites, resume: resume, retire: retire,
+                                  refreshDrawings: refreshDrawings, flush: flush)
         flushers[token] = entry
         if externalMutationActive { joinExternalMutation(token, entry: entry) }
         markDocumentChanged()
@@ -523,6 +527,7 @@ final class NativeWorkspaceStore: ObservableObject {
         let payload = result as? [String: Any]
         changedCourseIDs = (payload?["changedCourseIDs"] as? [String]).map(Set.init)
         changedDocuments = payload?["changedDocuments"] as? [[String: Any]]
+        if let documents = changedDocuments { changedDocuments = await redrawInPlace(documents) }
         // A document-only change does not rename/create courses. Let its editor
         // reopen immediately; refreshing the sidebar must not sit in that path.
         if changedDocuments != nil {
@@ -531,6 +536,25 @@ final class NativeWorkspaceStore: ObservableObject {
             try await loadCourses(); try await loadMaterials()
         }
         return result
+    }
+
+    /// Documents where only ink changed (`drawingsOnly`, from sync): their editors take the stored
+    /// rows like another pane's write while writes are still suspended, and redraw just what changed.
+    /// An editor that cannot reopens with the documents that changed otherwise.
+    private func redrawInPlace(_ documents: [[String: Any]]) async -> [[String: Any]] {
+        let redraw = documents.filter { $0["drawingsOnly"] as? Bool == true }
+        guard !redraw.isEmpty else { return documents }
+        var reopen = documents.filter { $0["drawingsOnly"] as? Bool != true }
+        for entry in externalParticipants.values {
+            guard let mutation = entry.mutation, Self.affects(changedDocuments: redraw, changedCourseIDs: nil, mutation),
+                  !Self.affects(changedDocuments: reopen, changedCourseIDs: nil, mutation) else { continue }
+            do {
+                guard let refresh = entry.refreshDrawings else { throw CancellationError() }
+                try await refresh()
+                events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:pdfContentChanged", payload: mutation))
+            } catch { reopen.append(mutation) }
+        }
+        return reopen
     }
 
     /// Editors call this whenever new local content needs to become durable.

@@ -31,6 +31,8 @@ final class CloudSyncEngineTests: XCTestCase {
         var flush: (() async throws -> Void)?
         /// Documents open in an editor, as `course\0path`; nil when an editor does not say.
         var open: Set<String>? = []
+        /// What the engine told the app, as channel names.
+        var emitted: [String] = []
         private let keychain = Box()
 
         init(cloud: URL) async throws {
@@ -47,6 +49,7 @@ final class CloudSyncEngineTests: XCTestCase {
                 return result
             }
             engine.openDocuments = { [unowned self] in open }
+            engine.emit = { [unowned self] channel, _ in emitted.append(channel) }
             try await runtime.withSyncStorage { context, _ in try SyncStore(context: context, keychain: keys).setProvider("icloud") }
         }
         deinit { try? FileManager.default.removeItem(at: root) }
@@ -87,13 +90,19 @@ final class CloudSyncEngineTests: XCTestCase {
         let ink = try await b.invoke("drawings:listForFile", ["courseId": other, "relPath": paper]) as? [[String: Any]]
         XCTAssertEqual(ink?.count, 1)
         XCTAssertTrue(b.reloads.isEmpty, "nothing was open")
-        // Ink for a PDF open on b goes in through the barrier, which reopens that editor.
+        // New ink alone still has the library refresh the PDF's course.
+        try await a.stroke(course, paper)
+        await a.engine.syncNow(); b.emitted.removeAll(); await b.engine.syncNow()
+        XCTAssertTrue(b.emitted.contains("materials:changed"))
+        // Ink for a PDF open on b goes in through the barrier, which has that editor redraw it in place.
         b.open = [other + "\u{0}" + paper]
         try await a.stroke(course, paper)
         await a.engine.syncNow(); await b.engine.syncNow()
-        XCTAssertEqual((b.reloads.last?["changedDocuments"] as? [[String: Any]])?.compactMap { $0["relPath"] as? String }, [paper])
-        let both = try await b.invoke("drawings:listForFile", ["courseId": other, "relPath": paper]) as? [[String: Any]]
-        XCTAssertEqual(both?.count, 2)
+        let redrawn = b.reloads.last?["changedDocuments"] as? [[String: Any]]
+        XCTAssertEqual(redrawn?.compactMap { $0["relPath"] as? String }, [paper])
+        XCTAssertEqual(redrawn?.first?["drawingsOnly"] as? Bool, true)
+        let all = try await b.invoke("drawings:listForFile", ["courseId": other, "relPath": paper]) as? [[String: Any]]
+        XCTAssertEqual(all?.count, 3)
     }
 
     /// The workspace barrier runs only when another device changed a document open here, and

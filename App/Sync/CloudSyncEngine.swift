@@ -8,7 +8,7 @@ import UIKit
 final class CloudSyncEngine {
     var emit: ((String, Any) -> Void)?
     /// Runs apply inside the workspace barrier: open editors save first, and those whose
-    /// documents changed reopen from the store (design §2.8).
+    /// documents changed reopen from the store, or redraw it when only ink changed (design §2.8).
     var mutateOpenDocuments: ((@escaping @MainActor () async throws -> Any) async throws -> Any)?
     /// Documents open in an editor, as `course\0path`; nil when an editor does not say.
     var openDocuments: (() -> Set<String>?)?
@@ -141,7 +141,7 @@ final class CloudSyncEngine {
             let outbox = SyncOutbox(store: store, library: library)
             outbox.deviceName = flags.name
             if session { try outbox.endSession() }
-            return try outbox.prepare(remote: Set(files.keys))
+            return try outbox.prepare(remote: Set(files.keys), deletedCourses: Set(state.courses.filter { !$0.value.isAlive }.keys))
         }
         newSession = newSession && !session
         if !batch.writes.isEmpty { publish("syncing", ["remaining": batch.writes.count]) }
@@ -204,7 +204,7 @@ final class CloudSyncEngine {
         }
         var report = try await pass(openDocuments.map { $0() } ?? [])
         if !report.courses.isEmpty { emit?("courses:changed", [:]) }
-        for course in report.files.keys.sorted() { emit?("materials:changed", ["courseId": course]) }
+        for course in Set(report.files.keys).union(report.drawn.keys).sorted() { emit?("materials:changed", ["courseId": course]) }
         guard report.held else { return report }
         let action: @MainActor () async throws -> Any = {
             report = try await pass([])
