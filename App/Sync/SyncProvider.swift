@@ -17,6 +17,9 @@ struct SyncRemoteFile: Equatable {
     let version: String
     /// On this device and readable now.
     let local: Bool
+    var size: Int64 = 0
+    /// In the cloud already; a file this device wrote may still be uploading.
+    var uploaded = true
 }
 
 /// A folder as the root: the tests' cloud, and the file handling under `ICloudProvider`.
@@ -42,7 +45,7 @@ class FolderProvider: SyncProvider, @unchecked Sendable {
             let values = try url.resourceValues(forKeys: Set(keys))
             let path = Self.unprefixed(url.path)
             guard values.isRegularFile == true, path.hasPrefix(base) else { continue }
-            files[String(path.dropFirst(base.count))] = SyncRemoteFile(version: "\(values.contentModificationDate?.timeIntervalSince1970 ?? 0):\(values.fileSize ?? 0)", local: true)
+            files[String(path.dropFirst(base.count))] = SyncRemoteFile(version: "\(values.contentModificationDate?.timeIntervalSince1970 ?? 0):\(values.fileSize ?? 0)", local: true, size: Int64(values.fileSize ?? 0))
         }
         return files
     }

@@ -107,6 +107,30 @@ final class SyncStore {
         }
     }
 
+    /// Forgets the root entirely (another iCloud account holds another root): no course or document
+    /// is matched to it any more, so joining the new root starts from the connection sheet.
+    func forgetRoot() throws {
+        try context.transaction {
+            for table in ["cloud_sync_courses", "cloud_sync_docs", "cloud_sync_objects", "cloud_sync_files"] { try context.run("DELETE FROM \(table)") }
+            try context.run("INSERT OR REPLACE INTO cloud_sync_dirty SELECT id, random() FROM pdf_drawings")
+            try context.run("DELETE FROM cloud_sync_state WHERE key IN ('root_seen','device_name','pending_deletes','export_first','last_success_at')")
+        }
+    }
+
+    /// Forgets what was exchanged (not the ids) so that everything goes out again into a root that
+    /// was removed: every course, document and drawing is sent whole, under the same ids.
+    func resetExchange() throws {
+        let empty = try Self.encode(.init())
+        try context.transaction {
+            try context.run("UPDATE cloud_sync_courses SET registers=?", [empty])
+            try context.run("UPDATE cloud_sync_docs SET registers=? WHERE rel_path<>''", [empty])
+            try context.run("DELETE FROM cloud_sync_objects")
+            try context.run("DELETE FROM cloud_sync_files")
+            try context.run("INSERT OR REPLACE INTO cloud_sync_dirty SELECT id, random() FROM pdf_drawings")
+            try context.run("DELETE FROM cloud_sync_state WHERE key IN ('root_seen','device_name','pending_deletes','export_first')")
+        }
+    }
+
     // MARK: Change capture (design §1.6)
 
     /// Drawing writes are captured by triggers only while sync is on, so the table never

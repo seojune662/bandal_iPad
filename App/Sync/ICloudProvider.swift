@@ -82,7 +82,8 @@ final class ICloudProvider: FolderProvider, @unchecked Sendable {
                     guard path.hasPrefix(base) else { continue }
                     let changed = (item.value(forAttribute: NSMetadataItemFSContentChangeDateKey) as? Date)?.timeIntervalSince1970 ?? 0
                     let size = (item.value(forAttribute: NSMetadataItemFSSizeKey) as? NSNumber)?.int64Value ?? 0
-                    files[String(path.dropFirst(base.count))] = SyncRemoteFile(version: "\(changed):\(size)", local: local)
+                    let uploaded = item.value(forAttribute: NSMetadataUbiquitousItemIsUploadedKey) as? Bool ?? true
+                    files[String(path.dropFirst(base.count))] = SyncRemoteFile(version: "\(changed):\(size)", local: local, size: size, uploaded: uploaded)
                 }
                 // An empty listing while the folder holds files (or their placeholders) means iCloud has
                 // not told this iPad what the root holds yet; taken as empty, it would start a new root.

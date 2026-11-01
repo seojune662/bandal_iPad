@@ -20,6 +20,8 @@ final class SyncOutbox {
         fileprivate var handled: [(id: String, mark: Int64)] = []
         fileprivate var files: [(path: String, key: String, content: String?)] = []
         fileprivate var deviceName: String?
+        /// Sends the deletes an overwrite queued (`SyncConnection`); commit forgets them.
+        fileprivate var clearsPending = false
         /// Files left for the next round (being written, unreadable), with the reason.
         fileprivate(set) var skipped: [(path: String, reason: String)] = []
     }
@@ -46,6 +48,7 @@ final class SyncOutbox {
         try courses(&draft)
         try documents(&draft)
         try drawings(&draft)
+        try pending(&draft)
         // Order of a flush (design §1.5): pdf and assets went in first, then ink and notes, then the log.
         try assemble(&draft)
         let named = try store.value("device_name")
@@ -77,6 +80,7 @@ final class SyncOutbox {
                 try context.run("INSERT OR REPLACE INTO cloud_sync_files(path,key,open,content) VALUES(?,?,1,?)", [file.path, file.key, file.content ?? NSNull()])
             }
             if let name = batch.deviceName { try store.set("device_name", name) }
+            if batch.clearsPending { try context.run("DELETE FROM cloud_sync_state WHERE key IN ('pending_deletes','export_first')") }
         }
     }
 
@@ -121,7 +125,8 @@ final class SyncOutbox {
             if known[local] == nil {
                 guard alive else { continue }
                 // Spec ids are lowercase UUIDs; an older id of another shape gets one once.
-                let id = local == local.lowercased() && UUID(uuidString: local) != nil ? local : UUID().uuidString.lowercased()
+                let free = try context.query("SELECT 1 FROM cloud_sync_courses WHERE sync_id=?", [local]).isEmpty
+                let id = free && local == local.lowercased() && UUID(uuidString: local) != nil ? local : UUID().uuidString.lowercased()
                 let empty = try SyncStore.encode(.init())
                 try context.run("INSERT INTO cloud_sync_courses(sync_id,local_id,origin,registers) VALUES(?,?,'local',?)", [id, local, empty])
                 known[local] = (id, empty)
@@ -223,6 +228,19 @@ final class SyncOutbox {
             }
         }
         return nil
+    }
+
+    /// What only the cloud held when this iPad overwrote it (design §4.2): its courses and documents
+    /// go out as deletes, its ink in documents both held as tombstones. Files stay in the root.
+    private func pending(_ draft: inout Draft) throws {
+        guard let text = try store.value("pending_deletes") else { return }
+        let pending = try JSONDecoder().decode(SyncConnection.Pending.self, from: Data(text.utf8))
+        for entry in pending.deletes where entry.count == 2 { draft.events.append(Event(op: entry[0] + ".delete", id: entry[1], fields: nil, registers: .init())) }
+        for stone in pending.tombstones {
+            let value: [String: Any] = ["id": stone.id, "page": stone.page, "del": true]
+            draft.ink["ink/\(stone.doc)/\(stone.page)", default: []].append(Object(id: stone.id, value: value, hash: try Self.hash(value), doc: stone.doc, page: stone.page))
+        }
+        draft.batch.clearsPending = true
     }
 
     /// A PDF keeps its binding id (as the desktop does); a note gets a new UUID.

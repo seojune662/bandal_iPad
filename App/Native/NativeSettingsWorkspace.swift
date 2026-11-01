@@ -269,6 +269,7 @@ struct NativeSettingsWorkspace: View {
     switch category {
     case "ai": aiPanel
     case "account": VStack(alignment: .leading, spacing: 24) { accountPanel; if NativeReleaseFlags.legacyCloudSync { subscriptionPanel; syncPanel; profilePanel } }
+    case "sync": NativeSettingsSyncPanel(store: store)
     case "browser": expandedPanel("browser")
     case "advanced": VStack(spacing: 24) { expandedPanel("advanced"); storagePanel }
     case "appearance": appearancePanel

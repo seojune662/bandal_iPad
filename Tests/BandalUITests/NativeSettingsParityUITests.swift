@@ -111,6 +111,25 @@ final class NativeSettingsParityUITests: XCTestCase {
         XCTAssertTrue(["Left draft", "Right draft"].contains(retained))
     }
 
+    /// Settings › 동기화 asks for nothing but iCloud: no login, no subscription. Without an iCloud
+    /// account (a fresh simulator) turning it on explains how to sign in instead of connecting.
+    @MainActor
+    func testSyncSettingsOfferICloudWithoutLogin() {
+        let app = launch()
+        app.buttons["native-section-settings"].tap()
+        let category = app.buttons["native-settings-category-sync"]
+        XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription); category.tap()
+        let provider = app.segmentedControls["native-sync-provider"]
+        XCTAssertTrue(provider.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.textFields["native-sync-device-name"].exists)
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS '로그인하면'")).firstMatch.exists)
+        capture("Sync settings, off")
+        provider.buttons["iCloud"].tap()
+        XCTAssertTrue(app.buttons["설정 열기"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(provider.buttons["끔"].isSelected)
+        capture("Sync settings without an iCloud account")
+    }
+
     @MainActor private func launch(extra: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"] + extra; app.launch()

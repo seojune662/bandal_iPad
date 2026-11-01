@@ -97,7 +97,7 @@ final class DesktopRuntime: @unchecked Sendable {
             let result = try await native("native:saveFile",output) as? [String:Any]
             return ["savedPath":result?["path"] ?? NativeValue.null]
         }
-        if channel == "studyMarket:request" || channel == "native:extractArticle" || channel.hasPrefix("native:cloud") || Self.nativeChannels.contains(channel) || channel.hasPrefix("browser:") || channel.hasPrefix("credentials:") || channel.hasPrefix("auth:") || channel.hasPrefix("sync:") || channel.hasPrefix("native:ai") || (channel.hasPrefix("nativeSettings:") && channel != "nativeSettings:usage") {
+        if channel == "studyMarket:request" || channel == "native:extractArticle" || channel.hasPrefix("native:cloud") || Self.nativeChannels.contains(channel) || channel.hasPrefix("browser:") || channel.hasPrefix("credentials:") || channel.hasPrefix("auth:") || channel.hasPrefix("sync:") || channel.hasPrefix("cloudSync:") || channel.hasPrefix("native:ai") || (channel.hasPrefix("nativeSettings:") && channel != "nativeSettings:usage") {
             return try await native(Self.aliases[channel] ?? channel,object)
         }
         if let result = try await onQueue({

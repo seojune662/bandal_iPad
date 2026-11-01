@@ -83,6 +83,9 @@ enum SyncAdapter {
         return ["id": row.id, "kind": row.kind, "page": row.page, "t": t, "created": try milliseconds(row.createdAt), "data": data, "style": style]
     }
 
+    /// An object of a kind this iPad can store; others (a newer app's) are kept as they are.
+    static func understands(_ object: SyncFormat.InkObject) -> Bool { (object.value["kind"] as? String).map(V.kinds.contains) ?? false }
+
     /// Merged spec object → local change. Clamps geometry into the page, then validates
     /// like a local save; content that still fails throws a validation error.
     static func importInkObject(_ object: SyncFormat.InkObject, imagePath: (AssetRef) -> String? = { _ in nil }) throws -> DrawingImport {

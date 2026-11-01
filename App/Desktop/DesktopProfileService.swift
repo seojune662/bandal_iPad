@@ -64,6 +64,52 @@ final class DesktopProfileService: NSObject, UIDocumentPickerDelegate {
         switched = true
         activate?(); return ["ok": true, "profileID": name]
     }
+    /// Read by the new profile's first start: connect to this sync provider (design §4.2 가져오기).
+    static let syncConnect = "cloud-sync-connect.json"
+    /// The profile a sync profile was made from, for 설정 › 이전 자료로 돌아가기.
+    static let previousProfile = "previous-profile.json"
+    struct Previous: Codable { let rootName: String }
+
+    /// A new, empty profile that connects to the sync root on its first start, so the cloud's data
+    /// arrives without touching this profile. No backup first: this profile stays where it is.
+    func newProfileForSync(provider: String) async throws -> [String: Any] {
+        guard !busy else { throw DesktopRuntimeError("프로필 작업이 진행 중입니다.") }
+        busy = true
+        var switched = false
+        defer { busy = false; if !switched { resume?() } }
+        try await prepare?()
+        let id = UUID().uuidString.lowercased(), name = "BandalProfile-" + id, next = documents.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: next, withIntermediateDirectories: false)
+        try FileManager.default.createDirectory(at: next.appendingPathComponent("Legacy"), withIntermediateDirectories: false)
+        try Self.writeDurably(JSONEncoder().encode(["provider": provider]), to: next.appendingPathComponent(Self.syncConnect))
+        try Self.writeDurably(JSONEncoder().encode(Previous(rootName: root.lastPathComponent)), to: next.appendingPathComponent(Self.previousProfile))
+        try Self.writeDurably(JSONEncoder().encode(Selection(id: id, rootName: name)), to: documents.appendingPathComponent("active-profile.json"))
+        switched = true
+        activate?(); return ["ok": true, "profileID": name]
+    }
+
+    /// The profile this sync profile was made from, if it is still there.
+    var previous: Previous? {
+        guard let value = try? JSONDecoder().decode(Previous.self, from: Data(contentsOf: root.appendingPathComponent(Self.previousProfile))),
+              value.rootName == "BandalDesktop" || value.rootName.hasPrefix("BandalProfile-") && UUID(uuidString: String(value.rootName.dropFirst("BandalProfile-".count))) != nil,
+              FileManager.default.fileExists(atPath: documents.appendingPathComponent(value.rootName).path) else { return nil }
+        return value
+    }
+
+    func returnToPrevious() async throws -> [String: Any] {
+        guard let previous else { throw DesktopRuntimeError("이전 자료를 찾지 못했습니다.") }
+        guard !busy else { throw DesktopRuntimeError("프로필 작업이 진행 중입니다.") }
+        busy = true
+        var switched = false
+        defer { busy = false; if !switched { resume?() } }
+        try await prepare?()
+        let pointer = documents.appendingPathComponent("active-profile.json")
+        if previous.rootName == "BandalDesktop" { if FileManager.default.fileExists(atPath: pointer.path) { try FileManager.default.removeItem(at: pointer) } }
+        else { try Self.writeDurably(JSONEncoder().encode(Selection(id: String(previous.rootName.dropFirst("BandalProfile-".count)), rootName: previous.rootName)), to: pointer) }
+        switched = true
+        activate?(); return ["ok": true, "profileID": previous.rootName]
+    }
+
     private func sourceRoots() throws -> [URL] {
         var roots = [root]
         let legacy = Self.legacyRoot(documents: documents, root: root)
