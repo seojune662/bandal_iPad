@@ -6,10 +6,10 @@ import XCTest
 /// a removed root and the device name.
 @MainActor
 final class CloudSyncConnectTests: XCTestCase {
-    private final class Box { var items: [String: String] = [:] }
+    fileprivate final class Box { var items: [String: String] = [:] }
 
     /// A folder whose writes fail while `fails` is set.
-    private final class Failing: FolderProvider, @unchecked Sendable {
+    fileprivate final class Failing: FolderProvider, @unchecked Sendable {
         var fails = false
         override func write(_ content: SyncOutbox.Content, to path: String) async throws {
             if fails { throw DesktopRuntimeError("write failed", code: "IO") }
@@ -17,19 +17,22 @@ final class CloudSyncConnectTests: XCTestCase {
         }
     }
 
-    @MainActor private final class Device {
+    @MainActor fileprivate final class Device {
         let documents: URL, store: NativeWorkspaceStore, service: CloudSyncService
         var failing: Failing?
         var account = "account-a"
 
-        init(cloud: URL, documents: URL? = nil, root name: String = "BandalDesktop") async throws {
+        /// Signing in to Google gives this account; sign-ins are counted.
+        var google: GoogleDriveAuth.Account? = .init(refresh: "refresh-a", id: "google-a", email: "a@example.com")
+        var signIns = 0
+
+        init(cloud: URL, documents: URL? = nil, root name: String = "BandalDesktop", keychain box: Box = Box()) async throws {
             self.documents = documents ?? FileManager.default.temporaryDirectory.appendingPathComponent("sync-connect-" + UUID().uuidString)
             let root = self.documents.appendingPathComponent(name)
             store = NativeWorkspaceStore(storageRoot: root)
             await store.start()
             XCTAssertTrue(store.isReady, store.errorMessage ?? "store")
             service = CloudSyncService(store: store, profile: DesktopProfileService(documents: self.documents, root: root))
-            let box = Box()
             service.environment = .init(locate: { (cloud, "account") }, provider: { FolderProvider(root: $0) },
                                         keychain: .init(read: { box.items[$0] }, write: { box.items[$0] = $1 }))
             service.environment.provider = { [unowned self] root in
@@ -37,6 +40,12 @@ final class CloudSyncConnectTests: XCTestCase {
                 return failing
             }
             setAccount(account, cloud: cloud)
+        }
+        /// Google Drive in memory, one per Google account id.
+        func useDrive(_ drives: [String: FakeDrive]) {
+            let cache = documents.appendingPathComponent("drive-cache", isDirectory: true)
+            service.environment.signIn = { [unowned self] in signIns += 1; return google }
+            service.environment.drive = { DriveProvider(account: $0, cache: cache, transport: drives[$0.id]!.transport, poll: .seconds(3600), backoff: 0.01, window: 0) }
         }
         func setAccount(_ name: String, cloud: URL) {
             account = name
@@ -372,5 +381,136 @@ final class CloudSyncConnectTests: XCTestCase {
         XCTAssertNotNil(arrived, "the cloud's data arrived")
         _ = try await next.sync("cloudSync:returnToPrevious")
         XCTAssertFalse(FileManager.default.fileExists(atPath: a.documents.appendingPathComponent("active-profile.json").path), "back to BandalDesktop")
+    }
+
+    // MARK: Google Drive (design §1.4)
+
+    /// Choosing Google Drive asks for the account first; a second iPad on that account joins the
+    /// same root; turning it off forgets the account here (no revoke, which would sign out the
+    /// other iPad too). No 반달 login anywhere.
+    func testDriveAsksForTheAccountAndTurningOffForgetsIt() async throws {
+        let drives = ["google-a": FakeDrive()], a = try await Device(cloud: cloud), b = try await Device(cloud: cloud)
+        a.useDrive(drives); b.useDrive(drives)
+        let course = try await newCourse(a, "물리")
+        _ = try await a.invoke("notes:write", ["courseId": course, "relPath": "요약.md", "markdown": "# 힘\n"])
+        let first = try await a.sync("cloudSync:preview", ["provider": "drive"])
+        XCTAssertEqual(first["empty"] as? Bool, true)
+        XCTAssertEqual(first["provider"] as? String, "drive")
+        let on = try await a.sync("cloudSync:connect", ["provider": "drive", "mode": "start"])
+        XCTAssertEqual(on["provider"] as? String, "drive")
+        XCTAssertEqual(on["driveEmail"] as? String, "a@example.com")
+        _ = try await a.sync("cloudSync:syncNow")
+        XCTAssertFalse(drives["google-a"]!.ids(named: "bandal.json").isEmpty)
+        let seen = try await b.sync("cloudSync:preview", ["provider": "drive"])
+        XCTAssertEqual((seen["cloud"] as? [String: Any])?["courses"] as? Int, 1)
+        _ = try await b.sync("cloudSync:connect", ["provider": "drive", "mode": "merge", "pairs": []])
+        _ = try await b.sync("cloudSync:syncNow")
+        let found = try await b.course("물리"), joined = try XCTUnwrap(found)["id"] as! String
+        let note = try await b.invoke("notes:read", ["courseId": joined, "relPath": "요약.md"]) as! [String: Any]
+        XCTAssertEqual(note["markdown"] as? String, "# 힘\n")
+        let off = try await a.sync("cloudSync:disconnect")
+        XCTAssertNil(off["provider"])
+        XCTAssertNil(off["driveEmail"])
+        // b still syncs: nothing was revoked.
+        _ = try await b.sync("cloudSync:syncNow")
+        let still = try await b.sync("cloudSync:status")
+        XCTAssertEqual(still["phase"] as? String, "idle")
+        // Closing the Google sheet leaves sync off, and an account signed in but never joined is not kept.
+        a.google = nil
+        let cancelled = try await a.sync("cloudSync:preview", ["provider": "drive"])
+        XCTAssertEqual(cancelled["available"] as? Bool, false)
+        a.google = .init(refresh: "refresh-a2", id: "google-a", email: "a@example.com")
+        _ = try await a.sync("cloudSync:preview", ["provider": "drive"])
+        let unjoined = try await a.sync("cloudSync:status")
+        XCTAssertNil(unjoined["driveEmail"], "kept only once the connection is made")
+    }
+
+    /// A Google account whose token stopped working is asked for again when Drive is chosen, and a
+    /// profile with sync on but no account pauses until it is connected again.
+    func testADeadGoogleTokenAsksAgain() async throws {
+        let drive = FakeDrive(), a = try await Device(cloud: cloud)
+        a.useDrive(["google-a": drive])
+        _ = try await a.sync("cloudSync:preview", ["provider": "drive"])
+        _ = try await a.sync("cloudSync:connect", ["provider": "drive", "mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        XCTAssertEqual(a.signIns, 1)
+        drive.failures = [("/token", "POST", 400, #"{"error":"invalid_grant"}"#)]
+        let again = try await a.sync("cloudSync:preview", ["provider": "drive"])
+        XCTAssertEqual(a.signIns, 2)
+        XCTAssertEqual(again["available"] as? Bool, true)
+        a.google = nil
+        drive.failures = [("/token", "POST", 400, #"{"error":"invalid_grant"}"#)]
+        _ = try await a.sync("cloudSync:preview", ["provider": "drive"])
+        await a.service.start()
+        let paused = try await a.sync("cloudSync:status")
+        XCTAssertEqual(paused["reason"] as? String, "drive-signed-out")
+    }
+
+    /// Joining iCloud lets the Google account of Drive sync go.
+    func testMovingFromDriveToICloudForgetsTheGoogleAccount() async throws {
+        let a = try await Device(cloud: cloud)
+        a.useDrive(["google-a": FakeDrive()])
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:preview", ["provider": "drive"])
+        _ = try await a.sync("cloudSync:connect", ["provider": "drive", "mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        _ = try await a.sync("cloudSync:preview")
+        let icloud = try await a.sync("cloudSync:connect", ["mode": "start"])
+        XCTAssertEqual(icloud["provider"] as? String, "icloud")
+        XCTAssertNil(icloud["driveEmail"])
+    }
+
+    /// Another Google account is another root: sync pauses until that root is joined, and then
+    /// everything goes out again into it (design §4.4).
+    func testAnotherGoogleAccountPausesUntilItsRootIsJoined() async throws {
+        let drives = ["google-a": FakeDrive(), "google-b": FakeDrive()], a = try await Device(cloud: cloud)
+        a.useDrive(drives)
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:preview", ["provider": "drive"])
+        _ = try await a.sync("cloudSync:connect", ["provider": "drive", "mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        a.google = .init(refresh: "refresh-b", id: "google-b", email: "b@example.com")
+        let paused = try await a.sync("cloudSync:signInDrive")
+        XCTAssertEqual(paused["reason"] as? String, "account-changed")
+        let preview = try await a.sync("cloudSync:preview", ["provider": "drive"])
+        XCTAssertEqual(preview["empty"] as? Bool, true)
+        _ = try await a.sync("cloudSync:connect", ["provider": "drive", "mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        XCTAssertTrue(drives["google-b"]!.text(endingWith: ".json").contains("물리"), "everything went out again into the new root")
+    }
+
+    /// A profile joined to iCloud before Drive existed kept the account under the old key; moving it
+    /// to Drive is still another root, so everything goes out again.
+    func testAnICloudRootJoinedBeforeDriveIsStillAnotherRoot() async throws {
+        let drives = ["google-a": FakeDrive()], a = try await Device(cloud: cloud)
+        a.useDrive(drives)
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        try await a.store.runtime.withSyncStorage { context, _ in
+            try context.run("DELETE FROM cloud_sync_state WHERE key='sync_account'")
+            try SyncStore(context: context).set("icloud_account", "account-a")
+        }
+        _ = try await a.sync("cloudSync:preview", ["provider": "drive"])
+        _ = try await a.sync("cloudSync:connect", ["provider": "drive", "mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        XCTAssertTrue(drives["google-a"]!.text(endingWith: ".json").contains("물리"))
+    }
+
+    /// 가져오기 on Drive: the new profile takes the Google account with it; this one lets it go
+    /// without giving the grant back.
+    func testImportOnDriveTakesTheGoogleAccountToTheNewProfile() async throws {
+        let drives = ["google-a": FakeDrive()], keychain = Box(), a = try await Device(cloud: cloud, keychain: keychain)
+        a.useDrive(drives)
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:preview", ["provider": "drive"])
+        _ = try await a.sync("cloudSync:connect", ["provider": "drive", "mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        _ = try await a.sync("cloudSync:connect", ["provider": "drive", "mode": "import"])
+        let pointer = try JSONDecoder().decode(DesktopProfileService.Selection.self, from: Data(contentsOf: a.documents.appendingPathComponent("active-profile.json")))
+        let next = try await Device(cloud: cloud, documents: a.documents, root: pointer.rootName, keychain: keychain)
+        next.useDrive(drives); next.google = nil
+        await next.service.start()
+        _ = try await next.sync("cloudSync:syncNow")
+        let status = try await next.sync("cloudSync:status")
+        XCTAssertEqual(status["provider"] as? String, "drive")
+        XCTAssertEqual(status["driveEmail"] as? String, "a@example.com")
+        let arrived = try await next.course("물리")
+        XCTAssertNotNil(arrived, "the cloud's data arrived")
+        let left = try await a.sync("cloudSync:status")
+        XCTAssertNil(left["driveEmail"], "the old profile let the account go")
     }
 }

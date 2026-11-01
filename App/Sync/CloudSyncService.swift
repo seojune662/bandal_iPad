@@ -1,26 +1,32 @@
 import Foundation
 
-/// Settings › 동기화 and the engine's life (design §4): sync on or off for this profile, joining a
-/// root that already holds data (merge, overwrite, or a new profile that takes the cloud's data),
-/// and a pause when the iCloud account changes or the root disappears. Login, subscription and
-/// sync stay independent: nothing here asks for either.
+/// Settings › 동기화 and the engine's life (design §4): sync on or off for this profile, in iCloud
+/// or in Google Drive, joining a root that already holds data (merge, overwrite, or a new profile
+/// that takes the cloud's data), and a pause when the account changes or the root disappears.
+/// Login, subscription and sync stay independent: nothing here asks for either, and the Google
+/// account of Drive sync is not the 반달 login.
 @MainActor
 final class CloudSyncService {
     static let channels: Set<String> = ["cloudSync:status", "cloudSync:preview", "cloudSync:connect", "cloudSync:disconnect", "cloudSync:syncNow",
-                                        "cloudSync:setDeviceName", "cloudSync:recreateRoot", "cloudSync:returnToPrevious"]
+                                        "cloudSync:setDeviceName", "cloudSync:recreateRoot", "cloudSync:returnToPrevious", "cloudSync:signInDrive"]
     private weak var store: NativeWorkspaceStore?
     private let runtime: DesktopRuntime, profile: DesktopProfileService
-    private var engine: CloudSyncEngine?, identityObserver: NSObjectProtocol?, starting = false, startAgain = false
+    private var engine: CloudSyncEngine?, provider: SyncProvider?, identityObserver: NSObjectProtocol?, starting = false, startAgain = false
     /// What is shown while no engine runs: off, signed out, another account.
     private var idle: [String: Any] = ["phase": "off"]
 
-    /// iCloud by default; tests give a folder, an account and their own keychain.
+    /// iCloud and Google by default; tests give a folder, accounts, a Drive and their own keychain.
     struct Environment {
         /// The root, or nil while signed out, and the signed-in account. May block: called off the main thread.
         var locate: @Sendable () -> (URL?, String) = { (ICloudProvider.locate(), ICloudProvider.identity()?.base64EncodedString() ?? "") }
         var provider: (URL) -> SyncProvider = { ICloudProvider(root: $0) }
         var keychain = SyncStore.Keychain.live
+        /// Google sign-in for Drive (nil when the user closes it) and the Drive root of an account.
+        var signIn: @MainActor () async throws -> GoogleDriveAuth.Account? = { try await GoogleDriveAuth.signIn() }
+        var drive: (GoogleDriveAuth.Account) -> SyncProvider = { DriveProvider(account: $0, cache: CloudSyncService.driveCache($0.id)) }
     }
+    /// A Google account signed in for a connection not made yet; it is kept only once the connection is.
+    private var pendingDrive: GoogleDriveAuth.Account?
     var environment = Environment()
 
     init(store: NativeWorkspaceStore, profile: DesktopProfileService) {
@@ -31,10 +37,17 @@ final class CloudSyncService {
 
     func handle(_ channel: String, _ request: [String: Any]) async throws -> Any {
         switch channel {
-        case "cloudSync:preview": return try await preview()
+        case "cloudSync:preview": return try await preview(request["provider"] as? String ?? "icloud")
         case "cloudSync:connect": try await connect(request)
         case "cloudSync:disconnect": try await disconnect()
-        case "cloudSync:syncNow": try await store?.flushDocuments(); await engine?.syncNow()
+        case "cloudSync:syncNow": try await store?.flushDocuments(); await (provider as? DriveProvider)?.hurry(); await engine?.syncNow()
+        case "cloudSync:signInDrive":
+            // Google stopped honouring the token: the same account again replaces it; another one is
+            // joined only through the sheet (start pauses for it).
+            guard let account = try await environment.signIn() else { break }
+            let joined = try await runtime.withSyncStorage { context, _ in try Self.joined(SyncStore(context: context)) }
+            if joined == "drive:" + account.id { try keepDriveAccount(account) } else { pendingDrive = account }
+            await start()
         case "cloudSync:setDeviceName": try await setDeviceName(request["name"])
         case "cloudSync:recreateRoot": try await engine?.recreateRoot()
         case "cloudSync:returnToPrevious":
@@ -48,7 +61,7 @@ final class CloudSyncService {
     }
 
     /// Starts sync when this profile has it on. A profile made by 가져오기 connects on its first start;
-    /// `-BandalCloudSync icloud|off` at launch also turns it on or off (device testing).
+    /// `-BandalCloudSync icloud|drive|off` at launch also turns it on or off (device testing).
     func start() async {
         // One start at a time; an account change during one starts once more after it.
         guard !starting else { startAgain = true; return }
@@ -67,21 +80,20 @@ final class CloudSyncService {
         if requested == nil, let data = try? Data(contentsOf: handoff) { requested = (try? JSONDecoder().decode([String: String].self, from: data))?["provider"] }
         do {
             let provider = try await runtime.withSyncStorage { context, _ -> String? in
-                if let requested { try SyncStore(context: context).setProvider(requested == "icloud" ? "icloud" : nil) }
+                if let requested { try SyncStore(context: context).setProvider(Self.kinds.contains(requested) ? requested : nil) }
                 return try SyncStore.provider(context)
             }
             try? FileManager.default.removeItem(at: handoff)
-            guard provider == "icloud" else { return publish(["phase": "off"]) }
-            observeIdentity()
-            let (root, account) = await locate()
-            guard let root else { return publish(["phase": "paused", "reason": "signed-out"]) }
-            let known = try await runtime.withSyncStorage { context, _ in try SyncStore(context: context).value("icloud_account") }
-            if known == nil { try await runtime.withSyncStorage { context, _ in try SyncStore(context: context).set("icloud_account", account) } }
-            // Another Apple ID holds another root: it is joined only through the connection sheet (design §4.4).
-            else if known != account { return publish(["phase": "paused", "reason": "account-changed"]) }
+            guard let provider, Self.kinds.contains(provider) else { return publish(["phase": "off"]) }
+            if provider == "icloud" { observeIdentity() }
+            guard let target = try await target(provider) else { return publish(["phase": "paused", "reason": provider == "drive" ? "drive-signed-out" : "signed-out"]) }
+            let known = try await runtime.withSyncStorage { context, _ in try Self.joined(SyncStore(context: context)) }
+            if known == nil { try await runtime.withSyncStorage { context, _ in try SyncStore(context: context).set("sync_account", target.account) } }
+            // Another account holds another root: it is joined only through the connection sheet (design §4.4).
+            else if known != target.account { return publish(["phase": "paused", "reason": "account-changed"]) }
             // Turned off while this start was waiting: stay off.
-            guard try await runtime.withSyncStorage({ context, _ in try SyncStore.provider(context) }) == "icloud" else { return publish(["phase": "off"]) }
-            try await run(environment.provider(root))
+            guard try await runtime.withSyncStorage({ context, _ in try SyncStore.provider(context) }) == provider else { return publish(["phase": "off"]) }
+            try await run(target.provider)
         } catch { publish(["phase": "error", "message": error.localizedDescription]) }
     }
 
@@ -90,37 +102,52 @@ final class CloudSyncService {
 
     // MARK: Connection (design §4.2)
 
-    /// What the root and this iPad hold, read before anything is written.
-    private func preview() async throws -> [String: Any] {
-        let (root, account) = await locate()
-        guard let root else { return ["available": false] }
+    /// What the root and this iPad hold, read before anything is written. Drive asks for the
+    /// Google account first when this profile has none, and again when the one kept stopped working.
+    private func preview(_ kind: String) async throws -> [String: Any] {
+        do { return try await previewOnce(kind) }
+        catch let error as DesktopRuntimeError where kind == "drive" && error.code == GoogleDriveAuth.signedOut.code {
+            pendingDrive = nil
+            try keepDriveAccount(nil)
+            return try await previewOnce(kind)
+        }
+    }
+
+    private func previewOnce(_ kind: String) async throws -> [String: Any] {
+        guard let target = try await target(kind, signIn: true) else { return ["available": false, "provider": kind] }
         let files: [String: SyncRemoteFile], state: SyncMerge.State
-        switch try await peek(root) {
-        case .downloading(let count): return ["available": true, "downloading": count]
+        switch try await peek(target.provider) {
+        case .downloading(let count): return ["available": true, "downloading": count, "provider": kind]
         case .ready(let listing, let merged): (files, state) = (listing, merged)
         }
         let empty = !files.keys.contains(where: SyncFormat.isSpecFile)
-        if let blocked = state.blocked, !empty { return ["available": true, "blocked": blocked.rawValue] }
+        if let blocked = state.blocked, !empty { return ["available": true, "blocked": blocked.rawValue, "provider": kind] }
         var result = try await runtime.withSyncStorage { context, library in
             let store = try SyncStore(context: context)
-            // Joining another Apple ID's root forgets what was matched with the old one (see connect).
-            let forgetting = try store.value("icloud_account").map { $0 != account } ?? false
+            // Joining another account's root forgets what was matched with the old one (see connect).
+            let forgetting = try Self.joined(store).map { $0 != target.account } ?? false
             return try SyncConnection.preview(state, files: files, forgetting: forgetting, context: context, library: library)
         }
-        result["available"] = true; result["empty"] = empty
+        result["available"] = true; result["empty"] = empty; result["provider"] = kind
         return result
     }
 
     /// `mode`: start (an empty root), merge, overwrite, or import (a new profile takes the cloud's data).
     private func connect(_ request: [String: Any]) async throws {
-        let mode = request["mode"] as? String ?? "start"
+        let mode = request["mode"] as? String ?? "start", kind = request["provider"] as? String ?? "icloud"
+        guard Self.kinds.contains(kind) else { throw DesktopRuntimeError("동기화 위치를 확인해 주세요.", code: "VALIDATION_ERROR") }
         if mode == "import" {
             try await store?.flushDocuments(); await engine?.syncNow()
-            let wasOn = engine != nil
-            try await disconnect()
-            do { _ = try await profile.newProfileForSync(provider: "icloud") } catch {
+            let was = engine == nil ? nil : try await runtime.withSyncStorage { context, _ in try SyncStore.provider(context) }
+            // The new profile takes the Google account (and its downloads) with it; this one lets it go.
+            let account = kind == "drive" ? pendingDrive ?? driveAccount : nil, kept = driveAccount
+            try await disconnect(movingAccount: true)
+            do {
+                _ = try await profile.newProfileForSync(provider: kind) { [self] root in if let account { try keepDriveAccount(account, key: Self.driveKey(root)) } }
+            } catch {
                 // The switch did not happen: this profile goes on as it was.
-                if wasOn { _ = try? await runtime.withSyncStorage { context, _ in try SyncStore(context: context).setProvider("icloud") }; await start() }
+                if let kept { try? keepDriveAccount(kept) }
+                if let was { _ = try? await runtime.withSyncStorage { context, _ in try SyncStore(context: context).setProvider(was) }; await start() }
                 throw error
             }
             return
@@ -130,10 +157,11 @@ final class CloudSyncService {
             guard let local = pair["local"] as? String, let remote = pair["remote"] as? String else { return nil }
             return (local, remote)
         }
-        let (root, account) = await locate()
-        guard let root else { throw DesktopRuntimeError("iCloud에 로그인하고 iCloud Drive를 켜야 합니다.", code: "SYNC_SIGNED_OUT") }
-        guard case .ready(let files, let state) = try await peek(root) else {
-            throw DesktopRuntimeError("iCloud에서 반달 폴더를 아직 내려받고 있어요. 잠시 뒤 다시 시도해 주세요.", code: "SYNC_NOT_READY")
+        guard let target = try await target(kind) else {
+            throw kind == "drive" ? GoogleDriveAuth.signedOut : DesktopRuntimeError("iCloud에 로그인하고 iCloud Drive를 켜야 합니다.", code: "SYNC_SIGNED_OUT")
+        }
+        guard case .ready(let files, let state) = try await peek(target.provider) else {
+            throw DesktopRuntimeError("\(Self.name(kind))에서 반달 폴더를 아직 내려받고 있어요. 잠시 뒤 다시 시도해 주세요.", code: "SYNC_NOT_READY")
         }
         let empty = !files.keys.contains(where: SyncFormat.isSpecFile)
         if state.blocked != nil, !empty { throw DesktopRuntimeError("이 반달 폴더는 새 버전의 반달이 만들었어요. 앱을 업데이트해 주세요.", code: "SYNC_UPDATE_REQUIRED") }
@@ -142,25 +170,30 @@ final class CloudSyncService {
         if connection == .overwrite, request["fingerprint"] as? String != SyncConnection.fingerprint(files) {
             throw DesktopRuntimeError("클라우드 자료가 바뀌었어요. 지워질 자료를 다시 확인해 주세요.", code: "SYNC_ROOT_CHANGED")
         }
-        await engine?.stop(); engine = nil
+        await engine?.stop(); engine = nil; provider = nil
         try await runtime.withSyncStorage { context, library in
             let store = try SyncStore(context: context)
             // All or nothing: a connection that fails leaves the earlier one as it was.
             try context.transaction {
-                // Another Apple ID is another root: what was exchanged with the old one says nothing about it.
-                if let known = try store.value("icloud_account"), known != account { try store.forgetRoot() }
+                // Another account, or the other provider, is another root: what was exchanged with the old one says nothing about it.
+                if let known = try Self.joined(store), known != target.account { try store.forgetRoot() }
                 if empty { try context.run("DELETE FROM cloud_sync_state WHERE key IN ('pending_deletes','export_first')") }
                 else { try SyncConnection.connect(connection, pairs: pairs, state: state, store: store, library: library) }
-                try store.set("icloud_account", account)
-                try store.setProvider("icloud")
+                try store.set("sync_account", target.account)
+                try store.setProvider(kind)
             }
         }
-        observeIdentity()
-        try await run(environment.provider(root))
+        // The Google account is kept from now on; joining iCloud lets it go.
+        try keepDriveAccount(target.drive)
+        pendingDrive = nil
+        if kind == "icloud" { observeIdentity() }
+        try await run(target.provider)
     }
 
-    private func disconnect() async throws {
-        await engine?.stop(); engine = nil
+    /// Sync off. The Google account of Drive sync is forgotten here with its downloads, not revoked:
+    /// a revoke ends the grant on the user's other devices too. Drive keeps its files.
+    private func disconnect(movingAccount: Bool = false) async throws {
+        await engine?.stop(); engine = nil; provider = nil
         let runtime = runtime
         try await runtime.withSyncStorage { context, _ in
             runtime.onLocalChange = nil
@@ -168,6 +201,11 @@ final class CloudSyncService {
             // An overwrite that did not go out yet is dropped with the connection (review HIGH).
             try context.run("DELETE FROM cloud_sync_state WHERE key IN ('pending_deletes','export_first')")
             try SyncStore(context: context).setProvider(nil)
+        }
+        pendingDrive = nil
+        if let account = driveAccount {
+            try keepDriveAccount(nil)
+            if !movingAccount { try? FileManager.default.removeItem(at: Self.driveCache(account.id)) }
         }
         publish(["phase": "off"])
     }
@@ -190,12 +228,14 @@ final class CloudSyncService {
         }
         var result = stored.merging(engine?.status ?? idle) { _, current in current }
         result["previousProfile"] = profile.previous != nil
+        if let account = driveAccount { result["driveEmail"] = account.email }
         return result
     }
 
     // MARK: Engine
 
     private func run(_ provider: SyncProvider) async throws {
+        self.provider = provider
         let engine = CloudSyncEngine(runtime: runtime, provider: provider, keychain: environment.keychain)
         engine.mutateOpenDocuments = { [weak store] action in
             guard let store else { throw CancellationError() }
@@ -225,8 +265,8 @@ final class CloudSyncService {
 
     private enum Peek { case downloading(Int), ready([String: SyncRemoteFile], SyncMerge.State) }
 
-    private func peek(_ root: URL) async throws -> Peek {
-        let peek = try await CloudSyncEngine.peek(environment.provider(root))
+    private func peek(_ provider: SyncProvider) async throws -> Peek {
+        let peek = try await CloudSyncEngine.peek(provider)
         guard let state = peek.state else { return .downloading(peek.downloading) }
         return .ready(peek.files, state)
     }
@@ -234,5 +274,44 @@ final class CloudSyncService {
     private func locate() async -> (URL?, String) {
         let locate = environment.locate
         return await Task.detached { locate() }.value
+    }
+
+    // MARK: Providers
+
+    static let kinds: Set = ["icloud", "drive"]
+    static func name(_ kind: String) -> String { kind == "drive" ? "Google Drive" : "iCloud" }
+
+    /// A provider's root with the account it belongs to; another account, or the other provider,
+    /// is another root (design §4.4). nil while signed out of it.
+    private struct Target { let provider: SyncProvider; let account: String; var drive: GoogleDriveAuth.Account? }
+
+    private func target(_ kind: String, signIn: Bool = false) async throws -> Target? {
+        if kind == "drive" {
+            var account = pendingDrive ?? driveAccount
+            if account == nil, signIn { account = try await environment.signIn(); pendingDrive = account }
+            return account.map { Target(provider: environment.drive($0), account: "drive:" + $0.id, drive: $0) }
+        }
+        let (root, account) = await locate()
+        return root.map { Target(provider: environment.provider($0), account: "icloud:" + account) }
+    }
+
+    /// Downloads of one Google account's Drive, under Caches (the system may clear them; they come down again).
+    nonisolated static func driveCache(_ id: String) -> URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("BandalDrive/" + id, isDirectory: true)
+    }
+
+    /// The account of the root last joined. Before Drive it was kept as the iCloud account alone.
+    private static func joined(_ store: SyncStore) throws -> String? {
+        try store.value("sync_account") ?? store.value("icloud_account").map { "icloud:" + $0 }
+    }
+
+    /// The Google account of this profile's Drive sync, in the keychain like the device id: one per profile.
+    static func driveKey(_ root: String) -> String { root == "BandalDesktop" ? "drive.account" : "drive.account." + root }
+    private var driveAccount: GoogleDriveAuth.Account? {
+        environment.keychain.read(Self.driveKey(runtime.root.lastPathComponent)).flatMap { try? JSONDecoder().decode(GoogleDriveAuth.Account.self, from: Data($0.utf8)) }
+    }
+    private func keepDriveAccount(_ account: GoogleDriveAuth.Account?, key: String? = nil) throws {
+        let value = try account.map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) } ?? ""
+        try environment.keychain.write(key ?? Self.driveKey(runtime.root.lastPathComponent), value)
     }
 }

@@ -72,7 +72,8 @@ final class DesktopProfileService: NSObject, UIDocumentPickerDelegate {
 
     /// A new, empty profile that connects to the sync root on its first start, so the cloud's data
     /// arrives without touching this profile. No backup first: this profile stays where it is.
-    func newProfileForSync(provider: String) async throws -> [String: Any] {
+    /// `beforeStart` gets the new profile's folder name before it starts (its keychain entries).
+    func newProfileForSync(provider: String, beforeStart: (String) throws -> Void = { _ in }) async throws -> [String: Any] {
         guard !busy else { throw DesktopRuntimeError("프로필 작업이 진행 중입니다.") }
         busy = true
         var switched = false
@@ -81,6 +82,7 @@ final class DesktopProfileService: NSObject, UIDocumentPickerDelegate {
         let id = UUID().uuidString.lowercased(), name = "BandalProfile-" + id, next = documents.appendingPathComponent(name)
         try FileManager.default.createDirectory(at: next, withIntermediateDirectories: false)
         try FileManager.default.createDirectory(at: next.appendingPathComponent("Legacy"), withIntermediateDirectories: false)
+        try beforeStart(name)
         try Self.writeDurably(JSONEncoder().encode(["provider": provider]), to: next.appendingPathComponent(Self.syncConnect))
         try Self.writeDurably(JSONEncoder().encode(Previous(rootName: root.lastPathComponent)), to: next.appendingPathComponent(Self.previousProfile))
         try Self.writeDurably(JSONEncoder().encode(Selection(id: id, rootName: name)), to: documents.appendingPathComponent("active-profile.json"))
