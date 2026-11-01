@@ -84,7 +84,7 @@ final class DriveProvider: SyncProvider, @unchecked Sendable {
         let md5: String?
         let size: Int64
         let created: String
-        /// Made as a 반달 root (`appProperties.bandalRoot = "2"`).
+        /// Marked as a 반달 root: `bandalRoot = "2"` in `properties` or `appProperties` (spec v2.5).
         let isRoot: Bool
         var isFolder: Bool { mime == DriveProvider.folder }
 
@@ -202,15 +202,18 @@ final class DriveProvider: SyncProvider, @unchecked Sendable {
             pageToken = start
         }
 
-        /// The root is the oldest folder made as one that holds `bandal.json`, else the oldest made as one
-        /// (spec "저장소 루트"). Under it, folders of one name are read together. A "Bandal" folder at the
-        /// top (no parent this app sees) counts too: `appProperties` are private to the app that wrote them.
+        /// The root is a folder marked as one, wherever it is and whatever its name (spec v2.5 "저장소 루트").
+        /// With none in sight, a "Bandal" folder holding `bandal.json`: before v2.5 a client marked it only in
+        /// `appProperties`, which no other client sees. Of several, the one holding `bandal.json`, then the
+        /// oldest. Under it, folders of one name are read together.
         private func build() {
             var children: [String: [Meta]] = [:]
             for item in items.values { for parent in item.parents { children[parent, default: []].append(item) } }
-            let roots = items.values.filter { $0.isFolder && ($0.isRoot || $0.name == "Bandal" && !$0.parents.contains { items[$0] != nil }) }.sorted(by: Meta.older)
+            let started = { (folder: Meta) in (children[folder.id] ?? []).contains { $0.name == "bandal.json" && !$0.isFolder } }
+            let marked = items.values.filter { $0.isFolder && $0.isRoot }
+            let roots = (marked.isEmpty ? items.values.filter { $0.isFolder && $0.name == "Bandal" && started($0) } : marked).sorted(by: Meta.older)
             folders = [:]; files = [:]
-            guard let root = roots.first(where: { (children[$0.id] ?? []).contains { $0.name == "bandal.json" && !$0.isFolder } }) ?? roots.first else { return }
+            guard let root = roots.first(where: started) ?? roots.first else { return }
             folders[""] = [root]
             var queue: [(path: String, id: String)] = [("", root.id)]
             while let (path, id) = queue.popLast() {
@@ -254,7 +257,7 @@ final class DriveProvider: SyncProvider, @unchecked Sendable {
             let parent: Meta? = path.isEmpty ? nil : try await folder((path as NSString).deletingLastPathComponent)
             var body: [String: Any] = ["id": try await spareID(), "mimeType": DriveProvider.folder]
             if let parent { body["name"] = (path as NSString).lastPathComponent; body["parents"] = [parent.id] }
-            else { body["name"] = "Bandal"; body["appProperties"] = ["bandalRoot": "2"] }
+            else { body["name"] = "Bandal"; body["properties"] = ["bandalRoot": "2"]; body["appProperties"] = ["bandalRoot": "2"] }
             let created = try await json("\(DriveProvider.api)/files", query: ["fields": DriveProvider.fields], method: "POST", body: try JSONSerialization.data(withJSONObject: body))
             guard let meta = Meta(created) else { throw DesktopRuntimeError("Google Drive에 폴더를 만들지 못했습니다.") }
             items[meta.id] = meta

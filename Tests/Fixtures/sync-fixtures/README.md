@@ -1,6 +1,6 @@
 # sync-fixtures
 
-반달 동기화 공통 스펙의 적합성 예제다. 스펙 본문은 [SPEC.md](SPEC.md)(v2.4)에 있다.
+반달 동기화 공통 스펙의 적합성 예제다. 스펙 본문은 [SPEC.md](SPEC.md)(v2.5)에 있다.
 
 - 각 폴더의 `root/`는 클라우드 루트를 그대로 옮긴 것이다.
 - `expected.json`은 `root/` 전체를 파싱·머지한 뒤의 상태다. 데스크톱과 iPad 파서는 같은 결과를 내야 한다.
@@ -43,7 +43,7 @@
 
 ```text
 fixture           폴더 이름
-spec              "2.4"
+spec              "2.4"   예제 내용이 마지막으로 바뀐 스펙. v2.5는 Drive 루트 찾기만 바꿔 예제가 그대로다
 blocked           null | "missing-root" | "update-required" | "unsupported-format"   format 검사 결과. null이 아니면 나머지는 모두 비어 있다
 courses           {id: {name, sort, color, archived, alive}}
 docs              {id: {course_id, type, name, rel_path, pdf_sha256 + pdf_prev_sha256 + pdf_rebind_from | md_hash, alive}}

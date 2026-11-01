@@ -18,9 +18,10 @@ final class FakeDrive: @unchecked Sendable {
 
     var transport: GoogleDriveAuth.Transport { { [self] request in try lock.withLock { try answer(request) } } }
 
-    /// Items as Drive holds them, for checks and for setting up a root by hand.
-    func add(_ id: String, name: String, parent: String?, folder: Bool = false, bytes: Data? = nil, root: Bool = false) {
-        lock.withLock { put(id, name: name, parents: parent.map { [$0] } ?? [], folder: folder, bytes: bytes, root: root) }
+    /// Items as Drive holds them, for checks and for setting up a root by hand. A root is marked in `mark`:
+    /// `appProperties` only the client that wrote them sees, or `properties` every client of the project sees.
+    func add(_ id: String, name: String, parent: String?, folder: Bool = false, bytes: Data? = nil, root: Bool = false, mark: String = "appProperties") {
+        lock.withLock { put(id, name: name, parents: parent.map { [$0] } ?? [], folder: folder, bytes: bytes, marks: root ? [mark: ["bandalRoot": "2"]] : [:]) }
     }
     func meta(_ id: String) -> [String: Any]? { lock.withLock { items[id]?.meta } }
     func remove(_ id: String) { lock.withLock { items[id] = nil; changed.append(id) } }
@@ -30,12 +31,12 @@ final class FakeDrive: @unchecked Sendable {
     }
     func ids(named name: String) -> [String] { lock.withLock { items.filter { $0.value.meta["name"] as? String == name }.map(\.key).sorted() } }
 
-    private func put(_ id: String, name: String, parents: [String], folder: Bool, bytes: Data?, root: Bool = false) {
+    private func put(_ id: String, name: String, parents: [String], folder: Bool, bytes: Data?, marks: [String: Any] = [:]) {
         clock += 1
         var meta: [String: Any] = ["id": id, "name": name, "parents": parents, "mimeType": folder ? DriveProvider.folder : "application/octet-stream",
                                    "createdTime": items[id]?.meta["createdTime"] ?? String(format: "2026-11-01T00:00:%02d.%03dZ", clock / 1000, clock % 1000)]
         if let bytes { meta["size"] = String(bytes.count); meta["md5Checksum"] = DriveProvider.md5(bytes) }
-        if root { meta["appProperties"] = ["bandalRoot": "2"] }
+        meta.merge(marks) { _, mark in mark }
         items[id] = (meta, bytes)
         changed.append(id)
     }
@@ -68,7 +69,8 @@ final class FakeDrive: @unchecked Sendable {
             let body = try XCTUnwrap(JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any])
             let id = body["id"] as! String
             guard items[id] == nil else { return try reply(409) }
-            put(id, name: body["name"] as! String, parents: body["parents"] as? [String] ?? ["my-drive"], folder: true, bytes: nil, root: (body["appProperties"] as? [String: String])?["bandalRoot"] == "2")
+            put(id, name: body["name"] as! String, parents: body["parents"] as? [String] ?? ["my-drive"], folder: true, bytes: nil,
+                marks: body.filter { ["properties", "appProperties"].contains($0.key) })
             return try reply(200, items[id]!.meta)
         case ("POST", "/upload/drive/v3/files") where query["uploadType"] == "multipart":
             let (metadata, bytes) = try Self.multipart(request)
@@ -122,7 +124,7 @@ final class DriveProviderTests: XCTestCase {
                              poll: .seconds(3600), backoff: 0.01, window: window)
     }
 
-    /// Writes make the root (`appProperties.bandalRoot = "2"`) and folders, and read back as written.
+    /// Writes make the root, marked in `properties` and `appProperties` (spec v2.5), and folders, and read back as written.
     func testWritesMakeTheRootAndReadBack() async throws {
         let drive = FakeDrive(), a = provider(drive, window: 0), log = "log/aaaaaaaa-0000-4000-8000-000000000001/00000001.json"
         let empty = try await a.list()
@@ -130,6 +132,7 @@ final class DriveProviderTests: XCTestCase {
         try await a.write(.data(Data(#"{"format":2}"#.utf8)), to: "bandal.json")
         try await a.write(.data(Data("[]".utf8)), to: log)
         let root = try XCTUnwrap(drive.ids(named: "Bandal").first)
+        XCTAssertEqual(drive.meta(root)?["properties"] as? [String: String], ["bandalRoot": "2"], "the mark every client of the project sees")
         XCTAssertEqual(drive.meta(root)?["appProperties"] as? [String: String], ["bandalRoot": "2"])
         let other = provider(drive), listed = try await other.list()
         XCTAssertEqual(Set(listed.keys), ["bandal.json", log])
@@ -170,13 +173,17 @@ final class DriveProviderTests: XCTestCase {
         XCTAssertEqual(drive.meta(made)?["parents"] as? [String], ["log1"])
     }
 
-    /// The root is the oldest folder made as one that holds bandal.json (design appendix C).
-    func testTheRootIsTheOldestThatHoldsBandalJSON() async throws {
+    /// The root is the oldest marked folder that holds bandal.json, wherever it is and whatever its name
+    /// (spec v2.5). While a marked folder is in sight, an unmarked "Bandal" folder is not one, even an older
+    /// one holding bandal.json.
+    func testTheRootIsTheOldestMarkedFolderThatHoldsBandalJSON() async throws {
         let drive = FakeDrive()
-        drive.add("empty", name: "Bandal", parent: "my-drive", folder: true, root: true)
-        drive.add("used", name: "Bandal", parent: "my-drive", folder: true, root: true)
-        drive.add("later", name: "Bandal", parent: "my-drive", folder: true, root: true)
         drive.add("plain", name: "Bandal", parent: "my-drive", folder: true)
+        drive.add("b0", name: "bandal.json", parent: "plain", bytes: Data("{}".utf8))
+        drive.add("empty", name: "Bandal", parent: "my-drive", folder: true, root: true)
+        // Marked by another client of the project, then moved and renamed by the user.
+        drive.add("used", name: "Notes", parent: "school", folder: true, root: true, mark: "properties")
+        drive.add("later", name: "Bandal", parent: "my-drive", folder: true, root: true)
         drive.add("b1", name: "bandal.json", parent: "used", bytes: Data("{}".utf8))
         drive.add("b2", name: "bandal.json", parent: "later", bytes: Data("{}".utf8))
         drive.add("x", name: "x.json", parent: "later", bytes: Data("{}".utf8))
@@ -186,8 +193,8 @@ final class DriveProviderTests: XCTestCase {
         XCTAssertEqual(drive.meta(try XCTUnwrap(drive.ids(named: "log").first))?["parents"] as? [String], ["used"])
     }
 
-    /// A root made by another app of the project carries `appProperties` this app cannot see; a
-    /// top-level "Bandal" folder holding bandal.json is still the root.
+    /// Before v2.5 another client marked its root only in `appProperties`, which this app cannot see;
+    /// with no marked folder in sight, a "Bandal" folder holding bandal.json is the root.
     func testARootMadeByAnotherAppIsFound() async throws {
         let drive = FakeDrive()
         drive.add("desktop", name: "Bandal", parent: "my-drive", folder: true)
@@ -197,6 +204,15 @@ final class DriveProviderTests: XCTestCase {
         XCTAssertEqual(Set(listed.keys), ["bandal.json"])
         try await a.write(.data(Data("[]".utf8)), to: "log/x.json")
         XCTAssertEqual(drive.ids(named: "Bandal"), ["desktop"], "no second root")
+    }
+
+    /// An unmarked "Bandal" folder without bandal.json is not a root: this iPad makes a marked one.
+    func testAnUnmarkedFolderWithoutBandalJSONIsNotTheRoot() async throws {
+        let drive = FakeDrive()
+        drive.add("stray", name: "Bandal", parent: "my-drive", folder: true)
+        try await provider(drive).write(.data(Data(#"{"format":2}"#.utf8)), to: "bandal.json")
+        let made = try XCTUnwrap(drive.ids(named: "Bandal").first { $0 != "stray" })
+        XCTAssertEqual(drive.meta(try XCTUnwrap(drive.ids(named: "bandal.json").first))?["parents"] as? [String], [made])
     }
 
     /// A create sent again after it went through (the id was made ahead) is the same file;

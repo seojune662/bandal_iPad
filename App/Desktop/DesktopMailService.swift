@@ -122,12 +122,12 @@ final class DesktopMailService {
         return try await task.value
     }
     private func disconnect() async throws {
-        let client = environment.configuration().clientID, old = credential
+        let client = environment.configuration().clientID
         cancel()
         // Retain visible state if secure deletion fails, allowing a retry.
         try environment.write(client, "")
+        // No revoke: it ends the account's grant for every client of the Google project, Drive sync too (spec v2.5).
         credential = nil; needsAuth = false
-        if let old { _ = try? await http(url: URL(string: "https://oauth2.googleapis.com/revoke")!, method: "POST", form: ["token": old.refreshToken]) }
     }
     private func token(expected: Int, client: String) async throws -> String {
         try check(expected, client: client)
