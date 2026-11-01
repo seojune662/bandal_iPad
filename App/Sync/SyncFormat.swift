@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import zlib
 
-/// Common sync spec v2.2 (`Tests/Fixtures/sync-fixtures/SPEC.md`): which cloud-root
+/// Common sync spec v2.3 (`Tests/Fixtures/sync-fixtures/SPEC.md`): which cloud-root
 /// paths are Bandal's, and validation of each file as untrusted input. Mirrors the
 /// desktop's `src/main/features/sync/format.ts` so both apps read a root alike.
 ///
@@ -42,7 +42,9 @@ enum SyncFormat {
 
     struct Unreadable: Error { let reason: String }
 
-    static func readRoot(_ files: [(path: String, bytes: Data)]) -> Root {
+    /// `present` lists `pdf/` and `assets/` files taken as there by name alone: their bytes are
+    /// checked against the name only when they are read to be applied (as the desktop does).
+    static func readRoot(_ files: [(path: String, bytes: Data)], present: [String] = []) -> Root {
         let rootIndex = files.firstIndex { $0.path == "bandal.json" }
         let root: File?
         do { root = try rootIndex.flatMap { try parse(path: files[$0].path, bytes: files[$0].bytes) } } catch {
@@ -59,7 +61,19 @@ enum SyncFormat {
                 if let result = try parse(path: file.path, bytes: file.bytes) { parsed.append(result) } else { ignored.append(file.path) }
             } catch { errors.append(file.path) }
         }
+        for path in present where isBlob(path) { parsed.append(File(path: path, content: path.hasPrefix("pdf/") ? .pdf : .asset)) }
         return Root(files: parsed, ignored: sortedUTF16(ignored), errors: sortedUTF16(errors), pending: sortedUTF16(pending))
+    }
+
+    /// A path one of the spec's patterns names.
+    static func isSpecFile(_ path: String) -> Bool { pattern(path) != nil }
+
+    /// A `pdf/` or `assets/` file: immutable, named by its SHA-256.
+    static func isBlob(_ path: String) -> Bool {
+        switch pattern(path) {
+        case .pdf?, .asset?: return true
+        default: return false
+        }
     }
 
     /// `nil` means the path is outside the spec's patterns and must be ignored.
@@ -265,6 +279,10 @@ enum SyncFormat {
         if let hash = fields["pdf_sha256"], sha(hash) == nil { return nil }
         if let hash = fields["md_hash"], sha(hash) == nil { return nil }
         if let base = fields["md_base"], !(base is NSNull), sha(base) == nil { return nil }
+        if let previous = fields["pdf_prev_sha256"], !(previous is NSNull), sha(previous) == nil { return nil }
+        // pdf_prev_sha256 belongs to the pdf_sha256 of its own event: missing it reads as null,
+        // alone it means nothing (spec v2.3), so the merged value always comes with its pdf_sha256.
+        result["pdf_prev_sha256"] = fields["pdf_sha256"] == nil ? nil : fields["pdf_prev_sha256"] ?? NSNull()
         return result
     }
 

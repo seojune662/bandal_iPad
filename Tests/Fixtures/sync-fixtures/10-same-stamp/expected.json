@@ -1,6 +1,6 @@
 {
   "fixture": "10-same-stamp",
-  "spec": "2.2",
+  "spec": "2.3",
   "blocked": null,
   "courses": {
     "c0000000-0000-4000-8000-000000000001": {
@@ -18,6 +18,7 @@
       "name": "동률.pdf",
       "rel_path": "",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
       "alive": true
     }
   },

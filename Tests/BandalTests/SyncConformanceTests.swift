@@ -1,14 +1,14 @@
 import XCTest
 @testable import Bandal
 
-/// Spec v2.2 conformance against the desktop's `sync-fixtures/` (pinned copy, see
+/// Spec v2.3 conformance against the desktop's `sync-fixtures/` (pinned copy, see
 /// `Tests/Fixtures/sync-fixtures/SOURCE`): every `root/` must parse and merge to its
 /// `expected.json` exactly as the desktop's `tests/main/sync/conformance.test.ts` does.
 final class SyncConformanceTests: XCTestCase {
     static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Fixtures/sync-fixtures")
     private static let names = ["01-basic", "02-same-id-both-edited", "03-delete-then-edit", "04-note-both-edited", "05-note-attachments",
-                                "06-path-collision", "07-out-of-range-coordinates", "08-format-not-2", "09-invalid-input", "10-same-stamp", "11-note-revert"]
+                                "06-path-collision", "07-out-of-range-coordinates", "08-format-not-2", "09-invalid-input", "10-same-stamp", "11-note-revert", "12-pdf-append"]
 
     func testEveryFixtureFolderIsChecked() throws {
         let folders = try FileManager.default.contentsOfDirectory(atPath: Self.fixtures.path)
@@ -21,7 +21,7 @@ final class SyncConformanceTests: XCTestCase {
             let root = try Self.readRoot(name)
             var expected = try XCTUnwrap(SyncJSON.parse(Data(contentsOf: Self.fixtures.appendingPathComponent("\(name)/expected.json")), maxDepth: .max) as? [String: Any])
             XCTAssertEqual(expected.removeValue(forKey: "fixture") as? String, name)
-            XCTAssertEqual(expected.removeValue(forKey: "spec") as? String, "2.2")
+            XCTAssertEqual(expected.removeValue(forKey: "spec") as? String, "2.3")
             var actual = Self.project(SyncMerge.merge(root.files))
             actual["ignored"] = root.ignored; actual["errors"] = root.errors
             Self.assertJSONEqual(actual, expected, name)
@@ -126,7 +126,7 @@ final class SyncConformanceTests: XCTestCase {
         return [
             "blocked": nullable(state.blocked?.rawValue),
             "courses": state.courses.mapValues { pick($0, ["name", "sort", "color", "archived"]) },
-            "docs": state.docs.mapValues { pick($0, ["course_id", "type", "name", "rel_path", "pdf_sha256", "md_hash"]) },
+            "docs": state.docs.mapValues { pick($0, ["course_id", "type", "name", "rel_path", "pdf_sha256", "pdf_prev_sha256", "md_hash"]) },
             "ink": ink,
             "notes": state.notes.mapValues { ["md_hash": $0.hash, "file": nullable($0.file)] },
             "conflict_copies": state.conflictCopies.map {

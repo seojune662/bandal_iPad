@@ -10,6 +10,8 @@ final class DesktopRuntime: @unchecked Sendable {
     let log: DesktopLog
     var onEmit: ((String, Any) -> Void)?
     var onNativeCall: ((String, [String: Any]) async throws -> Any)?
+    /// Called on the storage queue after a channel wrote to the database (sync, design §1.6).
+    var onLocalChange: (() -> Void)?
     private let queue = DispatchQueue(label:"app.bandal.swift-storage",qos:.userInitiated)
     private var context: NativeRepositoryContext?
     private var library: NativeLibraryRepository?
@@ -99,8 +101,9 @@ final class DesktopRuntime: @unchecked Sendable {
             return try await native(Self.aliases[channel] ?? channel,object)
         }
         if let result = try await onQueue({
-            let started = ProcessInfo.processInfo.systemUptime
+            let started = ProcessInfo.processInfo.systemUptime, changes = self.context?.db.totalChanges
             defer {
+                if let changes, self.context?.db.totalChanges != changes { self.onLocalChange?() }
                 switch channel {
                 case "nativePDF:binding": DesktopSignpost.benchmark("storage.binding", startedAt: started)
                 case "drawings:listForFile": DesktopSignpost.benchmark("storage.drawings", startedAt: started)
@@ -205,6 +208,13 @@ final class DesktopRuntime: @unchecked Sendable {
                 if let old = snapshots[course], old != current { onEmit?("materials:changed",["courseId":course]) }
                 snapshots[course] = current
             } catch { onEmit?("backend:error",["operation":"materials.watch","message":error.localizedDescription]) }
+        }
+    }
+    /// Sync engine work (design §1.1): its store, outbox and apply run here like every repository.
+    func withSyncStorage<T>(_ work: @escaping (NativeRepositoryContext, NativeLibraryRepository) throws -> T) async throws -> T {
+        try await onQueue {
+            guard let context = self.context, let library = self.library else { throw DesktopRuntimeError("자료 저장소를 시작하지 못했습니다.") }
+            return try work(context, library)
         }
     }
     private func onQueue<T>(_ work: @escaping () throws -> T) async throws -> T {

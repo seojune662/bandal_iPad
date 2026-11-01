@@ -8,14 +8,36 @@ final class SyncApply {
     private typealias C = NativeRepositoryContext
     private typealias Entity = SyncMerge.Entity
 
-    /// Items left for the next round, with the reason (an id and an error).
-    struct Report { var skipped: [(id: String, reason: String)] = [] }
+    struct Report {
+        /// Items left for the next round, with the reason (an id and an error).
+        var skipped: [(id: String, reason: String)] = []
+        /// Local courses changed as courses, and files changed per local course.
+        var courses = Set<String>(), files: [String: Set<String>] = [:]
+        /// A change to an open document waits for the workspace barrier.
+        var held = false
+
+        /// What the workspace reloads (`withExternalMutation`): a course change reloads the course
+        /// list and every editor in that course; otherwise only editors of the changed files reopen.
+        var workspaceChanges: [String: Any] {
+            guard courses.isEmpty else { return ["changedCourseIDs": courses.union(files.keys).sorted()] }
+            return ["changedCourseIDs": files.keys.sorted(),
+                    "changedDocuments": files.sorted { $0.key < $1.key }.flatMap { course, paths in paths.sorted().map { ["courseId": course, "relPath": $0] } }]
+        }
+        fileprivate mutating func changed(_ course: String, _ paths: String...) { files[course, default: []].formUnion(paths) }
+    }
+    private var report = Report()
 
     let store: SyncStore
     private let library: NativeLibraryRepository
     private var context: NativeRepositoryContext { store.context }
     /// Bytes of a root file (`pdf/…`, `notes/…`, `assets/…`).
     private let read: (String) throws -> Data
+    /// Documents open in an editor, as `course\0path`; nil when not known. Their changes are held
+    /// for the workspace barrier, where the editors save first and reopen after (design §2.8).
+    var open: Set<String>? = []
+    /// Off when only this device's own writes changed the root: those can derive conflict copies
+    /// and renames, never ink.
+    var includesInk = true
 
     init(store: SyncStore, library: NativeLibraryRepository, read: @escaping (String) throws -> Data) {
         self.store = store
@@ -24,7 +46,7 @@ final class SyncApply {
     }
 
     @discardableResult func apply(_ state: SyncMerge.State) throws -> Report {
-        var report = Report()
+        report = Report()
         guard state.blocked == nil else { return report }
         try observeClock(state)
         func each<T>(_ items: [(String, T)], _ body: (String, T) throws -> Void) {
@@ -36,13 +58,29 @@ final class SyncApply {
         let waiting = Set(state.waitingDocs), renames = Dictionary(state.renames.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         each(state.docs.filter { !waiting.contains($0.key) }.sorted { $0.key < $1.key }) { try document($0, $1, renamed: renames[$0], note: state.notes[$0]?.file) }
         each(state.conflictCopies.map { ($0.id, $0) }, copy)
-        let held = Set(state.waitingInk)
-        each(state.ink.filter { !held.contains($0.key) }.sorted { $0.key < $1.key }) { try drawing($0, doc: $1.doc, object: $1.object, stamp: $1.stamp) }
+        guard includesInk else { return report }
+        let waitingInk = Set(state.waitingInk)
+        each(state.ink.filter { !waitingInk.contains($0.key) }.sorted { $0.key < $1.key }) { try drawing($0, doc: $1.doc, object: $1.object, stamp: $1.stamp) }
         return report
     }
 
-    /// Every t in the root is at most the t of some winning register, so the winners move the clock past all of them.
-    private func observeClock(_ state: SyncMerge.State) throws {
+    /// True when the change must wait for the barrier; `path` nil means anything in the course.
+    private func held(_ course: String, _ path: String? = nil) -> Bool {
+        guard let open else { report.held = true; return true }
+        let prefix = course + "\u{0}"
+        let isOpen = open.contains { key in
+            guard key.hasPrefix(prefix) else { return false }
+            guard let path else { return true }
+            let other = String(key.dropFirst(prefix.count))
+            return other == path || path.hasPrefix(other + "/") || other.hasPrefix(path + "/")
+        }
+        if isOpen { report.held = true }
+        return isOpen
+    }
+
+    /// Every t in the root is at most the t of some winning register, so the winners move the clock
+    /// past all of them. The engine also calls this when it applies nothing, before it writes.
+    func observeClock(_ state: SyncMerge.State) throws {
         var latest: Int64 = 0
         for entity in Array(state.courses.values) + Array(state.docs.values) {
             latest = max(latest, entity.fields.values.map(\.stamp.t).max() ?? 0, entity.deleted?.stamp.t ?? 0)
@@ -74,15 +112,18 @@ final class SyncApply {
             let created = try library.handle("courses:create", ["name": name, "color": SyncAdapter.localCourseColor(target.text("color") ?? "blue")])
             guard let made = (created as? [String: Any])?["id"] as? String else { return }
             try context.run("INSERT INTO cloud_sync_courses(sync_id,local_id,origin,registers) VALUES(?,?,'remote',?)", [id, made, SyncStore.encode(target)])
-            try bring(made, to: target, known: Entity())
+            _ = try bring(made, to: target, known: Entity())
+            report.courses.insert(made)
             return
         }
         guard let current = try context.query("SELECT name,color,archived,sort_order,deleted_at FROM courses WHERE id=?", [local]).first,
               Self.matches(current, known) else { return }  // An unsent local change goes out next and wins.
         let alive = current["deleted_at"] is NSNull
-        if !target.isAlive, alive { _ = try library.handle("courses:delete", ["courseId": local]) }
-        if target.isAlive, !alive { _ = try library.handle("courses:restore", ["courseId": local]) }
-        if target.isAlive { try bring(local, to: target, known: known) }
+        let visible = target.isAlive != alive || target.isAlive && ["name", "color", "archived", "sort"].contains { !SyncStore.same(target.fields[$0]?.value, known.fields[$0]?.value) }
+        if visible, held(local) { return }
+        if !target.isAlive, alive { _ = try library.handle("courses:delete", ["courseId": local]); report.courses.insert(local) }
+        if target.isAlive, !alive { _ = try library.handle("courses:restore", ["courseId": local]); report.courses.insert(local) }
+        if target.isAlive, try bring(local, to: target, known: known) { report.courses.insert(local) }
         try context.run("UPDATE cloud_sync_courses SET registers=? WHERE sync_id=?", [SyncStore.encode(target), id])
     }
 
@@ -95,12 +136,15 @@ final class SyncApply {
         return known.isAlive == (row["deleted_at"] is NSNull) && local.allSatisfy { key, value in known.fields[key].map { SyncStore.same($0.value, value) } ?? true }
     }
 
-    private func bring(_ local: String, to target: Entity, known: Entity) throws {
+    /// True when a value changed.
+    private func bring(_ local: String, to target: Entity, known: Entity) throws -> Bool {
         func changed(_ key: String) -> Any? { target.fields[key].flatMap { SyncStore.same($0.value, known.fields[key]?.value) ? nil : $0.value } }
-        if let name = changed("name") as? String, !name.isEmpty { _ = try library.handle("courses:rename", ["courseId": local, "name": name]) }
-        if let color = changed("color") as? String, !color.isEmpty { _ = try library.handle("courses:setColor", ["courseId": local, "color": SyncAdapter.localCourseColor(color)]) }
-        if let archived = changed("archived") as? Bool { _ = try library.handle("courses:archive", ["courseId": local, "archived": archived]) }
-        if let sort = changed("sort") as? NSNumber { try context.run("UPDATE courses SET sort_order=?,updated_at=? WHERE id=?", [sort.intValue, C.nowISO, local]) }
+        var brought = false
+        if let name = changed("name") as? String, !name.isEmpty { _ = try library.handle("courses:rename", ["courseId": local, "name": name]); brought = true }
+        if let color = changed("color") as? String, !color.isEmpty { _ = try library.handle("courses:setColor", ["courseId": local, "color": SyncAdapter.localCourseColor(color)]); brought = true }
+        if let archived = changed("archived") as? Bool { _ = try library.handle("courses:archive", ["courseId": local, "archived": archived]); brought = true }
+        if let sort = changed("sort") as? NSNumber { try context.run("UPDATE courses SET sort_order=?,updated_at=? WHERE id=?", [sort.intValue, C.nowISO, local]); brought = true }
+        return brought
     }
 
     // MARK: Documents
@@ -118,19 +162,23 @@ final class SyncApply {
             INSERT INTO cloud_sync_docs(sync_id,course_id,rel_path,origin,registers) VALUES(?,?,?,'remote',?)
             ON CONFLICT(sync_id) DO UPDATE SET course_id=excluded.course_id,rel_path=excluded.rel_path,registers=excluded.registers
             """, [id, course, rel, SyncStore.encode(target)])
+            report.changed(course, rel)
             return
         }
         let local = row["course_id"] as! String
         guard changed || rel != path, try unchanged(known, course: local, path: path) else { return }  // An unsent local change goes out next and wins.
+        let visible = !target.isAlive || rel != path && course == local || target.text("pdf_sha256") != known.text("pdf_sha256") || note != nil && target.text("md_hash") != known.text("md_hash")
+        if visible, held(local, path) { return }
         guard target.isAlive else {
             _ = try library.handle("materials:delete", ["courseId": local, "relPath": path])
             try context.run("UPDATE cloud_sync_docs SET registers=?,rel_path='' WHERE sync_id=?", [SyncStore.encode(target), id])
+            report.changed(local, path)
             return
         }
         // Moving between courses is not applied in v1; such a document stays where it is.
         var now = path
-        if rel != path, course == local, try move(course: local, from: path, to: rel) { now = rel }
-        try replaceContent(target, known: known, id: id, note: note, course: local, rel: now)
+        if rel != path, course == local, try move(course: local, from: path, to: rel) { now = rel; report.changed(local, path, rel) }
+        if try replaceContent(target, known: known, id: id, note: note, course: local, rel: now) { report.changed(local, now) }
         try context.run("UPDATE cloud_sync_docs SET registers=?,rel_path=? WHERE sync_id=?", [SyncStore.encode(target), now, id])
     }
 
@@ -173,8 +221,10 @@ final class SyncApply {
         return true
     }
 
-    private func replaceContent(_ target: Entity, known: Entity, id: String, note: String?, course: String, rel: String) throws {
+    /// True when the file's bytes changed.
+    private func replaceContent(_ target: Entity, known: Entity, id: String, note: String?, course: String, rel: String) throws -> Bool {
         let url = try context.materialURL(courseID: course, relativePath: rel)
+        var replaced = false
         if let sha = target.text("pdf_sha256"), sha != known.text("pdf_sha256") {
             let bytes = try read("pdf/\(sha).pdf")
             guard SyncFormat.sha256(bytes) == sha else { throw C.validation("pdf/\(sha).pdf does not match its hash") }
@@ -187,11 +237,14 @@ final class SyncApply {
             for table in ["native_search_documents", "native_search_files"] where try context.tableExists(table) {
                 try context.run("DELETE FROM \(table) WHERE course_id=? AND rel_path=?", [course, rel])
             }
+            replaced = true
         }
         if let hash = target.text("md_hash"), hash != known.text("md_hash"), let note {
             let text = try noteText(note, course: course)
             try context.withMaterialLock { try context.atomicWrite(text, to: url) }
+            replaced = true
         }
+        return replaced
     }
 
     /// The PDF identity at a path, found by path because a PDF made here is bound under its local
@@ -308,14 +361,16 @@ final class SyncApply {
         if let row = try context.query("SELECT course_id,rel_path,registers FROM cloud_sync_docs WHERE sync_id=?", [id]).first {
             let known = try SyncStore.decode(row["registers"] as! String), path = row["rel_path"] as? String ?? ""
             guard known.deleted == nil, !path.isEmpty, path != rel, row["course_id"] as? String == course,
-                  try unchanged(known, course: course, path: path), try move(course: course, from: path, to: rel) else { return }
+                  try unchanged(known, course: course, path: path), !held(course, path), try move(course: course, from: path, to: rel) else { return }
             try context.run("UPDATE cloud_sync_docs SET rel_path=?,registers=? WHERE sync_id=?", [rel, SyncStore.encode(derived), id])
+            report.changed(course, path, rel)
             return
         }
         let url = try context.materialURL(courseID: course, relativePath: rel, allowMissing: true)
         guard !context.files.fileExists(atPath: url.path) else { return }
         try write(try noteText(copy.file, course: course), to: url, rel: rel)
         try context.run("INSERT INTO cloud_sync_docs(sync_id,course_id,rel_path,origin,registers) VALUES(?,?,?,'remote',?)", [id, course, rel, SyncStore.encode(derived)])
+        report.changed(course, rel)
     }
 
     // MARK: Drawings
@@ -336,6 +391,7 @@ final class SyncApply {
         } else if let stored, stored["hash"] as? String != (try SyncOutbox.hash(["id": id, "page": stored["page"] ?? 0, "del": true])) {
             return
         }
+        guard !held(course, path) else { return }
         switch try SyncAdapter.importInkObject(object, imagePath: { try? self.asset("assets/\($0.sha256).\($0.ext)", course: course) }) {
         case let .upsert(kind, page, data, style, createdAt, updatedAt):
             try context.run("""
@@ -353,5 +409,6 @@ final class SyncApply {
         let form = try saved.flatMap { try SyncOutbox.form($0, context: context) }?.value ?? ["id": id, "page": object.page, "del": true]
         try context.run("INSERT OR REPLACE INTO cloud_sync_objects(id,doc,page,t,dev,seq,idx,hash) VALUES(?,?,?,?,?,?,?,?)",
                         [id, doc, object.page, stamp.t, stamp.device, stamp.seq, stamp.index, try SyncOutbox.hash(form)])
+        report.changed(course, path)
     }
 }

@@ -19,6 +19,7 @@
 <key>ITSAppUsesNonExemptEncryption</key><false/>
 <key>LSSupportsOpeningDocumentsInPlace</key><true/>
 <key>UIFileSharingEnabled</key><true/>
+<key>NSUbiquitousContainers</key><dict><key>iCloud.app.bandal</key><dict><key>NSUbiquitousContainerIsDocumentScopePublic</key><true/><key>NSUbiquitousContainerName</key><string>반달</string><key>NSUbiquitousContainerSupportedFolderLevels</key><string>Any</string></dict></dict>
 <key>UTExportedTypeDeclarations</key><array><dict><key>UTTypeIdentifier</key><string>app.bandal.workspace-tab</string><key>UTTypeDescription</key><string>반달 작업 공간 탭</string><key>UTTypeConformsTo</key><array><string>public.data</string></array></dict></array>
 <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>app.bandal.auth</string><key>CFBundleURLSchemes</key><array><string>bandal</string></array></dict></array>
 <key>CFBundleDocumentTypes</key><array><dict><key>CFBundleTypeName</key><string>학습 자료</string><key>LSHandlerRank</key><string>Alternate</string><key>LSItemContentTypes</key><array><string>com.adobe.pdf</string><string>public.plain-text</string><string>net.daringfireball.markdown</string><string>public.image</string></array></dict></array>

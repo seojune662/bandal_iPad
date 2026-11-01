@@ -91,6 +91,22 @@ final class SyncStore {
         try context.run("INSERT INTO cloud_sync_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [key, value])
     }
 
+    // MARK: On or off
+
+    /// The provider sync runs with ("icloud"), or nil while it is off. Read without creating the tables.
+    static func provider(_ context: NativeRepositoryContext) throws -> String? {
+        guard try context.tableExists("cloud_sync_state") else { return nil }
+        return try context.query("SELECT value FROM cloud_sync_state WHERE key='provider'").first?["value"] as? String
+    }
+
+    func setProvider(_ provider: String?) throws {
+        guard provider != (try Self.provider(context)) else { return }
+        try context.transaction {
+            if let provider { try set("provider", provider) } else { try context.run("DELETE FROM cloud_sync_state WHERE key='provider'") }
+            try setCapturing(provider != nil)
+        }
+    }
+
     // MARK: Change capture (design §1.6)
 
     /// Drawing writes are captured by triggers only while sync is on, so the table never

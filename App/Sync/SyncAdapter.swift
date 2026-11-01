@@ -1,6 +1,6 @@
 import Foundation
 
-/// SyncAdapter mappings between local rows and spec v2.2 values, mirroring the
+/// SyncAdapter mappings between local rows and spec v2.3 values, mirroring the
 /// desktop's `src/main/features/sync/adapter.ts`. Pure: the engine supplies
 /// timestamps, asset hashes and image paths.
 enum SyncAdapter {
