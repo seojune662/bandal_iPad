@@ -1,0 +1,107 @@
+{
+  "fixture": "13-course-delete",
+  "spec": "2.4",
+  "blocked": null,
+  "courses": {
+    "c1300000-0000-4000-8000-000000000001": {
+      "name": "삭제된 과목",
+      "sort": 0,
+      "color": "gold",
+      "archived": false,
+      "alive": false
+    },
+    "c1300000-0000-4000-8000-000000000002": {
+      "name": "되살린 과목",
+      "sort": 1,
+      "color": "green",
+      "archived": false,
+      "alive": true
+    }
+  },
+  "docs": {
+    "d1300000-0000-4000-8000-000000000001": {
+      "course_id": "c1300000-0000-4000-8000-000000000001",
+      "type": "pdf",
+      "name": "강의.pdf",
+      "rel_path": "",
+      "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
+      "alive": false
+    },
+    "d1300000-0000-4000-8000-000000000002": {
+      "course_id": "c1300000-0000-4000-8000-000000000001",
+      "type": "pdf",
+      "name": "같은 이름.pdf",
+      "rel_path": "",
+      "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
+      "alive": false
+    },
+    "d1300000-0000-4000-8000-000000000003": {
+      "course_id": "c1300000-0000-4000-8000-000000000001",
+      "type": "pdf",
+      "name": "같은 이름.pdf",
+      "rel_path": "",
+      "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
+      "alive": false
+    },
+    "d1300000-0000-4000-8000-000000000004": {
+      "course_id": "c1300000-0000-4000-8000-000000000002",
+      "type": "pdf",
+      "name": "되살린 문서.pdf",
+      "rel_path": "",
+      "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
+      "alive": true
+    },
+    "d1300000-0000-4000-8000-000000000005": {
+      "course_id": "c1300000-0000-4000-8000-000000000002",
+      "type": "pdf",
+      "name": "지운 채 남은 문서.pdf",
+      "rel_path": "",
+      "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
+      "alive": false
+    },
+    "d1300000-0000-4000-8000-000000000006": {
+      "course_id": "c1300000-0000-4000-8000-000000000002",
+      "type": "pdf",
+      "name": "묘비 없는 문서.pdf",
+      "rel_path": "",
+      "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
+      "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
+      "alive": true
+    },
+    "d1300000-0000-4000-8000-000000000007": {
+      "course_id": "c1300000-0000-4000-8000-000000000001",
+      "type": "md",
+      "name": "노트.md",
+      "rel_path": "",
+      "md_hash": "0dcb510619508604ff520b040d7e64b9c14e4951e827789f1f931563c21c9193",
+      "alive": false
+    }
+  },
+  "notes": {
+    "d1300000-0000-4000-8000-000000000007": {
+      "md_hash": "0dcb510619508604ff520b040d7e64b9c14e4951e827789f1f931563c21c9193",
+      "file": "notes/d1300000-0000-4000-8000-000000000007/bbbbbbbb-0000-4000-8000-000000000002-00000002.md"
+    }
+  },
+  "ink": {},
+  "conflict_copies": [],
+  "renames": [],
+  "waiting": {
+    "docs": [],
+    "ink": [],
+    "copies": []
+  },
+  "ignored": [],
+  "errors": []
+}

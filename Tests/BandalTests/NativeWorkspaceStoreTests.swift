@@ -208,6 +208,46 @@ final class NativeWorkspaceStoreTests: XCTestCase {
         XCTAssertNotEqual(store.reloadIdentity(for: other), identities[2])
     }
 
+    /// Ink that sync stored for an open PDF is redrawn by its editor in place; an editor that cannot
+    /// redraw reopens, as do editors of documents that changed otherwise.
+    func testInkOnlyChangesRedrawOpenEditorsInPlace() async throws {
+        let store = NativeWorkspaceStore(storageRoot: directory)
+        let drawn = NativeDocumentReference(courseID: "a", relativePath: "x.pdf", title: "x", kind: "pdf")
+        let failing = NativeDocumentReference(courseID: "a", relativePath: "y.pdf", title: "y", kind: "pdf")
+        let rewritten = NativeDocumentReference(courseID: "a", relativePath: "z.pdf", title: "z", kind: "pdf")
+        var retired: [String] = [], redrawn: [String] = [], contentChanged: [String] = [], steps: [String] = []
+        let events = store.events.sink { event in
+            if event.channel == "nativeWorkspace:pdfContentChanged" { contentChanged.append((event.payload as? [String: Any])?["relPath"] as? String ?? "") }
+        }
+        defer { events.cancel() }
+        func register(_ document: NativeDocumentReference, fails: Bool = false) -> UUID {
+            store.registerDocumentFlush(id: document.id, document: document,
+                                        suspendWrites: { steps.append("suspend " + document.relativePath) },
+                                        resume: { steps.append("resume " + document.relativePath) },
+                                        retire: { retired.append(document.relativePath) },
+                                        refreshDrawings: {
+                                            if fails { throw DesktopRuntimeError("not open yet") }
+                                            redrawn.append(document.relativePath); steps.append("redraw " + document.relativePath)
+                                        }) {}
+        }
+        let tokens = [register(drawn), register(failing, fails: true), register(rewritten)]
+        defer { tokens.forEach(store.unregisterDocumentFlush) }
+        let identities = [drawn, failing, rewritten].map(store.reloadIdentity)
+        _ = try await store.withExternalMutation {
+            ["changedCourseIDs": ["a"], "changedDocuments": [["courseId": "a", "relPath": "z.pdf"],
+                                                              ["courseId": "a", "relPath": "x.pdf", "drawingsOnly": true],
+                                                              ["courseId": "a", "relPath": "y.pdf", "drawingsOnly": true],
+                                                              ["courseId": "a", "relPath": "z.pdf", "drawingsOnly": true]]] as [String: Any]
+        }
+        XCTAssertEqual(redrawn, ["x.pdf"])
+        XCTAssertEqual(steps.filter { $0.hasSuffix(" x.pdf") }, ["suspend x.pdf", "redraw x.pdf", "resume x.pdf"], "redrawn while its writes are suspended")
+        XCTAssertEqual(Set(retired), ["y.pdf", "z.pdf"])
+        XCTAssertEqual(contentChanged, ["x.pdf"])
+        XCTAssertEqual(store.reloadIdentity(for: drawn), identities[0], "a redrawn editor keeps its view")
+        XCTAssertNotEqual(store.reloadIdentity(for: failing), identities[1])
+        XCTAssertNotEqual(store.reloadIdentity(for: rewritten), identities[2])
+    }
+
     func testFlushBarrierJoinsConcurrentCallsAndStillFlushesAfterOneFailure() async throws {
         let store = NativeWorkspaceStore(storageRoot: directory)
         var firstCalls = 0, secondCalls = 0

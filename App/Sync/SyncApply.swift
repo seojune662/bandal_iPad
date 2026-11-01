@@ -11,19 +11,24 @@ final class SyncApply {
     struct Report {
         /// Items left for the next round, with the reason (an id and an error).
         var skipped: [(id: String, reason: String)] = []
-        /// Local courses changed as courses, and files changed per local course.
-        var courses = Set<String>(), files: [String: Set<String>] = [:]
+        /// Local courses changed as courses, files changed per local course, and documents whose ink changed.
+        var courses = Set<String>(), files: [String: Set<String>] = [:], drawn: [String: Set<String>] = [:]
         /// A change to an open document waits for the workspace barrier.
         var held = false
 
         /// What the workspace reloads (`withExternalMutation`): a course change reloads the course
-        /// list and every editor in that course; otherwise only editors of the changed files reopen.
+        /// list and every editor in that course; otherwise only editors of the changed files reopen,
+        /// and those of documents whose ink changed redraw it in place (`drawingsOnly`) unless the
+        /// document is listed without it too.
         var workspaceChanges: [String: Any] {
-            guard courses.isEmpty else { return ["changedCourseIDs": courses.union(files.keys).sorted()] }
-            return ["changedCourseIDs": files.keys.sorted(),
-                    "changedDocuments": files.sorted { $0.key < $1.key }.flatMap { course, paths in paths.sorted().map { ["courseId": course, "relPath": $0] } }]
+            guard courses.isEmpty else { return ["changedCourseIDs": courses.union(files.keys).union(drawn.keys).sorted()] }
+            func documents(_ changes: [String: Set<String>], _ extra: [String: Any]) -> [[String: Any]] {
+                changes.sorted { $0.key < $1.key }.flatMap { course, paths in paths.sorted().map { (["courseId": course, "relPath": $0] as [String: Any]).merging(extra) { $1 } } }
+            }
+            return ["changedCourseIDs": files.keys.sorted(), "changedDocuments": documents(files, [:]) + documents(drawn, ["drawingsOnly": true])]
         }
         fileprivate mutating func changed(_ course: String, _ paths: String...) { files[course, default: []].formUnion(paths) }
+        fileprivate mutating func drew(_ course: String, _ path: String) { drawn[course, default: []].insert(path) }
     }
     private var report = Report()
 
@@ -56,7 +61,9 @@ final class SyncApply {
         }
         each(state.courses.sorted { $0.key < $1.key }, course)
         let waiting = Set(state.waitingDocs), renames = Dictionary(state.renames.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
-        each(state.docs.filter { !waiting.contains($0.key) }.sorted { $0.key < $1.key }) { try document($0, $1, renamed: renames[$0], note: state.notes[$0]?.file) }
+        each(state.docs.filter { !waiting.contains($0.key) }.sorted { $0.key < $1.key }) {
+            try document($0, $1, renamed: renames[$0], note: state.notes[$0]?.file, rebindFrom: state.rebindFrom[$0] ?? [])
+        }
         each(state.conflictCopies.map { ($0.id, $0) }, copy)
         guard includesInk else { return report }
         let waitingInk = Set(state.waitingInk)
@@ -121,10 +128,45 @@ final class SyncApply {
         let alive = current["deleted_at"] is NSNull
         let visible = target.isAlive != alive || target.isAlive && ["name", "color", "archived", "sort"].contains { !SyncStore.same(target.fields[$0]?.value, known.fields[$0]?.value) }
         if visible, held(local) { return }
+        if !target.isAlive, alive, try holdsUnsent(local) {
+            // Spec v2.4: what changed here goes out into the course, so the course goes out again with all
+            // its fields and comes back everywhere (the outbox sends it: these registers say deleted). Values
+            // other devices changed before the delete are taken first, or the revival would undo them.
+            if try bring(local, to: target, known: known) { report.courses.insert(local) }
+            try context.run("UPDATE cloud_sync_courses SET registers=? WHERE sync_id=?", [SyncStore.encode(target), id])
+            return
+        }
         if !target.isAlive, alive { _ = try library.handle("courses:delete", ["courseId": local]); report.courses.insert(local) }
         if target.isAlive, !alive { _ = try library.handle("courses:restore", ["courseId": local]); report.courses.insert(local) }
         if target.isAlive, try bring(local, to: target, known: known) { report.courses.insert(local) }
         try context.run("UPDATE cloud_sync_courses SET registers=? WHERE sync_id=?", [SyncStore.encode(target), id])
+    }
+
+    /// A file in the course that has not gone out: new here, changed since it was last exchanged, or a PDF
+    /// with ink drawn here since.
+    private func holdsUnsent(_ course: String) throws -> Bool {
+        // Files added outside the app are indexed first, as the outbox does before it compares. A folder
+        // that cannot be read says nothing: the course waits for the next round.
+        _ = try library.handle("materials:tree", ["courseId": course])
+        var known: [String: Entity] = [:]
+        for row in try context.query("SELECT rel_path,registers FROM cloud_sync_docs WHERE course_id=? AND rel_path<>''", [course]) {
+            known[row["rel_path"] as! String] = try SyncStore.decode(row["registers"] as! String)
+        }
+        return try context.query("SELECT rel_path FROM materials_index WHERE course_id=? AND deleted_at IS NULL AND kind IN ('pdf','note')", [course]).contains { row in
+            let path = row["rel_path"] as! String
+            guard let registers = known[path], registers.deleted != nil || !registers.fields.isEmpty else { return true }
+            return try !unchanged(registers, course: course, path: path) || unsentInk(course: course, path: path)
+        }
+    }
+
+    /// Strokes at a path drawn or changed here that have not gone out (as the outbox compares them).
+    private func unsentInk(course: String, path: String) throws -> Bool {
+        try context.query("""
+        SELECT p.*,o.hash AS sent FROM cloud_sync_dirty d JOIN pdf_drawings p ON p.id=d.id LEFT JOIN cloud_sync_objects o ON o.id=d.id
+        WHERE p.course_id=? AND p.rel_path=? AND p.deleted_at IS NULL
+        """, [course, path]).contains { row in
+            try (SyncOutbox.form(row, context: context)).map { try SyncOutbox.hash($0.value) } != row["sent"] as? String
+        }
     }
 
     /// The local row still holds the values last exchanged. A course never exchanged is this
@@ -149,15 +191,20 @@ final class SyncApply {
 
     // MARK: Documents
 
-    private func document(_ id: String, _ entity: Entity, renamed: String?, note: String?) throws {
+    private func document(_ id: String, _ entity: Entity, renamed: String?, note: String?, rebindFrom: [String]) throws {
         let row = try context.query("SELECT course_id,rel_path,registers FROM cloud_sync_docs WHERE sync_id=?", [id]).first
         let known = try row.map { try SyncStore.decode($0["registers"] as! String) } ?? Entity()
         let (target, changed) = Self.newer(entity, than: known)
-        guard let course = try target.text("course_id").flatMap(localCourse), let name = renamed ?? target.text("name"), let folder = target.text("rel_path") else { return }
+        guard let course = try target.text("course_id").flatMap(localCourse), let name = renamed ?? target.text("name"), let folder = target.text("rel_path") else {
+            // Deleted with a course that is gone here (spec v2.4): the file and its path stay, as the course
+            // folder does, and the delete is recorded so that bringing the course back here sends it again.
+            if changed, !target.isAlive, row != nil { try context.run("UPDATE cloud_sync_docs SET registers=? WHERE sync_id=?", [SyncStore.encode(target), id]) }
+            return
+        }
         let rel = folder.isEmpty ? name : folder + "/" + name
         guard let row, let path = row["rel_path"] as? String, !path.isEmpty else {
             // Not on this iPad yet.
-            guard target.isAlive, changed, try place(target, id: id, note: note, course: course, rel: rel) else { return }
+            guard target.isAlive, changed, try place(target, id: id, note: note, course: course, rel: rel, rebindFrom: rebindFrom) else { return }
             try context.run("""
             INSERT INTO cloud_sync_docs(sync_id,course_id,rel_path,origin,registers) VALUES(?,?,?,'remote',?)
             ON CONFLICT(sync_id) DO UPDATE SET course_id=excluded.course_id,rel_path=excluded.rel_path,registers=excluded.registers
@@ -166,7 +213,15 @@ final class SyncApply {
             return
         }
         let local = row["course_id"] as! String
+        // A document deleted with its course keeps its path, as the course keeps its folder. When the course
+        // comes back its delete register takes the later stamp (spec v2.4), so it changed and goes unless written again.
         guard changed || rel != path, try unchanged(known, course: local, path: path) else { return }  // An unsent local change goes out next and wins.
+        if !target.isAlive, try unsentInk(course: local, path: path) {
+            // So does ink drawn here: the PDF stays and goes out again whole (these registers say deleted),
+            // bringing back its course if that went too.
+            try context.run("UPDATE cloud_sync_docs SET registers=? WHERE sync_id=?", [SyncStore.encode(target), id])
+            return
+        }
         let visible = !target.isAlive || rel != path && course == local || target.text("pdf_sha256") != known.text("pdf_sha256") || note != nil && target.text("md_hash") != known.text("md_hash")
         if visible, held(local, path) { return }
         guard target.isAlive else {
@@ -178,7 +233,7 @@ final class SyncApply {
         // Moving between courses is not applied in v1; such a document stays where it is.
         var now = path
         if rel != path, course == local, try move(course: local, from: path, to: rel) { now = rel; report.changed(local, path, rel) }
-        if try replaceContent(target, known: known, id: id, note: note, course: local, rel: now) { report.changed(local, now) }
+        if try replaceContent(target, known: known, id: id, note: note, course: local, rel: now, rebindFrom: rebindFrom) { report.changed(local, now) }
         try context.run("UPDATE cloud_sync_docs SET registers=?,rel_path=? WHERE sync_id=?", [SyncStore.encode(target), now, id])
     }
 
@@ -198,7 +253,7 @@ final class SyncApply {
     }
 
     /// Writes a document that is new on this iPad; false when it cannot be placed yet.
-    private func place(_ target: Entity, id: String, note: String?, course: String, rel: String) throws -> Bool {
+    private func place(_ target: Entity, id: String, note: String?, course: String, rel: String, rebindFrom: [String]) throws -> Bool {
         let url = try context.materialURL(courseID: course, relativePath: rel, allowMissing: true)
         guard !context.files.fileExists(atPath: url.path) else { return false }
         if target.text("type") == "pdf", let sha = target.text("pdf_sha256") {
@@ -208,11 +263,13 @@ final class SyncApply {
             let leftover = try context.query("SELECT material_id FROM pdf_document_aliases WHERE course_id=? AND rel_path=?", [course, rel]).first?["material_id"] as? String
             if leftover != id { try repoint(course: course, from: rel, to: Self.removed(leftover ?? UUID().uuidString.lowercased())) }
             try repoint(course: course, from: Self.removed(id), to: rel)
+            // Its strokes left where it was removed follow it, also when it comes back under another name.
+            try context.run("UPDATE pdf_drawings SET course_id=?,rel_path=? WHERE id IN (SELECT id FROM cloud_sync_objects WHERE doc=?) AND NOT (course_id=? AND rel_path=?)", [course, rel, id, course, rel])
             try write(bytes, to: url, rel: rel)
             // Bound first, so the PDF repository takes the file as this document (design §2.6).
             // A document coming back keeps the binding its ink has unless the rule lets it follow.
             try context.run("INSERT OR IGNORE INTO pdf_document_bindings(material_id,bound_sha,evidence,legacy_unverified,created_at) VALUES(?,?,'sync',0,?)", [id, sha, C.nowISO])
-            try follow(id, to: sha, target: target, course: course, rel: rel)
+            try follow(id, to: sha, from: rebindFrom, course: course, rel: rel)
             try context.run("INSERT OR IGNORE INTO pdf_document_aliases(course_id,rel_path,material_id) VALUES(?,?,?)", [course, rel, id])
             return true
         }
@@ -222,7 +279,7 @@ final class SyncApply {
     }
 
     /// True when the file's bytes changed.
-    private func replaceContent(_ target: Entity, known: Entity, id: String, note: String?, course: String, rel: String) throws -> Bool {
+    private func replaceContent(_ target: Entity, known: Entity, id: String, note: String?, course: String, rel: String, rebindFrom: [String]) throws -> Bool {
         let url = try context.materialURL(courseID: course, relativePath: rel)
         var replaced = false
         if let sha = target.text("pdf_sha256"), sha != known.text("pdf_sha256") {
@@ -231,7 +288,7 @@ final class SyncApply {
             let material = try boundMaterial(course: course, rel: rel)
             try preserve(url)
             try context.withMaterialLock { try context.atomicWrite(bytes, to: url) }
-            if let material { try follow(material, to: sha, target: target, course: course, rel: rel) }
+            if let material { try follow(material, to: sha, from: rebindFrom, course: course, rel: rel) }
             // As after a page change (NativePDFPageRepository.invalidate).
             try context.run("UPDATE materials_index SET size=?,mtime=?,updated_at=? WHERE course_id=? AND rel_path=?", [bytes.count, Date().timeIntervalSince1970 * 1000, C.nowISO, course, rel])
             for table in ["native_search_documents", "native_search_files"] where try context.tableExists(table) {
@@ -261,21 +318,22 @@ final class SyncApply {
         return try alias()
     }
 
-    /// Spec v2.3: a binding moves to new bytes only when their writer says they continue the PDF
-    /// bound here (`pdf_prev_sha256`, written with that `pdf_sha256`) or when no ink here could be
-    /// shown on the wrong PDF. Otherwise it stays, and the PDF repository keeps the ink off the new bytes.
-    private func follow(_ material: String, to sha: String, target: Entity, course: String, rel: String) throws {
+    /// Spec v2.4: a binding moves to new bytes when pages appended at the end lead there from the
+    /// PDF bound here (`rebindFrom`, the merge's prev→sha chain), or when nothing drawn or highlighted
+    /// here could be shown on the wrong PDF. Otherwise it stays, and the PDF repository keeps the
+    /// ink off the new bytes.
+    private func follow(_ material: String, to sha: String, from rebindFrom: [String], course: String, rel: String) throws {
         guard let bound = try context.query("SELECT bound_sha FROM pdf_document_bindings WHERE material_id=?", [material]).first?["bound_sha"] as? String,
               bound != sha else { return }
-        let previous = target.fields["pdf_prev_sha256"]
-        let continued = previous?.stamp == target.fields["pdf_sha256"]?.stamp && previous?.value as? String == bound
-        guard try continued || !hasInk(course: course, rel: rel) else { return }
+        guard try rebindFrom.contains(bound) || !hasInk(course: course, rel: rel, live: true) else { return }
         try context.run("UPDATE pdf_document_bindings SET bound_sha=?,evidence='sync',legacy_unverified=0 WHERE material_id=?", [sha, material])
     }
 
-    private func hasInk(course: String, rel: String) throws -> Bool {
-        try !context.query("SELECT 1 FROM pdf_drawings WHERE course_id=? AND rel_path=? UNION ALL SELECT 1 FROM annotations WHERE course_id=? AND rel_path=? LIMIT 1",
-                           [course, rel, course, rel]).isEmpty
+    /// Drawings or highlights at a path; `live` leaves out erased ones (spec v2.4 "필기 없음").
+    private func hasInk(course: String, rel: String, live: Bool = false) throws -> Bool {
+        let alive = live ? " AND deleted_at IS NULL" : ""
+        return try !context.query("SELECT 1 FROM pdf_drawings WHERE course_id=? AND rel_path=?\(alive) UNION ALL SELECT 1 FROM annotations WHERE course_id=? AND rel_path=?\(alive) LIMIT 1",
+                                  [course, rel, course, rel]).isEmpty
     }
 
     /// The bytes a synced PDF replaces stay in PDFOriginals, like the bytes before any page change.
@@ -409,6 +467,6 @@ final class SyncApply {
         let form = try saved.flatMap { try SyncOutbox.form($0, context: context) }?.value ?? ["id": id, "page": object.page, "del": true]
         try context.run("INSERT OR REPLACE INTO cloud_sync_objects(id,doc,page,t,dev,seq,idx,hash) VALUES(?,?,?,?,?,?,?,?)",
                         [id, doc, object.page, stamp.t, stamp.device, stamp.seq, stamp.index, try SyncOutbox.hash(form)])
-        report.changed(course, path)
+        report.drew(course, path)
     }
 }

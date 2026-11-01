@@ -1,6 +1,6 @@
 {
   "fixture": "09-invalid-input",
-  "spec": "2.3",
+  "spec": "2.4",
   "blocked": null,
   "courses": {
     "c0000000-0000-4000-8000-000000000001": {
@@ -19,6 +19,7 @@
       "rel_path": "강의자료",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
       "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
       "alive": true
     }
   },

@@ -40,11 +40,13 @@ final class SyncOutbox {
     }
 
     /// `remote` lists every path in the root now; files already there are not uploaded again.
-    /// Call it only for an empty root or one whose merge is not blocked: nothing may be written
-    /// into a root of another format (spec "원격 입력 검증", format).
-    func prepare(remote: Set<String>) throws -> Batch {
+    /// `deletedCourses` are the courses the root holds as deleted (sync ids). Call it only for an
+    /// empty root or one whose merge is not blocked: nothing may be written into a root of
+    /// another format (spec "원격 입력 검증", format).
+    func prepare(remote: Set<String>, deletedCourses: Set<String> = []) throws -> Batch {
         let me = try store.deviceID()
-        var draft = Draft(me: me, remote: remote, ownMax: remote.compactMap(SyncFormat.writer).filter { $0.device == me }.map(\.seq).max() ?? 0)
+        var draft = Draft(me: me, remote: remote, ownMax: remote.compactMap(SyncFormat.writer).filter { $0.device == me }.map(\.seq).max() ?? 0,
+                          deletedCourses: deletedCourses)
         try courses(&draft)
         try documents(&draft)
         try drawings(&draft)
@@ -66,9 +68,12 @@ final class SyncOutbox {
         try context.transaction {
             for (id, registers) in batch.courses { try context.run("UPDATE cloud_sync_courses SET registers=? WHERE sync_id=?", [SyncStore.encode(registers), id]) }
             for (id, registers) in batch.docs {
-                // A deleted document no longer holds its path: a new file there is a new document.
-                try context.run("UPDATE cloud_sync_docs SET registers=?,rel_path=CASE WHEN ? THEN '' ELSE rel_path END WHERE sync_id=?",
-                                [SyncStore.encode(registers), !registers.isAlive, id])
+                // A deleted document no longer holds its path: a new file there is a new document. One deleted
+                // with its course keeps it, as the course keeps its folder (SyncApply removes it if the course comes back).
+                try context.run("""
+                UPDATE cloud_sync_docs SET registers=?,rel_path=CASE WHEN ? AND course_id IN (SELECT id FROM courses WHERE deleted_at IS NULL) THEN '' ELSE rel_path END
+                WHERE sync_id=?
+                """, [SyncStore.encode(registers), !registers.isAlive, id])
             }
             for (id, object) in batch.objects {
                 try context.run("INSERT OR REPLACE INTO cloud_sync_objects(id,doc,page,t,dev,seq,idx,hash) VALUES(?,?,?,?,?,?,?,?)",
@@ -93,8 +98,10 @@ final class SyncOutbox {
     private struct Object { let id: String; let value: [String: Any]; let hash: String; let doc: String; let page: Int }
 
     private struct Draft {
-        let me: String, remote: Set<String>, ownMax: Int
+        let me: String, remote: Set<String>, ownMax: Int, deletedCourses: Set<String>
         var batch = Batch(), events: [Event] = [], ink: [String: [Object]] = [:], notes: [String: Data] = [:]
+        /// Courses an upsert in this flush brings back, and every local course's fields with its registers.
+        var revived = Set<String>(), courses: [String: (fields: [String: Any], registers: SyncMerge.Entity)] = [:]
         mutating func upload(_ path: String, _ url: URL) {
             guard !remote.contains(path), !batch.writes.contains(where: { $0.path == path }) else { return }
             batch.writes.append(Write(path: path, content: .file(url)))
@@ -133,7 +140,18 @@ final class SyncOutbox {
             }
             let fields: [String: Any] = ["name": row["name"] as? String ?? "", "sort": row["sort_order"] ?? 0,
                                          "color": SyncAdapter.specCourseColor(row["color"] as? String ?? ""), "archived": (row["archived"] as? NSNumber)?.boolValue ?? false]
-            if let event = Self.event("course", known[local]!.id, try SyncStore.decode(known[local]!.registers), fields, alive: alive) { draft.events.append(event) }
+            let id = known[local]!.id, registers = try SyncStore.decode(known[local]!.registers)
+            draft.courses[id] = (fields, registers)
+            guard let event = Self.event("course", id, registers, fields, alive: alive) else { continue }
+            draft.events.append(event)
+            guard event.fields == nil else { draft.revived.insert(id); continue }
+            // Spec v2.4: its live documents go with it, so a device that brings the course back brings back only
+            // what it writes again. Only those it holds as this course's: one moved elsewhere (not applied in v1) is not.
+            for row in try context.query("SELECT sync_id,registers FROM cloud_sync_docs WHERE course_id=? ORDER BY sync_id", [local]) {
+                let registers = try SyncStore.decode(row["registers"] as! String)
+                guard registers.text("course_id") ?? id == id else { continue }
+                if let event = Self.event("doc", row["sync_id"] as! String, registers, [:], alive: false) { draft.events.append(event) }
+            }
         }
     }
 
@@ -194,6 +212,7 @@ final class SyncOutbox {
                     event = Event(op: event.op, id: id, fields: fields, registers: registers)
                     draft.notes[id] = note
                 }
+                if let course = courseID as? String { revive(course, &draft) }
                 draft.events.append(event)
             }
             for id in gone.sorted() {
@@ -203,6 +222,14 @@ final class SyncOutbox {
                 if let event = Self.event("doc", id, known[id]!.registers, [:], alive: false) { draft.events.append(event) }
             }
         }
+    }
+
+    /// Spec v2.4: a document written into a course the root deleted would count as deleted with it, so
+    /// the course goes out again first, with all its fields (as the desktop's `reviveCourse`).
+    private func revive(_ course: String, _ draft: inout Draft) {
+        guard draft.deletedCourses.contains(course), !draft.revived.contains(course), let known = draft.courses[course] else { return }
+        draft.revived.insert(course)
+        draft.events.append(Event(op: "course.upsert", id: course, fields: known.fields, registers: known.registers))
     }
 
     /// The PDF last exchanged, when the PDF here grew from it only by pages added at the end (spec

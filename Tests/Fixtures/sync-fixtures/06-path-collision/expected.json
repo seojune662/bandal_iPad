@@ -1,6 +1,6 @@
 {
   "fixture": "06-path-collision",
-  "spec": "2.3",
+  "spec": "2.4",
   "blocked": null,
   "courses": {
     "c0000000-0000-4000-8000-000000000001": {
@@ -19,6 +19,7 @@
       "rel_path": "강의",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
       "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
       "alive": false
     },
     "d6000000-0000-4000-8000-000000000001": {
@@ -28,6 +29,7 @@
       "rel_path": "강의",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
       "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
       "alive": true
     },
     "d9000000-0000-4000-8000-000000000004": {
@@ -37,6 +39,7 @@
       "rel_path": "실습",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
       "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
       "alive": true
     },
     "da000000-0000-4000-8000-000000000006": {
@@ -54,6 +57,7 @@
       "rel_path": "강의",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
       "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
       "alive": true
     },
     "d8000000-0000-4000-8000-000000000003": {
@@ -63,6 +67,7 @@
       "rel_path": "강의",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
       "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
       "alive": true
     },
     "db000000-0000-4000-8000-000000000007": {
@@ -112,6 +117,7 @@
       "rel_path": "그리스어",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
       "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
       "alive": true
     },
     "d2b00000-0000-4000-8000-000000000014": {
@@ -121,6 +127,7 @@
       "rel_path": "그리스어",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
       "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
       "alive": true
     },
     "d2c00000-0000-4000-8000-000000000015": {
@@ -130,6 +137,7 @@
       "rel_path": "그리스어",
       "pdf_sha256": "b874efadd08d8148d022b60add6a0b3e942654ed646871f2c984c9c9051fb765",
       "pdf_prev_sha256": null,
+      "pdf_rebind_from": [],
       "alive": true
     }
   },

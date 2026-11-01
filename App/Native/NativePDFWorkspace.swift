@@ -360,7 +360,8 @@ final class NativePDFWorkspaceModel: ObservableObject {
             freeze: { [weak self] in self?.setMaterialMutating(true) },
             suspendWrites: { [weak self] in self?.writesSuspended = true },
             resume: { [weak self] in self?.writesSuspended = false; self?.setMaterialMutating(false) },
-            retire: { [weak self] in self?.retire() }) { [self] in try await flush() }
+            retire: { [weak self] in self?.retire() },
+            refreshDrawings: { [weak self] in try await self?.receiveStoredDrawings() }) { [self] in try await flush() }
         do {
             let native = try NativePDFHost(root: store.root, directEnabled: true) { [store] channel, request in
                 try await store.invokePrivate(channel, request)
@@ -1801,6 +1802,12 @@ final class NativePDFWorkspaceModel: ObservableObject {
         let task = Task { @MainActor in try await self.open() }
         opening = task
         try await task.value
+    }
+    /// Ink that sync stored for this file inside the workspace barrier, taken like another pane's
+    /// write: only the changed strokes are drawn again, and the view stays where it is.
+    private func receiveStoredDrawings() async throws {
+        guard opened, !retired, let persistence else { throw NativePDFError.invalid("PDF가 아직 열리지 않았습니다.") }
+        try await persistence.receiveStoredRows()
     }
     private func retire() {
         guard !retired else { return }

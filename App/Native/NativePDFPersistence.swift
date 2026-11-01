@@ -212,6 +212,18 @@ final class NativePDFPersistence {
         if let incomingAnnotations { peerAnnotationVersion += 1; annotations = incomingAnnotations; hasCanonicalAnnotations = true; hasCoordinatedAnnotationBaseline = true }
         onPeerChanged?(drawingIDs.union(annotationIDs))
     }
+    /// Rows another writer stored for this file (sync, while every editor's writes are suspended),
+    /// taken as an uncoordinated peer snapshot: only changed strokes are redrawn, and history that
+    /// touched them is dropped.
+    func receiveStoredRows() async throws {
+        // In the file's lane, so no write of this or another pane lands between the read and the swap.
+        try await serial {
+            guard let value = try await backend("drawings:listForFile", identity) as? [[String: Any]] else {
+                throw NativePDFError.invalid("PDF 필기 목록을 확인하지 못했습니다.")
+            }
+            receivePeerSnapshot(drawings: value, annotations: nil)
+        }
+    }
     func reload() async throws {
         let version = peerDrawingVersion
         guard let value = try await backend("drawings:listForFile", identity) as? [[String: Any]] else {
