@@ -7,6 +7,9 @@ struct DesktopAIEnvironment {
     var session: URLSession = URLSession(configuration: .ephemeral, delegate: DesktopAIRedirectPolicy(), delegateQueue: nil)
     var hasConsent: (AIProvider) -> Bool = { AIConsent.isGranted($0) }
     var askConsent: (AIProvider) async -> Bool = { await AIConsent.ask($0, english: false) }
+    /// The free AI allowance (반달 멤버십): checked before a request, counted once its answer arrives.
+    var checkAllowance: () throws -> Void = {}
+    var countUse: () -> Void = {}
 }
 private final class DesktopAIRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
@@ -103,6 +106,7 @@ final class DesktopAIService {
               let raw = request["messages"] as? [[String: Any]], raw.count <= 300,
               let toolInputs = request["tools"] as? [[String: Any]], toolInputs.count <= 160,
               let event = onEvent, let execute = onTool else { throw DesktopRuntimeError("AI 요청 구성을 확인할 수 없습니다.") }
+        try environment.checkAllowance()
         guard await consent(provider) else { throw DesktopRuntimeError("AI 제공자 전송에 동의하지 않아 요청을 보내지 않았습니다.") }
         try Task.checkCancellation()
         let key = environment.readKey(provider) ?? ""
@@ -142,6 +146,7 @@ final class DesktopAIService {
         do {
             let result = try await task.value
             guard generation == generations[provider, default: 0] else { throw CancellationError() }
+            environment.countUse()
             return ["text": result.text, "model": model, "usage": ["inputTokens": result.inputTokens, "outputTokens": result.outputTokens]]
         } catch is CancellationError { throw CancellationError() }
         catch { throw DesktopRuntimeError(error.localizedDescription.replacingOccurrences(of: key.isEmpty ? "\0" : key, with: "[redacted]")) }

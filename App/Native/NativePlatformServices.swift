@@ -42,12 +42,21 @@ final class NativePlatformServices: ObservableObject {
             let settings = (try? await store?.invoke("settings:get")) as? [String: Any]
             return await AIConsent.ask(provider, english: settings?["locale"] as? String == "en-US")
         }
+        if NativeReleaseFlags.membership {
+            aiEnvironment.checkAllowance = {
+                guard !Membership.unlimited else { return }
+                do { try FreeTier.AIAllowance().check() } catch { MembershipPaywall.present(message: error.localizedDescription); throw error }
+            }
+            aiEnvironment.countUse = { if !Membership.unlimited { FreeTier.AIAllowance().count() } }
+            runtime.limits = { channel, request, library in if !Membership.unlimited { try FreeTier.check(channel, request, library: library) } }
+        }
         ai = DesktopAIService(environment: aiEnvironment)
         assistant = NativeAssistantService(runtime:runtime,ai:ai)
         account = DesktopAccountService(root:runtime.root)
         profile = DesktopProfileService(documents:runtime.root.deletingLastPathComponent(),root:runtime.root)
         cloudSync = CloudSyncService(store:store,profile:profile)
         connectAccount()
+        Membership.shared.accountToken = { [weak account] in account?.userID.flatMap(UUID.init(uuidString:)) }
         profile.prepare = { [weak self, weak store] in
             await self?.sync?.suspendForProfileOperation()
             await self?.cloudSync.suspend()
@@ -129,6 +138,7 @@ final class NativePlatformServices: ObservableObject {
     }
     func start() async {
         guard !started, let store, store.isReady else { return }; started = true
+        if NativeReleaseFlags.membership { Membership.shared.start() }
         do {
             if let settings = try await store.invoke("settings:get") as? [String:Any] {
                 NativeAppearancePreference.apply(settings)

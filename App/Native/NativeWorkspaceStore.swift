@@ -44,7 +44,9 @@ final class NativeWorkspaceStore: ObservableObject {
     @Published var pendingBrowserURLs: [String:String] = [:]
     @Published var materials: [NativeMaterial] = []
     @Published var isLoading = false
-    @Published var errorMessage: String?
+    /// A refusal the 반달 플러스 sheet is explaining is not also shown as an error.
+    @Published var errorMessage: String? { didSet { if errorMessage != nil, errorMessage == paywallMessage { errorMessage = nil } } }
+    private var paywallMessage: String?
     @Published private(set) var isReady = false
     @Published private(set) var isApplyingExternalChanges = false
     @Published private(set) var documentReloadEpoch: UInt64 = 0
@@ -184,16 +186,28 @@ final class NativeWorkspaceStore: ObservableObject {
 
     func invoke(_ channel: String, _ request: [String: Any] = [:]) async throws -> Any {
         try await ensureStarted()
-        if ["study:listTools", "study:generate", "learning:addArticle", "learning:runCancel"].contains(channel) { return try await studyService.handle(channel, request) }
-        if Self.presentationChannels.contains(channel) {
-            return try await performNativeChannel(channel, request)
+        return try await offeringMembership {
+            if ["study:listTools", "study:generate", "learning:addArticle", "learning:runCancel"].contains(channel) { return try await self.studyService.handle(channel, request) }
+            if Self.presentationChannels.contains(channel) {
+                return try await self.performNativeChannel(channel, request)
+            }
+            return try await self.runtime.invoke(channel, request: request)
         }
-        return try await runtime.invoke(channel, request: request)
     }
 
     func invokePrivate(_ channel: String, _ request: [String: Any] = [:]) async throws -> Any {
         try await ensureStarted()
-        return try await runtime.invokePrivate(channel, request: request)
+        return try await offeringMembership { try await self.runtime.invokePrivate(channel, request: request) }
+    }
+
+    /// The free allowance refused it (`PLUS_REQUIRED`): the 반달 플러스 sheet opens and says why.
+    private func offeringMembership(_ work: () async throws -> Any) async throws -> Any {
+        do { return try await work() }
+        catch let error as DesktopRuntimeError where error.code == FreeTier.code {
+            paywallMessage = error.message
+            MembershipPaywall.present(message: error.message) { [weak self] in self?.paywallMessage = nil }
+            throw error
+        }
     }
 
     func openPDFPageNote(courseID: String, relativePath: String) async throws -> NativeDocumentReference {

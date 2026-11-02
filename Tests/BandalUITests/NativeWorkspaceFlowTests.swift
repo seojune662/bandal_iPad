@@ -291,6 +291,37 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         else { XCTAssertLessThanOrEqual(pixels.dark, 5, "The erased pen must not remain visible: \(pixels)", file: file, line: line) }
     }
 
+    /// Free (design §8.2–8.4): a second course opens 반달 플러스 with the reason instead of an error,
+    /// and Settings › 구독 opens it without asking for a login.
+    @MainActor
+    func testASecondCourseOpensMembershipOnTheFreeTier() throws {
+        let app = launch(reset: true, pencil: false, extra: ["--native-membership", "--native-free-tier"])
+        createCourse(in: app)
+        app.buttons["native-course-add-menu"].tap()
+        app.buttons["native-new-course"].tap()
+        let name = app.textFields["native-course-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap(); name.typeText("Physics")
+        app.buttons["native-create-course"].tap()
+        let reason = app.staticTexts["membership-reason"]
+        XCTAssertTrue(reason.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(reason.label, "무료로는 이 iPad에서 과목을 1개까지 만들 수 있어요.")
+        attachScreenshot(app, name: "Membership after a second course")
+        app.buttons["membership-close"].tap()
+        XCTAssertFalse(app.alerts["작업을 완료하지 못했어요"].waitForExistence(timeout: 2))
+        app.buttons["취소"].firstMatch.tap()
+        XCTAssertFalse(app.alerts["작업을 완료하지 못했어요"].waitForExistence(timeout: 2))
+        app.buttons["native-section-settings"].tap()
+        let category = app.buttons["native-settings-category-subscription"]
+        XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription); category.tap()
+        let open = app.buttons["native-membership-open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS '로그인'")).firstMatch.exists)
+        open.tap()
+        XCTAssertTrue(app.buttons["membership-close"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(reason.exists)
+    }
+
     @MainActor private func launch(reset: Bool, pencil: Bool = true, extra: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()

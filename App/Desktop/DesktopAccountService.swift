@@ -80,6 +80,8 @@ final class DesktopAccountService {
         default: throw DesktopRuntimeError("Unknown account operation")
         }
     }
+    /// The signed-in user's id (the membership's appAccountToken); nil while signed out.
+    var userID: String? { phase == "signed-in" ? session?.user.id : nil }
     private var state: [String: Any] {
         ["phase": phase, "profile": profile ?? NSNull() as Any, "email": session?.user.email ?? NSNull() as Any,
          "avatarUrl": avatarURL ?? NSNull() as Any, "online": online, "errorCode": errorCode ?? NSNull() as Any]
