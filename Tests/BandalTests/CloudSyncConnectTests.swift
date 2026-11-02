@@ -27,12 +27,14 @@ final class CloudSyncConnectTests: XCTestCase {
         var failing: Failing?
         var account = "account-a"
 
-        /// Signing in to Google gives this account; sign-ins are counted.
+        /// Signing in to Google gives this account; sign-ins are counted, with the account each one offered first.
         var google: GoogleDriveAuth.Account? = .init(refresh: "refresh-a", id: "google-a", email: "a@example.com")
-        var signIns = 0
+        var signIns = 0, hints: [String?] = []
+        let keychain: Box
 
         init(cloud: URL, documents: URL? = nil, root name: String = "BandalDesktop", keychain box: Box = Box()) async throws {
             self.documents = documents ?? FileManager.default.temporaryDirectory.appendingPathComponent("sync-connect-" + UUID().uuidString)
+            keychain = box
             let root = self.documents.appendingPathComponent(name)
             store = NativeWorkspaceStore(storageRoot: root)
             await store.start()
@@ -49,7 +51,7 @@ final class CloudSyncConnectTests: XCTestCase {
         /// Google Drive in memory, one per Google account id.
         func useDrive(_ drives: [String: FakeDrive]) {
             let cache = documents.appendingPathComponent("drive-cache", isDirectory: true)
-            service.environment.signIn = { [unowned self] in signIns += 1; return google }
+            service.environment.signIn = { [unowned self] hint in signIns += 1; hints.append(hint); return google }
             service.environment.drive = { DriveProvider(account: $0, cache: cache, transport: drives[$0.id]!.transport, poll: .seconds(3600), backoff: 0.01, window: 0) }
         }
         func setAccount(_ name: String, cloud: URL) {
@@ -61,6 +63,11 @@ final class CloudSyncConnectTests: XCTestCase {
             return try XCTUnwrap(value as? [String: Any])
         }
         func invoke(_ channel: String, _ request: [String: Any] = [:]) async throws -> Any { try await store.runtime.invokePrivate(channel, request: request) }
+        /// This device's sync store, read or changed on the storage queue.
+        func syncStore<T>(_ work: @escaping (SyncStore) throws -> T) async throws -> T {
+            let box = keychain
+            return try await store.runtime.withSyncStorage { context, _ in try work(SyncStore(context: context, keychain: .init(read: { box.items[$0] }, write: { box.items[$0] = $1 }))) }
+        }
         /// The device log, as `<event> channel=<c> code=<c>` lines.
         func logLines() async -> [String] {
             await store.runtime.log.flush()
@@ -542,6 +549,260 @@ final class CloudSyncConnectTests: XCTestCase {
         XCTAssertEqual(preview["empty"] as? Bool, true)
         _ = try await a.sync("cloudSync:connect", ["provider": "drive", "mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
         XCTAssertTrue(drives["google-b"]!.text(endingWith: ".json").contains("물리"), "everything went out again into the new root")
+    }
+
+    // MARK: Moving (spec v2.7)
+
+    /// Looks at the other storage as the settings screen does, then moves there with the plan it showed.
+    @discardableResult private func move(_ device: Device, to kind: String, expect: String, hint: String? = nil) async throws -> [String: Any] {
+        var request: [String: Any] = ["provider": kind]
+        if let hint { request["accountHint"] = hint }
+        let prepared = try await device.sync("cloudSync:prepareMove", request)
+        XCTAssertEqual(prepared["plan"] as? String, expect, "\(prepared)")
+        return try await device.sync("cloudSync:move", ["provider": kind, "expect": expect])
+    }
+
+    private func iCloudFile(_ path: String) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: cloud.appendingPathComponent(path))) as? [String: Any])
+    }
+
+    private func count(_ text: String, _ word: String) -> Int { text.components(separatedBy: word).count - 1 }
+
+    /// A move fills the empty storage, stamped from the old root's clock, then tells the old root where it went.
+    /// A device still there is offered to follow; following joins by id and sends only what the new root lacks.
+    func testAMoveFillsTheEmptyStorageThenTellsTheOldOneAndAFollowerSendsOnlyWhatChanged() async throws {
+        let drives = ["google-a": FakeDrive()], a = try await Device(cloud: cloud), b = try await Device(cloud: cloud)
+        a.useDrive(drives); b.useDrive(drives)
+        let physics = try await newCourse(a, "물리")
+        let paper = try await a.pdf(physics, named: "역학")
+        _ = try await a.stroke(physics, paper)
+        _ = try await a.sync("cloudSync:setDeviceName", ["name": "iPad A"])
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        _ = try await b.sync("cloudSync:connect", ["mode": "merge", "pairs": []]); _ = try await b.sync("cloudSync:syncNow")
+        let quiet = try await b.sync("cloudSync:syncNow")
+        XCTAssertNil(quiet["moved"])
+        let clock = try await a.syncStore { try $0.clock() }
+
+        let moving = try await move(a, to: "drive", expect: "upload")
+        XCTAssertEqual(moving["provider"] as? String, "drive")
+        let moved = try await a.sync("cloudSync:syncNow")
+        XCTAssertNil(moved["moving"], "the old root was told and let go")
+        let drive = drives["google-a"]!.text(endingWith: ".json")
+        let stamps = try NSRegularExpression(pattern: #""t":([0-9]+)"#).matches(in: drive, range: NSRange(drive.startIndex..., in: drive)).map { Int64((drive as NSString).substring(with: $0.range(at: 1)))! }
+        XCTAssertEqual(stamps.sorted(), [clock + 2, clock + 3], "the first upload goes on from the old root's clock (the stroke took clock + 1), not from now")
+        XCTAssertFalse(drives["google-a"]!.text(endingWith: ".json.gz").isEmpty, "the ink went up too")
+        let me = try await a.syncStore { try $0.deviceID() }
+        let note = try XCTUnwrap(try iCloudFile("devices/\(me).json")["moved_to"] as? [String: Any])
+        XCTAssertEqual(note["provider"] as? String, "drive")
+        XCTAssertEqual(note["account_hint"] as? String, "a@example.com")
+        XCTAssertGreaterThan((note["t"] as? NSNumber)?.int64Value ?? 0, clock)
+
+        // b, still in iCloud, makes a course after a left, is offered to follow, and follows in one step.
+        _ = try await newCourse(b, "생물")
+        let offered = try await b.sync("cloudSync:syncNow")
+        let offer = try XCTUnwrap(offered["moved"] as? [String: Any])
+        XCTAssertEqual(offer["device"] as? String, "iPad A")
+        XCTAssertEqual(offer["provider"] as? String, "drive")
+        XCTAssertEqual(offer["account"] as? String, "a@example.com")
+        let before = drives["google-a"]!.text(endingWith: ".json")
+        try await move(b, to: "drive", expect: "join", hint: "a@example.com")
+        XCTAssertEqual(b.hints, ["a@example.com"], "Google is asked for the account a moved to")
+        _ = try await b.sync("cloudSync:syncNow"); _ = try await a.sync("cloudSync:syncNow")
+        let after = drives["google-a"]!.text(endingWith: ".json")
+        XCTAssertEqual(count(after, "doc.upsert"), count(before, "doc.upsert"), "nothing both held goes up again")
+        XCTAssertEqual(count(after, "course.upsert"), count(before, "course.upsert") + 1, "only 생물")
+        let courses = try await a.invoke("courses:list") as! [[String: Any]]
+        XCTAssertEqual(Set(courses.compactMap { $0["name"] as? String }), ["물리", "생물"])
+        let followed = try await b.sync("cloudSync:status")
+        XCTAssertEqual(followed["provider"] as? String, "drive")
+        XCTAssertNil(followed["moved"], "the new root has no move in it")
+        XCTAssertNil(followed["moving"])
+    }
+
+    /// The note's t is an event's (spec v2.7): past every t this iPad has seen, also from a device whose clock runs a
+    /// day ahead, and so past the first upload's own stamps, which went on from that clock.
+    func testAMoveIsToldAfterEveryTSeenEvenFromAClockADayAhead() async throws {
+        let drives = ["google-a": FakeDrive()], a = try await Device(cloud: cloud)
+        a.useDrive(drives)
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        let ahead = Int64(Date().timeIntervalSince1970 * 1000) + 86_400_000, other = "dddddddd-0000-4000-8000-000000000004"
+        try FileManager.default.createDirectory(at: cloud.appendingPathComponent("log/\(other)"), withIntermediateDirectories: true)
+        try Data(#"[{"t":\#(ahead),"op":"course.upsert","id":"c0000000-0000-4000-8000-000000000009","fields":{"name":"미래","sort":1,"color":"blue","archived":false}}]"#.utf8)
+            .write(to: cloud.appendingPathComponent("log/\(other)/00000001.json"))
+        _ = try await a.sync("cloudSync:syncNow")
+        try await move(a, to: "drive", expect: "upload")
+        _ = try await a.sync("cloudSync:syncNow")
+        let me = try await a.syncStore { try $0.deviceID() }
+        let note = try XCTUnwrap(try iCloudFile("devices/\(me).json")["moved_to"] as? [String: Any])
+        XCTAssertGreaterThan((note["t"] as? NSNumber)?.int64Value ?? 0, ahead + 1)
+    }
+
+    /// Following to a Drive that looks empty: the screen names the account signed in, and choosing the Google account
+    /// again signs in once more, offering first the account the other device moved to.
+    func testFollowingToADriveThatLooksEmptyCanChooseTheGoogleAccountAgain() async throws {
+        let drives = ["google-a": FakeDrive(), "google-b": FakeDrive()], a = try await Device(cloud: cloud), b = try await Device(cloud: cloud)
+        a.useDrive(drives); b.useDrive(drives)
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        _ = try await b.sync("cloudSync:connect", ["mode": "merge", "pairs": []]); _ = try await b.sync("cloudSync:syncNow")
+        try await move(a, to: "drive", expect: "upload")
+        _ = try await a.sync("cloudSync:syncNow")
+
+        b.google = .init(refresh: "refresh-b", id: "google-b", email: "b@example.com")
+        let empty = try await b.sync("cloudSync:prepareMove", ["provider": "drive", "accountHint": "a@example.com"])
+        XCTAssertEqual(empty["plan"] as? String, "upload", "another Google account's Drive")
+        XCTAssertEqual(empty["account"] as? String, "b@example.com")
+        b.google = .init(refresh: "refresh-a2", id: "google-a", email: "a@example.com")
+        let found = try await b.sync("cloudSync:prepareMove", ["provider": "drive", "accountHint": "a@example.com", "signInAgain": true])
+        XCTAssertEqual(found["plan"] as? String, "join")
+        XCTAssertEqual(found["account"] as? String, "a@example.com")
+        XCTAssertEqual(b.hints, ["a@example.com", "a@example.com"])
+    }
+
+    /// What another device changed in the old storage after the move (a rename, a deletion) wins once it follows:
+    /// the first upload was stamped before it. "나중에" hides the offer until then.
+    func testWhatTheOldStorageChangedAfterTheMoveWinsWhenItFollows() async throws {
+        let drives = ["google-a": FakeDrive()], a = try await Device(cloud: cloud), b = try await Device(cloud: cloud)
+        a.useDrive(drives); b.useDrive(drives)
+        _ = try await newCourse(a, "물리"); _ = try await newCourse(a, "화학")
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        _ = try await b.sync("cloudSync:connect", ["mode": "merge", "pairs": []]); _ = try await b.sync("cloudSync:syncNow")
+        try await move(a, to: "drive", expect: "upload")
+        _ = try await a.sync("cloudSync:syncNow")
+
+        let rows = (try await b.course("물리"), try await b.course("화학"))
+        let physics = try XCTUnwrap(rows.0?["id"] as? String), chemistry = try XCTUnwrap(rows.1?["id"] as? String)
+        _ = try await b.invoke("courses:rename", ["courseId": physics, "name": "물리학"])
+        _ = try await b.invoke("courses:delete", ["courseId": chemistry])
+        let offered = try await b.sync("cloudSync:syncNow")
+        let t = try XCTUnwrap((offered["moved"] as? [String: Any])?["t"] as? NSNumber)
+        let later = try await b.sync("cloudSync:dismissMove", ["t": t])
+        XCTAssertNil(later["moved"])
+        let still = try await b.sync("cloudSync:syncNow")
+        XCTAssertNil(still["moved"], "not offered again")
+
+        try await move(b, to: "drive", expect: "join")
+        _ = try await b.sync("cloudSync:syncNow"); _ = try await a.sync("cloudSync:syncNow")
+        let courses = try await a.invoke("courses:list") as! [[String: Any]]
+        XCTAssertEqual(courses.compactMap { $0["name"] as? String }, ["물리학"], "the rename and the deletion made in iCloud after the move")
+    }
+
+    /// The old storage is let go only after a last pass with it went through: a file still coming down stops the move.
+    func testAMoveGoesOnlyAfterALastPassWithTheOldStorage() async throws {
+        let drives = ["google-a": FakeDrive()], a = try await Device(cloud: cloud)
+        a.useDrive(drives)
+        a.failing = Failing(root: cloud)
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        let other = "dddddddd-0000-4000-8000-000000000004"
+        try Data(#"{"name":"Mac","last_seen":1}"#.utf8).write(to: cloud.appendingPathComponent("devices/\(other).json"))
+        a.failing?.pending = ["devices/\(other).json"]
+        _ = try await a.sync("cloudSync:prepareMove", ["provider": "drive"])
+        do { _ = try await a.sync("cloudSync:move", ["provider": "drive", "expect": "upload"]); XCTFail("moved") }
+        catch { XCTAssertEqual((error as? DesktopRuntimeError)?.code, "SYNC_MOVE_BEHIND") }
+        let status = try await a.sync("cloudSync:status")
+        XCTAssertEqual(status["provider"] as? String, "icloud")
+        XCTAssertEqual(drives["google-a"]!.text(endingWith: ".json"), "", "nothing went into Drive")
+        a.failing?.pending = []
+        try await move(a, to: "drive", expect: "upload")
+        _ = try await a.sync("cloudSync:syncNow")
+        XCTAssertTrue(drives["google-a"]!.text(endingWith: ".json").contains("물리"))
+    }
+
+    /// A note changed in both storages around a move keeps both texts: one stays the note, the other a conflict copy.
+    func testANoteChangedInBothStoragesAroundAMoveKeepsBothTexts() async throws {
+        let drives = ["google-a": FakeDrive()], a = try await Device(cloud: cloud), b = try await Device(cloud: cloud)
+        a.useDrive(drives); b.useDrive(drives)
+        let course = try await newCourse(a, "물리")
+        _ = try await a.invoke("notes:write", ["courseId": course, "relPath": "요약.md", "markdown": "# 힘\n"])
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        _ = try await b.sync("cloudSync:connect", ["mode": "merge", "pairs": []]); _ = try await b.sync("cloudSync:syncNow")
+        try await move(a, to: "drive", expect: "upload")
+        _ = try await a.sync("cloudSync:syncNow")
+        _ = try await a.invoke("notes:write", ["courseId": course, "relPath": "요약.md", "markdown": "# 힘 (Drive)\n"])
+        _ = try await a.sync("cloudSync:syncNow")
+        let row = try await b.course("물리"), other = try XCTUnwrap(row?["id"] as? String)
+        _ = try await b.invoke("notes:write", ["courseId": other, "relPath": "요약.md", "markdown": "# 힘 (iCloud)\n"])
+        _ = try await b.sync("cloudSync:syncNow")
+
+        try await move(b, to: "drive", expect: "join")
+        _ = try await b.sync("cloudSync:syncNow"); _ = try await a.sync("cloudSync:syncNow"); _ = try await b.sync("cloudSync:syncNow")
+        for (device, id) in [(a, course), (b, other)] {
+            let files = try await device.files(id)
+            let copy = try XCTUnwrap(files.first { $0.hasPrefix("요약 (충돌 사본") }, "\(files)")
+            var texts = Set<String>()
+            for path in ["요약.md", copy] {
+                let note = try await device.invoke("notes:read", ["courseId": id, "relPath": path]) as? [String: Any]
+                texts.insert(try XCTUnwrap(note?["markdown"] as? String))
+            }
+            XCTAssertEqual(texts, ["# 힘 (Drive)\n", "# 힘 (iCloud)\n"])
+        }
+    }
+
+    /// Moving back to the storage it left: its own note there offers nothing and goes with its next devices file;
+    /// the Drive left behind is told, and its Google account is let go once iCloud holds everything.
+    func testMovingBackOffersNothingAndLetsTheGoogleAccountGo() async throws {
+        let drives = ["google-a": FakeDrive()], a = try await Device(cloud: cloud)
+        a.useDrive(drives)
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        try await move(a, to: "drive", expect: "upload")
+        _ = try await a.sync("cloudSync:syncNow")
+        let me = try await a.syncStore { try $0.deviceID() }
+        XCTAssertNotNil(try iCloudFile("devices/\(me).json")["moved_to"])
+        let events = try a.logEvents(cloud)
+
+        try await move(a, to: "icloud", expect: "join")
+        let back = try await a.sync("cloudSync:syncNow")
+        XCTAssertNil(back["moved"], "its own move is no offer")
+        XCTAssertNil(back["moving"])
+        XCTAssertNil(try iCloudFile("devices/\(me).json")["moved_to"], "written again without it")
+        XCTAssertEqual(try a.logEvents(cloud), events, "nothing both held goes up again")
+        let told = drives["google-a"]!.text(endingWith: "\(me).json")
+        XCTAssertTrue(told.contains(#""provider":"icloud""#), told)
+        XCTAssertEqual(a.keychain.items["drive.account"], "", "the Google account went once Drive was told")
+    }
+
+    /// A disconnect before the new storage's first pass ends the move untold. The base still describes the old
+    /// root then, so that is the root this profile belongs to again.
+    func testADisconnectBeforeTheNewStoragesFirstPassGivesTheBaseBackToTheOldRoot() async throws {
+        let a = try await Device(cloud: cloud)
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        let old = try await a.syncStore { try $0.value("sync_account") }
+        try await a.syncStore { store in
+            try store.setMoving(.init(provider: "icloud", account: old ?? "", at: 0, clock: 0, rebase: true))
+            try store.set("sync_account", "drive:google-a")
+        }
+        _ = try await a.sync("cloudSync:disconnect")
+        let after = try await a.syncStore { (account: try $0.value("sync_account"), moving: try $0.moving()) }
+        XCTAssertEqual(after.account, old)
+        XCTAssertNil(after.moving)
+    }
+
+    /// Telling the old storage is tried again after each pass and given up after a week; the move ends either way.
+    func testTellingTheOldStorageIsTriedAgainThenGivenUpAfterAWeek() async throws {
+        let drives = ["google-a": FakeDrive()], a = try await Device(cloud: cloud)
+        a.useDrive(drives)
+        a.failing = Failing(root: cloud)
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        a.failing?.fails = true
+        try await move(a, to: "drive", expect: "upload")
+        let trying = try await a.sync("cloudSync:syncNow")
+        XCTAssertEqual(trying["moving"] as? String, "icloud", "tried again after the next pass")
+        try await a.syncStore { store in
+            var moving = try XCTUnwrap(try store.moving())
+            moving.at -= CloudSyncService.tellingFor
+            try store.setMoving(moving)
+        }
+        let done = try await a.sync("cloudSync:syncNow")
+        XCTAssertNil(done["moving"])
+        let lines = await a.logLines()
+        XCTAssertTrue(lines.contains("sync.move channel=icloud code=gave-up"), "\(lines)")
+        let me = try await a.syncStore { try $0.deviceID() }
+        XCTAssertNil(try iCloudFile("devices/\(me).json")["moved_to"])
     }
 
     /// A profile joined to iCloud before Drive existed kept the account under the old key; moving it

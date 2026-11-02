@@ -99,6 +99,46 @@ final class SyncFormatTests: XCTestCase {
         XCTAssertNil(merged(#"{"format":2}"#, #"{"name":"Mac"}"#).initialUpload)
     }
 
+    /// Spec v2.7: a device that moved its sync to the other storage says so in its file in the old root, as
+    /// "icloud" or "drive". Anything but a known storage and a whole t is no move, and the file still reads. The
+    /// offer is the latest other device's move to the storage this root is not on; an account hint goes along
+    /// when it is an address: one @ with text on both sides, no space or control character, any length.
+    func testADeviceFileSaysWhereItsSyncMoved() throws {
+        let deviceC = "cccccccc-0000-4000-8000-000000000003"
+        func read(_ devices: [(id: String, json: String)]) -> (state: SyncMerge.State, errors: [String]) {
+            let root = SyncFormat.readRoot([("bandal.json", Data(#"{"format":2}"#.utf8))] + devices.map { ("devices/\($0.id).json", Data($0.json.utf8)) })
+            return (SyncMerge.merge(root.files), root.errors)
+        }
+        let moved = read([(deviceA, #"{"name":"Mac","last_seen":5,"moved_to":{"provider":"drive","t":7,"account_hint":"a@example.com"}}"#)]).state
+        XCTAssertEqual(moved.movedTo[deviceA], .init(kind: "drive", t: 7, account: "a@example.com"))
+        XCTAssertEqual(moved.moved(besides: deviceB, from: "icloud")?.device, "Mac")
+        XCTAssertEqual(moved.moved(besides: deviceB, from: "icloud")?.to, .init(kind: "drive", t: 7, account: "a@example.com"))
+        XCTAssertNil(moved.moved(besides: deviceA, from: "icloud"), "this device's own")
+        XCTAssertNil(moved.moved(besides: deviceB, from: "drive"), "a move to where this root already is")
+        for bad in [#""drive""#, #"{"provider":"gdrive","t":7}"#, #"{"provider":"Drive","t":7}"#, #"{"provider":"drive","t":7.5}"#, #"{"provider":"drive"}"#, #"{"t":7}"#] {
+            let file = read([(deviceA, #"{"name":"Mac","moved_to":\#(bad)}"#)])
+            XCTAssertTrue(file.errors.isEmpty, bad)
+            XCTAssertNil(file.state.movedTo[deviceA], bad)
+            XCTAssertEqual(file.state.devices[deviceA], "Mac", bad)
+        }
+        for hint in [#"7"#, #""""#, #""student""#, #""a@b@c""#, #""@example.com""#, #""student@""#, #""student @example.com""#,
+                     #""a\tb@c""#, #""a\u007fb@c""#, #""a\u0085b@c""#] {
+            let file = read([(deviceA, #"{"name":"Mac","moved_to":{"provider":"drive","t":7,"account_hint":\#(hint)}}"#)])
+            XCTAssertTrue(file.errors.isEmpty, hint)
+            XCTAssertEqual(file.state.movedTo[deviceA], .init(kind: "drive", t: 7), hint)
+        }
+        // Only U+0020 and control characters are out: other spaces and format characters stay, an @ keeps a mark after it, and any length goes.
+        for hint in [#""a\u00a0b@c""#, #""a\u200bb@c""#, #""a@\u0301c""#, "\"\(String(repeating: "a", count: 400))@example.com\""] {
+            let file = read([(deviceA, #"{"name":"Mac","moved_to":{"provider":"drive","t":7,"account_hint":\#(hint)}}"#)])
+            XCTAssertNotNil(file.state.movedTo[deviceA]?.account, hint)
+        }
+        let two = read([(deviceA, #"{"name":"Mac","moved_to":{"provider":"drive","t":7}}"#), (deviceC, #"{"name":" ","moved_to":{"provider":"drive","t":9}}"#)]).state
+        XCTAssertEqual(two.moved(besides: deviceB, from: "icloud")?.device, String(deviceC.prefix(8)), "the latest move, by its id while it has no name")
+        let written = try SyncOutbox.deviceFile(name: "iPad", lastSeen: 9, movedTo: .init(kind: "drive", t: 9, account: "b@example.com"))
+        XCTAssertEqual(read([(deviceB, String(decoding: written, as: UTF8.self))]).state.movedTo[deviceB], .init(kind: "drive", t: 9, account: "b@example.com"))
+        XCTAssertFalse(String(decoding: try SyncOutbox.deviceFile(name: "iPad", lastSeen: 9), as: UTF8.self).contains("moved_to"))
+    }
+
     func testOneBadEventIsDroppedAlone() throws {
         let file = try log(deviceA, seq: 1, [
             ["t": t0, "op": "course.upsert", "id": course, "fields": ["name": "물리", "sort": 0]],

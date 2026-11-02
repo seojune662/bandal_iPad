@@ -32,6 +32,9 @@ final class SyncOutbox {
     private let library: NativeLibraryRepository
     private var context: NativeRepositoryContext { store.context }
     var now: () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1000).rounded(.down)) }
+    /// A move's first upload into an empty root (spec v2.7) is stamped from the old root's clock + 1, not from
+    /// now, so what other devices changed there meanwhile wins over it once they follow.
+    var asOf: Int64?
     var deviceName = "iPad"
     /// A session file is replaced by a new one once its gzip passes this size (spec: 1 MB).
     var maxFile = 1 << 20
@@ -73,7 +76,16 @@ final class SyncOutbox {
     }
 
     /// `devices/<id>.json`: the name, and when this device wrote it (ms).
-    static func deviceFile(name: String, lastSeen: Int64) throws -> Data { try json(["name": name, "last_seen": lastSeen]) }
+    /// A device that left this root says where it went (spec v2.7 `moved_to`).
+    static func deviceFile(name: String, lastSeen: Int64, movedTo: SyncFormat.MovedTo? = nil) throws -> Data {
+        var file: [String: Any] = ["name": name, "last_seen": lastSeen]
+        if let movedTo {
+            var moved: [String: Any] = ["provider": movedTo.kind, "t": movedTo.t]
+            if let account = movedTo.account { moved["account_hint"] = account }
+            file["moved_to"] = moved
+        }
+        return try json(file)
+    }
 
     /// Run `prepare`, the writes and `commit` with no `SyncApply` in between: the registers
     /// stored here are the ones computed in `prepare`.
@@ -375,7 +387,7 @@ final class SyncOutbox {
             var stamps: [(Object, Int)] = []
             for object in objects {
                 var value = object.value
-                value["t"] = try store.stamp(now: now())
+                value["t"] = try store.stamp(now: asOf ?? now())
                 // A newer version replaces the one this session already wrote, at the same position.
                 let index = items.firstIndex { $0["id"] as? String == object.id } ?? items.count
                 if index == items.count { items.append(value) } else { items[index] = value }
@@ -405,7 +417,7 @@ final class SyncOutbox {
         let file = try session("log", &draft) { "log/\(me)/\(name($0)).json" }
         var items = try file.content.map { try C.jsonObject($0) as? [[String: Any]] ?? [] } ?? []
         for event in draft.events {
-            let stamp = Stamp(t: try store.stamp(now: now()), device: me, seq: file.seq, index: items.count)
+            let stamp = Stamp(t: try store.stamp(now: asOf ?? now()), device: me, seq: file.seq, index: items.count)
             var item: [String: Any] = ["t": stamp.t, "op": event.op, "id": event.id]
             if let fields = event.fields { item["fields"] = fields }
             items.append(item)

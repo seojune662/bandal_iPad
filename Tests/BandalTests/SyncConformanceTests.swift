@@ -10,7 +10,7 @@ final class SyncConformanceTests: XCTestCase {
     private static let names = ["01-basic", "02-same-id-both-edited", "03-delete-then-edit", "04-note-both-edited", "05-note-attachments",
                                 "06-path-collision", "07-out-of-range-coordinates", "08-format-not-2", "09-invalid-input", "10-same-stamp", "11-note-revert", "12-pdf-append",
                                 "13-course-delete", "14-append-chain", "15-initial-upload", "16-initial-upload-no-device", "17-initial-upload-not-a-mark",
-                                "18-initial-upload-bad-started"]
+                                "18-initial-upload-bad-started", "19-moved-to"]
 
     func testEveryFixtureFolderIsChecked() throws {
         let folders = try FileManager.default.contentsOfDirectory(atPath: Self.fixtures.path)
@@ -23,7 +23,7 @@ final class SyncConformanceTests: XCTestCase {
             let root = try Self.readRoot(name)
             var expected = try XCTUnwrap(SyncJSON.parse(Data(contentsOf: Self.fixtures.appendingPathComponent("\(name)/expected.json")), maxDepth: .max) as? [String: Any])
             XCTAssertEqual(expected.removeValue(forKey: "fixture") as? String, name)
-            XCTAssertEqual(expected.removeValue(forKey: "spec") as? String, "2.6")
+            XCTAssertEqual(expected.removeValue(forKey: "spec") as? String, "2.7")
             var actual = Self.project(SyncMerge.merge(root.files))
             actual["ignored"] = root.ignored; actual["errors"] = root.errors
             Self.assertJSONEqual(actual, expected, name)
@@ -129,6 +129,7 @@ final class SyncConformanceTests: XCTestCase {
             "blocked": nullable(state.blocked?.rawValue),
             "initial_upload": state.initialUpload.map { ["device": $0, "started": state.started.map { $0 as Any } ?? NSNull(),
                                                           "last_seen": state.lastSeen[$0].map { $0 as Any } ?? NSNull()] } ?? NSNull(),
+            "moved_to": state.movedTo.mapValues { ["provider": $0.kind, "t": $0.t, "account_hint": nullable($0.account)] },
             "courses": state.courses.mapValues { pick($0, ["name", "sort", "color", "archived"]) },
             "docs": Dictionary(uniqueKeysWithValues: state.docs.map { id, entity in
                 var doc = pick(entity, ["course_id", "type", "name", "rel_path", "pdf_sha256", "pdf_prev_sha256", "md_hash"])

@@ -1,0 +1,39 @@
+{
+  "fixture": "19-moved-to",
+  "spec": "2.7",
+  "blocked": null,
+  "initial_upload": null,
+  "moved_to": {
+    "aaaaaaaa-0000-4000-8000-000000000001": {
+      "provider": "drive",
+      "t": 1793319000000,
+      "account_hint": "student@example.com"
+    },
+    "ffffffff-0000-4000-8000-000000000006": {
+      "provider": "drive",
+      "t": 1793318950000,
+      "account_hint": null
+    }
+  },
+  "courses": {
+    "c0000000-0000-4000-8000-000000000001": {
+      "name": "선형대수학",
+      "sort": 0,
+      "color": "blue",
+      "archived": false,
+      "alive": true
+    }
+  },
+  "docs": {},
+  "ink": {},
+  "notes": {},
+  "conflict_copies": [],
+  "renames": [],
+  "waiting": {
+    "docs": [],
+    "ink": [],
+    "copies": []
+  },
+  "ignored": [],
+  "errors": []
+}

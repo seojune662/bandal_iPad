@@ -81,7 +81,20 @@ final class SyncStore {
         if t > (try clock()) { try set("clock", String(t)) }
     }
 
-    private func clock() throws -> Int64 { Int64(try value("clock") ?? "0") ?? 0 }
+    /// The largest t seen, own or remote.
+    func clock() throws -> Int64 { Int64(try value("clock") ?? "0") ?? 0 }
+
+    /// A move whose last step is still to come (spec v2.7): the storage this profile left and the account of
+    /// that root, when, that root's clock then, and whether the base still describes it (the new root's first
+    /// pass rebases it).
+    struct Moving: Codable, Equatable { var provider: String, account: String, at: Int64, clock: Int64, rebase: Bool }
+
+    func moving() throws -> Moving? { try value("moving").flatMap { try? JSONDecoder().decode(Moving.self, from: Data($0.utf8)) } }
+
+    func setMoving(_ moving: Moving?) throws {
+        guard let moving else { try context.run("DELETE FROM cloud_sync_state WHERE key='moving'"); return }
+        try set("moving", String(decoding: try JSONEncoder().encode(moving), as: UTF8.self))
+    }
 
     func value(_ key: String) throws -> String? {
         try context.query("SELECT value FROM cloud_sync_state WHERE key=?", [key]).first?["value"] as? String

@@ -311,6 +311,7 @@
 		A0FF3AFEDA7BC2E0B9F95256 /* NativePlannerRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF03A043846CF14752ADDB44 /* NativePlannerRepository.swift */; };
 		A1050B7CEDA1B68423AFB22A /* NativePDFPageInsertionWriterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B7DB2F52A98A3471780086 /* NativePDFPageInsertionWriterTests.swift */; };
 		A105595C424E0791564D2C74 /* BrowserMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EDF6DE3C6340E8C1FF066D0 /* BrowserMemory.swift */; };
+		A13575A70F4845070D51FF6C /* NativeSyncMoveNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F72C445B1CB1C5E4042F020 /* NativeSyncMoveNotice.swift */; };
 		A14DC3F8E050E9543F6D1494 /* NativeLibraryRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A5871048C4DF2DF1509F29 /* NativeLibraryRepository.swift */; };
 		A17DD264FFBD985F486ED82C /* SyncMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 301C335A495896E3EFD26CA2 /* SyncMerge.swift */; };
 		A1B0F22C483F74C3252FC94D /* DriveProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FAEFD5D61971595113C995A /* DriveProvider.swift */; };
@@ -697,6 +698,7 @@
 		4E63C51D42871150CA4F40E2 /* NativeSettingsShortcutsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsShortcutsPanel.swift; sourceTree = "<group>"; };
 		4EFFF0BF44F2EAA641740B2A /* NativePDFScenePatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFScenePatch.swift; sourceTree = "<group>"; };
 		4F5B67BC4D869BCADCF59B33 /* NativePDFMetalInkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFMetalInkTests.swift; sourceTree = "<group>"; };
+		4F72C445B1CB1C5E4042F020 /* NativeSyncMoveNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSyncMoveNotice.swift; sourceTree = "<group>"; };
 		50EB72A95EAC0A4BD5817EEC /* Brand */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Brand; path = App/Resources/Brand; sourceTree = SOURCE_ROOT; };
 		5108F4A57BBEA966A104826E /* DesktopAccountService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAccountService.swift; sourceTree = "<group>"; };
 		5218D677343B78F6B192AB7F /* LearningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningTests.swift; sourceTree = "<group>"; };
@@ -1293,6 +1295,7 @@
 				A2C597F89A5F760E10E63ED0 /* NativeSidebarShortcuts.swift */,
 				939C1B5D60FC505EC49C4303 /* NativeStudyMarketClient.swift */,
 				9284F1F34BE103B0F49A6BE8 /* NativeStudyService.swift */,
+				4F72C445B1CB1C5E4042F020 /* NativeSyncMoveNotice.swift */,
 				96BEB8A5596262DC54D6403E /* NativeThumbnailWork.swift */,
 				A8799BCF8F942661EB357289 /* NativeToolChrome.swift */,
 				20DDB22D8ED5697E767FB3BD /* NativeToolSelection.swift */,
@@ -2345,6 +2348,7 @@
 				468AC35DD9A62A0CFD12DC3D /* NativeSyncInkGeometry.swift in Sources */,
 				81353D9C2B22A6DB368B88ED /* NativeSyncJournal.swift in Sources */,
 				492E9FC3C8FC477101DC1CF8 /* NativeSyncMaterials.swift in Sources */,
+				A13575A70F4845070D51FF6C /* NativeSyncMoveNotice.swift in Sources */,
 				1E36AB11726BA7718E320680 /* NativeSyncRepository.swift in Sources */,
 				0FF5DEECDA6A8EF8D424F3B6 /* NativeThumbnailWork.swift in Sources */,
 				4C9802F6AD1AFE17B3C1ABE3 /* NativeToolChrome.swift in Sources */,
