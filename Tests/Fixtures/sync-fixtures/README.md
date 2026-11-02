@@ -1,6 +1,6 @@
 # sync-fixtures
 
-반달 동기화 공통 스펙의 적합성 예제다. 스펙 본문은 [SPEC.md](SPEC.md)(v2.5)에 있다.
+반달 동기화 공통 스펙의 적합성 예제다. 스펙 본문은 [SPEC.md](SPEC.md)(v2.6)에 있다.
 
 - 각 폴더의 `root/`는 클라우드 루트를 그대로 옮긴 것이다.
 - `expected.json`은 `root/` 전체를 파싱·머지한 뒤의 상태다. 데스크톱과 iPad 파서는 같은 결과를 내야 한다.
@@ -19,17 +19,20 @@
 | `06-path-collision` | 경로 충돌. `1주차.pdf`, `1주차.PDF`, NFD로 쓴 `1주차.pdf`는 한 이름이다. `Lecture/Notes.md`와 `lecture/notes.md`도 한 이름이다. 삭제된 문서는 id가 가장 작아도 빠진다. `renames`가 결과다. 충돌 사본도 넣는다: 살아 있는 문서와 이름이 겹친 사본은 id 앞 4자를 붙이고, 겹친 사본끼리는 id가 작은 쪽이 이름을 쓴다. 그리스 문자 `ΟΔΥΣΣΕΥΣ 1.pdf`, `οδυσσευσ 1.pdf`, 끝 시그마로 쓴 `οδυσσευς 1.pdf`는 코드 포인트마다 `lower(upper(c))`로 바꾸면 모두 `οδυσσευσ 1.pdf`라 한 이름이다(v2.3). 문자열 전체를 JS `toLowerCase()`로 바꾸면 앞의 둘이 갈린다 |
 | `07-out-of-range-coordinates` | 페이지를 조금 벗어난 좌표(-0.0012, 1.0034, 페이지 밖으로 나간 상자)를 거부하지 않고 쓴 그대로 둔다. 클램프는 각 앱이 저장할 때 한다 |
 | `08-format-not-2` | `bandal.json`의 format이 3이면 아무것도 읽지 않는다. 깨진 log가 있어도 `errors`는 비어 있다 |
-| `09-invalid-input` | 잘못된 입력과 파서 경계. 읽을 수 없는 파일은 `errors`다: JSON·gzip 오류, 배열 아님, `1e999`, 해시 불일치, BOM, 잘못된 UTF-8, 짝 없는 서로게이트, 깊이 65, gzip 뒤 쓰레기 바이트. 값이 틀린 이벤트와 개체(경로 탈출, `/`가 든 이름, 대문자 id, 2100년 이후 t, page 0, 잘못된 asset 참조, `del: false`)는 그것만 버리고, 같은 파일의 올바른 이벤트는 반영한다. 깊이 64, 중복 키(마지막 값), gzip 멤버 여러 개, gzip 뒤 0 바이트는 받는다 |
+| `09-invalid-input` | 잘못된 입력과 파서 경계. 읽을 수 없는 파일은 `errors`다: JSON·gzip 오류, 배열 아님, `1e999`, 해시 불일치, BOM, 잘못된 UTF-8, 짝 없는 서로게이트, 깊이 65, gzip 뒤 쓰레기 바이트. `bandal.json`의 대문자 `initial_upload`는 표시가 아니다(v2.6, 파일 오류도 아니다). 값이 틀린 이벤트와 개체(경로 탈출, `/`가 든 이름, 대문자 id, 2100년 이후 t, page 0, 잘못된 asset 참조, `del: false`)는 그것만 버리고, 같은 파일의 올바른 이벤트는 반영한다. 깊이 64, 중복 키(마지막 값), gzip 멤버 여러 개, gzip 뒤 0 바이트는 받는다 |
 | `10-same-stamp` | `(t, device_id)`까지 같은 경우. seq가 큰 파일이 이기고, 같은 파일이면 뒤에 있는 것이 이긴다. device_id 비교가 seq보다 먼저다 |
 | `11-note-revert` | head 규칙. A가 H1을 H0으로 되돌리는 동안 B가 H1에서 H2를 만들고 더 늦으면, 본문은 H2이고 A의 되돌리기(H0)는 충돌 사본으로 남는다. 오프라인 C가 원래 H0에서 H3을 만들었고 A의 되돌리기보다 늦으면, H3 하나만 남고 사본은 없다 |
 | `12-pdf-append` | `pdf_prev_sha256`(D6). 결과의 값은 늘 이긴 `pdf_sha256`과 같은 이벤트의 것이다. 문서 1은 한 번 덧붙였다(H0→H1, 만든 이벤트에는 v2.3 전 형식이라 키가 없다). 문서 2는 덧붙인 뒤 다른 기기가 키 없이 파일을 바꿨으므로 null이다. 문서 3은 두 번 덧붙여 마지막 덧붙이기의 직전 값(H1)이다. 문서 4는 `pdf_sha256` 없이 온 값이라 무시한다. 문서 5는 대문자 hex라 그 이벤트를 버린다 |
 | `13-course-delete` | 삭제된 과목(v2.4). "삭제된 과목"을 지울 때 문서 1에는 tombstone을 쓰고, 문서 2(v2.4 전 형식)에는 쓰지 않았다. 문서 3은 다른 기기가 삭제 뒤에 오프라인으로 더했다. 셋 다 삭제이고, 같은 이름인 2와 3은 이름 바꾸기가 없다. 그 과목의 노트(문서 7)는 head가 둘이어도 충돌 사본이 없다. "되살린 과목"은 지운 뒤 되살렸다. 다시 쓴 문서 4는 살아 있고, tombstone만 남은 문서 5는 삭제이고, tombstone이 없는 문서 6은 다시 살아난다 |
 | `14-append-chain` | 덧붙이기 연결(v2.4). `pdf_rebind_from`이 결과다. 세 번 이어 덧붙인 문서 1은 H0·H1·H2에서 다시 묶인다. 같은 H0에서 동시에 덧붙인 문서 2는 이긴 H1b에 H0만 이어진다(진 H1은 아니다). 덧붙인 뒤 교체(null)하고 다시 덧붙인 문서 3은 H5만이다. 문서 4는 거꾸로 가는 위조 연결이 순환을 만들어도 이긴 sha256을 넣지 않는다. 덧붙이기가 없는 문서 5는 빈 배열이다 |
+| `15-initial-upload` | 첫 업로드 중인 루트(v2.6). iPad가 `bandal.json`에 표시를 쓰고 기기 파일을 쓴 뒤 PDF와 필기 하나를 올린 순간이다. log가 아직 없어 과목과 문서는 없고, 필기는 문서가 올 때까지 `waiting.ink`에 있다. 표시는 머지를 막지 않는다. `initial_upload`는 표시한 기기와 그 기기 파일의 `last_seen`이다 |
+| `16-initial-upload-no-device` | 표시는 있는데 그 기기(`cccccccc-…0003`)의 기기 파일이 없다(v2.6). `last_seen`이 null이라 연결하려는 기기는 중단으로 본다 |
+| `17-initial-upload-not-a-mark` | `initial_upload`가 숫자다(v2.6). 표시가 아니고 파일 오류도 아니다. `bandal.json`은 그대로 읽혀 `blocked`와 `errors`가 비어 있다 |
 | `render/v5-diameter.json` | inkVersion 5의 점별 지름 계수. 두 렌더러의 굵기가 같은지 본다. 계수는 데스크톱 `src/shared/inkV5.ts`로 계산했다. 허용오차는 1e-6이다 |
 
 ## 고정 값
 
-- **기기**: `aaaaaaaa-…0001`은 "MacBook Air"(데스크톱), `bbbbbbbb-…0002`는 "iPad Pro"다. 사전순으로는 iPad가 더 크다. `cccccccc-…0003`은 기기 파일이 아직 없는 기기다(05).
+- **기기**: `aaaaaaaa-…0001`은 "MacBook Air"(데스크톱), `bbbbbbbb-…0002`는 "iPad Pro"다. 사전순으로는 iPad가 더 크다. `cccccccc-…0003`은 기기 파일이 아직 없는 기기다(05, 16).
 - **파일 이름**: 대소문자만 다른 두 경로를 두지 않는다. APFS와 NTFS는 둘을 같은 파일로 본다.
 - **시각**: `t`는 ms epoch이고, 기준은 `T0 = 1793318400000`(2026-10-30T00:00:00Z)이다.
 - **충돌 사본 id**: `uuidv5(namespace = 9b1f6a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b, name = "<document_id>:<진 쪽 md_hash>")`
@@ -43,8 +46,9 @@
 
 ```text
 fixture           폴더 이름
-spec              "2.4"   예제 내용이 마지막으로 바뀐 스펙. v2.5는 Drive 루트 찾기만 바꿔 예제가 그대로다
+spec              "2.6"   예제 내용이 마지막으로 바뀐 스펙
 blocked           null | "missing-root" | "update-required" | "unsupported-format"   format 검사 결과. null이 아니면 나머지는 모두 비어 있다
+initial_upload    null | {device, last_seen}   첫 업로드 표시(v2.6). device는 표시한 기기, last_seen은 그 기기 파일의 값(파일이 없으면 null)
 courses           {id: {name, sort, color, archived, alive}}
 docs              {id: {course_id, type, name, rel_path, pdf_sha256 + pdf_prev_sha256 + pdf_rebind_from | md_hash, alive}}
 ink               {document_id: {page: {object_id: 이긴 버전의 개체 전체}}}
@@ -60,6 +64,7 @@ errors            [root 기준 경로]  파싱하지 못한 파일, 사전순
 - v2.2에서 `blocked`, `renames`, `waiting`을 더했다. 01–04의 `root/`는 그대로이고 `expected.json`에 빈 값으로 들어 있다.
 - v2.3에서 pdf 문서에 `pdf_prev_sha256`을 더했다. `pdf_sha256`이 있는 문서에만 있고, 값은 그 `pdf_sha256`을 쓴 이벤트의 것(없으면 null)이다.
 - v2.4에서 `pdf_rebind_from`을 더했다. 덧붙이기 연결을 따라 이긴 `pdf_sha256`에 닿는 sha256들이고, 이긴 것 자체는 빼며 사전순이다. `alive`는 문서와 그 과목이 모두 살아 있을 때만 true다.
+- v2.6에서 `initial_upload`를 더했다. 다른 예제에는 null로 들어 있다. 연결하려는 기기는 이 값과 지금 시각으로 기다릴지(1시간 안), 중단으로 볼지 정한다.
 - 필기 개체는 해시가 아니라 개체 전체를 담는다. 두 플랫폼 사이에 정규 JSON(숫자 표기) 규칙을 맞추지 않아도 되도록 JSON 값으로 비교한다.
 
 ## 보는 방법

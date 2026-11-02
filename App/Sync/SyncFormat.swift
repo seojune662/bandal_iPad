@@ -23,8 +23,11 @@ enum SyncFormat {
     struct InkObject { let id: String; let page: Int; let t: Int64; let index: Int; let value: [String: Any] }
 
     enum Content {
-        case root(format: Int)
-        case device(id: String, name: String)
+        /// `initialUpload`: the device whose first upload into the root is not done yet (spec v2.6),
+        /// and `started` when it began (ms).
+        case root(format: Int, initialUpload: String?, started: Int64?)
+        /// `lastSeen`: ms, when the device last wrote this file.
+        case device(id: String, name: String, lastSeen: Int64?)
         /// `dropped` counts entries that failed validation and were left out.
         case log(author: String, seq: Int, events: [Event], dropped: Int)
         case ink(author: String, seq: Int, doc: String, objects: [InkObject], dropped: Int)
@@ -50,7 +53,7 @@ enum SyncFormat {
         do { root = try rootIndex.flatMap { try parse(path: files[$0].path, bytes: files[$0].bytes) } } catch {
             return Root(files: [], ignored: [], errors: ["bandal.json"], pending: [])
         }
-        guard let root, case .root(Self.version) = root.content else {
+        guard let root, case .root(Self.version, _, _) = root.content else {
             let waiting = files.contains { placeholderTarget($0.path) == "bandal.json" }
             return Root(files: root.map { [$0] } ?? [], ignored: [], errors: [], pending: waiting ? ["bandal.json"] : [])
         }
@@ -82,10 +85,10 @@ enum SyncFormat {
         switch match {
         case .root:
             guard let root = try json(bytes, limit: mib) as? [String: Any], let format = safeInteger(root["format"]) else { throw Unreadable(reason: "bandal.json format") }
-            return File(path: path, content: .root(format: format))
+            return File(path: path, content: .root(format: format, initialUpload: uuid(root["initial_upload"]), started: stamp(root["started"])))
         case .device(let id):
             guard let device = try json(bytes, limit: mib) as? [String: Any], let name = device["name"] as? String else { throw Unreadable(reason: "device name") }
-            return File(path: path, content: .device(id: id, name: name))
+            return File(path: path, content: .device(id: id, name: name, lastSeen: stamp(device["last_seen"])))
         case .log(let author, let seq):
             let (events, dropped) = try items(json(bytes, limit: 4 * mib), event)
             return File(path: path, content: .log(author: author, seq: seq, events: events, dropped: dropped))

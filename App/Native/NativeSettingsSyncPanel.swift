@@ -21,6 +21,8 @@ struct NativeSettingsSyncPanel: View {
     private var reason: String? { phase == "paused" ? status["reason"] as? String : nil }
     /// The provider being shown: the one on, or the one a preview is for.
     private var shown: String { preview?["provider"] as? String ?? provider }
+    /// The provider whose root another device is still filling (spec v2.6).
+    private var waitingFor: String? { (preview?["initialUpload"] as? [String: Any])?["going"] as? Bool == true ? shown : nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -42,6 +44,9 @@ struct NativeSettingsSyncPanel: View {
                     Text("\(CloudSyncService.name(shown))에서 반달 폴더를 내려받는 중이에요(\(count)개). 잠시 뒤 다시 켜 주세요.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
                 }
                 if preview?["blocked"] != nil { Text("새 버전의 반달이 만든 폴더예요. 앱을 업데이트한 뒤 켜 주세요.").font(.caption).foregroundStyle(.orange) }
+                if let uploading = preview?["initialUpload"] as? [String: Any], waitingFor != nil {
+                    Text("‘\(uploading["device"] as? String ?? "")’에서 \(CloudSyncService.name(shown))에 처음 올리는 중이에요. 30초마다 다시 확인해요.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
+                }
             }
             NativeSettingsCard(title: "이 기기 이름", description: "충돌 사본 이름에 쓰입니다.") {
                 HStack {
@@ -63,6 +68,14 @@ struct NativeSettingsSyncPanel: View {
         }
         .disabled(busy)
         .task { await load() }
+        .task(id: waitingFor) {
+            // Another device's first upload is looked at again every 30 s (spec v2.6); the sheet opens once it is done or stopped.
+            while let kind = waitingFor {
+                try? await Task.sleep(for: .seconds(30))
+                if Task.isCancelled { return }
+                turnOn(kind)
+            }
+        }
         .onReceive(store.events) { event in
             guard event.channel == "runtime:cloudSyncChanged", let value = event.payload as? [String: Any] else { return }
             status = status.filter { ["provider", "deviceName", "previousProfile", "lastSuccessAt", "driveEmail"].contains($0.key) }.merging(value) { $1 }
@@ -114,7 +127,7 @@ struct NativeSettingsSyncPanel: View {
     private var phaseText: String {
         switch phase {
         case "idle": return "최신 상태" + (relative.map { " · \($0)에 동기화" } ?? "")
-        case "syncing": return "동기화 중" + ((status["remaining"] as? Int).map { " (\($0)개 남음)" } ?? "")
+        case "syncing": return (status["initial"] as? Bool == true ? "처음 올리는 중" : "동기화 중") + ((status["remaining"] as? Int).map { " (\($0)개 남음)" } ?? "")
         case "downloading": return "내려받는 중" + ((status["remaining"] as? Int).map { " (\($0)개)" } ?? "")
         case "waiting": return "열린 문서를 저장한 뒤 이어서 맞춥니다"
         case "paused":
@@ -195,6 +208,8 @@ struct NativeSyncConnectSheet: View {
 
     private var pairs: [[String: Any]] { preview["sameName"] as? [[String: Any]] ?? [] }
     private var place: String { CloudSyncService.name(preview["provider"] as? String ?? "icloud") }
+    /// Another device's first upload stopped partway (spec v2.6): what is there is not all of it.
+    private var unfinished: String? { (preview["initialUpload"] as? [String: Any])?["device"] as? String }
 
     var body: some View {
         NavigationStack {
@@ -202,7 +217,9 @@ struct NativeSyncConnectSheet: View {
                 Section {
                     LabeledContent("클라우드", value: Self.summary(preview["cloud"]))
                     LabeledContent("이 iPad", value: Self.summary(preview["local"]))
-                } header: { Text("클라우드에 반달 자료가 있습니다") }
+                } header: { Text("클라우드에 반달 자료가 있습니다") } footer: {
+                    if let unfinished { Text("‘\(unfinished)’에서 처음 올리다 멈춘 폴더라 자료가 다 올라오지 않았을 수 있어요. 합치기나 가져오기만 할 수 있어요.") }
+                }
                 if !pairs.isEmpty {
                     Section("이름이 같은 과목 \(pairs.count)개") {
                         ForEach(pairs.indices, id: \.self) { index in
@@ -216,7 +233,9 @@ struct NativeSyncConnectSheet: View {
                 Section {
                     Picker("방법", selection: $mode) {
                         Text("합치기 — 두 쪽 자료를 모두 유지합니다 (권장)").tag("merge")
-                        Text("이 iPad 자료로 덮어쓰기 — 클라우드에만 있는 과목 \(deletes.courses)개, 자료 \(deletes.documents)개, 필기 \(deletes.ink)개가 다른 기기에서도 삭제됩니다").tag("overwrite")
+                        if unfinished == nil {
+                            Text("이 iPad 자료로 덮어쓰기 — 클라우드에만 있는 과목 \(deletes.courses)개, 자료 \(deletes.documents)개, 필기 \(deletes.ink)개가 다른 기기에서도 삭제됩니다").tag("overwrite")
+                        }
                         Text("클라우드 자료 가져오기 — 이 iPad 자료는 따로 보관하고 클라우드 자료로 시작합니다").tag("import")
                     }.pickerStyle(.inline).labelsHidden()
                 }

@@ -67,6 +67,38 @@ final class SyncFormatTests: XCTestCase {
         XCTAssertEqual(SyncMerge.merge(missing.files).blocked, .missingRoot)
     }
 
+    /// Spec v2.6: bandal.json names the device whose first upload is not done and when it began, and
+    /// that device's file says when it last wrote. It is waited for while that is within the hour, or,
+    /// with no such file yet, while it began within five minutes; either way round (2026-11-02).
+    func testTheRootNamesAFirstUploadThatIsNotDone() throws {
+        func merged(_ root: String, _ device: String?) -> SyncMerge.State {
+            SyncMerge.merge(SyncFormat.readRoot([("bandal.json", Data(root.utf8))] + (device.map { [("devices/\(deviceA).json", Data($0.utf8))] } ?? [])).files)
+        }
+        func going(_ state: SyncMerge.State, at now: Int64) -> Bool? { state.initialUploader(besides: deviceB, now: now)?.going }
+        let marked = #"{"format":2,"initial_upload":"\#(deviceA)","started":10000000}"#
+        let state = merged(marked, #"{"name":"Mac","last_seen":20000000}"#)
+        XCTAssertNil(state.blocked)
+        XCTAssertEqual(state.initialUpload, deviceA)
+        XCTAssertEqual(state.started, 10_000_000)
+        XCTAssertEqual(state.lastSeen[deviceA], 20_000_000)
+        XCTAssertEqual(going(state, at: 20_000_000 + 3_600_000), true)
+        XCTAssertEqual(going(state, at: 20_000_001 + 3_600_000), false, "an hour of silence")
+        XCTAssertEqual(going(state, at: 20_000_000 - 3_600_000), true)
+        XCTAssertEqual(going(state, at: 19_999_999 - 3_600_000), false, "a clock more than an hour ahead")
+        XCTAssertEqual(state.initialUploader(besides: deviceB, now: 0)?.name, "Mac")
+        XCTAssertNil(state.initialUploader(besides: deviceA, now: 0), "this device's own")
+        for device in [nil, #"{"name":"Mac"}"#] {
+            let early = merged(marked, device)
+            XCTAssertEqual(going(early, at: 10_000_000 + 300_000), true, "begun within five minutes")
+            XCTAssertEqual(going(early, at: 10_000_001 + 300_000), false)
+            XCTAssertEqual(going(early, at: 9_999_999 - 300_000), false)
+        }
+        XCTAssertEqual(merged(marked, nil).initialUploader(besides: deviceB, now: 0)?.name, String(deviceA.prefix(8)))
+        XCTAssertEqual(going(merged(#"{"format":2,"initial_upload":"\#(deviceA)"}"#, nil), at: 0), false, "nothing says when")
+        XCTAssertNil(merged(#"{"format":2,"initial_upload":"Mac"}"#, nil).initialUpload, "not a device id")
+        XCTAssertNil(merged(#"{"format":2}"#, #"{"name":"Mac"}"#).initialUpload)
+    }
+
     func testOneBadEventIsDroppedAlone() throws {
         let file = try log(deviceA, seq: 1, [
             ["t": t0, "op": "course.upsert", "id": course, "fields": ["name": "물리", "sort": 0]],

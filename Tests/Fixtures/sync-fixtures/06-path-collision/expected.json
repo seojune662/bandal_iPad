@@ -1,7 +1,8 @@
 {
   "fixture": "06-path-collision",
-  "spec": "2.4",
+  "spec": "2.6",
   "blocked": null,
+  "initial_upload": null,
   "courses": {
     "c0000000-0000-4000-8000-000000000001": {
       "name": "선형대수학",

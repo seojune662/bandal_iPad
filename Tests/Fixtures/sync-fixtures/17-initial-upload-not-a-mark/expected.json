@@ -1,0 +1,19 @@
+{
+  "fixture": "17-initial-upload-not-a-mark",
+  "spec": "2.6",
+  "blocked": null,
+  "initial_upload": null,
+  "courses": {},
+  "docs": {},
+  "ink": {},
+  "notes": {},
+  "conflict_copies": [],
+  "renames": [],
+  "waiting": {
+    "docs": [],
+    "ink": [],
+    "copies": []
+  },
+  "ignored": [],
+  "errors": []
+}

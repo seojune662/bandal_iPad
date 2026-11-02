@@ -27,6 +27,8 @@ final class CloudSyncService {
     }
     /// A Google account signed in for a connection not made yet; it is kept only once the connection is.
     private var pendingDrive: GoogleDriveAuth.Account?
+    /// The root the last preview or connection read, for the log: its provider and what it held.
+    private var looked: (provider: SyncProvider, root: String?)?
     var environment = Environment()
 
     init(store: NativeWorkspaceStore, profile: DesktopProfileService) {
@@ -37,8 +39,11 @@ final class CloudSyncService {
 
     func handle(_ channel: String, _ request: [String: Any]) async throws -> Any {
         switch channel {
-        case "cloudSync:preview": return try await preview(request["provider"] as? String ?? "icloud")
-        case "cloudSync:connect": try await connect(request)
+        case "cloudSync:preview":
+            let kind = request["provider"] as? String ?? "icloud"
+            do { return try await preview(kind) } catch { await log("preview", (error as? DesktopRuntimeError)?.code ?? "error", kind); throw error }
+        case "cloudSync:connect":
+            do { try await connect(request) } catch { await log("connect", (error as? DesktopRuntimeError)?.code ?? "error", request["provider"] as? String ?? "icloud"); throw error }
         case "cloudSync:disconnect": try await disconnect()
         case "cloudSync:syncNow": try await store?.flushDocuments(); await (provider as? DriveProvider)?.hurry(); await engine?.syncNow()
         case "cloudSync:signInDrive":
@@ -114,14 +119,25 @@ final class CloudSyncService {
     }
 
     private func previewOnce(_ kind: String) async throws -> [String: Any] {
+        looked = nil
         guard let target = try await target(kind, signIn: true) else { return ["available": false, "provider": kind] }
-        let files: [String: SyncRemoteFile], state: SyncMerge.State
-        switch try await peek(target.provider) {
-        case .downloading(let count): return ["available": true, "downloading": count, "provider": kind]
-        case .ready(let listing, let merged): (files, state) = (listing, merged)
+        let peek = try await self.peek(target.provider)
+        // Another device still filling the root is waited for, told from its mark before the rest is
+        // down; once it has stopped, the root can be merged or taken, not overwritten (spec v2.6).
+        let uploader = try await initialUploader(peek.state ?? peek.mark)
+        if let uploader, uploader.going {
+            await log("preview", "uploading", kind)
+            return ["available": true, "initialUpload": ["device": uploader.name, "going": true], "provider": kind]
         }
-        let empty = !files.keys.contains(where: SyncFormat.isSpecFile)
-        if let blocked = state.blocked, !empty { return ["available": true, "blocked": blocked.rawValue, "provider": kind] }
+        guard let state = peek.state else {
+            await log("preview", "downloading", kind)
+            return ["available": true, "downloading": peek.downloading, "provider": kind]
+        }
+        let files = peek.files, empty = !files.keys.contains(where: SyncFormat.isSpecFile)
+        if let blocked = state.blocked, !empty {
+            await log("preview", blocked.rawValue, kind)
+            return ["available": true, "blocked": blocked.rawValue, "provider": kind]
+        }
         var result = try await runtime.withSyncStorage { context, library in
             let store = try SyncStore(context: context)
             // Joining another account's root forgets what was matched with the old one (see connect).
@@ -129,7 +145,15 @@ final class CloudSyncService {
             return try SyncConnection.preview(state, files: files, forgetting: forgetting, context: context, library: library)
         }
         result["available"] = true; result["empty"] = empty; result["provider"] = kind
+        if let uploader { result["initialUpload"] = ["device": uploader.name, "going": false] }
         return result
+    }
+
+    private func initialUploader(_ state: SyncMerge.State?) async throws -> (name: String, going: Bool)? {
+        guard let state, state.initialUpload != nil else { return nil }
+        let keychain = environment.keychain
+        let me = try await runtime.withSyncStorage { context, _ in try SyncStore(context: context, keychain: keychain).deviceID() }
+        return state.initialUploader(besides: me, now: Int64(Date().timeIntervalSince1970 * 1000))
     }
 
     /// `mode`: start (an empty root), merge, overwrite, or import (a new profile takes the cloud's data).
@@ -157,13 +181,19 @@ final class CloudSyncService {
             guard let local = pair["local"] as? String, let remote = pair["remote"] as? String else { return nil }
             return (local, remote)
         }
+        looked = nil
         guard let target = try await target(kind) else {
             throw kind == "drive" ? GoogleDriveAuth.signedOut : DesktopRuntimeError("iCloud에 로그인하고 iCloud Drive를 켜야 합니다.", code: "SYNC_SIGNED_OUT")
         }
-        guard case .ready(let files, let state) = try await peek(target.provider) else {
+        let peek = try await self.peek(target.provider)
+        if let uploader = try await initialUploader(peek.state ?? peek.mark) {
+            if uploader.going { throw DesktopRuntimeError("‘\(uploader.name)’에서 처음 올리는 중이에요. 끝난 뒤 다시 켜 주세요.", code: "SYNC_INITIAL_UPLOAD") }
+            if connection == .overwrite { throw DesktopRuntimeError("처음 올리기가 끝나지 않은 폴더는 덮어쓸 수 없어요. 합치거나 가져와 주세요.", code: "SYNC_INITIAL_UPLOAD") }
+        }
+        guard let state = peek.state else {
             throw DesktopRuntimeError("\(Self.name(kind))에서 반달 폴더를 아직 내려받고 있어요. 잠시 뒤 다시 시도해 주세요.", code: "SYNC_NOT_READY")
         }
-        let empty = !files.keys.contains(where: SyncFormat.isSpecFile)
+        let files = peek.files, empty = !files.keys.contains(where: SyncFormat.isSpecFile)
         if state.blocked != nil, !empty { throw DesktopRuntimeError("이 반달 폴더는 새 버전의 반달이 만들었어요. 앱을 업데이트해 주세요.", code: "SYNC_UPDATE_REQUIRED") }
         // What the user agreed to must still be what is there.
         if connection == .start, !empty { throw DesktopRuntimeError("클라우드에 반달 자료가 생겼어요. 다시 확인해 주세요.", code: "SYNC_ROOT_CHANGED") }
@@ -187,6 +217,8 @@ final class CloudSyncService {
         try keepDriveAccount(target.drive)
         pendingDrive = nil
         if kind == "icloud" { observeIdentity() }
+        // No folder found, so the first write makes one: how two devices end up on two roots (spec v2.6).
+        if let drive = target.provider as? DriveProvider, await drive.lookup().chosen == nil { await log("connect", "new-root-folder", kind) }
         try await run(target.provider)
     }
 
@@ -263,12 +295,23 @@ final class CloudSyncService {
         runtime.onEmit?("runtime:cloudSyncChanged", state)
     }
 
-    private enum Peek { case downloading(Int), ready([String: SyncRemoteFile], SyncMerge.State) }
-
-    private func peek(_ provider: SyncProvider) async throws -> Peek {
+    /// The root as `CloudSyncEngine.peek` reads it, kept for the connection log.
+    private func peek(_ provider: SyncProvider) async throws -> (files: [String: SyncRemoteFile], state: SyncMerge.State?, mark: SyncMerge.State?, downloading: Int) {
+        looked = (provider, nil)
         let peek = try await CloudSyncEngine.peek(provider)
-        guard let state = peek.state else { return .downloading(peek.downloading) }
-        return .ready(peek.files, state)
+        let device = (peek.state ?? peek.mark)?.initialUpload ?? "-"
+        looked = (provider, "entries:\(peek.files.count):bandal_json:\(peek.files["bandal.json"] == nil ? 0 : 1):initial_upload:\(device)")
+        return peek
+    }
+
+    /// The connection log (spec v2.6): a preview or connection that waits or fails, or makes a new Drive
+    /// folder, with the root it read and, on Drive, each folder it looked at as
+    /// `id:createdTime:mark|name:bandal.json 1|0:chosen 1|0:name`. Two devices on two roots show in it.
+    private func log(_ step: String, _ outcome: String, _ kind: String) async {
+        runtime.log.record("sync.\(step)", channel: kind, code: outcome)
+        guard let looked else { return }
+        if let root = looked.root { runtime.log.record("sync.\(step).root", channel: kind, code: root) }
+        for folder in await (looked.provider as? DriveProvider)?.lookup().folders ?? [] { runtime.log.record("sync.\(step).folder", channel: kind, code: folder) }
     }
 
     private func locate() async -> (URL?, String) {

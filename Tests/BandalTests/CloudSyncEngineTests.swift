@@ -11,6 +11,16 @@ final class CloudSyncEngineTests: XCTestCase {
     /// as iCloud reports them.
     private final class Downloading: FolderProvider, @unchecked Sendable {
         var pending = Set<String>(), unlisted: (String) -> Bool = { _ in false }
+        /// Paths written, in order; once `cutAfter` went through, writes fail as an upload cut off does.
+        var written: [String] = [], cutAfter: Int?
+        /// Runs after each write, as another device writing meanwhile.
+        var afterWrite: (String) throws -> Void = { _ in }
+        override func write(_ content: SyncOutbox.Content, to path: String) async throws {
+            if let cutAfter, written.count >= cutAfter { throw DesktopRuntimeError("upload cut off", code: "IO") }
+            try await super.write(content, to: path)
+            written.append(path)
+            try afterWrite(path)
+        }
         override func list() async throws -> [String: SyncRemoteFile] {
             try await super.list().reduce(into: [:]) { files, file in
                 guard !unlisted(file.key) else { return }
@@ -259,6 +269,57 @@ final class CloudSyncEngineTests: XCTestCase {
         XCTAssertEqual(a.engine.status["phase"] as? String, "paused")
         XCTAssertEqual(a.engine.status["reason"] as? String, "update-required")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cloud.path), ["bandal.json"])
+    }
+
+    /// Spec v2.6: a first upload marks bandal.json with its device and start first and unmarks it last.
+    /// One cut off goes on at the next run instead of pausing on its own root. A device already connected
+    /// syncs meanwhile: the mark holds back only a device connecting.
+    func testAFirstUploadCutOffGoesOnWhileAConnectedDeviceSyncs() async throws {
+        let a = try await Device(cloud: cloud), b = try await Device(cloud: cloud)
+        let course = (try await a.invoke("courses:create", ["name": "물리", "color": "blue"]) as! [String: Any])["id"] as! String
+        let paper = (try await a.invoke("pdfNotes:create", ["courseId": course, "title": "1주차", "paper": "blank"]) as! [String: Any])["relPath"] as! String
+        try await a.stroke(course, paper)
+        a.provider.cutAfter = 3
+        await a.engine.syncNow()
+        XCTAssertEqual(a.engine.status["phase"] as? String, "error")
+        XCTAssertEqual(a.provider.written.first, "bandal.json")
+        let mine = try XCTUnwrap(a.provider.written.dropFirst().first)
+        let marker = { try JSONSerialization.jsonObject(with: Data(contentsOf: self.cloud.appendingPathComponent("bandal.json"))) as? [String: Any] }
+        let marked = try XCTUnwrap(try marker())
+        XCTAssertEqual(marked["initial_upload"].map { "devices/\($0).json" }, mine, "names the device that fills the root, whose file says it is at it")
+        let started = try XCTUnwrap(marked["started"] as? NSNumber).doubleValue / 1000
+        XCTAssertLessThan(abs(Date().timeIntervalSince1970 - started), 60, "and when it began")
+        _ = try await b.invoke("courses:create", ["name": "화학", "color": "green"])
+        await b.engine.syncNow()
+        XCTAssertEqual(b.engine.status["phase"] as? String, "idle")
+        XCTAssertTrue(b.provider.written.contains { $0.hasPrefix("log/") })
+        XCTAssertEqual(try marker()?["initial_upload"] as? String, marked["initial_upload"] as? String, "a's mark is a's to take off")
+        // a goes on where it stopped, says meanwhile that it is at it, and unmarks the root last.
+        a.provider.cutAfter = nil; a.provider.written = []; a.engine.heartbeat = 0
+        await a.engine.syncNow()
+        XCTAssertEqual(a.engine.status["phase"] as? String, "idle")
+        XCTAssertEqual(a.provider.written.filter { $0 != mine }.last, "bandal.json")
+        XCTAssertGreaterThan(a.provider.written.filter { $0 == mine }.count, 2)
+        XCTAssertEqual(try marker()?.keys.sorted(), ["format"])
+        await b.engine.syncNow()
+        XCTAssertEqual(b.engine.status["phase"] as? String, "idle")
+        let other = try await b.course("물리")
+        let ink = try await b.invoke("drawings:listForFile", ["courseId": other, "relPath": paper]) as? [[String: Any]]
+        XCTAssertEqual(ink?.count, 1)
+        _ = try await a.course("화학")
+    }
+
+    /// Two devices starting one empty root at once: the later mark is not the earlier device's to clear,
+    /// so its last write is left out after reading bandal.json again (spec v2.6).
+    func testAFirstUploadLeavesAMarkNoLongerItsOwn() async throws {
+        let a = try await Device(cloud: cloud)
+        _ = try await a.invoke("courses:create", ["name": "물리", "color": "blue"])
+        let theirs = Data(#"{"format":2,"initial_upload":"cccccccc-0000-4000-8000-000000000003","started":1}"#.utf8), root = cloud.appendingPathComponent("bandal.json")
+        a.provider.afterWrite = { path in if path.hasPrefix("log/") { try theirs.write(to: root) } }
+        await a.engine.syncNow()
+        XCTAssertEqual(a.engine.status["phase"] as? String, "idle")
+        XCTAssertEqual(try Data(contentsOf: root), theirs)
+        XCTAssertEqual(a.provider.written.filter { $0 == "bandal.json" }.count, 1, "marked, never unmarked")
     }
 
     /// Until every spec file is here nothing is applied or written; then everything is.
