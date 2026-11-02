@@ -9,7 +9,8 @@ final class SyncConformanceTests: XCTestCase {
         .appendingPathComponent("Fixtures/sync-fixtures")
     private static let names = ["01-basic", "02-same-id-both-edited", "03-delete-then-edit", "04-note-both-edited", "05-note-attachments",
                                 "06-path-collision", "07-out-of-range-coordinates", "08-format-not-2", "09-invalid-input", "10-same-stamp", "11-note-revert", "12-pdf-append",
-                                "13-course-delete", "14-append-chain", "15-initial-upload", "16-initial-upload-no-device", "17-initial-upload-not-a-mark"]
+                                "13-course-delete", "14-append-chain", "15-initial-upload", "16-initial-upload-no-device", "17-initial-upload-not-a-mark",
+                                "18-initial-upload-bad-started"]
 
     func testEveryFixtureFolderIsChecked() throws {
         let folders = try FileManager.default.contentsOfDirectory(atPath: Self.fixtures.path)
@@ -126,7 +127,8 @@ final class SyncConformanceTests: XCTestCase {
         for (id, entry) in state.ink { ink[entry.doc, default: [:]][String(entry.object.page), default: [:]][id] = entry.object.value }
         return [
             "blocked": nullable(state.blocked?.rawValue),
-            "initial_upload": state.initialUpload.map { ["device": $0, "last_seen": state.lastSeen[$0].map { $0 as Any } ?? NSNull()] } ?? NSNull(),
+            "initial_upload": state.initialUpload.map { ["device": $0, "started": state.started.map { $0 as Any } ?? NSNull(),
+                                                          "last_seen": state.lastSeen[$0].map { $0 as Any } ?? NSNull()] } ?? NSNull(),
             "courses": state.courses.mapValues { pick($0, ["name", "sort", "color", "archived"]) },
             "docs": Dictionary(uniqueKeysWithValues: state.docs.map { id, entity in
                 var doc = pick(entity, ["course_id", "type", "name", "rel_path", "pdf_sha256", "pdf_prev_sha256", "md_hash"])

@@ -4,6 +4,7 @@
   "blocked": null,
   "initial_upload": {
     "device": "cccccccc-0000-4000-8000-000000000003",
+    "started": 1793318700000,
     "last_seen": null
   },
   "courses": {},
