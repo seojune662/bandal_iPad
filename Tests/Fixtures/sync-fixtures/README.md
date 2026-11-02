@@ -25,14 +25,15 @@
 | `12-pdf-append` | `pdf_prev_sha256`(D6). 결과의 값은 늘 이긴 `pdf_sha256`과 같은 이벤트의 것이다. 문서 1은 한 번 덧붙였다(H0→H1, 만든 이벤트에는 v2.3 전 형식이라 키가 없다). 문서 2는 덧붙인 뒤 다른 기기가 키 없이 파일을 바꿨으므로 null이다. 문서 3은 두 번 덧붙여 마지막 덧붙이기의 직전 값(H1)이다. 문서 4는 `pdf_sha256` 없이 온 값이라 무시한다. 문서 5는 대문자 hex라 그 이벤트를 버린다 |
 | `13-course-delete` | 삭제된 과목(v2.4). "삭제된 과목"을 지울 때 문서 1에는 tombstone을 쓰고, 문서 2(v2.4 전 형식)에는 쓰지 않았다. 문서 3은 다른 기기가 삭제 뒤에 오프라인으로 더했다. 셋 다 삭제이고, 같은 이름인 2와 3은 이름 바꾸기가 없다. 그 과목의 노트(문서 7)는 head가 둘이어도 충돌 사본이 없다. "되살린 과목"은 지운 뒤 되살렸다. 다시 쓴 문서 4는 살아 있고, tombstone만 남은 문서 5는 삭제이고, tombstone이 없는 문서 6은 다시 살아난다 |
 | `14-append-chain` | 덧붙이기 연결(v2.4). `pdf_rebind_from`이 결과다. 세 번 이어 덧붙인 문서 1은 H0·H1·H2에서 다시 묶인다. 같은 H0에서 동시에 덧붙인 문서 2는 이긴 H1b에 H0만 이어진다(진 H1은 아니다). 덧붙인 뒤 교체(null)하고 다시 덧붙인 문서 3은 H5만이다. 문서 4는 거꾸로 가는 위조 연결이 순환을 만들어도 이긴 sha256을 넣지 않는다. 덧붙이기가 없는 문서 5는 빈 배열이다 |
-| `15-initial-upload` | 첫 업로드 중인 루트(v2.6). iPad가 `bandal.json`에 표시를 쓰고 기기 파일을 쓴 뒤 PDF와 필기 하나를 올린 순간이다. log가 아직 없어 과목과 문서는 없고, 필기는 문서가 올 때까지 `waiting.ink`에 있다. 표시는 머지를 막지 않는다. `initial_upload`는 표시한 기기와 그 기기 파일의 `last_seen`이다 |
-| `16-initial-upload-no-device` | 표시는 있는데 그 기기(`cccccccc-…0003`)의 기기 파일이 없다(v2.6). `last_seen`이 null이라 연결하려는 기기는 중단으로 본다 |
-| `17-initial-upload-not-a-mark` | `initial_upload`가 숫자다(v2.6). 표시가 아니고 파일 오류도 아니다. `bandal.json`은 그대로 읽혀 `blocked`와 `errors`가 비어 있다 |
+| `15-initial-upload` | 첫 업로드 중인 루트(v2.6). iPad가 `bandal.json`에 표시를 쓰고 기기 파일을 쓴 뒤 PDF와 필기 하나를 올린 순간이다. log가 아직 없어 과목과 문서는 없고, 필기는 문서가 올 때까지 `waiting.ink`에 있다. 표시는 머지를 막지 않는다. `initial_upload`는 표시한 기기, 표시의 `started`, 그 기기 파일의 `last_seen`이다 |
+| `16-initial-upload-no-device` | 표시는 있는데 그 기기(`cccccccc-…0003`)의 기기 파일이 없다(v2.6). `last_seen`이 null이라 연결하려는 기기는 `started`로 정한다. 5분 안이면 기다리고, 지났으면 중단으로 본다 |
+| `17-initial-upload-not-a-mark` | `initial_upload`가 숫자다(v2.6). `started`가 있어도 표시가 아니고 파일 오류도 아니다. `bandal.json`은 그대로 읽혀 `blocked`와 `errors`가 비어 있다 |
+| `18-initial-upload-bad-started` | 표시의 `started`가 정수 ms가 아니다(`1793318700000.5`, v2.6). `started`는 null로 읽고 표시는 그대로다. 파일 오류도 아니다. 기기 파일도 없어 연결하려는 기기는 바로 중단으로 본다 |
 | `render/v5-diameter.json` | inkVersion 5의 점별 지름 계수. 두 렌더러의 굵기가 같은지 본다. 계수는 데스크톱 `src/shared/inkV5.ts`로 계산했다. 허용오차는 1e-6이다 |
 
 ## 고정 값
 
-- **기기**: `aaaaaaaa-…0001`은 "MacBook Air"(데스크톱), `bbbbbbbb-…0002`는 "iPad Pro"다. 사전순으로는 iPad가 더 크다. `cccccccc-…0003`은 기기 파일이 아직 없는 기기다(05, 16).
+- **기기**: `aaaaaaaa-…0001`은 "MacBook Air"(데스크톱), `bbbbbbbb-…0002`는 "iPad Pro"다. 사전순으로는 iPad가 더 크다. `cccccccc-…0003`은 기기 파일이 아직 없는 기기다(05, 16, 18).
 - **파일 이름**: 대소문자만 다른 두 경로를 두지 않는다. APFS와 NTFS는 둘을 같은 파일로 본다.
 - **시각**: `t`는 ms epoch이고, 기준은 `T0 = 1793318400000`(2026-10-30T00:00:00Z)이다.
 - **충돌 사본 id**: `uuidv5(namespace = 9b1f6a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b, name = "<document_id>:<진 쪽 md_hash>")`
@@ -48,7 +49,7 @@
 fixture           폴더 이름
 spec              "2.6"   예제 내용이 마지막으로 바뀐 스펙
 blocked           null | "missing-root" | "update-required" | "unsupported-format"   format 검사 결과. null이 아니면 나머지는 모두 비어 있다
-initial_upload    null | {device, last_seen}   첫 업로드 표시(v2.6). device는 표시한 기기, last_seen은 그 기기 파일의 값(파일이 없으면 null)
+initial_upload    null | {device, started, last_seen}   첫 업로드 표시(v2.6). device는 표시한 기기, started는 표시의 값(없거나 틀리면 null), last_seen은 그 기기 파일의 값(파일이 없으면 null)
 courses           {id: {name, sort, color, archived, alive}}
 docs              {id: {course_id, type, name, rel_path, pdf_sha256 + pdf_prev_sha256 + pdf_rebind_from | md_hash, alive}}
 ink               {document_id: {page: {object_id: 이긴 버전의 개체 전체}}}
@@ -64,7 +65,7 @@ errors            [root 기준 경로]  파싱하지 못한 파일, 사전순
 - v2.2에서 `blocked`, `renames`, `waiting`을 더했다. 01–04의 `root/`는 그대로이고 `expected.json`에 빈 값으로 들어 있다.
 - v2.3에서 pdf 문서에 `pdf_prev_sha256`을 더했다. `pdf_sha256`이 있는 문서에만 있고, 값은 그 `pdf_sha256`을 쓴 이벤트의 것(없으면 null)이다.
 - v2.4에서 `pdf_rebind_from`을 더했다. 덧붙이기 연결을 따라 이긴 `pdf_sha256`에 닿는 sha256들이고, 이긴 것 자체는 빼며 사전순이다. `alive`는 문서와 그 과목이 모두 살아 있을 때만 true다.
-- v2.6에서 `initial_upload`를 더했다. 다른 예제에는 null로 들어 있다. 연결하려는 기기는 이 값과 지금 시각으로 기다릴지(1시간 안), 중단으로 볼지 정한다.
+- v2.6에서 `initial_upload`를 더했다. 다른 예제에는 null로 들어 있다. 연결하려는 기기는 이 값과 지금 시각으로 기다릴지(`last_seen`이 1시간 안, `last_seen`이 없으면 `started`가 5분 안), 중단으로 볼지 정한다.
 - 필기 개체는 해시가 아니라 개체 전체를 담는다. 두 플랫폼 사이에 정규 JSON(숫자 표기) 규칙을 맞추지 않아도 되도록 JSON 값으로 비교한다.
 
 ## 보는 방법
