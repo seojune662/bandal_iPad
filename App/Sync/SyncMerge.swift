@@ -42,6 +42,10 @@ enum SyncMerge {
         /// Set when `bandal.json` is missing or not format 2: nothing else is read.
         var blocked: Blocked?
         var devices: [String: String] = [:]
+        /// When each device last wrote its devices file (ms), where the file says.
+        var lastSeen: [String: Int64] = [:]
+        /// The device whose first upload into this root is not done yet, and when it began (ms) (spec v2.6).
+        var initialUpload: String?, started: Int64?
         var courses: [String: Entity] = [:]
         var docs: [String: Entity] = [:]
         /// Winning version per drawing id, with the document its file sits under.
@@ -56,6 +60,15 @@ enum SyncMerge {
         var waitingDocs: [String] = [], waitingInk: [String] = [], waitingCopies: [String] = []
         /// PDF documents: the bytes from which end-page appends lead to the winning pdf_sha256, sorted (spec v2.4).
         var rebindFrom: [String: [String]] = [:]
+
+        /// Another device's first upload into this root (spec v2.6), by name, and whether it is still
+        /// going: its devices file was written within the hour, or, with no such file yet, it began
+        /// within five minutes. Either way round, so a clock far ahead holds no one back.
+        func initialUploader(besides me: String, now: Int64) -> (name: String, going: Bool)? {
+            guard let device = initialUpload, device != me else { return nil }
+            let going: Bool = lastSeen[device].map { abs(now - $0) <= 3_600_000 } ?? started.map { abs(now - $0) <= 300_000 } ?? false
+            return (devices[device] ?? String(device.prefix(8)), going)
+        }
     }
 
     private struct NoteVersion { let hash: String; let base: String?; let stamp: Stamp }
@@ -63,10 +76,13 @@ enum SyncMerge {
 
     static func merge(_ files: [SyncFormat.File]) -> State {
         var state = State()
-        guard let format = files.lazy.compactMap({ file -> Int? in if case .root(let format) = file.content { return format }; return nil }).first else {
+        guard let root = files.lazy.compactMap({ file -> (format: Int, uploader: String?, started: Int64?)? in
+            if case .root(let format, let uploader, let started) = file.content { return (format, uploader, started) }; return nil
+        }).first else {
             state.blocked = .missingRoot; return state
         }
-        guard format == SyncFormat.version else { state.blocked = format > SyncFormat.version ? .updateRequired : .unsupportedFormat; return state }
+        guard root.format == SyncFormat.version else { state.blocked = root.format > SyncFormat.version ? .updateRequired : .unsupportedFormat; return state }
+        (state.initialUpload, state.started) = (root.uploader, root.started)
 
         var present = Set<String>(), versions: [String: [NoteVersion]] = [:], noteFiles: [String: [NoteFile]] = [:]
         /// Appends per document: the bytes before → the bytes after, from every event, winning or not.
@@ -74,7 +90,7 @@ enum SyncMerge {
         for file in files {
             switch file.content {
             case .root: break
-            case .device(let id, let name): state.devices[id] = name
+            case .device(let id, let name, let seen): state.devices[id] = name; state.lastSeen[id] = seen
             case .pdf, .asset: present.insert(file.path)
             case .note(let author, let seq, let doc, let hash, let assets):
                 noteFiles[doc, default: []].append(NoteFile(path: file.path, author: author, hash: hash, seq: seq, assets: assets))

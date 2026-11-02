@@ -1,0 +1,22 @@
+{
+  "fixture": "16-initial-upload-no-device",
+  "spec": "2.6",
+  "blocked": null,
+  "initial_upload": {
+    "device": "cccccccc-0000-4000-8000-000000000003",
+    "last_seen": null
+  },
+  "courses": {},
+  "docs": {},
+  "ink": {},
+  "notes": {},
+  "conflict_copies": [],
+  "renames": [],
+  "waiting": {
+    "docs": [],
+    "ink": [],
+    "copies": []
+  },
+  "ignored": [],
+  "errors": []
+}

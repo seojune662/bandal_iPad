@@ -187,8 +187,12 @@ final class DriveProviderTests: XCTestCase {
         drive.add("b1", name: "bandal.json", parent: "used", bytes: Data("{}".utf8))
         drive.add("b2", name: "bandal.json", parent: "later", bytes: Data("{}".utf8))
         drive.add("x", name: "x.json", parent: "later", bytes: Data("{}".utf8))
-        let listed = try await provider(drive).list()
+        let a = provider(drive), listed = try await a.list()
         XCTAssertEqual(Set(listed.keys), ["bandal.json"])
+        let lookup = await a.lookup()
+        XCTAssertEqual(lookup.chosen, "used")
+        XCTAssertEqual(lookup.folders, ["empty:2026-11-01T00:00:00.003Z:mark:0:0:Bandal", "used:2026-11-01T00:00:00.004Z:mark:1:1:Notes",
+                                        "later:2026-11-01T00:00:00.005Z:mark:1:0:Bandal"], "the connection log's folders (spec v2.6)")
         try await provider(drive).write(.data(Data("[]".utf8)), to: "log/x.json")
         XCTAssertEqual(drive.meta(try XCTUnwrap(drive.ids(named: "log").first))?["parents"] as? [String], ["used"])
     }
@@ -210,7 +214,12 @@ final class DriveProviderTests: XCTestCase {
     func testAnUnmarkedFolderWithoutBandalJSONIsNotTheRoot() async throws {
         let drive = FakeDrive()
         drive.add("stray", name: "Bandal", parent: "my-drive", folder: true)
-        try await provider(drive).write(.data(Data(#"{"format":2}"#.utf8)), to: "bandal.json")
+        let a = provider(drive)
+        _ = try await a.list()
+        let lookup = await a.lookup()
+        XCTAssertNil(lookup.chosen)
+        XCTAssertEqual(lookup.folders, ["stray:2026-11-01T00:00:00.001Z:name:0:0:Bandal"])
+        try await a.write(.data(Data(#"{"format":2}"#.utf8)), to: "bandal.json")
         let made = try XCTUnwrap(drive.ids(named: "Bandal").first { $0 != "stray" })
         XCTAssertEqual(drive.meta(try XCTUnwrap(drive.ids(named: "bandal.json").first))?["parents"] as? [String], [made])
     }
@@ -253,6 +262,12 @@ final class DriveProviderTests: XCTestCase {
         await a.hurry()
         start = Date()
         try await a.write(.data(Data("3".utf8)), to: "log/x.json")
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.4)
+        // A first upload unmarks bandal.json as soon as it is done (spec v2.6).
+        let other = provider(drive, window: 0.5)
+        try await other.write(.data(Data(#"{"format":2,"initial_upload":"x"}"#.utf8)), to: "bandal.json")
+        start = Date()
+        try await other.write(.data(Data(#"{"format":2}"#.utf8)), to: "bandal.json")
         XCTAssertLessThan(Date().timeIntervalSince(start), 0.4)
     }
 

@@ -1,7 +1,8 @@
 {
   "fixture": "08-format-not-2",
-  "spec": "2.4",
+  "spec": "2.6",
   "blocked": "update-required",
+  "initial_upload": null,
   "courses": {},
   "docs": {},
   "ink": {},

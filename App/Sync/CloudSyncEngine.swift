@@ -28,6 +28,8 @@ final class CloudSyncEngine {
     private var running: Task<Void, Never>?, again = false, suspended = false, newSession = true
     private var idle: Task<Void, Never>?, listening: Task<Void, Never>?
     private var timer: Timer?, observers: [NSObjectProtocol] = []
+    /// A first upload writes this device's file again this often, so other devices see it is still at it.
+    var heartbeat: TimeInterval = 600
 
     init(runtime: DesktopRuntime, provider: SyncProvider, keychain: SyncStore.Keychain = .live) {
         self.runtime = runtime
@@ -111,6 +113,9 @@ final class CloudSyncEngine {
         // An empty root is started here; a root of any other format is never written (spec "원격 입력 검증").
         if let blocked = state.blocked, !(blocked == .missingRoot && empty) { return publish("paused", ["reason": blocked.rawValue]) }
         let (me, session) = (try await storage { store, _, _ in try store.deviceID() }, newSession)
+        // This device fills an empty root, or goes on with its first upload that was cut off. Another
+        // device's mark holds back only a device connecting to the root, not one connected (spec v2.6).
+        let initial = empty || state.initialUpload == me
         let flags = try await storage { store, _, _ in (exportFirst: try store.value("export_first") != nil, rootSeen: try store.value("root_seen") != nil, name: try store.value("device_label") ?? "iPad") }
         // This iPad's devices file stays in a root it wrote to. Once seen, its absence means the folder
         // was removed or replaced (Files app, another device): not every document deleted, and not a
@@ -144,12 +149,21 @@ final class CloudSyncEngine {
             let outbox = SyncOutbox(store: store, library: library)
             outbox.deviceName = flags.name
             if session { try outbox.endSession() }
-            return try outbox.prepare(remote: Set(files.keys), deletedCourses: Set(state.courses.filter { !$0.value.isAlive }.keys))
+            return try outbox.prepare(remote: Set(files.keys), deletedCourses: Set(state.courses.filter { !$0.value.isAlive }.keys), initialUpload: initial)
         }
         newSession = newSession && !session
-        if !batch.writes.isEmpty { publish("syncing", ["remaining": batch.writes.count]) }
-        for write in batch.writes { try await provider.write(write.content, to: write.path) }
-        let finished = Int64(Date().timeIntervalSince1970 * 1000)
+        if !batch.writes.isEmpty { publish("syncing", ["remaining": batch.writes.count, "initial": initial]) }
+        var said = Date()
+        for write in batch.writes {
+            // A device starting the same empty root meanwhile may have marked it: not this one's mark to clear (spec v2.6).
+            if write.unmark, try await Self.marker(provider) != me { continue }
+            try await provider.write(write.content, to: write.path)
+            if initial, Date().timeIntervalSince(said) >= heartbeat {
+                try await provider.write(.data(try SyncOutbox.deviceFile(name: flags.name, lastSeen: Self.now())), to: "devices/\(me).json")
+                said = Date()
+            }
+        }
+        let finished = Self.now()
         try await storage { store, library, _ in
             try SyncOutbox(store: store, library: library).commit(batch)
             if mine { try store.set("root_seen", "1") }
@@ -170,9 +184,26 @@ final class CloudSyncEngine {
     }
 
     /// The root as it is now, for the connection sheet; no state while a text file is still downloading.
-    nonisolated static func peek(_ provider: SyncProvider) async throws -> (files: [String: SyncRemoteFile], state: SyncMerge.State?, downloading: Int) {
+    /// `mark` is then `bandal.json` and the file of the device it marks read alone, so a first upload
+    /// under way shows before the rest of the root is down (spec v2.6); nil while either is still coming.
+    nonisolated static func peek(_ provider: SyncProvider) async throws -> (files: [String: SyncRemoteFile], state: SyncMerge.State?, mark: SyncMerge.State?, downloading: Int) {
         let files = try await provider.list(), result = await read(files, cache: [:], provider: provider)
-        return (files, result.state, result.downloading)
+        return (files, result.state, result.state == nil ? mark(files, provider: provider) : nil, result.downloading)
+    }
+
+    private nonisolated static func mark(_ files: [String: SyncRemoteFile], provider: SyncProvider) -> SyncMerge.State? {
+        func text(_ path: String) -> (path: String, bytes: Data)? { files[path]?.local == true ? (try? provider.read(path)).map { (path, $0) } : nil }
+        guard let root = text("bandal.json") else { return nil }
+        let state = SyncMerge.merge(SyncFormat.readRoot([root]).files)
+        guard let device = state.initialUpload, files["devices/\(device).json"] != nil else { return state }
+        return text("devices/\(device).json").map { SyncMerge.merge(SyncFormat.readRoot([root, $0]).files) }
+    }
+
+    /// The device `bandal.json` marks as on its first upload, read again from the root.
+    private nonisolated static func marker(_ provider: SyncProvider) async throws -> String? {
+        guard try await provider.list()["bandal.json"]?.local == true, let bytes = try? provider.read("bandal.json"),
+              case .root(_, let device, _)? = (try? SyncFormat.parse(path: "bandal.json", bytes: bytes))?.content else { return nil }
+        return device
     }
 
     /// Reading and merging the root is the heavy part of a cycle, so it runs off the main actor and
@@ -189,6 +220,8 @@ final class CloudSyncEngine {
         let present = files.filter { SyncFormat.isBlob($0.key) && $0.value.local }.map(\.key)
         return (SyncMerge.merge(SyncFormat.readRoot(texts, present: present).files), next, 0)
     }
+
+    private static func now() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 
     private static func own(_ path: String, _ me: String) -> Bool {
         SyncFormat.writer(of: path)?.device == me || path == "devices/\(me).json"

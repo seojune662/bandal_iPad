@@ -43,6 +43,10 @@ final class DriveProvider: SyncProvider, @unchecked Sendable {
     /// The writes of the next few seconds skip the 15 s window ("지금 동기화").
     func hurry() async { await remote.hurry() }
 
+    /// The folders the last listing looked at for the root, `id:createdTime:mark|name:bandal.json 1|0:chosen 1|0:name`
+    /// each, and the one chosen (nil: none, so the first write makes one). For the connection log (spec v2.6).
+    func lookup() async -> (folders: [String], chosen: String?) { await remote.looked }
+
     func list() async throws -> [String: SyncRemoteFile] {
         let listing = try await remote.list()
         lock.withLock { readable = listing.readable }
@@ -117,6 +121,7 @@ final class DriveProvider: SyncProvider, @unchecked Sendable {
         /// The md5 each file id was last kept under, so its earlier download goes.
         private var kept: [String: String] = [:]
         private var uploaded: [String: Date] = [:], hurried: Date?
+        private(set) var looked: (folders: [String], chosen: String?) = ([], nil)
         /// Rewrites of one file wait this long between uploads (design §1.4: 15 s), unless hurried.
         private let window: TimeInterval, backoff: Double
 
@@ -203,17 +208,20 @@ final class DriveProvider: SyncProvider, @unchecked Sendable {
         }
 
         /// The root is a folder marked as one, wherever it is and whatever its name (spec v2.5 "저장소 루트").
-        /// With none in sight, a "Bandal" folder holding `bandal.json`: before v2.5 a client marked it only in
-        /// `appProperties`, which no other client sees. Of several, the one holding `bandal.json`, then the
-        /// oldest. Under it, folders of one name are read together.
+        /// With none in sight, a "Bandal" folder holding `bandal.json`, for a folder without a mark (both
+        /// marks show to every client of the project, spec v2.6). Of several, the one holding `bandal.json`,
+        /// then the oldest. Under it, folders of one name are read together.
         private func build() {
             var children: [String: [Meta]] = [:]
             for item in items.values { for parent in item.parents { children[parent, default: []].append(item) } }
             let started = { (folder: Meta) in (children[folder.id] ?? []).contains { $0.name == "bandal.json" && !$0.isFolder } }
             let marked = items.values.filter { $0.isFolder && $0.isRoot }
-            let roots = (marked.isEmpty ? items.values.filter { $0.isFolder && $0.name == "Bandal" && started($0) } : marked).sorted(by: Meta.older)
+            let candidates = (marked.isEmpty ? items.values.filter { $0.isFolder && $0.name == "Bandal" } : marked).sorted(by: Meta.older)
+            let roots = marked.isEmpty ? candidates.filter(started) : candidates
             folders = [:]; files = [:]
-            guard let root = roots.first(where: started) ?? roots.first else { return }
+            let chosen = roots.first(where: started) ?? roots.first
+            looked = (candidates.map { "\($0.id):\($0.created):\(marked.isEmpty ? "name" : "mark"):\(started($0) ? 1 : 0):\($0.id == chosen?.id ? 1 : 0):\($0.name)" }, chosen?.id)
+            guard let root = chosen else { return }
             folders[""] = [root]
             var queue: [(path: String, id: String)] = [("", root.id)]
             while let (path, id) = queue.popLast() {
@@ -234,7 +242,8 @@ final class DriveProvider: SyncProvider, @unchecked Sendable {
             if let existing = files[path]?.first {
                 // A blob is named by its bytes: the one there is it.
                 if SyncFormat.isBlob(path) { return try remember(existing, bytes: bytes, path: path) }
-                if hurried.map({ Date().timeIntervalSince($0) > 10 }) ?? true, let last = uploaded[path], Date().timeIntervalSince(last) < window {
+                // bandal.json is written twice per root, marked then not (spec v2.6): the unmarking never waits.
+                if path != "bandal.json", hurried.map({ Date().timeIntervalSince($0) > 10 }) ?? true, let last = uploaded[path], Date().timeIntervalSince(last) < window {
                     try await Task.sleep(for: .seconds(window - Date().timeIntervalSince(last)))
                 }
                 return try remember(try await send(bytes, url: "\(DriveProvider.uploadAPI)/files/\(existing.id)", method: "PATCH", metadata: nil), bytes: bytes, path: path)

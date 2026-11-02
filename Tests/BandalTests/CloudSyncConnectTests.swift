@@ -8,12 +8,17 @@ import XCTest
 final class CloudSyncConnectTests: XCTestCase {
     fileprivate final class Box { var items: [String: String] = [:] }
 
-    /// A folder whose writes fail while `fails` is set.
+    /// A folder whose writes fail while `fails` is set, and whose `pending` files are still downloading.
     fileprivate final class Failing: FolderProvider, @unchecked Sendable {
-        var fails = false
+        var fails = false, pending = Set<String>()
         override func write(_ content: SyncOutbox.Content, to path: String) async throws {
             if fails { throw DesktopRuntimeError("write failed", code: "IO") }
             try await super.write(content, to: path)
+        }
+        override func list() async throws -> [String: SyncRemoteFile] {
+            var files = try await super.list()
+            for path in pending { files[path] = files[path].map { SyncRemoteFile(version: $0.version, local: false) } }
+            return files
         }
     }
 
@@ -56,6 +61,12 @@ final class CloudSyncConnectTests: XCTestCase {
             return try XCTUnwrap(value as? [String: Any])
         }
         func invoke(_ channel: String, _ request: [String: Any] = [:]) async throws -> Any { try await store.runtime.invokePrivate(channel, request: request) }
+        /// The device log, as `<event> channel=<c> code=<c>` lines.
+        func logLines() async -> [String] {
+            await store.runtime.log.flush()
+            let text = try? String(contentsOf: store.runtime.root.appendingPathComponent("Logs/bandal.log"), encoding: .utf8)
+            return (text ?? "").split(separator: "\n").map { $0.split(separator: " ", maxSplits: 1).last.map(String.init) ?? "" }
+        }
         func course(_ name: String) async throws -> [String: Any]? {
             (try await invoke("courses:list") as! [[String: Any]]).first { $0["name"] as? String == name }
         }
@@ -125,6 +136,60 @@ final class CloudSyncConnectTests: XCTestCase {
         let joined = try await b.course("물리"), other = try XCTUnwrap(joined)["id"] as! String
         let note = try await b.invoke("notes:read", ["courseId": other, "relPath": "요약.md"]) as! [String: Any]
         XCTAssertEqual(note["markdown"] as? String, "# 힘\n")
+    }
+
+    /// Spec v2.6: while another device fills the root, the sheet only says so and nothing connects. It is
+    /// told from the mark and that device's file before the rest of the root is down: written within the
+    /// hour, or, with no file yet, a mark from the last five minutes (2026-11-02). Once stopped, the root
+    /// can be merged or taken, not overwritten. Each wait and refusal goes into the device log.
+    func testAnotherDevicesFirstUploadIsWaitedForThenOnlyMerged() async throws {
+        let other = "cccccccc-0000-4000-8000-000000000003", now = Date().timeIntervalSince1970, device = "devices/\(other).json"
+        func ms(minutesAgo: Double) -> Int64 { Int64((now - minutesAgo * 60) * 1000) }
+        func mark(minutesAgo: Double) throws {
+            try Data(#"{"format":2,"initial_upload":"\#(other)","started":\#(ms(minutesAgo: minutesAgo))}"#.utf8).write(to: cloud.appendingPathComponent("bandal.json"))
+        }
+        func seen(minutesAgo: Double) throws { try SyncOutbox.deviceFile(name: "Mac", lastSeen: ms(minutesAgo: minutesAgo)).write(to: cloud.appendingPathComponent(device)) }
+        func uploading(_ b: Device) async throws -> [String: AnyHashable]? { try await b.sync("cloudSync:preview")["initialUpload"] as? [String: AnyHashable] }
+        try FileManager.default.createDirectory(at: cloud.appendingPathComponent("log/\(other)"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: cloud.appendingPathComponent("devices"), withIntermediateDirectories: true)
+        try mark(minutesAgo: 1)
+        let b = try await Device(cloud: cloud)
+        _ = try await newCourse(b, "화학")
+        let begun = try await uploading(b)
+        XCTAssertEqual(begun, ["device": "cccccccc", "going": true], "no device file yet, a mark just made")
+        try seen(minutesAgo: 1)
+        try Data("[]".utf8).write(to: cloud.appendingPathComponent("log/\(other)/00000001.json"))
+        b.failing = Failing(root: cloud); b.failing?.pending = ["log/\(other)/00000001.json"]
+        let going = try await b.sync("cloudSync:preview")
+        XCTAssertEqual(going["initialUpload"] as? [String: AnyHashable], ["device": "Mac", "going": true], "a file still coming down does not hide it")
+        XCTAssertNil(going["sameName"], "no connection sheet")
+        do { _ = try await b.sync("cloudSync:connect", ["mode": "merge", "pairs": []]); XCTFail("connected") } catch { XCTAssertEqual((error as? DesktopRuntimeError)?.code, "SYNC_INITIAL_UPLOAD") }
+        b.failing?.pending.insert(device)
+        let unknown = try await b.sync("cloudSync:preview")
+        XCTAssertNil(unknown["initialUpload"], "its device file still coming down: not decided")
+        XCTAssertNotNil(unknown["downloading"])
+        b.failing?.pending = []
+        try seen(minutesAgo: -61)
+        let ahead = try await uploading(b)
+        XCTAssertEqual(ahead, ["device": "Mac", "going": false], "a clock more than an hour ahead")
+        try FileManager.default.removeItem(at: cloud.appendingPathComponent(device))
+        try mark(minutesAgo: 6)
+        let old = try await uploading(b)
+        XCTAssertEqual(old, ["device": "cccccccc", "going": false], "no device file, a mark older than five minutes")
+        try seen(minutesAgo: 120)
+        let stopped = try await b.sync("cloudSync:preview")
+        XCTAssertEqual(stopped["initialUpload"] as? [String: AnyHashable], ["device": "Mac", "going": false])
+        do {
+            _ = try await b.sync("cloudSync:connect", ["mode": "overwrite", "pairs": [], "fingerprint": stopped["fingerprint"]!]); XCTFail("overwrote")
+        } catch { XCTAssertEqual((error as? DesktopRuntimeError)?.code, "SYNC_INITIAL_UPLOAD") }
+        _ = try await b.sync("cloudSync:connect", ["mode": "merge", "pairs": []])
+        let synced = try await b.sync("cloudSync:syncNow")
+        XCTAssertEqual(synced["phase"] as? String, "idle")
+        let log = await b.logLines()
+        XCTAssertTrue(log.contains("sync.preview channel=icloud code=uploading"), "\(log)")
+        XCTAssertTrue(log.contains("sync.preview.root channel=icloud code=entries:3:bandal_json:1:initial_upload:\(other)"), "\(log)")
+        XCTAssertTrue(log.contains("sync.preview channel=icloud code=downloading"), "\(log)")
+        XCTAssertEqual(log.filter { $0 == "sync.connect channel=icloud code=SYNC_INITIAL_UPLOAD" }.count, 2, "\(log)")
     }
 
     /// A merge joins the checked same-name course and the PDF both hold: one course and one document
@@ -399,11 +464,15 @@ final class CloudSyncConnectTests: XCTestCase {
         let on = try await a.sync("cloudSync:connect", ["provider": "drive", "mode": "start"])
         XCTAssertEqual(on["provider"] as? String, "drive")
         XCTAssertEqual(on["driveEmail"] as? String, "a@example.com")
+        let made = await a.logLines()
+        XCTAssertTrue(made.contains("sync.connect channel=drive code=new-root-folder"), "\(made)")
         _ = try await a.sync("cloudSync:syncNow")
         XCTAssertFalse(drives["google-a"]!.ids(named: "bandal.json").isEmpty)
         let seen = try await b.sync("cloudSync:preview", ["provider": "drive"])
         XCTAssertEqual((seen["cloud"] as? [String: Any])?["courses"] as? Int, 1)
         _ = try await b.sync("cloudSync:connect", ["provider": "drive", "mode": "merge", "pairs": []])
+        let joinedLog = await b.logLines()
+        XCTAssertFalse(joinedLog.contains { $0.hasPrefix("sync.connect") }, "b joins a's folder: \(joinedLog)")
         _ = try await b.sync("cloudSync:syncNow")
         let found = try await b.course("물리"), joined = try XCTUnwrap(found)["id"] as! String
         let note = try await b.invoke("notes:read", ["courseId": joined, "relPath": "요약.md"]) as! [String: Any]

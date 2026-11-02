@@ -10,7 +10,9 @@ final class SyncOutbox {
     private typealias Stamp = SyncMerge.Stamp
 
     enum Content { case data(Data), file(URL) }
-    struct Write { let path: String; let content: Content }
+    /// `unmark`: `bandal.json` without the first-upload mark, written only while the mark is still
+    /// this device's (spec v2.6).
+    struct Write { let path: String; let content: Content; var unmark = false }
 
     struct Batch {
         fileprivate(set) var writes: [Write] = []
@@ -42,8 +44,10 @@ final class SyncOutbox {
     /// `remote` lists every path in the root now; files already there are not uploaded again.
     /// `deletedCourses` are the courses the root holds as deleted (sync ids). Call it only for an
     /// empty root or one whose merge is not blocked: nothing may be written into a root of
-    /// another format (spec "원격 입력 검증", format).
-    func prepare(remote: Set<String>, deletedCourses: Set<String> = []) throws -> Batch {
+    /// another format (spec "원격 입력 검증", format). `initialUpload`: this device goes on filling
+    /// a root it marked; a root without `bandal.json` is being started anyway (spec v2.6).
+    func prepare(remote: Set<String>, deletedCourses: Set<String> = [], initialUpload: Bool = false) throws -> Batch {
+        let initialUpload = initialUpload || !remote.contains("bandal.json")
         let me = try store.deviceID()
         var draft = Draft(me: me, remote: remote, ownMax: remote.compactMap(SyncFormat.writer).filter { $0.device == me }.map(\.seq).max() ?? 0,
                           deletedCourses: deletedCourses)
@@ -54,13 +58,22 @@ final class SyncOutbox {
         // Order of a flush (design §1.5): pdf and assets went in first, then ink and notes, then the log.
         try assemble(&draft)
         let named = try store.value("device_name")
-        if !remote.contains("devices/\(me).json") || named != deviceName {
-            draft.batch.writes.append(Write(path: "devices/\(me).json", content: .data(try Self.json(["name": deviceName]))))
+        let device = Write(path: "devices/\(me).json", content: .data(try Self.deviceFile(name: deviceName, lastSeen: now())))
+        if initialUpload {
+            // The root names this device until everything is up, so no device takes it as whole before
+            // then and an upload cut off goes on from here; this device's file says it is at it (spec v2.6).
+            let mark = remote.contains("bandal.json") ? [] : [Write(path: "bandal.json", content: .data(try Self.json(["format": SyncFormat.version, "initial_upload": me, "started": now()])))]
+            draft.batch.writes = mark + [device] + draft.batch.writes + [Write(path: "bandal.json", content: .data(try Self.json(["format": SyncFormat.version])), unmark: true)]
+            draft.batch.deviceName = deviceName
+        } else if !remote.contains("devices/\(me).json") || named != deviceName {
+            draft.batch.writes.append(device)
             draft.batch.deviceName = deviceName
         }
-        if !remote.contains("bandal.json") { draft.batch.writes.append(Write(path: "bandal.json", content: .data(try Self.json(["format": SyncFormat.version])))) }
         return draft.batch
     }
+
+    /// `devices/<id>.json`: the name, and when this device wrote it (ms).
+    static func deviceFile(name: String, lastSeen: Int64) throws -> Data { try json(["name": name, "last_seen": lastSeen]) }
 
     /// Run `prepare`, the writes and `commit` with no `SyncApply` in between: the registers
     /// stored here are the ones computed in `prepare`.
