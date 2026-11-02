@@ -12,6 +12,8 @@ final class DesktopRuntime: @unchecked Sendable {
     var onNativeCall: ((String, [String: Any]) async throws -> Any)?
     /// Called on the storage queue after a channel wrote to the database (sync, design §1.6).
     var onLocalChange: (() -> Void)?
+    /// Checked on the storage queue before each channel (the free allowance, design §8.2). Unset in tests.
+    var limits: ((String, [String: Any], NativeLibraryRepository) throws -> Void)?
     private let queue = DispatchQueue(label:"app.bandal.swift-storage",qos:.userInitiated)
     private var context: NativeRepositoryContext?
     private var library: NativeLibraryRepository?
@@ -123,8 +125,12 @@ final class DesktopRuntime: @unchecked Sendable {
     private static let aliases = ["agent:availability":"native:aiAvailability","agent:apiKey":"native:aiKeyStatus","agent:setApiKey":"native:aiSetKey","agent:models":"native:aiModels"]
     private static let nativeChannels: Set<String> = ["chat:send","chat:cancel","chat:close","recordings:create","recordings:control","recordings:append","recordings:models","recordings:downloadModel","recordings:cancelDownload","runtime:recordingStart","runtime:recordingDevices","runtime:recordingAbandon","agent:availability","agent:apiKey","agent:setApiKey","agent:models","native:configureAccount","native:saveFile","native:pickFiles","native:openLogs","materials:preview","materials:reveal","materials:share","materials:export","courses:pickFolder","chat:pickAttachments","chat:openArtifact","print:pdf","print:savePdfAs","clipboard:beginCopy","clipboard:writeImage"]
     private func handle(_ channel: String,_ request: [String:Any]) throws -> Any? {
-        guard context != nil else { throw DesktopRuntimeError("자료 저장소를 시작하지 못했습니다.") }
+        guard context != nil, let storage = library else { throw DesktopRuntimeError("자료 저장소를 시작하지 못했습니다.") }
+        try limits?(channel, request, storage)
         switch channel {
+        case "nativeMembership:usage":
+            let usage = try FreeTier.usage(library: storage)
+            return ["courses": usage.courses, "documents": usage.documents]
         case "nativeSettings:usage":
             guard let context else { throw DesktopRuntimeError("저장소가 준비되지 않았습니다.") }
             return try NativeSettingsUsageRepository.summary(context:context,request:request)

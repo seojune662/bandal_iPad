@@ -21,12 +21,15 @@ enum NativeSettingsCatalog {
         ("info", "정보"),
     ]
     /// The account category (optional login, nickname, delete account) follows the account switch.
-    static var categories: [NativeSettingsCategory] { allCategories.filter { NativeReleaseFlags.showsAccount || $0.id != "account" } }
+    static var categories: [NativeSettingsCategory] {
+        allCategories.filter { (NativeReleaseFlags.showsAccount || $0.id != "account") && (NativeReleaseFlags.membership || $0.id != "subscription") }
+    }
     private static let allCategories: [NativeSettingsCategory] = [
         .init(id: "ai", title: "AI 엔진", description: "학습을 도와줄 AI 도구의 연결 상태를 확인합니다.", keywords: "에이전트 AI API 키 OpenAI Anthropic Google", icon: "sparkles", group: "ai"),
         .init(id: "assistant", title: "화면 도우미", description: "AI의 화면 도우미 동작을 관리합니다.", keywords: "화면 도우미 읽기 클릭 입력 screen assistant", icon: "rectangle.and.hand.point.up.left", group: "ai"),
         .init(id: "account", title: "계정", description: "반달 프로필과 로그인 상태를 관리합니다.", keywords: "계정 프로필 닉네임 로그아웃 로그인 반달", icon: "person.crop.circle", group: "setup"),
         .init(id: "sync", title: "동기화", description: "iCloud나 Google Drive로 이 iPad와 다른 기기의 과목과 자료를 맞춥니다.", keywords: "동기화 iCloud 아이클라우드 Google Drive 구글 드라이브 클라우드 기기 연결 맞추기 sync", icon: "arrow.triangle.2.circlepath.icloud", group: "setup"),
+        .init(id: "subscription", title: "구독", description: "반달 플러스와 무료로 쓸 수 있는 양을 확인합니다.", keywords: "구독 멤버십 반달 플러스 Bandal Plus 결제 구매 복원 무료 체험 한도 AI 횟수 subscription membership", icon: "star.circle", group: "setup"),
         .init(id: "general", title: "일반", description: "언어와 기본 동작을 관리합니다.", keywords: "일반 탭 언어 한국어 영어 튜토리얼 둘러보기 language korean english tutorial tour", icon: "slider.horizontal.3", group: "setup"),
         .init(id: "university", title: "학교", description: "학교 학사 사이트 바로가기를 관리합니다.", keywords: "학교 대학 학사 포털 lms 강의실 도서관 수강신청 바로가기 etl 캠퍼스 university", icon: "building.columns", group: "setup"),
         .init(id: "packs", title: "플러그인", description: "학습 도구, 확장과 외부 서비스를 한곳에서 관리합니다.", keywords: "플러그인 확장 학습 도구 팩 워크플로 연결 외부 서비스 MCP 서버 Notion GitHub Google Drive Slack JSON 권한 명령 패널", icon: "shippingbox", group: "workflows"),

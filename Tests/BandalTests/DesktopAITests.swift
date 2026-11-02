@@ -96,6 +96,33 @@ final class DesktopAITests: XCTestCase {
         _ = try await service.handle(channel: "native:aiSetKey", request: ["provider": "codex", "key": NSNull()])
         do { _ = try await active.value; XCTFail("Cancelled request returned success") } catch { XCTAssertFalse(error.localizedDescription.contains("fixture-secret")) }
     }
+    /// The free AI allowance: checked before anything is sent, and one use per answer that came back.
+    func testTheFreeAllowanceIsCheckedFirstAndCountsAnswersOnly() async throws {
+        let body = try event(["type": "response.output_text.delta", "delta": "답"]) + event(["type": "response.completed", "response": ["output": [], "usage": ["input_tokens": 1, "output_tokens": 1]]])
+        var fixture = environment(body), allowed = true, counted = 0
+        fixture.checkAllowance = { if !allowed { throw DesktopRuntimeError("한도", code: FreeTier.code) } }
+        fixture.countUse = { counted += 1 }
+        let service = DesktopAIService(environment: fixture)
+        service.onEvent = { _, _ in }; service.onTool = { _, _ in "" }
+        _ = try await service.handle(channel: "native:aiRun", request: request())
+        XCTAssertEqual(counted, 1)
+        allowed = false
+        do { _ = try await service.handle(channel: "native:aiRun", request: request()); XCTFail("Refused request ran") }
+        catch let error as DesktopRuntimeError { XCTAssertEqual(error.code, FreeTier.code) }
+        XCTAssertEqual(DesktopAIProtocol.requests.count, 1); XCTAssertEqual(counted, 1)
+        // A request stopped before its answer costs nothing.
+        allowed = true
+        var held = environment("", hold: true)
+        held.checkAllowance = fixture.checkAllowance; held.countUse = fixture.countUse
+        let stopped = DesktopAIService(environment: held)
+        stopped.onEvent = { _, _ in }; stopped.onTool = { _, _ in "" }
+        let active = Task { try await stopped.handle(channel: "native:aiRun", request: request()) }
+        let limit = ContinuousClock.now.advanced(by: .seconds(3))
+        while DesktopAIProtocol.requests.isEmpty { guard ContinuousClock.now < limit else { throw URLError(.timedOut) }; await Task.yield() }
+        _ = try await stopped.handle(channel: "native:aiSetKey", request: ["provider": "codex", "key": "other"])
+        _ = await active.result
+        XCTAssertEqual(counted, 1)
+    }
     func testAllProvidersReceiveActualImageInputs() async throws {
         let openai = try event(["type": "response.completed", "response": ["output": []]])
         let claude = try event(["type": "message_stop"])

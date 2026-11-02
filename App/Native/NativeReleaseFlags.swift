@@ -10,6 +10,15 @@ enum NativeReleaseFlags {
     /// Never turn it back on as is: the account-binding confirmation it relied on is gone, so the
     /// first signed-in account would sync this device's content.
     static let legacyCloudSync = false
+    /// 반달 멤버십: the free allowance, the paywall and settings › 구독. Off until the App Store subscription
+    /// products are live, or free users meet a paywall with nothing to buy. DEBUG builds turn it on with
+    /// `--native-membership` (UI tests).
+    static let membership: Bool = {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--native-membership") { return true }
+        #endif
+        return false
+    }()
     /// The study market uploads materials to Supabase Storage; its channels are refused while off.
     static let showsMarketplace = false
     /// Lecture recording is left out of iPad 1.0 (App Review 2.5.4): the audio capture service,
