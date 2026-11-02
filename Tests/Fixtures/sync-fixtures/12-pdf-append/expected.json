@@ -1,8 +1,9 @@
 {
   "fixture": "12-pdf-append",
-  "spec": "2.6",
+  "spec": "2.7",
   "blocked": null,
   "initial_upload": null,
+  "moved_to": {},
   "courses": {
     "c1200000-0000-4000-8000-000000000001": {
       "name": "필기 노트",

@@ -105,6 +105,49 @@ enum SyncConnection {
         }
     }
 
+    /// A move (spec v2.7): what this iPad last exchanged with the old root, made to describe the new one, by id
+    /// and never by name. Where the new root holds a register (or drawing) at least as new, the base stays, so
+    /// what both roots hold alike settles without a write and a change made there applies here. Where it holds an
+    /// older one the base becomes that one, and where it holds none the base goes; either way this iPad's value
+    /// then goes out: a change made in the old root after the moving device left it, a deletion included, or
+    /// whatever the new root lacks. A note's text goes by content: one the new root's log never named was
+    /// written in the old root after the move and goes out whatever the stamps say, without md_base when the
+    /// new root's note changed too, so both texts stay heads and neither is lost (a conflict copy).
+    static func rebase(_ state: SyncMerge.State, store: SyncStore) throws {
+        let context = store.context
+        /// `(t, device_id)` order, as the spec compares the two roots' stamps.
+        func older(_ a: SyncMerge.Stamp, _ b: SyncMerge.Stamp) -> Bool { a.t != b.t ? a.t < b.t : a.device.utf8.lexicographicallyPrecedes(b.device.utf8) }
+        try context.transaction {
+            for (table, merged) in [("cloud_sync_courses", state.courses), ("cloud_sync_docs", state.docs)] {
+                for row in try context.query("SELECT sync_id,registers FROM \(table)") {
+                    let id = row["sync_id"] as! String, base = try SyncStore.decode(row["registers"] as! String), next = merged[id]
+                    var rebased = base
+                    for (key, register) in base.fields {
+                        let texts = key == "md_hash" ? state.noteHashes[id] : nil
+                        let unknown = texts.map { !$0.contains(register.value as? String ?? "") } ?? false
+                        guard let incoming = next?.fields[key] else { rebased.fields[key] = nil; continue }
+                        guard unknown || older(incoming.stamp, register.stamp) else { continue }
+                        rebased.fields[key] = SyncMerge.Register(value: unknown && texts!.count > 1 ? NSNull() : incoming.value, stamp: incoming.stamp)
+                    }
+                    if let deleted = base.deleted, next?.deleted.map({ older($0.stamp, deleted.stamp) }) ?? true { rebased.deleted = next?.deleted }
+                    try context.run("UPDATE \(table) SET registers=? WHERE sync_id=?", [SyncStore.encode(rebased), id])
+                }
+            }
+            for row in try context.query("SELECT id,t,dev FROM cloud_sync_objects") {
+                let id = row["id"] as! String
+                let base = SyncMerge.Stamp(t: (row["t"] as? NSNumber)?.int64Value ?? 0, device: row["dev"] as? String ?? "", seq: 0, index: 0)
+                if let incoming = state.ink[id] {
+                    guard older(incoming.stamp, base) else { continue }
+                    // The stamp stays, so the root's older drawing does not apply; a hash no form has sends this iPad's.
+                    try context.run("UPDATE cloud_sync_objects SET hash='' WHERE id=?", [id])
+                } else {
+                    try context.run("DELETE FROM cloud_sync_objects WHERE id=?", [id])
+                }
+                try context.run("INSERT OR REPLACE INTO cloud_sync_dirty VALUES(?, random())", [id])
+            }
+        }
+    }
+
     /// Course pairs to join: this iPad's own course ids the cloud already holds (an earlier connection
     /// to this root, forgotten since), then unmapped courses with the same name. Each side pairs once.
     private static func candidates(_ state: SyncMerge.State, forgetting: Bool, context: NativeRepositoryContext) throws -> [(local: String, remote: String, fixed: Bool)] {

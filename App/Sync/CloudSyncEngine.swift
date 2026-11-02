@@ -15,6 +15,10 @@ final class CloudSyncEngine {
     private(set) var status: [String: Any] = ["phase": "idle"]
 
     let provider: SyncProvider
+    /// "icloud" or "drive": the storage this root is in.
+    let kind: String
+    /// A pass went through to the end (a move's last step can follow it, spec v2.7).
+    var onPass: (() -> Void)?
     private let runtime: DesktopRuntime, keychain: SyncStore.Keychain
     typealias Cache = [String: (version: String, bytes: Data)]
     private var cache: Cache = [:]
@@ -30,10 +34,15 @@ final class CloudSyncEngine {
     private var timer: Timer?, observers: [NSObjectProtocol] = []
     /// A first upload writes this device's file again this often, so other devices see it is still at it.
     var heartbeat: TimeInterval = 600
+    /// Another device's move of this root's sync to the other storage, unless "나중에" covered it, and the
+    /// storage this profile is still moving from (spec v2.7); every status says both.
+    private var moved: (device: String, to: SyncFormat.MovedTo)?, dismissed: Int64 = 0
+    var moving: String?
 
-    init(runtime: DesktopRuntime, provider: SyncProvider, keychain: SyncStore.Keychain = .live) {
+    init(runtime: DesktopRuntime, provider: SyncProvider, kind: String = "icloud", keychain: SyncStore.Keychain = .live) {
         self.runtime = runtime
         self.provider = provider
+        self.kind = kind
         self.keychain = keychain
     }
 
@@ -113,10 +122,20 @@ final class CloudSyncEngine {
         // An empty root is started here; a root of any other format is never written (spec "원격 입력 검증").
         if let blocked = state.blocked, !(blocked == .missingRoot && empty) { return publish("paused", ["reason": blocked.rawValue]) }
         let (me, session) = (try await storage { store, _, _ in try store.deviceID() }, newSession)
+        moved = state.moved(besides: me, from: kind)
         // This device fills an empty root, or goes on with its first upload that was cut off. Another
         // device's mark holds back only a device connecting to the root, not one connected (spec v2.6).
         let initial = empty || state.initialUpload == me
-        let flags = try await storage { store, _, _ in (exportFirst: try store.value("export_first") != nil, rootSeen: try store.value("root_seen") != nil, name: try store.value("device_label") ?? "iPad") }
+        let flags = try await storage { store, _, _ in
+            // A move's first pass in the new root (spec v2.7): the base is rebased on the very state applied below.
+            var moving = try store.moving()
+            if moving?.rebase == true {
+                try store.context.transaction { try SyncConnection.rebase(state, store: store); moving!.rebase = false; try store.setMoving(moving) }
+            }
+            return (exportFirst: try store.value("export_first") != nil, rootSeen: try store.value("root_seen") != nil, name: try store.value("device_label") ?? "iPad",
+                    moving: moving, dismissed: Int64(try store.value("move_dismissed") ?? "") ?? 0)
+        }
+        (moving, dismissed) = (flags.moving?.provider, max(dismissed, flags.dismissed))
         // This iPad's devices file stays in a root it wrote to. Once seen, its absence means the folder
         // was removed or replaced (Files app, another device): not every document deleted, and not a
         // root that holds what this iPad sent. It is filled again only when the user says so (design §4.4).
@@ -148,6 +167,7 @@ final class CloudSyncEngine {
         let batch = try await storage { store, library, _ in
             let outbox = SyncOutbox(store: store, library: library)
             outbox.deviceName = flags.name
+            if initial { outbox.asOf = flags.moving.map { $0.clock + 1 } }
             if session { try outbox.endSession() }
             return try outbox.prepare(remote: Set(files.keys), deletedCourses: Set(state.courses.filter { !$0.value.isAlive }.keys), initialUpload: initial)
         }
@@ -172,7 +192,17 @@ final class CloudSyncEngine {
         if let waiting { return publish("waiting", ["message": waiting]) }
         // iCloud uploads in the background after a write; what has not gone up yet is shown apart (design §4.5).
         publish("idle", ["lastSuccessAt": finished, "uploads": files.values.filter { !$0.uploaded }.count, "skipped": skipped + batch.skipped.count])
+        onPass?()
     }
+
+    /// "나중에" on another device's move (spec v2.7): neither it nor an earlier one is offered again.
+    func dismissMove(_ t: Int64) {
+        dismissed = max(dismissed, t)
+        republish()
+    }
+
+    /// The status again, with what changed outside a cycle (a dismissed offer, a move that finished).
+    func republish() { publish(status["phase"] as? String ?? "idle", status) }
 
     /// The removed root is filled again with everything this iPad holds (design §4.4). A root that
     /// holds this iPad's files again (restored from Recently Deleted) just resumes.
@@ -260,6 +290,12 @@ final class CloudSyncEngine {
 
     private func publish(_ phase: String, _ details: [String: Any] = [:]) {
         status = details.merging(["phase": phase]) { $1 }
+        status["moved"] = nil; status["moving"] = moving
+        if let moved, moved.to.t > dismissed {
+            var offer: [String: Any] = ["device": moved.device, "provider": moved.to.kind, "t": moved.to.t]
+            if let account = moved.to.account { offer["account"] = account }
+            status["moved"] = offer
+        }
         emit?("runtime:cloudSyncChanged", status)
     }
 }

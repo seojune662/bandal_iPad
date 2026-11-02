@@ -283,6 +283,7 @@ struct NativeWorkspaceView: View {
             .overlay(alignment: .top) {
                 if showBusy { ProgressView().padding(10).background(.regularMaterial, in: Capsule()).padding(.top, 48) }
             }
+            .overlay(alignment: .bottom) { NativeSyncMoveNotice(store: store) { openSettings("sync") } }
             .onAppear { updateWindowWidth(geometry.size.width) }
             .onChange(of: geometry.size.width) { _, width in updateWindowWidth(width) }
             .task(id: busy) {

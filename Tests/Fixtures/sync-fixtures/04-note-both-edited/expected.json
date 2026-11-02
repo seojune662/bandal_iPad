@@ -1,8 +1,9 @@
 {
   "fixture": "04-note-both-edited",
-  "spec": "2.6",
+  "spec": "2.7",
   "blocked": null,
   "initial_upload": null,
+  "moved_to": {},
   "courses": {
     "c0000000-0000-4000-8000-000000000001": {
       "name": "선형대수학",

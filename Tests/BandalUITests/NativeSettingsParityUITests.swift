@@ -130,6 +130,22 @@ final class NativeSettingsParityUITests: XCTestCase {
         capture("Sync settings without an iCloud account")
     }
 
+    /// Spec v2.7: while sync is on, the other storage is reached by moving; disconnecting waits under 고급.
+    @MainActor
+    func testSyncSettingsWhileOnOfferAMoveAndFoldDisconnectUnderAdvanced() {
+        let app = launch(extra: ["-BandalCloudSync", "icloud"])
+        app.buttons["native-section-settings"].tap()
+        let category = app.buttons["native-settings-category-sync"]
+        XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription); category.tap()
+        XCTAssertTrue(app.buttons["native-sync-move"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertFalse(app.buttons["native-sync-disconnect"].exists, "folded under 고급")
+        capture("Sync settings, on: moving")
+        // Not the 고급 settings category in the sidebar.
+        app.buttons.matching(NSPredicate(format: "label == '고급' AND identifier != 'native-settings-category-advanced'")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["native-sync-disconnect"].waitForExistence(timeout: 5), app.debugDescription)
+        capture("Sync settings, on: advanced")
+    }
+
     @MainActor private func launch(extra: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"] + extra; app.launch()

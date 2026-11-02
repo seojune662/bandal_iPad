@@ -28,11 +28,12 @@ enum GoogleDriveAuth {
 
     static let signedOut = DesktopRuntimeError("Google에 다시 연결해 주세요.", code: "SYNC_DRIVE_SIGNED_OUT")
 
-    /// Asks the user to sign in and allow Drive files; nil when they close the sheet.
-    @MainActor static func signIn(transport: @escaping Transport = live) async throws -> Account? {
+    /// Asks the user to sign in and allow Drive files; nil when they close the sheet. `hint`: the account to offer
+    /// first (another device moved sync to that Drive, spec v2.7).
+    @MainActor static func signIn(hint: String? = nil, transport: @escaping Transport = live) async throws -> Account? {
         let verifier = random(), state = random()
         let callback: URL
-        do { callback = try await OAuthSession().open(authorization(challenge: challenge(verifier), state: state), callbackScheme: scheme) }
+        do { callback = try await OAuthSession().open(authorization(challenge: challenge(verifier), state: state, hint: hint), callbackScheme: scheme) }
         catch {
             let closed = (error as NSError).domain == ASWebAuthenticationSessionError.errorDomain && (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue
             if error is CancellationError || closed { return nil }
@@ -41,11 +42,11 @@ enum GoogleDriveAuth {
         return try await finish(callback, state: state, verifier: verifier, transport: transport)
     }
 
-    static func authorization(challenge: String, state: String) -> URL {
+    static func authorization(challenge: String, state: String, hint: String? = nil) -> URL {
         var url = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
         url.queryItems = [.init(name: "client_id", value: clientID), .init(name: "redirect_uri", value: redirect), .init(name: "response_type", value: "code"),
                           .init(name: "scope", value: scopes), .init(name: "code_challenge", value: challenge), .init(name: "code_challenge_method", value: "S256"),
-                          .init(name: "state", value: state)]
+                          .init(name: "state", value: state)] + (hint.map { [.init(name: "login_hint", value: $0)] } ?? [])
         return url.url!
     }
 

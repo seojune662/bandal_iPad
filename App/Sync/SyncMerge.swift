@@ -44,6 +44,8 @@ enum SyncMerge {
         var devices: [String: String] = [:]
         /// When each device last wrote its devices file (ms), where the file says.
         var lastSeen: [String: Int64] = [:]
+        /// Devices that moved their sync from this root to another storage (spec v2.7).
+        var movedTo: [String: SyncFormat.MovedTo] = [:]
         /// The device whose first upload into this root is not done yet, and when it began (ms) (spec v2.6).
         var initialUpload: String?, started: Int64?
         var courses: [String: Entity] = [:]
@@ -60,6 +62,9 @@ enum SyncMerge {
         var waitingDocs: [String] = [], waitingInk: [String] = [], waitingCopies: [String] = []
         /// PDF documents: the bytes from which end-page appends lead to the winning pdf_sha256, sorted (spec v2.4).
         var rebindFrom: [String: [String]] = [:]
+        /// md documents: every md_hash this root's log names for each, winning or not, sorted. A move asks
+        /// whether a text is in the root (spec v2.7).
+        var noteHashes: [String: [String]] = [:]
 
         /// Another device's first upload into this root (spec v2.6), by name, and whether it is still
         /// going: its devices file was written within the hour, or, with no such file yet, it began
@@ -68,6 +73,14 @@ enum SyncMerge {
             guard let device = initialUpload, device != me else { return nil }
             let going: Bool = lastSeen[device].map { abs(now - $0) <= 3_600_000 } ?? started.map { abs(now - $0) <= 300_000 } ?? false
             return (devices[device] ?? String(device.prefix(8)), going)
+        }
+
+        /// Another device's latest move to the storage this root is not on (spec v2.7): its name, or the start of
+        /// its id while it has none, and where it went.
+        func moved(besides me: String, from kind: String) -> (device: String, to: SyncFormat.MovedTo)? {
+            guard let latest = movedTo.filter({ $0.key != me && $0.value.kind != kind }).max(by: { ($0.value.t, $0.key) < ($1.value.t, $1.key) }) else { return nil }
+            let name = devices[latest.key].flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } ?? String(latest.key.prefix(8))
+            return (name, latest.value)
         }
     }
 
@@ -90,7 +103,7 @@ enum SyncMerge {
         for file in files {
             switch file.content {
             case .root: break
-            case .device(let id, let name, let seen): state.devices[id] = name; state.lastSeen[id] = seen
+            case .device(let id, let name, let seen, let moved): state.devices[id] = name; state.lastSeen[id] = seen; state.movedTo[id] = moved
             case .pdf, .asset: present.insert(file.path)
             case .note(let author, let seq, let doc, let hash, let assets):
                 noteFiles[doc, default: []].append(NoteFile(path: file.path, author: author, hash: hash, seq: seq, assets: assets))
@@ -155,6 +168,7 @@ enum SyncMerge {
             }
         }
 
+        for (doc, own) in versions { state.noteHashes[doc] = Set(own.map(\.hash)).sorted() }
         var waiting = Set<String>(), copies: [(id: String, of: String, course: String, folder: String, name: String, hash: String, file: String?)] = []
         for (doc, entity) in state.docs {
             guard let body = entity.text("md_hash") else { continue }

@@ -26,8 +26,8 @@ enum SyncFormat {
         /// `initialUpload`: the device whose first upload into the root is not done yet (spec v2.6),
         /// and `started` when it began (ms).
         case root(format: Int, initialUpload: String?, started: Int64?)
-        /// `lastSeen`: ms, when the device last wrote this file.
-        case device(id: String, name: String, lastSeen: Int64?)
+        /// `lastSeen`: ms, when the device last wrote this file. `movedTo`: the storage it left this root for (spec v2.7).
+        case device(id: String, name: String, lastSeen: Int64?, movedTo: MovedTo?)
         /// `dropped` counts entries that failed validation and were left out.
         case log(author: String, seq: Int, events: [Event], dropped: Int)
         case ink(author: String, seq: Int, doc: String, objects: [InkObject], dropped: Int)
@@ -37,6 +37,11 @@ enum SyncFormat {
     }
 
     struct File { let path: String; let content: Content }
+
+    /// A device that left this root for the other storage (spec v2.7): "icloud" or "drive", as the spec and
+    /// this app both name them, and when (ms). `account`: the Google account it went to (`account_hint`,
+    /// user decision 2026-11-03), only to sign in with and to name in the offer.
+    struct MovedTo: Equatable { let kind: String; let t: Int64; var account: String? = nil }
 
     /// Root files sorted into parsed files, ignored paths, unreadable paths and iCloud
     /// placeholders (`pending`, listed by the path they stand for). Without a format-2
@@ -88,7 +93,7 @@ enum SyncFormat {
             return File(path: path, content: .root(format: format, initialUpload: uuid(root["initial_upload"]), started: stamp(root["started"])))
         case .device(let id):
             guard let device = try json(bytes, limit: mib) as? [String: Any], let name = device["name"] as? String else { throw Unreadable(reason: "device name") }
-            return File(path: path, content: .device(id: id, name: name, lastSeen: stamp(device["last_seen"])))
+            return File(path: path, content: .device(id: id, name: name, lastSeen: stamp(device["last_seen"]), movedTo: movedTo(device["moved_to"])))
         case .log(let author, let seq):
             let (events, dropped) = try items(json(bytes, limit: 4 * mib), event)
             return File(path: path, content: .log(author: author, seq: seq, events: events, dropped: dropped))
@@ -242,6 +247,13 @@ enum SyncFormat {
     }
     private static func whole(_ value: Any?) -> Double? { number(value).flatMap { $0.rounded(.towardZero) == $0 ? $0 : nil } }
     private static func safeInteger(_ value: Any?) -> Int? { whole(value).flatMap { abs($0) <= 9_007_199_254_740_991 ? Int($0) : nil } }
+    /// Anything but a known storage and a time is no move, and not a file error. An account hint that is not
+    /// one short line is left out of a move that stands.
+    private static func movedTo(_ value: Any?) -> MovedTo? {
+        guard let value = value as? [String: Any], let kind = value["provider"] as? String, ["icloud", "drive"].contains(kind), let t = stamp(value["t"]) else { return nil }
+        let account = (value["account_hint"] as? String).flatMap { (1...320).contains($0.count) && !$0.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) ? $0 : nil }
+        return MovedTo(kind: kind, t: t, account: account)
+    }
     private static func stamp(_ value: Any?) -> Int64? { whole(value).flatMap { $0 >= 0 && $0 < Double(maxStamp) ? Int64($0) : nil } }
     private static func isBoolean(_ value: Any?) -> Bool { (value as? NSNumber).map { CFGetTypeID($0) == CFBooleanGetTypeID() } ?? false }
 

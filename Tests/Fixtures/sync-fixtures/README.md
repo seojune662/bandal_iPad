@@ -1,6 +1,6 @@
 # sync-fixtures
 
-반달 동기화 공통 스펙의 적합성 예제다. 스펙 본문은 [SPEC.md](SPEC.md)(v2.6)에 있다.
+반달 동기화 공통 스펙의 적합성 예제다. 스펙 본문은 [SPEC.md](SPEC.md)(v2.7)에 있다.
 
 - 각 폴더의 `root/`는 클라우드 루트를 그대로 옮긴 것이다.
 - `expected.json`은 `root/` 전체를 파싱·머지한 뒤의 상태다. 데스크톱과 iPad 파서는 같은 결과를 내야 한다.
@@ -29,11 +29,12 @@
 | `16-initial-upload-no-device` | 표시는 있는데 그 기기(`cccccccc-…0003`)의 기기 파일이 없다(v2.6). `last_seen`이 null이라 연결하려는 기기는 `started`로 정한다. 5분 안이면 기다리고, 지났으면 중단으로 본다 |
 | `17-initial-upload-not-a-mark` | `initial_upload`가 숫자다(v2.6). `started`가 있어도 표시가 아니고 파일 오류도 아니다. `bandal.json`은 그대로 읽혀 `blocked`와 `errors`가 비어 있다 |
 | `18-initial-upload-bad-started` | 표시의 `started`가 정수 ms가 아니다(`1793318700000.5`, v2.6). `started`는 null로 읽고 표시는 그대로다. 파일 오류도 아니다. 기기 파일도 없어 연결하려는 기기는 바로 중단으로 본다 |
+| `19-moved-to` | 다른 저장소로 옮겨 간 기기가 있는 옛 루트(v2.7). MacBook Air(`aaaaaaaa-…0001`)는 Google Drive로 옮겼고, 남은 iPad의 과목은 그대로 머지된다. iPad mini(`dddddddd-…0004`)의 `provider: "Drive"`(대문자)와 Windows 노트북(`eeeeeeee-…0005`)의 소수 `t`는 `moved_to`가 아니다. 파일 오류도 아니다 |
 | `render/v5-diameter.json` | inkVersion 5의 점별 지름 계수. 두 렌더러의 굵기가 같은지 본다. 계수는 데스크톱 `src/shared/inkV5.ts`로 계산했다. 허용오차는 1e-6이다 |
 
 ## 고정 값
 
-- **기기**: `aaaaaaaa-…0001`은 "MacBook Air"(데스크톱), `bbbbbbbb-…0002`는 "iPad Pro"다. 사전순으로는 iPad가 더 크다. `cccccccc-…0003`은 기기 파일이 아직 없는 기기다(05, 16, 18).
+- **기기**: `aaaaaaaa-…0001`은 "MacBook Air"(데스크톱), `bbbbbbbb-…0002`는 "iPad Pro"다. 사전순으로는 iPad가 더 크다. `cccccccc-…0003`은 기기 파일이 아직 없는 기기다(05, 16, 18). 19에는 "iPad mini"(`dddddddd-…0004`)와 "Windows 노트북"(`eeeeeeee-…0005`)도 있다.
 - **파일 이름**: 대소문자만 다른 두 경로를 두지 않는다. APFS와 NTFS는 둘을 같은 파일로 본다.
 - **시각**: `t`는 ms epoch이고, 기준은 `T0 = 1793318400000`(2026-10-30T00:00:00Z)이다.
 - **충돌 사본 id**: `uuidv5(namespace = 9b1f6a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b, name = "<document_id>:<진 쪽 md_hash>")`
@@ -47,9 +48,10 @@
 
 ```text
 fixture           폴더 이름
-spec              "2.6"   예제 내용이 마지막으로 바뀐 스펙
+spec              "2.7"   예제 내용이 마지막으로 바뀐 스펙
 blocked           null | "missing-root" | "update-required" | "unsupported-format"   format 검사 결과. null이 아니면 나머지는 모두 비어 있다
 initial_upload    null | {device, started, last_seen}   첫 업로드 표시(v2.6). device는 표시한 기기, started는 표시의 값(없거나 틀리면 null), last_seen은 그 기기 파일의 값(파일이 없으면 null)
+moved_to          {device_id: {provider, t}}   다른 저장소로 옮겨 간 기기(v2.7). provider와 t가 모두 올바른 기기 파일만 넣는다
 courses           {id: {name, sort, color, archived, alive}}
 docs              {id: {course_id, type, name, rel_path, pdf_sha256 + pdf_prev_sha256 + pdf_rebind_from | md_hash, alive}}
 ink               {document_id: {page: {object_id: 이긴 버전의 개체 전체}}}
@@ -65,6 +67,7 @@ errors            [root 기준 경로]  파싱하지 못한 파일, 사전순
 - v2.2에서 `blocked`, `renames`, `waiting`을 더했다. 01–04의 `root/`는 그대로이고 `expected.json`에 빈 값으로 들어 있다.
 - v2.3에서 pdf 문서에 `pdf_prev_sha256`을 더했다. `pdf_sha256`이 있는 문서에만 있고, 값은 그 `pdf_sha256`을 쓴 이벤트의 것(없으면 null)이다.
 - v2.4에서 `pdf_rebind_from`을 더했다. 덧붙이기 연결을 따라 이긴 `pdf_sha256`에 닿는 sha256들이고, 이긴 것 자체는 빼며 사전순이다. `alive`는 문서와 그 과목이 모두 살아 있을 때만 true다.
+- v2.7에서 `moved_to`를 더했다. 19 밖의 예제에는 `{}`로 들어 있다. 다른 기기는 이 값으로 배너를 띄운다(지금 저장소가 아닌 `provider` 가운데 `t`가 가장 큰 것).
 - v2.6에서 `initial_upload`를 더했다. 다른 예제에는 null로 들어 있다. 연결하려는 기기는 이 값과 지금 시각으로 기다릴지(`last_seen`이 1시간 안, `last_seen`이 없으면 `started`가 5분 안), 중단으로 볼지 정한다.
 - 필기 개체는 해시가 아니라 개체 전체를 담는다. 두 플랫폼 사이에 정규 JSON(숫자 표기) 규칙을 맞추지 않아도 되도록 JSON 값으로 비교한다.
 

@@ -1,12 +1,13 @@
 {
   "fixture": "18-initial-upload-bad-started",
-  "spec": "2.6",
+  "spec": "2.7",
   "blocked": null,
   "initial_upload": {
     "device": "cccccccc-0000-4000-8000-000000000003",
     "started": null,
     "last_seen": null
   },
+  "moved_to": {},
   "courses": {},
   "docs": {},
   "ink": {},

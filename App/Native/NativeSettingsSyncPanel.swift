@@ -4,6 +4,7 @@ import UIKit
 /// Settings › 동기화 (design §4.1–4.5). Independent of the Bandal login and of any subscription,
 /// so nothing here mentions either. Choosing iCloud or Google Drive reads the root first and asks
 /// only when it already holds data (the connection sheet); Drive asks for a Google account first.
+/// While on, the other storage is reached by moving (spec v2.7), never by connecting again.
 struct NativeSettingsSyncPanel: View {
     @ObservedObject var store: NativeWorkspaceStore
     @State private var status: [String: Any] = [:]
@@ -11,6 +12,12 @@ struct NativeSettingsSyncPanel: View {
     @State private var preview: [String: Any]?
     @State private var startConfirmation = false
     @State private var offConfirmation = false
+    /// A move under way here (spec v2.7): the storage it goes to, whether it moves as soon as that storage holds
+    /// the data another device moved there (the offer), the Google account that device named, and what was found.
+    @State private var moveTarget: String?
+    @State private var oneStep = false
+    @State private var moveHint: String?
+    @State private var movePlan: [String: Any]?
     @State private var busy = false
     @State private var error: String?
     @State private var notice: String?
@@ -21,15 +28,19 @@ struct NativeSettingsSyncPanel: View {
     private var reason: String? { phase == "paused" ? status["reason"] as? String : nil }
     /// The provider being shown: the one on, or the one a preview is for.
     private var shown: String { preview?["provider"] as? String ?? provider }
+    /// The storage a move goes to: the one not on now.
+    private var other: String { provider == "drive" ? "icloud" : "drive" }
     /// The provider whose root another device is still filling (spec v2.6).
     private var waitingFor: String? { (preview?["initialUpload"] as? [String: Any])?["going"] as? Bool == true ? shown : nil }
+    /// A move waiting for the other storage: another device still fills it, or it is still coming down.
+    private var moveWaits: Bool { (movePlan?["initialUpload"] as? [String: Any])?["going"] as? Bool == true || movePlan?["downloading"] != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             if let error { NativeToolError(message: error) }
             if let notice { Label(notice, systemImage: "checkmark.circle").font(NativeDesktopTheme.font(13)).foregroundStyle(.green) }
             NativeSettingsCard(title: "동기화", description: "다른 기기의 과목과 자료를 맞춥니다. iCloud는 같은 Apple ID, Google Drive는 같은 Google 계정을 쓰는 기기끼리입니다.") {
-                Picker("동기화", selection: Binding(get: { on ? provider : "off" }, set: { $0 == "off" ? (offConfirmation = true) : turnOn($0) })) {
+                Picker("동기화", selection: Binding(get: { on ? provider : "off" }, set: { $0 == "off" ? (offConfirmation = true) : on ? beginMove($0) : turnOn($0) })) {
                     Text("끔").tag("off")
                     Text("iCloud").tag("icloud")
                     Text("Google Drive").tag("drive")
@@ -47,6 +58,11 @@ struct NativeSettingsSyncPanel: View {
                 if let uploading = preview?["initialUpload"] as? [String: Any], waitingFor != nil {
                     Text("‘\(uploading["device"] as? String ?? "")’에서 \(CloudSyncService.name(shown))에 처음 올리는 중이에요. 30초마다 다시 확인해요.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
                 }
+                if on { advanced }
+            }
+            if on, status["moving"] == nil {
+                moveOffer
+                moveCard
             }
             NativeSettingsCard(title: "이 기기 이름", description: "충돌 사본 이름에 쓰입니다.") {
                 HStack {
@@ -76,6 +92,14 @@ struct NativeSettingsSyncPanel: View {
                 turnOn(kind)
             }
         }
+        .task(id: moveWaits) {
+            // So is the storage a move waits for, while this screen is open; the offer moves once it is ready.
+            while moveWaits, let kind = moveTarget {
+                try? await Task.sleep(for: .seconds(30))
+                if Task.isCancelled { return }
+                look(kind, quietly: true)
+            }
+        }
         .onReceive(store.events) { event in
             guard event.channel == "runtime:cloudSyncChanged", let value = event.payload as? [String: Any] else { return }
             status = status.filter { ["provider", "deviceName", "previousProfile", "lastSuccessAt", "driveEmail"].contains($0.key) }.merging(value) { $1 }
@@ -99,6 +123,9 @@ struct NativeSettingsSyncPanel: View {
                 .disabled(phase == "paused" || phase == "syncing")
         }
         LabeledContent("위치", value: provider == "drive" ? "Google Drive › Bandal" : "iCloud Drive › 반달")
+        if let left = status["moving"] as? String {
+            Text("\(CloudSyncService.name(provider))로 옮기는 중이에요. 다 올리면 \(CloudSyncService.name(left))에 알리고 연결을 끊어요.").font(.caption).accessibilityIdentifier("native-sync-moving")
+        }
         if provider == "drive", let email = status["driveEmail"] as? String, !email.isEmpty { LabeledContent("Google 계정", value: email) }
         if let uploads = status["uploads"] as? Int, uploads > 0 { Text("업로드 대기 \(uploads)개").font(.caption).foregroundStyle(NativeDesktopTheme.secondary) }
         switch status["reason"] as? String {
@@ -172,6 +199,117 @@ struct NativeSettingsSyncPanel: View {
             preview = nil
             if request["mode"] as? String != "import" { notice = "\(CloudSyncService.name(kind)) 동기화를 켰어요." }
         }
+    }
+
+    // MARK: Moving (spec v2.7)
+
+    /// Another device moved this root's sync to the other storage: this iPad moves too in one step, or not now.
+    @ViewBuilder private var moveOffer: some View {
+        if moveTarget == nil, let moved = status["moved"] as? [String: Any], let kind = moved["provider"] as? String, let t = (moved["t"] as? NSNumber)?.int64Value {
+            let account = (moved["account"] as? String).map { "(\($0))" } ?? ""
+            NativeSettingsCard(title: "\(moved["device"] as? String ?? "")에서 \(CloudSyncService.name(kind))\(account)로 옮겼어요",
+                               description: "이 iPad도 옮길까요? 같은 자료는 다시 올리지 않고, \(CloudSyncService.name(provider))의 파일은 지우지 않아요.") {
+                HStack {
+                    Button("나중에") { run { status = try await invoke("cloudSync:dismissMove", ["t": t]) } }.accessibilityIdentifier("native-sync-move-later")
+                    Button("옮기기") { moveTarget = kind; oneStep = true; moveHint = moved["account"] as? String; look(kind) }.accessibilityIdentifier("native-sync-follow")
+                }
+            }
+        }
+    }
+
+    /// Moving to the other storage from here: what it holds is shown first, then the move.
+    private var moveCard: some View {
+        NativeSettingsCard(title: "저장소 옮기기", description: "자료를 \(CloudSyncService.name(other))로 옮기고 이 iPad를 그쪽에 연결해요. 다른 기기에는 따라 옮길지 묻는 안내가 떠요. \(CloudSyncService.name(provider))의 파일은 지우지 않아요.") {
+            if let target = moveTarget {
+                if let prepared = movePlan { moveStep(prepared, to: target) } else { Text("\(CloudSyncService.name(target))를 확인하는 중").foregroundStyle(NativeDesktopTheme.secondary) }
+            } else {
+                HStack {
+                    Text("지금은 \(CloudSyncService.name(provider))와 동기화하고 있어요.")
+                    Spacer()
+                    Button("\(CloudSyncService.name(other))로 옮기기") { beginMove(other) }.accessibilityIdentifier("native-sync-move")
+                }
+            }
+        }.font(NativeDesktopTheme.font(13))
+    }
+
+    @ViewBuilder private func moveStep(_ prepared: [String: Any], to target: String) -> some View {
+        let name = CloudSyncService.name(target)
+        if let plan = prepared["plan"] as? String {
+            let local = prepared["local"] as? [String: Any] ?? [:], cloud = prepared["cloud"] as? [String: Any] ?? [:]
+            Text(plan == "upload" ? "이 iPad의 과목 \(local["courses"] as? Int ?? 0)개, 자료 \(local["documents"] as? Int ?? 0)개를 \(name)로 옮깁니다. 다 올리면 \(CloudSyncService.name(provider)) 연결을 끊어요."
+                 : "\(name)에 이미 과목 \(cloud["courses"] as? Int ?? 0)개가 있어요. 같은 자료는 다시 올리지 않고, 이 iPad에만 있거나 바뀐 것만 올려 합칩니다. 다 맞추면 \(CloudSyncService.name(provider)) 연결을 끊어요.")
+                .accessibilityIdentifier("native-sync-move-plan")
+            if oneStep, plan == "upload" {
+                // Another device moved there, yet it looks empty: another Google account, or iCloud still coming down.
+                Text("\((status["moved"] as? [String: Any])?["device"] as? String ?? "다른 기기")에서 옮긴 자료가 \(name)에 아직 보이지 않아요. \(target == "drive" ? "같은 Google 계정인지 확인해 주세요." : "iCloud가 아직 내려받는 중일 수 있어요.") 그대로 옮기면 이 iPad의 자료를 새로 올려요.")
+                    .foregroundStyle(.orange)
+            }
+            if let unfinished = (prepared["initialUpload"] as? [String: Any])?["device"] as? String {
+                Text("‘\(unfinished)’에서 \(name)에 처음 올리다 멈췄어요. 옮기면 그 자료와 합쳐요.").foregroundStyle(NativeDesktopTheme.secondary)
+            }
+            HStack {
+                Button("취소") { endMove() }
+                if oneStep, plan == "upload" { Button("다시 확인") { look(target) } }
+                Button("옮기기") { run { try await move(target, expect: plan) } }.accessibilityIdentifier("native-sync-move-confirm")
+            }
+        } else {
+            Text(Self.waitText(prepared, name) + (oneStep && moveWaits ? " 이 화면을 열어 두면 준비되는 대로 옮겨요." : "")).foregroundStyle(.orange)
+            HStack {
+                Button("취소") { endMove() }
+                Button("다시 확인") { look(target) }
+            }
+        }
+    }
+
+    /// Why the other storage cannot take this profile now.
+    private static func waitText(_ prepared: [String: Any], _ name: String) -> String {
+        if let device = (prepared["initialUpload"] as? [String: Any])?["device"] as? String { return "‘\(device)’에서 \(name)에 처음 올리는 중이에요. 다 올린 뒤 옮길 수 있어요." }
+        if let count = prepared["downloading"] as? Int { return "\(name)에서 반달 폴더를 내려받는 중이에요(\(count)개)." }
+        if prepared["blocked"] != nil { return "새 버전의 반달이 만든 폴더예요. 앱을 업데이트한 뒤 옮겨 주세요." }
+        return name == "iCloud" ? "iCloud에 로그인하고 iCloud Drive를 켜야 합니다." : "Google 계정을 연결하지 않았어요."
+    }
+
+    /// Disconnecting and connecting again is the advanced way to another storage or another Google account.
+    private var advanced: some View {
+        DisclosureGroup("고급") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("연결 해제는 이 iPad의 동기화를 끕니다. 이 iPad의 자료와 \(CloudSyncService.name(provider))의 파일은 그대로 둡니다. 다시 연결하면 처음 연결할 때처럼 합치기·덮어쓰기·가져오기를 고릅니다. 저장소를 바꿀 때는 저장소 옮기기를, 다른 Google 계정으로 바꿀 때는 연결 해제 뒤 새로 연결하세요.")
+                    .font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
+                Button("연결 해제", role: .destructive) { offConfirmation = true }.accessibilityIdentifier("native-sync-disconnect")
+            }
+        }
+    }
+
+    private func beginMove(_ kind: String) {
+        moveTarget = kind; oneStep = false; moveHint = nil; movePlan = nil
+        look(kind)
+    }
+
+    private func endMove() { moveTarget = nil; oneStep = false; moveHint = nil; movePlan = nil }
+
+    /// Looks at the other storage. From the offer, a storage that holds data is moved to right away; one that looks
+    /// empty is shown first. A recheck nobody asked for keeps waiting when the check fails.
+    private func look(_ kind: String, quietly: Bool = false) {
+        run {
+            do {
+                var request: [String: Any] = ["provider": kind]
+                if let moveHint { request["accountHint"] = moveHint }
+                let prepared = try await invoke("cloudSync:prepareMove", request)
+                if oneStep, prepared["plan"] as? String == "join" { try await move(kind, expect: "join") } else { movePlan = prepared }
+            } catch where quietly {
+                return
+            } catch {
+                if oneStep { endMove() }
+                throw error
+            }
+        }
+    }
+
+    private func move(_ kind: String, expect: String) async throws {
+        try await store.flushDocuments()
+        do { status = try await invoke("cloudSync:move", ["provider": kind, "expect": expect]) } catch { endMove(); throw error }
+        endMove()
+        notice = "\(CloudSyncService.name(kind))로 옮기기 시작했어요."
     }
 
     private func load() async {
