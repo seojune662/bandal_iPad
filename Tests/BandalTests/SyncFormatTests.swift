@@ -102,7 +102,7 @@ final class SyncFormatTests: XCTestCase {
     /// Spec v2.7: a device that moved its sync to the other storage says so in its file in the old root, as
     /// "icloud" or "drive". Anything but a known storage and a whole t is no move, and the file still reads. The
     /// offer is the latest other device's move to the storage this root is not on; an account hint goes along
-    /// when it is one short line (user decision 2026-11-03).
+    /// when it is an address: one @ with text on both sides, no space or control character, any length.
     func testADeviceFileSaysWhereItsSyncMoved() throws {
         let deviceC = "cccccccc-0000-4000-8000-000000000003"
         func read(_ devices: [(id: String, json: String)]) -> (state: SyncMerge.State, errors: [String]) {
@@ -121,9 +121,16 @@ final class SyncFormatTests: XCTestCase {
             XCTAssertNil(file.state.movedTo[deviceA], bad)
             XCTAssertEqual(file.state.devices[deviceA], "Mac", bad)
         }
-        for hint in [#"7"#, #""""#, #""a\nb""#, "\"\(String(repeating: "a", count: 321))\""] {
+        for hint in [#"7"#, #""""#, #""student""#, #""a@b@c""#, #""@example.com""#, #""student@""#, #""student @example.com""#,
+                     #""a\tb@c""#, #""a\u007fb@c""#, #""a\u0085b@c""#] {
             let file = read([(deviceA, #"{"name":"Mac","moved_to":{"provider":"drive","t":7,"account_hint":\#(hint)}}"#)])
+            XCTAssertTrue(file.errors.isEmpty, hint)
             XCTAssertEqual(file.state.movedTo[deviceA], .init(kind: "drive", t: 7), hint)
+        }
+        // Only U+0020 and control characters are out: other spaces and format characters stay, an @ keeps a mark after it, and any length goes.
+        for hint in [#""a\u00a0b@c""#, #""a\u200bb@c""#, #""a@\u0301c""#, "\"\(String(repeating: "a", count: 400))@example.com\""] {
+            let file = read([(deviceA, #"{"name":"Mac","moved_to":{"provider":"drive","t":7,"account_hint":\#(hint)}}"#)])
+            XCTAssertNotNil(file.state.movedTo[deviceA]?.account, hint)
         }
         let two = read([(deviceA, #"{"name":"Mac","moved_to":{"provider":"drive","t":7}}"#), (deviceC, #"{"name":" ","moved_to":{"provider":"drive","t":9}}"#)]).state
         XCTAssertEqual(two.moved(besides: deviceB, from: "icloud")?.device, String(deviceC.prefix(8)), "the latest move, by its id while it has no name")

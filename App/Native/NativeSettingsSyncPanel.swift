@@ -241,14 +241,18 @@ struct NativeSettingsSyncPanel: View {
                 .accessibilityIdentifier("native-sync-move-plan")
             if oneStep, plan == "upload" {
                 // Another device moved there, yet it looks empty: another Google account, or iCloud still coming down.
-                Text("\((status["moved"] as? [String: Any])?["device"] as? String ?? "다른 기기")에서 옮긴 자료가 \(name)에 아직 보이지 않아요. \(target == "drive" ? "같은 Google 계정인지 확인해 주세요." : "iCloud가 아직 내려받는 중일 수 있어요.") 그대로 옮기면 이 iPad의 자료를 새로 올려요.")
-                    .foregroundStyle(.orange)
+                let device = (status["moved"] as? [String: Any])?["device"] as? String ?? "다른 기기"
+                let check = target == "drive"
+                    ? "같은 Google 계정\(moveHint.map { "(\($0))" } ?? "")인지 확인해 주세요." + ((prepared["account"] as? String).map { " 지금 로그인한 계정: \($0)." } ?? "")
+                    : "iCloud가 아직 내려받는 중일 수 있어요."
+                Text("\(device)에서 옮긴 자료가 \(name)에 아직 보이지 않아요. \(check) 그대로 옮기면 이 iPad의 자료를 새로 올려요.").foregroundStyle(.orange)
             }
             if let unfinished = (prepared["initialUpload"] as? [String: Any])?["device"] as? String {
                 Text("‘\(unfinished)’에서 \(name)에 처음 올리다 멈췄어요. 옮기면 그 자료와 합쳐요.").foregroundStyle(NativeDesktopTheme.secondary)
             }
             HStack {
                 Button("취소") { endMove() }
+                if oneStep, plan == "upload", target == "drive" { Button("Google 계정 다시 고르기") { look(target, again: true) }.accessibilityIdentifier("native-sync-move-account") }
                 if oneStep, plan == "upload" { Button("다시 확인") { look(target) } }
                 Button("옮기기") { run { try await move(target, expect: plan) } }.accessibilityIdentifier("native-sync-move-confirm")
             }
@@ -289,10 +293,10 @@ struct NativeSettingsSyncPanel: View {
 
     /// Looks at the other storage. From the offer, a storage that holds data is moved to right away; one that looks
     /// empty is shown first. A recheck nobody asked for keeps waiting when the check fails.
-    private func look(_ kind: String, quietly: Bool = false) {
+    private func look(_ kind: String, quietly: Bool = false, again: Bool = false) {
         run {
             do {
-                var request: [String: Any] = ["provider": kind]
+                var request: [String: Any] = ["provider": kind, "signInAgain": again]
                 if let moveHint { request["accountHint"] = moveHint }
                 let prepared = try await invoke("cloudSync:prepareMove", request)
                 if oneStep, prepared["plan"] as? String == "join" { try await move(kind, expect: "join") } else { movePlan = prepared }

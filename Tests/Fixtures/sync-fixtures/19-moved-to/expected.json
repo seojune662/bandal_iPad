@@ -6,7 +6,13 @@
   "moved_to": {
     "aaaaaaaa-0000-4000-8000-000000000001": {
       "provider": "drive",
-      "t": 1793319000000
+      "t": 1793319000000,
+      "account_hint": "student@example.com"
+    },
+    "ffffffff-0000-4000-8000-000000000006": {
+      "provider": "drive",
+      "t": 1793318950000,
+      "account_hint": null
     }
   },
   "courses": {

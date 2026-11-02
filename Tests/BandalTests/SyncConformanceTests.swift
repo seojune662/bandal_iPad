@@ -129,7 +129,7 @@ final class SyncConformanceTests: XCTestCase {
             "blocked": nullable(state.blocked?.rawValue),
             "initial_upload": state.initialUpload.map { ["device": $0, "started": state.started.map { $0 as Any } ?? NSNull(),
                                                           "last_seen": state.lastSeen[$0].map { $0 as Any } ?? NSNull()] } ?? NSNull(),
-            "moved_to": state.movedTo.mapValues { ["provider": $0.kind, "t": $0.t] },
+            "moved_to": state.movedTo.mapValues { ["provider": $0.kind, "t": $0.t, "account_hint": nullable($0.account)] },
             "courses": state.courses.mapValues { pick($0, ["name", "sort", "color", "archived"]) },
             "docs": Dictionary(uniqueKeysWithValues: state.docs.map { id, entity in
                 var doc = pick(entity, ["course_id", "type", "name", "rel_path", "pdf_sha256", "pdf_prev_sha256", "md_hash"])

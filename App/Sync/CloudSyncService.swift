@@ -50,7 +50,8 @@ final class CloudSyncService {
         case "cloudSync:disconnect": try await disconnect()
         case "cloudSync:prepareMove":
             let kind = request["provider"] as? String ?? ""
-            do { return try await prepareMove(kind, hint: request["accountHint"] as? String) } catch { await log("move", (error as? DesktopRuntimeError)?.code ?? "error", kind); throw error }
+            do { return try await prepareMove(kind, hint: request["accountHint"] as? String, again: request["signInAgain"] as? Bool == true) }
+            catch { await log("move", (error as? DesktopRuntimeError)?.code ?? "error", kind); throw error }
         case "cloudSync:move":
             let kind = request["provider"] as? String ?? ""
             do { try await move(kind, expect: request["expect"] as? String) } catch { await log("move", (error as? DesktopRuntimeError)?.code ?? "error", kind); throw error }
@@ -244,11 +245,12 @@ final class CloudSyncService {
     }
 
     /// The other storage as a move would find it: `upload` when it holds nothing alive, `join` when it holds data
-    /// to merge with by id; or why a move cannot go on now. `hint`: the Google account another device moved to.
-    private func prepareMove(_ kind: String, hint: String?) async throws -> [String: Any] {
+    /// to merge with by id; or why a move cannot go on now. `hint`: the Google account another device moved to,
+    /// offered first when signing in; `again`: sign in again (a Drive that looks empty may be another account).
+    private func prepareMove(_ kind: String, hint: String?, again: Bool) async throws -> [String: Any] {
         _ = try await moveFrom(kind)
         looked = nil
-        guard let target = try await target(kind, signIn: true, hint: hint) else { return ["available": false, "provider": kind] }
+        guard let target = try await target(kind, signIn: true, hint: SyncFormat.accountHint(hint), again: again) else { return ["available": false, "provider": kind] }
         let peek = try await self.peek(target.provider)
         let uploader = try await initialUploader(peek.state ?? peek.mark)
         if let uploader, uploader.going {
@@ -266,6 +268,7 @@ final class CloudSyncService {
         }.filter { ["cloud", "local"].contains($0.key) }
         result["available"] = true; result["provider"] = kind; result["plan"] = Self.plan(state)
         if let uploader { result["initialUpload"] = ["device": uploader.name, "going": false] }
+        if let account = target.drive?.email { result["account"] = account }
         return result
     }
 
@@ -337,7 +340,7 @@ final class CloudSyncService {
         let keychain = environment.keychain
         guard let read = try? await runtime.withSyncStorage({ context, _ in
             let store = try SyncStore(context: context, keychain: keychain)
-            return (moving: try store.moving(), me: try store.deviceID(), name: try store.value("device_label") ?? "iPad", kind: try SyncStore.provider(context))
+            return (moving: try store.moving(), me: try store.deviceID(), name: try store.value("device_label") ?? "iPad", kind: try SyncStore.provider(context), clock: try store.clock())
         }), let moving = read.moving, let kind = read.kind, kind != moving.provider else { return }
         let (me, name, now) = (read.me, read.name, Self.now())
         if let old = await oldRoot(moving) {
@@ -345,8 +348,8 @@ final class CloudSyncService {
                 // A root without this iPad's file is not the one it left (removed or made again): nothing to tell.
                 if try await old.list()["devices/\(me).json"] != nil {
                     await (old as? DriveProvider)?.hurry()
-                    // The t of an event in that root: past everything this iPad saw there (user decision 2026-11-03).
-                    let note = SyncFormat.MovedTo(kind: kind, t: max(now, moving.clock + 1), account: kind == "drive" ? driveAccount?.email : nil)
+                    // An event's t (spec v2.7): past every t this iPad has seen in either root, as one clock runs on across a move.
+                    let note = SyncFormat.MovedTo(kind: kind, t: max(now, read.clock + 1), account: kind == "drive" ? SyncFormat.accountHint(driveAccount?.email) : nil)
                     try await old.write(.data(SyncOutbox.deviceFile(name: name, lastSeen: now, movedTo: note)), to: "devices/\(me).json")
                 }
             } catch {
@@ -502,10 +505,11 @@ final class CloudSyncService {
     /// is another root (design §4.4). nil while signed out of it.
     private struct Target { let provider: SyncProvider; let account: String; var drive: GoogleDriveAuth.Account? }
 
-    private func target(_ kind: String, signIn: Bool = false, hint: String? = nil) async throws -> Target? {
+    private func target(_ kind: String, signIn: Bool = false, hint: String? = nil, again: Bool = false) async throws -> Target? {
         if kind == "drive" {
             var account = pendingDrive ?? driveAccount
-            if account == nil, signIn { account = try await environment.signIn(hint); pendingDrive = account }
+            // Closing the sheet keeps the account there was.
+            if signIn, account == nil || again, let chosen = try await environment.signIn(hint) { account = chosen; pendingDrive = chosen }
             return account.map { Target(provider: environment.drive($0), account: "drive:" + $0.id, drive: $0) }
         }
         let (root, account) = await locate()

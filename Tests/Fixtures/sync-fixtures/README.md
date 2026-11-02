@@ -29,12 +29,12 @@
 | `16-initial-upload-no-device` | 표시는 있는데 그 기기(`cccccccc-…0003`)의 기기 파일이 없다(v2.6). `last_seen`이 null이라 연결하려는 기기는 `started`로 정한다. 5분 안이면 기다리고, 지났으면 중단으로 본다 |
 | `17-initial-upload-not-a-mark` | `initial_upload`가 숫자다(v2.6). `started`가 있어도 표시가 아니고 파일 오류도 아니다. `bandal.json`은 그대로 읽혀 `blocked`와 `errors`가 비어 있다 |
 | `18-initial-upload-bad-started` | 표시의 `started`가 정수 ms가 아니다(`1793318700000.5`, v2.6). `started`는 null로 읽고 표시는 그대로다. 파일 오류도 아니다. 기기 파일도 없어 연결하려는 기기는 바로 중단으로 본다 |
-| `19-moved-to` | 다른 저장소로 옮겨 간 기기가 있는 옛 루트(v2.7). MacBook Air(`aaaaaaaa-…0001`)는 Google Drive로 옮겼고, 남은 iPad의 과목은 그대로 머지된다. iPad mini(`dddddddd-…0004`)의 `provider: "Drive"`(대문자)와 Windows 노트북(`eeeeeeee-…0005`)의 소수 `t`는 `moved_to`가 아니다. 파일 오류도 아니다 |
+| `19-moved-to` | 다른 저장소로 옮겨 간 기기가 있는 옛 루트(v2.7). MacBook Air(`aaaaaaaa-…0001`)는 Google Drive(`student@example.com`)로 옮겼고, 남은 iPad의 과목은 그대로 머지된다. iPad Air(`ffffffff-…0006`)도 Drive로 옮겼지만 `account_hint`에 공백이 있어 그것만 null이다. iPad mini(`dddddddd-…0004`)의 `provider: "Drive"`(대문자)와 Windows 노트북(`eeeeeeee-…0005`)의 소수 `t`는 `moved_to`가 아니다. 모두 파일 오류가 아니다. 배너는 `t`가 가장 큰 MacBook Air의 것이다 |
 | `render/v5-diameter.json` | inkVersion 5의 점별 지름 계수. 두 렌더러의 굵기가 같은지 본다. 계수는 데스크톱 `src/shared/inkV5.ts`로 계산했다. 허용오차는 1e-6이다 |
 
 ## 고정 값
 
-- **기기**: `aaaaaaaa-…0001`은 "MacBook Air"(데스크톱), `bbbbbbbb-…0002`는 "iPad Pro"다. 사전순으로는 iPad가 더 크다. `cccccccc-…0003`은 기기 파일이 아직 없는 기기다(05, 16, 18). 19에는 "iPad mini"(`dddddddd-…0004`)와 "Windows 노트북"(`eeeeeeee-…0005`)도 있다.
+- **기기**: `aaaaaaaa-…0001`은 "MacBook Air"(데스크톱), `bbbbbbbb-…0002`는 "iPad Pro"다. 사전순으로는 iPad가 더 크다. `cccccccc-…0003`은 기기 파일이 아직 없는 기기다(05, 16, 18). 19에는 "iPad mini"(`dddddddd-…0004`), "Windows 노트북"(`eeeeeeee-…0005`), "iPad Air"(`ffffffff-…0006`)도 있다.
 - **파일 이름**: 대소문자만 다른 두 경로를 두지 않는다. APFS와 NTFS는 둘을 같은 파일로 본다.
 - **시각**: `t`는 ms epoch이고, 기준은 `T0 = 1793318400000`(2026-10-30T00:00:00Z)이다.
 - **충돌 사본 id**: `uuidv5(namespace = 9b1f6a2e-3c4d-4e5f-8a6b-7c8d9e0f1a2b, name = "<document_id>:<진 쪽 md_hash>")`
@@ -51,7 +51,7 @@ fixture           폴더 이름
 spec              "2.7"   예제 내용이 마지막으로 바뀐 스펙
 blocked           null | "missing-root" | "update-required" | "unsupported-format"   format 검사 결과. null이 아니면 나머지는 모두 비어 있다
 initial_upload    null | {device, started, last_seen}   첫 업로드 표시(v2.6). device는 표시한 기기, started는 표시의 값(없거나 틀리면 null), last_seen은 그 기기 파일의 값(파일이 없으면 null)
-moved_to          {device_id: {provider, t}}   다른 저장소로 옮겨 간 기기(v2.7). provider와 t가 모두 올바른 기기 파일만 넣는다
+moved_to          {device_id: {provider, t, account_hint}}   다른 저장소로 옮겨 간 기기(v2.7). provider와 t가 모두 올바른 기기 파일만 넣는다. account_hint는 없거나 틀리면 null
 courses           {id: {name, sort, color, archived, alive}}
 docs              {id: {course_id, type, name, rel_path, pdf_sha256 + pdf_prev_sha256 + pdf_rebind_from | md_hash, alive}}
 ink               {document_id: {page: {object_id: 이긴 버전의 개체 전체}}}

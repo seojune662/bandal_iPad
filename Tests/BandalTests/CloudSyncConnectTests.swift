@@ -619,6 +619,47 @@ final class CloudSyncConnectTests: XCTestCase {
         XCTAssertNil(followed["moving"])
     }
 
+    /// The note's t is an event's (spec v2.7): past every t this iPad has seen, also from a device whose clock runs a
+    /// day ahead, and so past the first upload's own stamps, which went on from that clock.
+    func testAMoveIsToldAfterEveryTSeenEvenFromAClockADayAhead() async throws {
+        let drives = ["google-a": FakeDrive()], a = try await Device(cloud: cloud)
+        a.useDrive(drives)
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        let ahead = Int64(Date().timeIntervalSince1970 * 1000) + 86_400_000, other = "dddddddd-0000-4000-8000-000000000004"
+        try FileManager.default.createDirectory(at: cloud.appendingPathComponent("log/\(other)"), withIntermediateDirectories: true)
+        try Data(#"[{"t":\#(ahead),"op":"course.upsert","id":"c0000000-0000-4000-8000-000000000009","fields":{"name":"미래","sort":1,"color":"blue","archived":false}}]"#.utf8)
+            .write(to: cloud.appendingPathComponent("log/\(other)/00000001.json"))
+        _ = try await a.sync("cloudSync:syncNow")
+        try await move(a, to: "drive", expect: "upload")
+        _ = try await a.sync("cloudSync:syncNow")
+        let me = try await a.syncStore { try $0.deviceID() }
+        let note = try XCTUnwrap(try iCloudFile("devices/\(me).json")["moved_to"] as? [String: Any])
+        XCTAssertGreaterThan((note["t"] as? NSNumber)?.int64Value ?? 0, ahead + 1)
+    }
+
+    /// Following to a Drive that looks empty: the screen names the account signed in, and choosing the Google account
+    /// again signs in once more, offering first the account the other device moved to.
+    func testFollowingToADriveThatLooksEmptyCanChooseTheGoogleAccountAgain() async throws {
+        let drives = ["google-a": FakeDrive(), "google-b": FakeDrive()], a = try await Device(cloud: cloud), b = try await Device(cloud: cloud)
+        a.useDrive(drives); b.useDrive(drives)
+        _ = try await newCourse(a, "물리")
+        _ = try await a.sync("cloudSync:connect", ["mode": "start"]); _ = try await a.sync("cloudSync:syncNow")
+        _ = try await b.sync("cloudSync:connect", ["mode": "merge", "pairs": []]); _ = try await b.sync("cloudSync:syncNow")
+        try await move(a, to: "drive", expect: "upload")
+        _ = try await a.sync("cloudSync:syncNow")
+
+        b.google = .init(refresh: "refresh-b", id: "google-b", email: "b@example.com")
+        let empty = try await b.sync("cloudSync:prepareMove", ["provider": "drive", "accountHint": "a@example.com"])
+        XCTAssertEqual(empty["plan"] as? String, "upload", "another Google account's Drive")
+        XCTAssertEqual(empty["account"] as? String, "b@example.com")
+        b.google = .init(refresh: "refresh-a2", id: "google-a", email: "a@example.com")
+        let found = try await b.sync("cloudSync:prepareMove", ["provider": "drive", "accountHint": "a@example.com", "signInAgain": true])
+        XCTAssertEqual(found["plan"] as? String, "join")
+        XCTAssertEqual(found["account"] as? String, "a@example.com")
+        XCTAssertEqual(b.hints, ["a@example.com", "a@example.com"])
+    }
+
     /// What another device changed in the old storage after the move (a rename, a deletion) wins once it follows:
     /// the first upload was stamped before it. "나중에" hides the offer until then.
     func testWhatTheOldStorageChangedAfterTheMoveWinsWhenItFollows() async throws {

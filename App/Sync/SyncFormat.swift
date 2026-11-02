@@ -39,8 +39,8 @@ enum SyncFormat {
     struct File { let path: String; let content: Content }
 
     /// A device that left this root for the other storage (spec v2.7): "icloud" or "drive", as the spec and
-    /// this app both name them, and when (ms). `account`: the Google account it went to (`account_hint`,
-    /// user decision 2026-11-03), only to sign in with and to name in the offer.
+    /// this app both name them, and when (an event's t). `account`: the Google account it went to
+    /// (`account_hint`), only to sign in with and to name in the offer.
     struct MovedTo: Equatable { let kind: String; let t: Int64; var account: String? = nil }
 
     /// Root files sorted into parsed files, ignored paths, unreadable paths and iCloud
@@ -247,12 +247,22 @@ enum SyncFormat {
     }
     private static func whole(_ value: Any?) -> Double? { number(value).flatMap { $0.rounded(.towardZero) == $0 ? $0 : nil } }
     private static func safeInteger(_ value: Any?) -> Int? { whole(value).flatMap { abs($0) <= 9_007_199_254_740_991 ? Int($0) : nil } }
-    /// Anything but a known storage and a time is no move, and not a file error. An account hint that is not
-    /// one short line is left out of a move that stands.
+    /// Anything but a known storage and a time is no move, and not a file error. An account hint that is not an
+    /// address is left out of a move that stands.
     private static func movedTo(_ value: Any?) -> MovedTo? {
         guard let value = value as? [String: Any], let kind = value["provider"] as? String, ["icloud", "drive"].contains(kind), let t = stamp(value["t"]) else { return nil }
-        let account = (value["account_hint"] as? String).flatMap { (1...320).contains($0.count) && !$0.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) ? $0 : nil }
-        return MovedTo(kind: kind, t: t, account: account)
+        return MovedTo(kind: kind, t: t, account: accountHint(value["account_hint"]))
+    }
+
+    /// An address as `account_hint` (spec v2.7): one @ with text on both sides, and no space (U+0020) or control
+    /// character (Cc). No length limit, as the two apps count lengths differently. Scalars, as the desktop's
+    /// pattern reads UTF-16 units: an @ with a combining mark after it is still one @.
+    static func accountHint(_ value: Any?) -> String? {
+        guard let text = value as? String else { return nil }
+        let scalars = Array(text.unicodeScalars)
+        guard let at = scalars.firstIndex(of: "@"), at > 0, at < scalars.count - 1, scalars.lastIndex(of: "@") == at,
+              !scalars.contains(where: { $0.value <= 0x20 || (0x7F...0x9F).contains($0.value) }) else { return nil }
+        return text
     }
     private static func stamp(_ value: Any?) -> Int64? { whole(value).flatMap { $0 >= 0 && $0 < Double(maxStamp) ? Int64($0) : nil } }
     private static func isBoolean(_ value: Any?) -> Bool { (value as? NSNumber).map { CFGetTypeID($0) == CFBooleanGetTypeID() } ?? false }

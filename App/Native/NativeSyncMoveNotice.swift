@@ -38,6 +38,7 @@ struct NativeSyncMoveNotice: View {
         guard let moved = status["moved"] as? [String: Any], let kind = moved["provider"] as? String,
               let t = (moved["t"] as? NSNumber)?.int64Value, !Self.told.contains(t) else { return }
         Self.told.insert(t)
-        withAnimation { shown = ("\(moved["device"] as? String ?? "")에서 \(CloudSyncService.name(kind))로 옮겼어요. 이 iPad도 옮길까요?", t) }
+        let account = (moved["account"] as? String).map { "(\($0))" } ?? ""
+        withAnimation { shown = ("\(moved["device"] as? String ?? "")에서 \(CloudSyncService.name(kind))\(account)로 옮겼어요. 이 iPad도 옮길까요?", t) }
     }
 }
