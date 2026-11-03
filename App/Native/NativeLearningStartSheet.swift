@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeLearningStartSheet: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let kind: NativeLearningStartKind
     let source: NativeDocumentReference?
     var binding: NativeLearningBinding? = nil

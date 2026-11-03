@@ -6,7 +6,7 @@ import UIKit
 /// only when it already holds data (the connection sheet); Drive asks for a Google account first.
 /// While on, the other storage is reached by moving (spec v2.7), never by connecting again.
 struct NativeSettingsSyncPanel: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @State private var status: [String: Any] = [:]
     @State private var deviceName = ""
     @State private var preview: [String: Any]?

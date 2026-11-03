@@ -337,7 +337,7 @@ private final class NativeAssistantSession: ObservableObject {
 }
 
 struct NativeAssistantPanel: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let context: NativeWorkspaceContext
     let sourceDocument: NativeDocumentReference?
     let attachments: [NativeAssistantAttachment]
@@ -592,7 +592,7 @@ struct NativeAssistantPanel: View {
 
 /// Compatibility for saved tool tabs. New workspace chrome opens the global panel.
 struct NativeAssistantWorkspace: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     var workspaceID: String? = nil
     var courseID: String? = nil
     var sourceDocument: NativeDocumentReference? = nil

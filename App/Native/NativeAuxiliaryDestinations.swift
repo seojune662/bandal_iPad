@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeAccountView: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     var body: some View { NativeSettingsWorkspace(store: store, initialCategory: "account") }
 }
 
@@ -114,7 +114,7 @@ final class NativeMarketplaceModel: ObservableObject {
 }
 
 struct NativeMarketplaceView: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @StateObject private var model: NativeMarketplaceModel
     @State private var tab = "browse"
     @State private var showingAccount = false

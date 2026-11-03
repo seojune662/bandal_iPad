@@ -2,7 +2,7 @@ import SwiftUI
 
 struct NativeSettingsSystemPanels: View {
     let section: String
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let settings: [String: Any]
     let save: @MainActor ([String: Any]) async throws -> Void
     @Environment(\.scenePhase) private var scenePhase

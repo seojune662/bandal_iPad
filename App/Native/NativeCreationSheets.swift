@@ -9,7 +9,7 @@ enum NativePaper: String, CaseIterable, Identifiable {
 }
 
 struct NativeNewNoteSheet: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     var courseID: String? = nil
     var parentPath: String = ""
     var onCreated: (NativeDocumentReference) -> Void

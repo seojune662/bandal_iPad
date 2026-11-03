@@ -22,34 +22,45 @@ final class NativeCourseRefreshQueue {
     }
 }
 
+/// Publishes nothing: `@StateObject` only keeps one `@Observable` model alive per
+/// view identity. `State(initialValue:)` would rerun the model's init (file reads,
+/// subscriptions) on every parent re-render.
+final class NativeObservableHolder<Model: AnyObject>: ObservableObject {
+    let model: Model
+    init(_ model: Model) { self.model = model }
+}
+
 /// Swift owns workspace navigation while the existing repositories continue to
 /// own bandal.db, course folders, PDF bindings, receipts and recovery journals.
 @MainActor
-final class NativeWorkspaceStore: ObservableObject {
-    private lazy var studyService = NativeStudyService(store: self)
+@Observable
+final class NativeWorkspaceStore {
+    @ObservationIgnored private lazy var studyService = NativeStudyService(store: self)
     let runtime: DesktopRuntime
     let annotation = NativeAnnotationCoordinator()
     let whiteboardSessions = NativeWhiteboardSessionRegistry()
-    lazy var learningSessions = NativeLearningSessionRegistry(store: self)
-    lazy var panelViewStates = NativePanelViewStateStore(root: root)
+    @ObservationIgnored lazy var learningSessions = NativeLearningSessionRegistry(store: self)
+    @ObservationIgnored lazy var panelViewStates = NativePanelViewStateStore(root: root)
     var root: URL { runtime.root }
-    @Published var courses: [NativeCourse] = []
-    @Published var selectedCourseID: String?
+    var courses: [NativeCourse] = []
+    var selectedCourseID: String?
     /// A newly created docked browser consumes its URL after its page exists.
-    @Published var assistantDocumentIDs = Set<String>()
-    @Published var pendingAssistantConversationIDs: [String: String] = [:]
-    @Published var documentSelections: [String: String] = [:]
-    @Published var documentDuplicateSourceIDs: [String: String] = [:]
-    @Published var pageNoteSourceTabIDs: [String: String] = [:]
-    @Published var pendingBrowserURLs: [String:String] = [:]
-    @Published var materials: [NativeMaterial] = []
-    @Published var isLoading = false
+    var assistantDocumentIDs = Set<String>()
+    var pendingAssistantConversationIDs: [String: String] = [:]
+    var documentSelections: [String: String] = [:]
+    var documentDuplicateSourceIDs: [String: String] = [:]
+    var pageNoteSourceTabIDs: [String: String] = [:]
+    var pendingBrowserURLs: [String:String] = [:] { didSet { pendingBrowserURLsChanges.send(pendingBrowserURLs) } }
+    /// Browser sessions are classes, not views; they listen here instead of through Observation.
+    @ObservationIgnored let pendingBrowserURLsChanges = CurrentValueSubject<[String:String], Never>([:])
+    var materials: [NativeMaterial] = []
+    var isLoading = false
     /// A refusal the 반달 플러스 sheet is explaining is not also shown as an error.
-    @Published var errorMessage: String? { didSet { if errorMessage != nil, errorMessage == paywallMessage { errorMessage = nil } } }
+    var errorMessage: String? { didSet { if errorMessage != nil, errorMessage == paywallMessage { errorMessage = nil } } }
     private var paywallMessage: String?
-    @Published private(set) var isReady = false
-    @Published private(set) var isApplyingExternalChanges = false
-    @Published private(set) var documentReloadEpoch: UInt64 = 0
+    private(set) var isReady = false
+    private(set) var isApplyingExternalChanges = false
+    private(set) var documentReloadEpoch: UInt64 = 0
     private var universalReloadEpoch: UInt64 = 0
     private var courseReloadEpochs: [String:UInt64] = [:]
     /// Keyed by the editor registration id (one per tab), so a page edit
@@ -660,7 +671,9 @@ final class NativeWorkspaceStore: ObservableObject {
         guard let courseID else { materials = []; return }
         let loaded: [NativeMaterial] = try Self.decode(try await runtime.invoke("materials:tree", request: ["courseId": courseID]))
         guard materialRequest == token, selectedCourseID == courseID else { return }
-        materials = loaded
+        // Every PDF save emits materials:changed; an unchanged tree must not
+        // republish and re-render the root and library views.
+        if materials != loaded { materials = loaded }
         if watchedCourseID != courseID {
             _ = try await runtime.invoke("materials:watch", request: ["courseId": courseID, "workspaceSessionId": sessionID, "subscriptionId": "native-library"])
             // A course switch can happen while the initial watch scan awaits.

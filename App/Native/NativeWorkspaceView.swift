@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 
 struct NativeWorkspaceView: View {
-    @StateObject private var store: NativeWorkspaceStore
+    @StateObject private var storeHolder: NativeObservableHolder<NativeWorkspaceStore>
+    private var store: NativeWorkspaceStore { storeHolder.model }
     @StateObject private var navigation = NativeWorkspaceNavigation()
     @StateObject private var previews = NativeWorkspacePreviewController()
     @State private var windowsOverviewOpen = false
@@ -49,7 +50,7 @@ struct NativeWorkspaceView: View {
 
     init() {
         let store = NativeWorkspaceStore()
-        _store = StateObject(wrappedValue: store)
+        _storeHolder = StateObject(wrappedValue: NativeObservableHolder(store))
         _services = StateObject(wrappedValue: NativePlatformServices(store: store))
         _annotation = ObservedObject(wrappedValue: store.annotation)
     }

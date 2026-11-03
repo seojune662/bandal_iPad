@@ -46,7 +46,7 @@ private extension ISO8601DateFormatter {
 }
 
 struct NativePlannerWorkspace: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let courseID: String?
     private var effectiveCourseID: String? { courseID ?? store.selectedCourseID }
     init(store: NativeWorkspaceStore, courseID: String? = nil) {

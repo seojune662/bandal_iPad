@@ -6,7 +6,7 @@ import ImageIO
 struct NativeMarkdownWorkspace: View {
     let document: NativeDocumentReference
     @ObservedObject private var annotation: NativeAnnotationCoordinator
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @StateObject private var session: NativeMarkdownSession
     @State private var registration: UUID?
     @State private var confirmReload = false

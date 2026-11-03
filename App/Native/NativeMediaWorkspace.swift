@@ -3,7 +3,7 @@ import SwiftUI
 
 struct NativeMediaWorkspace: View {
     let document: NativeDocumentReference
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @StateObject private var playback = NativeMediaPlayback()
     @Environment(\.nativeEditorVisible) private var editorVisible
     @Environment(\.nativeWorkspaceChromeMode) private var chromeMode

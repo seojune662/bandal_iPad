@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeCourseSidebar: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @ObservedObject var navigation: NativeWorkspaceNavigation
     let settings: [String: Any]
     let onSelect: (String) -> Void

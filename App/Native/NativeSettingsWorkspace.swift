@@ -42,7 +42,7 @@ enum NativeAppearancePreference {
 }
 
 struct NativeSettingsWorkspace: View {
-  @ObservedObject var store: NativeWorkspaceStore
+  var store: NativeWorkspaceStore
   let initialCategory: String
   @AppStorage("native.appearance") private var appearance = "system"
   @AppStorage("native.fontScale") private var fontScale = 1.0

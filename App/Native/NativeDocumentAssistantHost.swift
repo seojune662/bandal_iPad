@@ -3,7 +3,7 @@ import SwiftUI
 /// Per-document assistant state follows the desktop controller contract. Opening
 /// the rail action reveals this document's conversation without replacing it.
 struct NativeDocumentAssistantHost<Content: View>: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let document: NativeDocumentReference
     @ViewBuilder var content: () -> Content
     private var visible: Bool { store.assistantDocumentIDs.contains(document.id) }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeSidebarShortcuts: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let settings: [String: Any]
     let onOpenSettings: (String) -> Void
     let onOpenURL: (String) -> Void

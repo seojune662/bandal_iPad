@@ -120,7 +120,7 @@ final class NativeLibrarySourceTrayModel: ObservableObject {
 }
 
 struct NativeLibrarySourceTray: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let folderPath: String
     @ObservedObject var model: NativeLibrarySourceTrayModel
     @State private var expanded = false

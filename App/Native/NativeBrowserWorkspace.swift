@@ -139,7 +139,7 @@ final class NativeBrowserSession: ObservableObject {
         self.store = store; self.host = host; self.workspaceID = workspaceID; self.courseID = courseID
         Self.sessions[Self.stateURL(workspaceID: workspaceID, store: store).path] = WeakSession(self)
         store.events.sink { [weak self] event in self?.receive(event) }.store(in: &subscriptions)
-        store.$pendingBrowserURLs.sink { [weak self] values in
+        store.pendingBrowserURLsChanges.sink { [weak self] values in
             guard let self, values[self.scopeKey] != nil, self.loaded else { return }
             Task { @MainActor [weak self] in await self?.consumePendingURL() }
         }.store(in: &subscriptions)
@@ -322,7 +322,7 @@ struct NativeBrowserWorkspace: View {
     @State private var annotationRegionMode = true
     @State private var annotationBusy = false
     @State private var annotationPageID: String?
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @StateObject private var session: NativeBrowserSession
     @State private var address = ""
     @State private var addressFocused = false

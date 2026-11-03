@@ -39,7 +39,7 @@ extension EnvironmentValues {
 
 struct NativeDockWorkspace<Content: View, Empty: View>: View {
     @ObservedObject var navigation: NativeWorkspaceNavigation
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let content: (NativeDocumentReference) -> Content
     let empty: () -> Empty
     let perform: (@escaping @MainActor () -> Void) -> Void

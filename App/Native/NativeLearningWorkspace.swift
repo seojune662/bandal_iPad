@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeLearningWorkspace: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let binding: NativeLearningBinding
     let onOpenDocument: (NativeDocumentReference) -> Void
     let onOpenBrowser: (String) -> Void
@@ -133,7 +133,7 @@ struct NativeLearningWorkspace: View {
 /// Each pane owns its detail selection. Identical quizzes share a durable
 /// attempt while different artifacts remain independent.
 struct NativeLearningDocumentWorkspace: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let document: NativeDocumentReference
     let onOpenDocument: (NativeDocumentReference) -> Void
     let onOpenBrowser: (String) -> Void

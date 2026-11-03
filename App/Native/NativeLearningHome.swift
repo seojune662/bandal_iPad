@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeLearningHome: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     var courseID: String? = nil
     let onOpen: (NativeLearningBinding) -> Void
     @StateObject private var model = NativeLearningCatalog()
@@ -64,7 +64,7 @@ struct NativeLearningHome: View {
 }
 
 struct NativeLearningSidebar: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let onOpen: (NativeLearningBinding) -> Void
     @StateObject private var model = NativeLearningCatalog()
     @State private var query = ""
@@ -86,7 +86,7 @@ struct NativeLearningSidebar: View {
 
 private struct NativeLearningGroups: View {
     let projects: [NativeLearningSummary]
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let onOpen: (NativeLearningBinding) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -106,7 +106,7 @@ private struct NativeLearningGroups: View {
 
 private struct NativeLearningProjectRow: View {
     let project: NativeLearningSummary
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let onOpen: (NativeLearningBinding) -> Void
     @State private var renaming = false
     @State private var name = ""
@@ -138,7 +138,7 @@ private struct NativeLearningProjectRow: View {
 /// Projects use the same compact folder rows as the course navigator. Purpose
 /// (reading/review/freeform) stays in the data instead of defining another UI.
 struct NativeProjectSidebar: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     var selectedID: String? = nil
     let onOpen: (NativeWorkspaceContext) -> Void
     @StateObject private var catalog = NativeLearningCatalog()

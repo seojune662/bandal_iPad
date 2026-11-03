@@ -3,7 +3,7 @@ import SwiftUI
 /// SwiftUI registers these with the containing hosting controller, so the
 /// shortcuts also work while a native text view has keyboard focus.
 struct NativeWorkspaceKeyboardBridge: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @State private var bindings: [Binding] = []
     private struct Binding: Identifiable {
         let id: String

@@ -3,7 +3,7 @@ import SwiftUI
 /// Another device moved this profile's sync to the other storage (spec v2.7): a notice once per move and launch,
 /// wherever the user is, leading to Settings › 동기화, where the offer moves this iPad too in one step.
 struct NativeSyncMoveNotice: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let openSettings: () -> Void
     @State private var shown: (text: String, t: Int64)?
     /// Moves already told this launch, by their time.

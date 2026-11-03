@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeFeatureLauncherPanel: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let source: NativeDocumentReference?
     let onOpen: (NativeLearningBinding) -> Void
     let onOpenSettings: (String) -> Void

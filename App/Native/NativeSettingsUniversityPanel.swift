@@ -46,7 +46,7 @@ enum NativeUniversityCatalog {
 }
 
 struct NativeSettingsUniversityPanel: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let settings: [String: Any]
     let save: @MainActor ([String: Any]) async throws -> Void
     @Environment(\.openURL) private var openURL

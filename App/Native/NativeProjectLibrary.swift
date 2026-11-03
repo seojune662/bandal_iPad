@@ -74,7 +74,7 @@ struct NativeLibraryBrowsingState: Codable, Equatable {
 struct NativeScopedMaterialMovePicker: View {
     let material: NativeMaterial
     let scope: NativeWorkspaceContext
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @Environment(\.dismiss) private var dismiss
     @State private var busy = false
     @State private var error: String?

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeCourseManager: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @Environment(\.dismiss) private var dismiss
     @State private var courses: [ManagedCourse] = []
     @State private var renaming: ManagedCourse?
@@ -93,7 +93,7 @@ struct NativeCourseManager: View {
 
 struct NativeMaterialMovePicker: View {
     let material: NativeMaterial
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @Environment(\.dismiss) private var dismiss
     @State private var busy = false
     @State private var error: String?

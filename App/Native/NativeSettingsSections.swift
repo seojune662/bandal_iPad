@@ -22,7 +22,7 @@ struct NativeSettingsCard<Content: View>: View {
 
 struct NativeSettingsSections: View {
     let section: String
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let settings: [String: Any]
     let save: @MainActor ([String: Any]) async throws -> Void
     let navigate: (String) -> Void
