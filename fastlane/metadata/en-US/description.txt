@@ -20,3 +20,12 @@ AI
 
 Storage
 - Everything is stored on your iPad. No account is needed.
+- You can sync with your other devices through your own iCloud or Google Drive, for free. Your materials are never uploaded to Bandal's servers.
+
+Bandal Plus (auto-renewable subscription)
+- Free: on this iPad, create 1 course and 10 materials, and use AI features with your own API key 20 times a month.
+- Bandal Plus: unlimited courses and materials, and unlimited AI requests.
+- New subscribers get a 1-week free trial before the first charge. Payment is charged to your Apple Account. The subscription renews automatically unless cancelled at least 24 hours before the end of the period. Manage or cancel it in Settings › [your name] › Subscriptions.
+- When a subscription ends, the courses and materials you made stay open and editable.
+- Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+- Privacy Policy: https://bandal.io/privacy

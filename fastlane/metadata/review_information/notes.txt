@@ -1,28 +1,40 @@
-1. Screen recording
-Attached to our reply in App Review messages. Recorded on an iPad Pro 11-inch (3rd generation) running iPadOS 27.0.1, starting at app launch. In the file picker, the first seconds are blurred because they showed the tester's own iCloud Drive file names; the rest is unedited.
+Hello,
 
-2. Purpose, audience, problem
-Bandal (store name 반달 노트) is a study app for university students on iPad. Students keep lecture PDFs, handwritten notes and typed notes for each course in one place, instead of switching between separate PDF, note-taking and browser apps.
+Version 1.2.0 adds three optional features: sign-in, sync and the Bandal Plus subscription. No demo account is needed. Every feature, including sync, purchase and restore, works without signing in, and the app never asks for sign-in at launch.
 
-Version 1.0 works entirely on the device. There is no account creation or login, no syncing, no sharing of user content with other users, and no paid features or in-app purchases. All files are stored on the iPad.
+1. Sign-in and account deletion
+- The 계정 (Account) button in the left rail offers Sign in with Apple and Sign in with Google. Signing in only adds a Bandal profile (nickname and avatar).
+- To delete the account, while signed in: Settings > 계정 (Account) > 계정 삭제 (Delete Account). This deletes the account on our server and revokes the Sign in with Apple token. Files on the iPad stay.
 
-3. How to use the main features (no login needed)
-- Create a course: tap "+" next to the course list (과목) and choose "새 과목 만들기" (New Course), then enter a name.
-- Import a PDF: put any PDF in the Files app (for example On My iPad > 반달), then in the app tap the tray icon "파일 가져오기" (Import Files) above the materials list (자료) and pick the PDF. Tap it in the list to open it.
-- Handwriting: choose the pen, highlighter or eraser in the PDF toolbar and write with Apple Pencil. "+" > "새 노트" in the materials list creates a blank handwriting note (plain, lined, grid or dotted paper).
-- Tabs and panes: "+" in the tab bar opens a new tab (handwriting note, Markdown, browser, AI). The layout button in the tab bar splits the workspace into two columns, two rows or four panes.
-- Typed notes: "+" in the tab bar > "마크다운" creates a Markdown note.
-- Browser: "+" in the tab bar > "브라우저", then enter an address.
-- AI assistant (optional): this needs the user's own API key from OpenAI, Anthropic or Google, entered in Settings > AI 엔진 (AI Engine). Without a key the rest of the app works fully. We do not provide a key.
-- No sample account is needed. Any PDF works as a sample file.
+2. Sync (optional, free, not part of the subscription)
+- Settings > 동기화 (Sync): choose iCloud or Google Drive. Courses and materials are stored only in the user's own storage: the app's iCloud Drive folder, or a "Bandal" folder in their Google Drive (drive.file scope: only files the app creates). We run no server for documents and cannot read them.
+- Sync needs an iCloud or Google account. Reviewing the other features does not need it.
 
-4. External services
-- AI assistant (optional, user's own key): when the user asks a question, the question, any attached images and any material or note the user lets the AI read are sent from the iPad directly to the provider the user chose (OpenAI, Anthropic or Google), using the user's own API key stored in the iPad Keychain. Before the first request to each provider, the app shows a consent screen that says what is sent and to whom, with a link to the provider's privacy policy. Nothing is sent without consent, and consent can be withdrawn in Settings > AI 엔진. We run no server for this and never receive these requests or the key.
-- In-app browser: loads the websites the user opens (and their icons) directly from those sites. The sidebar shortcuts to ChatGPT, Claude, Gemini and school websites only open those websites in this browser. Because the browser can open any website, the age rating is 17+.
-- No analytics, advertising, crash-reporting, authentication or payment services are used. There is no server of ours that the app talks to.
+3. Bandal Plus (auto-renewable subscription)
+- Free use on this iPad: 1 course, 10 materials (PDFs and notes) and 20 AI requests a month. Bandal Plus (monthly or yearly, 1-week free trial for new subscribers) removes these limits. When it ends, nothing already made is locked.
+- To see the purchase screen: Settings > 구독 (Subscription) > 반달 플러스 보기, or create a second course ("+" next to 과목 > 새 과목 만들기).
+- Restore Purchases is on the purchase screen and at Settings > 구독 > 구매 복원. The purchase screen links to the Terms of Use (Apple standard EULA) and our Privacy Policy.
 
-5. Regional differences
-The app is not distributed in the European Union. In all regions where it is available, the features are the same.
+Guideline 2.1(b)
+1. Anyone can use the app for free within the limits above. Bandal Plus is for users who need more courses, materials or AI requests.
+2. Only inside the app, with In-App Purchase.
+3. Bandal Plus bought with In-App Purchase on the same Apple Account, brought back with Restore Purchases.
+4. None. Nothing is unlocked by payment outside the app. AI requests are billed by the AI provider to the user's own API account; we do not sell AI access or API keys.
 
-6. Regulated industry
-Not applicable. The app is a general study and note-taking tool and is not in a regulated industry.
+How to use the main features
+- Create a course: "+" next to 과목 > 새 과목 만들기 (New Course).
+- Import a PDF: the tray icon "파일 가져오기" (Import Files) above 자료 (Materials), then pick any PDF. Tap it to open.
+- Handwriting: choose the pen, highlighter or eraser in the PDF toolbar and write with Apple Pencil. "+" > "새 노트" in 자료 creates a handwriting note.
+- Tabs and panes: "+" in the tab bar opens a note, Markdown, browser or AI tab. The layout button splits the workspace.
+- AI assistant (optional): needs the user's own OpenAI, Anthropic or Google API key in Settings > AI 엔진 (AI Engine). We do not provide a key.
+
+External services
+- Bandal account server (auth.bandal.io), only after sign-in: account ID, email, name from the sign-in provider, and nickname. No documents or handwriting.
+- Apple: Sign in with Apple, In-App Purchase. Transactions are verified on the device and not sent to us.
+- Google: Sign in with Google (through our account server), and the Google Drive API for sync, called from the iPad.
+- AI providers: only with the user's own key, after a consent screen for each provider. Requests go from the iPad straight to the provider.
+- In-app browser: loads the sites the user opens. Because it can open any website, the age rating is 17+.
+- No analytics, advertising or crash-reporting services.
+
+Regional differences: not distributed in the EU or China mainland. The features are the same everywhere else.
+Regulated industry: not applicable.
