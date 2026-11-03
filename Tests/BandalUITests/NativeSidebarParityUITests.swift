@@ -34,7 +34,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 15), app.debugDescription)
         editor.tap(); editor.typeText("A project keeps its original notes.")
         app.dismissNativeTestKeyboard()
-        openInspector(app); app.buttons["native-inspector-assistant"].tap()
+        openAI(app)
         let input = app.descendants(matching: .any).matching(identifier: "native-chat-input").firstMatch
         XCTAssertTrue(input.waitForExistence(timeout: 10), app.debugDescription)
         input.tap(); input.typeText("Explain this material")
@@ -46,15 +46,13 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["native-ai-connect"].exists, "No key is required to compose a request")
         XCTAssertFalse(app.otherElements["native-document-assistant"].exists)
         capture("Project notes and unified AI with exam mode")
-        app.buttons["native-inspector-materials"].tap()
-        app.buttons["native-inspector-assistant"].tap()
+        app.buttons["native-ai-rail-toggle"].tap(); openAI(app)
         XCTAssertTrue((input.value as? String ?? "").contains("Explain this material"))
         app.terminate(); app.launchArguments = ["--native-ui-testing"]; app.launch()
-        openInspector(app); app.buttons["native-inspector-assistant"].tap()
+        openAI(app)
         XCTAssertTrue(input.waitForExistence(timeout: 25), app.debugDescription)
         XCTAssertTrue((input.value as? String ?? "").contains("Explain this material"), app.debugDescription)
         XCTAssertTrue(editor.exists, "The project's document tab is restored")
-        app.buttons["native-inspector-materials"].tap()
         openHome(app); app.buttons["native-home-courses"].tap()
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-course-", "Physics")).firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-course-", "Exam preparation")).firstMatch.exists)
@@ -77,7 +75,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         let editor = app.textViews["native-markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 15), app.debugDescription); editor.tap(); editor.typeText("This paragraph stays editable after annotation.")
         app.dismissNativeTestKeyboard()
-        openInspector(app); app.buttons["native-inspector-assistant"].tap()
+        openAI(app)
         let annotate = app.buttons["native-ai-annotate"]
         XCTAssertTrue(annotate.waitForExistence(timeout: 10)); annotate.tap()
         let toolbar = app.descendants(matching: .any).matching(identifier: "native-ai-annotation-toolbar").firstMatch
@@ -102,10 +100,11 @@ final class NativeSidebarParityUITests: XCTestCase {
         toggle.tap(); XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.tap()
         XCUIDevice.shared.orientation = .portrait
         XCTAssertTrue(toggle.waitForExistence(timeout: 10), app.debugDescription)
+        openAI(app) // Opening materials made room by closing AI chat.
         XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(toggle.isHittable)
         XCTAssertTrue(annotate.isEnabled, app.debugDescription)
-        XCTAssertGreaterThan(annotate.frame.midX, app.frame.midX, "The inspector stays against the right edge in portrait")
+        XCTAssertLessThan(annotate.frame.midX, app.frame.midX, "AI chat stays in the left column in portrait")
         XCTAssertEqual(app.buttons.matching(identifier: "native-toggle-materials-rail").count, 1)
         capture("Portrait inspector keeps annotation attachment and controls available")
         // Exercise a real touch at the visible control after the drawer moves
@@ -161,11 +160,39 @@ final class NativeSidebarParityUITests: XCTestCase {
             app.terminate()
         }
     }
+    @MainActor func testAIRailHandleOpensChatBesideTheCourseRail() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
+        openHome(app)
+        let handle = app.buttons["native-ai-rail-toggle"]
+        XCTAssertTrue(handle.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(handle.label, "AI 열기", "AI chat starts closed")
+        let closedX = handle.frame.minX
+        handle.tap()
+        wait(for: handle) { $0.frame.minX > closedX + 250 }
+        XCTAssertEqual(handle.label, "AI 닫기")
+        capture("AI chat beside the course rail")
+        app.buttons["native-section-library"].tap()
+        wait(for: handle) { $0.frame.minX < closedX + 150 }
+        capture("AI chat beside the navigation rail")
+        handle.tap()
+        wait(for: handle) { $0.frame.minX < 100 }
+        XCTAssertEqual(handle.label, "AI 열기")
+    }
+    @MainActor private func wait(for element: XCUIElement, until condition: @escaping (XCUIElement) -> Bool) {
+        expectation(for: NSPredicate { _, _ in condition(element) }, evaluatedWith: nil); waitForExpectations(timeout: 5)
+    }
     @MainActor private func openHome(_ app: XCUIApplication) {
         let home = app.buttons["native-section-library"]
         XCTAssertTrue(home.waitForExistence(timeout: 25), app.debugDescription)
         if !app.buttons["native-home-projects"].isHittable { home.tap() }
         XCTAssertTrue(app.buttons["native-home-projects"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+    @MainActor private func openAI(_ app: XCUIApplication) {
+        let toggle = app.buttons["native-ai-rail-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), app.debugDescription)
+        if toggle.label == "AI 열기" { toggle.tap() }
+        expectation(for: NSPredicate(format: "label == %@", "AI 닫기"), evaluatedWith: toggle); waitForExpectations(timeout: 5)
     }
     @MainActor private func openInspector(_ app: XCUIApplication) {
         if !app.buttons["native-inspector-materials"].isHittable {

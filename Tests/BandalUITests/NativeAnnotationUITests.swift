@@ -141,6 +141,12 @@ final class NativeAnnotationUITests: XCTestCase {
         closeInspector(app)
         return app
     }
+    @MainActor private func openAI(_ app: XCUIApplication) {
+        let toggle = app.buttons["native-ai-rail-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), app.debugDescription)
+        if toggle.label == "AI 열기" { toggle.tap() }
+        expectation(for: NSPredicate(format: "label == %@", "AI 닫기"), evaluatedWith: toggle); waitForExpectations(timeout: 5)
+    }
     @MainActor private func openInspector(_ app: XCUIApplication) {
         if !app.buttons["native-inspector-materials"].isHittable {
             let toggle = app.buttons["native-toggle-materials-rail"]
@@ -152,9 +158,13 @@ final class NativeAnnotationUITests: XCTestCase {
         if app.buttons["native-inspector-materials"].isHittable { app.buttons["native-toggle-materials-rail"].tap() }
     }
     @MainActor private func beginAnnotation(_ app: XCUIApplication) {
-        openInspector(app); app.buttons["native-inspector-assistant"].tap()
+        openAI(app)
         let annotate = app.buttons["native-ai-annotate"]
-        waitUntilReady(annotate, in: app); annotate.tap()
+        // Right after a web form's keyboard is dismissed XCUITest can report the
+        // left AI column as not hittable although a real touch reaches it.
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: annotate)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 20), .completed, app.debugDescription)
+        annotate.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
         waitUntilReady(app.buttons["native-ai-annotation-cancel"], in: app)
     }
     @MainActor private func annotationRegion(_ app: XCUIApplication) -> XCUIElement {

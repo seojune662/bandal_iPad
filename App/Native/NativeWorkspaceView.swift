@@ -23,7 +23,7 @@ struct NativeWorkspaceView: View {
     @AppStorage("native.desktop.courseRailWidth") private var courseRailWidth = 240.0
     @AppStorage("native.inspector.width") private var materialsRailWidth = 360.0
     @AppStorage("native.home.section") private var leftPanel: NativeHomeSection = .courses
-    @AppStorage("native.inspector.tab") private var inspectorTab: NativeInspectorTab = .materials
+    @AppStorage("native.desktop.aiRail") private var aiRailOpen = false
     @State private var windowWidth: CGFloat = 1200
     @State private var hasWindowWidth = false
     @State private var restoreInspectorAfterAnnotation = true
@@ -34,6 +34,7 @@ struct NativeWorkspaceView: View {
     @State private var settingsCategory = "appearance"
     @State private var compactCourseRail = false
     @State private var compactMaterialsRail = false
+    @State private var compactAIRail = false
     @AppStorage("native.openAdjacentTab") private var openAdjacentTab = false
     @AppStorage("native.restoreLastCourse") private var restoreLastCourse = true
     @AppStorage("native.fontScale") private var fontScale = 1.0
@@ -181,17 +182,27 @@ struct NativeWorkspaceView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let chrome = NativeWorkspaceChromeLayout(width: geometry.size.width,
-                leftOpen: courseRailOpen, rightOpen: materialsRailOpen && annotation.request == nil,
-                leftRequested: courseRailWidth, rightRequested: materialsRailWidth, showsWorkspace: showsWorkspace)
+            let chrome = chromeLayout(width: geometry.size.width)
+            // AI chat stays on screen while annotating so the document does not jump sideways.
+            let aiVisible = showsWorkspace &&
+                (chrome.aiPinned || !NativeWorkspaceChromeLayout.fitsAI(geometry.size.width) && compactAIRail)
+            let aiHostWidth = chrome.aiPinned ? chrome.aiWidth : chrome.compactAIWidth
+            let aiLeading = NativeDesktopTheme.navigationWidth + (chrome.leftPinned ? chrome.leftWidth + 1 : 0)
+            let minimum = NativeWorkspaceChromeLayout.editorMinimum
             let rightVisible = showsWorkspace && annotation.request == nil &&
                 (chrome.rightPinned || !NativeWorkspaceChromeLayout.fitsRight(geometry.size.width) && compactMaterialsRail)
             HStack(spacing: 0) {
-                globalNavigation(width: geometry.size.width)
+                globalNavigation(width: geometry.size.width).zIndex(2)
                 if chrome.leftPinned {
-                    courseSidebar.frame(width: chrome.leftWidth)
-                    railDivider
+                    HStack(spacing: 0) { courseSidebar.frame(width: chrome.leftWidth); railDivider }
+                        .transition(.move(edge: .leading)).zIndex(1)
                 }
+                // Always mounted so a draft or streaming reply survives closing the column;
+                // the width animates and the clipped content slides with it.
+                HStack(spacing: 0) { aiRail.frame(width: aiHostWidth); railDivider }
+                    .frame(width: aiVisible ? aiHostWidth + 1 : 0, alignment: .trailing)
+                    .clipped()
+                    .opacity(aiVisible ? 1 : 0).allowsHitTesting(aiVisible && annotation.request == nil).accessibilityHidden(!aiVisible)
                 // Editors and the inspector remain mounted while covered. Navigation
                 // and opening a keyboard must not discard an in-progress draft.
                 let covered = section != .library || auxiliary != nil || windowsOverviewOpen
@@ -230,9 +241,17 @@ struct NativeWorkspaceView: View {
             }
             .overlay {
                 if chrome.leftPinned {
-                    NativeDockRailResizer(side: .left, width: Binding(get: { chrome.leftWidth }, set: { courseRailWidth = $0 }), maximum: min(360, geometry.size.width - 48 - chrome.rightWidth - 480))
+                    NativeDockRailResizer(side: .left, width: Binding(get: { chrome.leftWidth }, set: { courseRailWidth = $0 }), maximum: min(360, geometry.size.width - 48 - chrome.aiWidth - chrome.rightWidth - minimum - 3))
                         .frame(width: 44, height: geometry.size.height)
                         .position(x: 48 + chrome.leftWidth + 0.5, y: geometry.size.height / 2)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if showsWorkspace && annotation.request == nil {
+                    NativeAIRailHandle(open: aiVisible) { toggleAIRail(width: geometry.size.width) }
+                        .padding(.leading, aiLeading + (aiVisible ? aiHostWidth + 1 : 0))
+                        .padding(.top, geometry.size.height / 2 - 36)
+                        .nativeWorkspacePreviewExcluded()
                 }
             }
             .overlay(alignment: .leading) {
@@ -241,8 +260,9 @@ struct NativeWorkspaceView: View {
                         courseSidebar.frame(width: min(320, geometry.size.width - 48))
                             .nativeWorkspacePreviewExcluded(occludesContent: true)
                             .background(NativeDesktopTheme.surface).overlay(alignment: .trailing) { railDivider }
-                        Color.black.opacity(0.12).onTapGesture { compactCourseRail = false }
-                    }.padding(.leading, NativeDesktopTheme.navigationWidth)
+                            .transition(.move(edge: .leading))
+                        Color.black.opacity(0.12).onTapGesture { setCourseRail(false, width: geometry.size.width) }
+                    }.padding(.leading, NativeDesktopTheme.navigationWidth).clipped()
                 }
             }
             .overlay(alignment: .trailing) {
@@ -250,9 +270,9 @@ struct NativeWorkspaceView: View {
                 // aligned to the trailing edge when the backdrop appears.
                 ZStack(alignment: .trailing) {
                     if rightVisible && !chrome.rightPinned {
-                        Color.black.opacity(0.12).onTapGesture { compactMaterialsRail = false }
+                        Color.black.opacity(0.12).onTapGesture { setRail(.materials, open: false, width: geometry.size.width) }.transition(.opacity)
                     }
-                    // One stable host, including while hidden, for file browsing and AI.
+                    // One stable host, including while hidden, for file browsing.
                     inspectorSidebar
                         .frame(width: chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth,
                                height: max(0, geometry.size.height - NativeWorkspaceWindowControls.inspectorTop))
@@ -260,13 +280,14 @@ struct NativeWorkspaceView: View {
                         .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
                         .background(NativeDesktopTheme.surface)
                         .overlay(alignment: .leading) { if rightVisible && !chrome.rightPinned { railDivider } }
+                        .offset(x: rightVisible ? 0 : (chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth))
                         .opacity(rightVisible ? 1 : 0).allowsHitTesting(rightVisible).accessibilityHidden(!rightVisible)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             }
             .overlay {
                 if chrome.rightPinned {
-                    NativeDockRailResizer(side: .right, width: Binding(get: { chrome.rightWidth }, set: { materialsRailWidth = max(320, $0) }), maximum: min(520, geometry.size.width - 48 - chrome.leftWidth - 480), resetWidth: 360)
+                    NativeDockRailResizer(side: .right, width: Binding(get: { chrome.rightWidth }, set: { materialsRailWidth = max(320, $0) }), maximum: min(520, geometry.size.width - 48 - chrome.leftWidth - chrome.aiWidth - minimum - 3), resetWidth: 360)
                         .frame(width: 44, height: geometry.size.height)
                         .position(x: geometry.size.width - chrome.rightWidth - 0.5, y: geometry.size.height / 2)
                 }
@@ -363,7 +384,7 @@ struct NativeWorkspaceView: View {
                 if let context = workspaceContext, let conversation = NativeToolSelection.conversationID(workspaceID: document.relativePath, root: store.root) {
                     store.pendingAssistantConversationIDs[context.id] = conversation
                 }
-                revealInspector(.assistant)
+                openAIRail()
             }
             await importSharedMaterials()
         }
@@ -375,7 +396,7 @@ struct NativeWorkspaceView: View {
         }
         .onChange(of: store.assistantDocumentIDs) { _, ids in
             guard !ids.isEmpty else { return }
-            revealInspector(.assistant)
+            openAIRail()
             store.assistantDocumentIDs.removeAll()
         }
         .onChange(of: section) { old, new in
@@ -391,7 +412,7 @@ struct NativeWorkspaceView: View {
         }
         .onChange(of: annotation.completed?.id) { _, _ in receiveAnnotation() }
         .onChange(of: annotation.request?.id) { old, new in
-            if old != nil && new == nil && restoreInspectorAfterAnnotation && showsWorkspace && !boardOverlayOpen { revealInspector(.assistant) }
+            if old != nil && new == nil && restoreInspectorAfterAnnotation && showsWorkspace && !boardOverlayOpen { openAIRail() }
         }
         .onChange(of: openAdjacentTab) { _, value in navigation.openAdjacentTab = value }
         .onChange(of: store.courses) { _, _ in refreshShareDestinations(); refreshWorkspaceContext() }
@@ -473,49 +494,77 @@ struct NativeWorkspaceView: View {
     }
 
     private var railDivider: some View { NativeDesktopTheme.border.frame(width: 1) }
-    private static let railAnimation = Animation.easeOut(duration: 0.2)
-    /// Pinned rails push the editor; when only one fits, opening one closes the other.
-    private func setCourseRail(_ open: Bool, width: CGFloat) {
-        guard NativeWorkspaceChromeLayout.fitsLeft(width) else { compactCourseRail = open; if open { compactMaterialsRail = false }; return }
-        withAnimation(Self.railAnimation) {
-            compactCourseRail = false; courseRailOpen = open
-            if open && !NativeWorkspaceChromeLayout.fitsBoth(width) { materialsRailOpen = false }
+    private static let railAnimation = Animation.spring(response: 0.32, dampingFraction: 0.88)
+    private enum Rail { case course, ai, materials }
+    private func chromeLayout(width: CGFloat) -> NativeWorkspaceChromeLayout {
+        NativeWorkspaceChromeLayout(width: width, leftOpen: courseRailOpen, rightOpen: materialsRailOpen && annotation.request == nil,
+            aiOpen: aiRailOpen, leftRequested: courseRailWidth, rightRequested: materialsRailWidth,
+            showsWorkspace: showsWorkspace)
+    }
+    private func fitsAlone(_ rail: Rail, width: CGFloat) -> Bool {
+        switch rail {
+        case .course: NativeWorkspaceChromeLayout.fitsLeft(width)
+        case .ai: NativeWorkspaceChromeLayout.fitsAI(width)
+        case .materials: NativeWorkspaceChromeLayout.fitsRight(width)
         }
     }
-    private func setMaterialsRail(_ open: Bool, width: CGFloat) {
-        compactCourseRail = false
-        guard NativeWorkspaceChromeLayout.fitsRight(width) else { compactMaterialsRail = open; return }
+    private func railIsOpen(_ rail: Rail) -> Bool {
+        switch rail { case .course: courseRailOpen; case .ai: aiRailOpen; case .materials: materialsRailOpen }
+    }
+    /// Pinned rails push the editor. Opening one closes the others, in this
+    /// order, until the editor keeps its minimum width; narrow windows use drawers.
+    private func setRail(_ rail: Rail, open: Bool, width: CGFloat) {
         withAnimation(Self.railAnimation) {
-            compactMaterialsRail = false; materialsRailOpen = open
-            if open && !NativeWorkspaceChromeLayout.fitsBoth(width) { courseRailOpen = false }
+            guard fitsAlone(rail, width: width) else {
+                compactCourseRail = rail == .course && open
+                compactAIRail = rail == .ai && open
+                compactMaterialsRail = rail == .materials && open
+                return
+            }
+            compactCourseRail = false; compactAIRail = false; compactMaterialsRail = false
+            switch rail { case .course: courseRailOpen = open; case .ai: aiRailOpen = open; case .materials: materialsRailOpen = open }
+            guard open else { return }
+            let minimum: [Rail: Double] = [.course: NativeWorkspaceChromeLayout.leftMinimum, .ai: NativeWorkspaceChromeLayout.aiMinimum,
+                                           .materials: NativeWorkspaceChromeLayout.rightMinimum]
+            let closeOrder: [Rail] = switch rail { case .course: [.materials, .ai]; case .ai: [.materials, .course]; case .materials: [.ai, .course] }
+            var opened = [Rail.course, .ai, .materials].filter(railIsOpen)
+            for other in closeOrder where !NativeWorkspaceChromeLayout.fits(opened.compactMap { minimum[$0] }, in: width) && opened.contains(other) {
+                opened.removeAll { $0 == other }
+                switch other { case .course: courseRailOpen = false; case .ai: aiRailOpen = false; case .materials: materialsRailOpen = false }
+            }
         }
     }
-    private func courseRailVisible(width: CGFloat) -> Bool {
-        NativeWorkspaceChromeLayout.fitsLeft(width) ? courseRailOpen && (materialsRailOpen ? NativeWorkspaceChromeLayout.fitsBoth(width) : true) : compactCourseRail
+    private func railVisible(_ rail: Rail, width: CGFloat) -> Bool {
+        let chrome = chromeLayout(width: width)
+        switch rail {
+        case .course: return fitsAlone(.course, width: width) ? chrome.leftPinned : compactCourseRail
+        case .ai: return fitsAlone(.ai, width: width) ? chrome.aiPinned : compactAIRail
+        case .materials: return fitsAlone(.materials, width: width) ? chrome.rightPinned : compactMaterialsRail
+        }
     }
-    private func materialsRailVisible(width: CGFloat) -> Bool {
-        NativeWorkspaceChromeLayout.fitsRight(width) ? materialsRailOpen : compactMaterialsRail
-    }
-    private func toggleCourseRail(width: CGFloat) { setCourseRail(!courseRailVisible(width: width), width: width) }
-    private func toggleMaterialsRail(width: CGFloat) { setMaterialsRail(!materialsRailVisible(width: width), width: width) }
-    private func openMaterialsRail(width: CGFloat) { setMaterialsRail(true, width: width) }
+    private func setCourseRail(_ open: Bool, width: CGFloat) { setRail(.course, open: open, width: width) }
+    private func toggleCourseRail(width: CGFloat) { setRail(.course, open: !railVisible(.course, width: width), width: width) }
+    private func toggleMaterialsRail(width: CGFloat) { setRail(.materials, open: !railVisible(.materials, width: width), width: width) }
+    private func openMaterialsRail(width: CGFloat) { setRail(.materials, open: true, width: width) }
+    private func toggleAIRail(width: CGFloat) { setRail(.ai, open: !railVisible(.ai, width: width), width: width) }
     private func updateWindowWidth(_ width: CGFloat) {
         if hasWindowWidth {
             let fitsRight = NativeWorkspaceChromeLayout.fitsRight
-            if fitsRight(windowWidth) && !fitsRight(width) { compactMaterialsRail = materialsRailOpen; compactCourseRail = false }
+            if fitsRight(windowWidth) && !fitsRight(width) { compactMaterialsRail = materialsRailOpen; compactCourseRail = false; compactAIRail = false }
             if !fitsRight(windowWidth) && fitsRight(width) { materialsRailOpen = compactMaterialsRail; compactMaterialsRail = false }
             if NativeWorkspaceChromeLayout.fitsLeft(windowWidth) != NativeWorkspaceChromeLayout.fitsLeft(width) { compactCourseRail = false }
+            if NativeWorkspaceChromeLayout.fitsAI(windowWidth) != NativeWorkspaceChromeLayout.fitsAI(width) { compactAIRail = false }
         }
         windowWidth = width; hasWindowWidth = true
     }
-    private func revealInspector(_ tab: NativeInspectorTab) {
-        inspectorTab = tab
+    /// AI chat lives in its own column right of the course rail.
+    private func openAIRail() {
         section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false
-        openMaterialsRail(width: windowWidth)
+        setRail(.ai, open: true, width: windowWidth)
     }
     private func globalNavigation(width: CGFloat) -> some View {
         VStack(spacing: 8) {
-            NativeChromeButton(title: "홈", symbol: "house.fill", selected: showsWorkspace && courseRailVisible(width: width)) {
+            NativeChromeButton(title: "홈", symbol: "house.fill", selected: showsWorkspace && railVisible(.course, width: width)) {
                 if showsWorkspace { toggleCourseRail(width: width) } else {
                     transition {
                         section = .library; auxiliary = nil; learningHome = false
@@ -588,7 +637,7 @@ struct NativeWorkspaceView: View {
         }
     }
     private func openActiveAssistant() {
-        revealInspector(.assistant)
+        openAIRail()
     }
     private func beginAnnotation() {
         guard let document = navigation.active, let context = workspaceContext,
@@ -613,7 +662,7 @@ struct NativeWorkspaceView: View {
         pendingAttachments[capture.spaceID] = attachments
         annotation.consumeCompleted()
         if workspaceContext?.id == capture.spaceID && restoreInspectorAfterAnnotation && showsWorkspace && !boardOverlayOpen {
-            revealInspector(.assistant)
+            openAIRail()
         }
     }
     private func openSettings(_ category: String) { transition { windowsOverviewOpen = false; boardOverlayOpen = false; settingsCategory = category; section = .settings; auxiliary = nil } }
@@ -655,7 +704,7 @@ struct NativeWorkspaceView: View {
                 else { context = .course(value) }
                 if let conversation = payload["conversationId"] as? String { store.pendingAssistantConversationIDs[context.id] = conversation }
                 if workspaceContext?.id != context.id { changeWorkspace(context) }
-                revealInspector(.assistant)
+                openAIRail()
             }
             return
         }
@@ -680,7 +729,7 @@ struct NativeWorkspaceView: View {
         }
     }
     private func openNewTab(_ action: NativeNewTabAction, _ groupID: String) {
-        if action == .assistant { revealInspector(.assistant); return }
+        if action == .assistant { openAIRail(); return }
         guard !busy else { return }; busy = true
         let context = workspaceContext
         let target = navigation.captureTarget(groupID: groupID.isEmpty ? nil : groupID)
@@ -745,37 +794,38 @@ struct NativeWorkspaceView: View {
     }
     private var inspectorSidebar: some View {
         VStack(spacing: 0) {
-            NativeInspectorHeader(selection: $inspectorTab)
+            NativeInspectorHeader()
             if let context = workspaceContext {
-                ZStack {
-                    VStack(spacing: 0) {
-                        NativeLibraryView(store: store, sourceTrayModel: librarySources, scope: context,
-                            onOpenAI: { revealInspector(.assistant) }, selectedDocumentID: navigation.active?.storageID,
-                            captureOpen: {
-                                let target = navigation.captureTarget()
-                                return { document in openCapturedDocument(document, target: target) }
-                            }) { document in
-                            compactMaterialsRail = false; open(document)
-                        }.id(context.id).frame(maxHeight: .infinity)
-                        NativeSettingsWidgetDock(store: store, services: services, availableHeight: 600)
-                    }.opacity(inspectorTab == .materials ? 1 : 0)
-                        .allowsHitTesting(inspectorTab == .materials).accessibilityHidden(inspectorTab != .materials)
-                    NativeAssistantPanel(store: store, context: context, sourceDocument: navigation.active,
-                        attachments: pendingAttachments[context.id] ?? [],
-                        onConsumeAttachments: { pendingAttachments[context.id] = nil },
-                        onOpenDocument: openWorkspaceResult, onOpenSettings: { openSettings("ai") }, onAnnotate: beginAnnotation)
-                        .environment(\.nativeWorkspaceTarget, navigation.captureTarget())
-                        .id(context.id).opacity(inspectorTab == .assistant ? 1 : 0)
-                        .allowsHitTesting(inspectorTab == .assistant).accessibilityHidden(inspectorTab != .assistant)
-                }
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "folder").font(.largeTitle).foregroundStyle(NativeDesktopTheme.muted)
-                    Text("과목이나 프로젝트를 선택하세요").font(NativeDesktopTheme.font(14))
-                    Text("자료와 AI 대화를 한 공간에서 이어가세요.").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+                NativeLibraryView(store: store, sourceTrayModel: librarySources, scope: context,
+                    onOpenAI: openAIRail, selectedDocumentID: navigation.active?.storageID,
+                    captureOpen: {
+                        let target = navigation.captureTarget()
+                        return { document in openCapturedDocument(document, target: target) }
+                    }) { document in
+                    compactMaterialsRail = false; open(document)
+                }.id(context.id).frame(maxHeight: .infinity)
+                NativeSettingsWidgetDock(store: store, services: services, availableHeight: 600)
+            } else { noWorkspacePlaceholder }
         }.background(NativeDesktopTheme.surface)
+    }
+    private var aiRail: some View {
+        VStack(spacing: 0) {
+            if let context = workspaceContext {
+                NativeAssistantPanel(store: store, context: context, sourceDocument: navigation.active,
+                    attachments: pendingAttachments[context.id] ?? [],
+                    onConsumeAttachments: { pendingAttachments[context.id] = nil },
+                    onOpenDocument: openWorkspaceResult, onOpenSettings: { openSettings("ai") }, onAnnotate: beginAnnotation)
+                    .environment(\.nativeWorkspaceTarget, navigation.captureTarget())
+                    .id(context.id)
+            } else { noWorkspacePlaceholder }
+        }.background(NativeDesktopTheme.surface)
+    }
+    private var noWorkspacePlaceholder: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "folder").font(.largeTitle).foregroundStyle(NativeDesktopTheme.muted)
+            Text("과목이나 프로젝트를 선택하세요").font(NativeDesktopTheme.font(14))
+            Text("자료와 AI 대화를 한 공간에서 이어가세요.").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     private var toolTabs: some View {
         HStack(spacing: 4) {
@@ -818,7 +868,7 @@ struct NativeWorkspaceView: View {
         switch document.kind { case "browser": "globe"; case "assistant": "sparkle"; case "recordings": "waveform"; case "planner": "checklist"; case "pdf": "doc.richtext"; case "whiteboard": "rectangle.and.pencil.and.ellipsis"; case "video": "play.rectangle"; case "audio": "waveform"; default: "doc.text" }
     }
     private func openTool(_ target: NativeWorkspaceSection, new: Bool = false) {
-        if target == .assistant { revealInspector(.assistant); return }
+        if target == .assistant { openAIRail(); return }
         guard target != .library && target != .settings else { transition { section = target }; return }
         transition {
             guard let course = store.selectedCourseID else { section = target; return }
@@ -909,7 +959,7 @@ struct NativeWorkspaceView: View {
                let conversation = NativeToolSelection.conversationID(workspaceID: document.relativePath, root: store.root) {
                 store.pendingAssistantConversationIDs[context.id] = conversation
             }
-            revealInspector(.assistant)
+            openAIRail()
             return
         }
         if document.kind == "learning-home" { leftPanel = .projects; setCourseRail(true, width: windowWidth); return }
@@ -1091,7 +1141,7 @@ struct NativeWorkspaceView: View {
         busy = true
         Task { @MainActor in
             defer { finishWorkspaceTransition() }
-            do { try await store.flushDocuments(); compactCourseRail = false; compactMaterialsRail = false; action(); try navigation.save(to: navigationURL) }
+            do { try await store.flushDocuments(); compactCourseRail = false; compactMaterialsRail = false; compactAIRail = false; action(); try navigation.save(to: navigationURL) }
             catch { store.errorMessage = error.localizedDescription }
         }
     }
