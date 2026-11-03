@@ -1,7 +1,3 @@
-- Organize your work into courses and projects from Home.
-- Use materials and AI side by side in the right panel, with chat, quiz, flashcard and practice-question modes (requires your own API key).
-- Point to part of a PDF, note or web page and attach it to your AI question.
-- Drag images from the Photos & Files tray into PDFs and Markdown, and adjust Markdown image size and alignment.
-- Copy a PDF area as an image with the lasso, or move selected handwriting to another page.
-- View materials as icons, a list or a gallery.
-- PDFs and thumbnails open faster.
+- Sync courses, materials and handwriting with your other devices through your own iCloud or Google Drive (Settings > Sync). Free, and no Bandal account is needed.
+- Bandal Plus: unlimited courses, materials and AI requests. Free use includes 1 course, 10 materials and 20 AI requests a month.
+- Optional sign-in with Apple or Google for a Bandal profile.

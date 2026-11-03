@@ -62,8 +62,8 @@ PR8(구독)에 맞춰 App Store Connect(ASC)에 넣을 값이다. 코드는 아�
 
 ## 4. 앱 버전 페이지 (구독을 처음 내는 버전)
 
-1. **앱 내 구입 및 구독**: 두 구독을 고른다. 첫 구독은 새 앱 버전과 함께 심사에 내야 한다. 그 버전은 `NativeReleaseFlags.membership`을 켠 빌드여야 한다. 지금은 꺼 두었고, 끈 빌드로 내면 심사자가 구매 화면을 찾지 못한다.
-2. **설명**: 끝에 붙인다(Apple 표준 EULA를 쓰면 설명에 링크가 있어야 한다). `fastlane metadata` 레인으로 올린다면 `fastlane/metadata/*/description.txt`에도 같은 줄을 넣어야 덮어쓰이지 않는다.
+1. **앱 내 구입 및 구독**: 두 구독을 고른다. 첫 구독은 새 앱 버전과 함께 심사에 내야 한다. 그 버전은 `NativeReleaseFlags.membership`을 켠 빌드여야 한다(1.2.0부터 켜져 있다). 끈 빌드로 내면 심사자가 구매 화면을 찾지 못한다.
+2. **설명**: 끝에 붙인다(Apple 표준 EULA를 쓰면 설명에 링크가 있어야 한다). `fastlane/metadata/*/description.txt`에 넣어 두었다.
 
    한국어:
    ```text
@@ -87,12 +87,7 @@ PR8(구독)에 맞춰 App Store Connect(ASC)에 넣을 값이다. 코드는 아�
    - Privacy Policy: https://bandal.io/privacy
    ```
 3. **사용권 계약(EULA)**: ASC 칸은 비워 둔다(Apple 표준). **개인정보 처리방침 URL**은 이미 `https://bandal.io/privacy`다.
-4. **App Review 정보 › 메모**: 지금 메모 2절의 "no paid features or in-app purchases" 문장은 지운다. 그리고 다음 절을 더한다.
-
-   ```text
-   5. Subscription (Bandal Plus)
-   The app is free to use with limits: on this iPad, 1 course and 10 materials (PDFs and notes) can be created, and the AI assistant (user's own API key) can be used 20 times a month. Bandal Plus, an auto-renewable subscription (monthly or yearly, 1-week free trial for new subscribers), removes these limits. To see the purchase screen, create a second course ("+" next to 과목 > 새 과목 만들기), or open Settings > 구독 (Subscription) > 반달 플러스 보기. Buying and restoring need no login; Restore Purchases is on the same screen. When a subscription ends, nothing already made is locked.
-   ```
+4. **App Review 정보 › 메모**: 1.2.0 메모는 [app-review-1.2.0.md](app-review-1.2.0.md) 4절 문안으로 통째로 바꿨다(`fastlane/metadata/review_information/notes.txt`).
 5. **앱 개인정보 보호(App Privacy)**: 구독 때문에 바꿀 것은 없다. 거래는 기기 안에서만 확인하고 어디로도 보내지 않는다. 로그인 화면 때문에 라벨을 바꾸는 것은 별개 일이다.
 6. **App Store 서버 알림 URL**: 비워 둔다(서버 없음).
 7. **청구 유예 기간**: 켠다. 앱 › 구독 › "청구 유예 기간" 섹션에서 "청구 유예 기간 설정"을 누른다. 이 설정은 앱 하나에 하나이고, 앱의 모든 구독에 같이 적용된다.
