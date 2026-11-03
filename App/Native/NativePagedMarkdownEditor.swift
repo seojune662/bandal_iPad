@@ -6,7 +6,7 @@ import UIKit
 /// discard composition or replace another page's pending edit.
 struct NativePagedMarkdownEditor: View {
     let document: NativeDocumentReference
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @ObservedObject var session: NativeMarkdownSession
     let note: NativePDFPageNoteDocument
     @Binding var pageIndex: Int

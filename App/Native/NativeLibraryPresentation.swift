@@ -83,6 +83,7 @@ struct NativeLibraryThumbnail: View {
     var revision = ""
     var isDirectory = false
     @State private var image: UIImage?
+    @State private var loadedPath: String?
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8).fill(NativeDesktopTheme.raised)
@@ -96,7 +97,8 @@ struct NativeLibraryThumbnail: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityHidden(true)
         .task(id: (url?.path ?? "") + ":" + revision) {
-            image = nil
+            // A revision-only change keeps the old image until the new one is ready.
+            if loadedPath != url?.path { image = nil; loadedPath = url?.path }
             guard let url, !isDirectory else { return }
             let next = await NativeLibraryThumbnailCache.shared.image(url: url, revision: revision)
             guard !Task.isCancelled else { return }

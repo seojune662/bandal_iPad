@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 /// The course children are portable saved tab descriptors, as on desktop.
 struct NativeFavoritesSection: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let courseID: String
     let currentDocument: NativeDocumentReference?
     let descriptor: (NativeDocumentReference) -> [String: Any]?

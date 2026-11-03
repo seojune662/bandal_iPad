@@ -38,7 +38,7 @@ enum NativeNewTabCatalog {
 }
 
 struct NativeNewTabMenu: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let courseID: String
     let onAction: (NativeNewTabAction) -> Void
     let onClose: () -> Void

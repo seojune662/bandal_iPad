@@ -66,7 +66,7 @@ struct MembershipPaywall: View {
 /// Settings › 구독: what this iPad has made against the free allowance, the paywall, restore and
 /// Apple's subscription management. Signing in is never asked for.
 struct NativeSettingsSubscriptionPanel: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @ObservedObject private var membership = Membership.shared
     @State private var usage: [String: Any] = [:]
     @State private var managing = false

@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct NativePDFToolbar: View {
-    @ObservedObject var model: NativePDFWorkspaceModel
+    var model: NativePDFWorkspaceModel
     var writingOnly = false
     @State private var entry = "1"
     var body: some View {
@@ -105,7 +105,7 @@ struct NativePDFToolbar: View {
 
 /// Floats above the lasso/select box like a notebook app's selection menu.
 struct NativePDFSelectionBar: View {
-    @ObservedObject var model: NativePDFWorkspaceModel
+    var model: NativePDFWorkspaceModel
     let frame: CGRect
     var body: some View {
         GeometryReader { geometry in
@@ -154,8 +154,10 @@ struct NativePDFSelectionBar: View {
 }
 
 struct NativePDFPagesPanel: View {
-    @ObservedObject var model: NativePDFWorkspaceModel
-    @State private var thumbnailHeights: [Int: CGFloat] = [:]
+    var model: NativePDFWorkspaceModel
+    /// Every thumbnail shares one fixed aspect ratio, so one measured height
+    /// serves all rows; per-row writes re-rendered the whole panel per page.
+    @State private var thumbnailHeight: CGFloat?
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -197,6 +199,9 @@ struct NativePDFPagesPanel: View {
         }.background(NativeDesktopTheme.surface).buttonStyle(.plain)
             .disabled(model.isBusy || model.isLoading || model.errorMessage != nil)
     }
+    /// A page action disables this panel; running it inside the menu action
+    /// disabled the menu's own label while UIKit was still dismissing it.
+    private func afterMenu(_ action: @escaping @MainActor () -> Void) { Task { @MainActor in action() } }
     private func insertionMarker(_ slot: Int) -> some View {
         Rectangle().fill(model.pageDropSlot == slot ? NativeDesktopTheme.accent : .clear).frame(height: 4)
             .onDrop(of: [UTType.text], delegate: NativePDFPageDropDelegate(model: model, slot: slot))
@@ -208,19 +213,19 @@ struct NativePDFPagesPanel: View {
                     .padding(3).overlay(RoundedRectangle(cornerRadius: 5).stroke(model.page == number ? NativeDesktopTheme.accent : .clear, lineWidth: 2))
             }.accessibilityLabel("\(number)페이지").accessibilityIdentifier("native-pdf-thumbnail-\(number)")
                 .accessibilityAddTraits(model.page == number ? .isSelected : [])
-                .background(GeometryReader { geometry in
-                    Color.clear.onChange(of: geometry.size.height, initial: true) { _, height in thumbnailHeights[number] = height }
-                })
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    if thumbnailHeight != height { thumbnailHeight = height }
+                }
                 .onDrag { model.draggedPage = number; return NSItemProvider(object: (model.dragIdentity + ":" + String(number)) as NSString) }
-                .onDrop(of: [UTType.text], delegate: NativePDFPageDropDelegate(model: model, slot: number, midpoint: thumbnailHeights[number].map { $0 / 2 }))
+                .onDrop(of: [UTType.text], delegate: NativePDFPageDropDelegate(model: model, slot: number, midpoint: thumbnailHeight.map { $0 / 2 }))
             HStack {
                 Text(String(number)).font(.system(size: 11).monospacedDigit()).foregroundStyle(NativeDesktopTheme.muted)
                 Spacer()
                 Menu {
-                    Button("아래에 페이지 추가") { model.addPage(after: number) }.disabled(!(model.pageCanRestructure || model.pageCanAppend && number == model.pageCount)).accessibilityIdentifier("native-pdf-page-insert-below")
-                    Button("위로 이동") { model.movePage(number, to: number - 1) }.disabled(number == 1 || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-move-up")
-                    Button("아래로 이동") { model.movePage(number, to: number + 1) }.disabled(number == model.pageCount || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-move-down")
-                    Button("페이지 삭제", role: .destructive) { model.requestDeletePage(number) }.disabled(model.pageCount == 1 || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-delete")
+                    Button("아래에 페이지 추가") { afterMenu { model.addPage(after: number) } }.disabled(!(model.pageCanRestructure || model.pageCanAppend && number == model.pageCount)).accessibilityIdentifier("native-pdf-page-insert-below")
+                    Button("위로 이동") { afterMenu { model.movePage(number, to: number - 1) } }.disabled(number == 1 || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-move-up")
+                    Button("아래로 이동") { afterMenu { model.movePage(number, to: number + 1) } }.disabled(number == model.pageCount || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-move-down")
+                    Button("페이지 삭제", role: .destructive) { afterMenu { model.requestDeletePage(number) } }.disabled(model.pageCount == 1 || !model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-delete")
                 } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .accessibilityLabel("\(number)페이지 메뉴").accessibilityIdentifier("native-pdf-page-menu-\(number)")
             }.padding(.leading, 4)
@@ -255,7 +260,7 @@ private struct NativePDFPageDropDelegate: DropDelegate {
 }
 
 struct NativePDFAnnotationRail: View {
-    @ObservedObject var model: NativePDFWorkspaceModel
+    var model: NativePDFWorkspaceModel
     var body: some View {
         VStack(spacing: 0) {
             HStack { Text("형광펜 · 메모").font(.system(size: 13, weight: .semibold)); Spacer(); Button { model.toggleAnnotations() } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }.accessibilityLabel("주석 닫기") }.padding(.leading, 14)

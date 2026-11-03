@@ -16,7 +16,7 @@ struct NativePlannerExternalEvent: Decodable, Identifiable {
 }
 
 struct NativePlannerCalendar: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let tasks: [NativePlannerTask]
     let courses: [NativeCourse]
     let onEdit: (NativePlannerTask) -> Void

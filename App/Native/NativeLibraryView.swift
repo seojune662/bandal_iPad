@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct NativeLibraryView: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @ObservedObject var sourceTrayModel: NativeLibrarySourceTrayModel
     var scope: NativeWorkspaceContext? = nil
     var onOpenAI: (() -> Void)? = nil
@@ -58,7 +58,6 @@ struct NativeLibraryView: View {
     }
     private var displayMode: NativeLibraryDisplayMode { NativeLibraryDisplayMode(rawValue: storedDisplayMode) ?? .list }
     private var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    private var galleryMaterial: NativeMaterial? { items.first { $0.relPath == gallerySelection && !$0.isDirectory } ?? items.first { !$0.isDirectory } }
     private var currentItems: [NativeMaterial] {
         folderPath == rootPath ? scopedMaterials : NativeLibraryIndex.contents(in: folderPath, materials: scopedMaterials)
     }
@@ -370,8 +369,11 @@ Menu {
         .accessibilityAddTraits(isSelected(material) ? .isSelected : [])
     }
     private var galleryContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let material = galleryMaterial {
+        // `items` sorts with localizedStandardCompare; compute it once per pass.
+        let items = items
+        let files = items.filter { !$0.isDirectory }
+        return VStack(alignment: .leading, spacing: 12) {
+            if let material = files.first(where: { $0.relPath == gallerySelection }) ?? files.first {
                 Button { open(material) } label: {
                     VStack(alignment: .leading, spacing: 8) {
                         NativeLibraryMaterialThumbnail(store: store, material: material, courseID: courseID, url: materialURL(material), symbol: symbol(material), refresh: isSelected(material) ? "active" : "")
@@ -390,7 +392,7 @@ Menu {
                 .accessibilityIdentifier("native-library-gallery-preview")
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 8) {
-                        ForEach(items.filter { !$0.isDirectory }) { item in
+                        ForEach(files) { item in
                             Button { gallerySelection = item.relPath } label: {
                                 VStack(spacing: 4) {
                                     NativeLibraryMaterialThumbnail(store: store, material: item, courseID: courseID, url: materialURL(item), symbol: symbol(item), refresh: isSelected(item) ? "active" : "")
@@ -459,7 +461,7 @@ Menu {
         let key = course + ":" + material.relPath
         do {
             let url = try await NativeLibraryMaterialAccess.url(store: store, courseID: course, relativePath: material.relPath)
-            guard !Task.isCancelled, course == courseID else { return }
+            guard !Task.isCancelled, course == courseID, materialURLs[key] != url else { return }
             materialURLs[key] = url
         } catch { /* Missing/unavailable files retain their type icon. Opening reports the precise error. */ }
     }

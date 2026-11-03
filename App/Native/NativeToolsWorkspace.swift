@@ -27,7 +27,7 @@ enum NativeWorkspaceSection: String, CaseIterable, Identifiable {
 
 struct NativeToolsWorkspace: View {
     let section: NativeWorkspaceSection
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @ObservedObject var services: NativePlatformServices
     @StateObject private var librarySources = NativeLibrarySourceTrayModel()
     var workspaceID: String? = nil

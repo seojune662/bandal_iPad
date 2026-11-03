@@ -66,7 +66,6 @@ struct NativePDFPageThumbnail: View {
     var rows: [[String: Any]] = []
     var inkRevision = 0
     @State private var image: UIImage?
-    @State private var loadedIdentity = ""
     var body: some View {
         ZStack {
             Color.white
@@ -79,8 +78,9 @@ struct NativePDFPageThumbnail: View {
         .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
         .accessibilityHidden(true)
         .task(id: (source?.revision ?? "") + ":" + String(page) + ":" + String(inkRevision)) {
-            let identity = (source?.revision ?? "") + ":" + String(page)
-            if loadedIdentity != identity { image = nil; loadedIdentity = identity }
+            // Keep the previous image while a new revision renders: a page
+            // add reopens the document and used to flash every thumbnail.
+            if source == nil { image = nil }
             let next = await source?.image(page: page, rows: rows, inkRevision: inkRevision)
             guard !Task.isCancelled else { return }
             image = next

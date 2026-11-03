@@ -4,7 +4,7 @@ import SwiftUI
 /// and opens a popover with name · email, 계정 설정, 앱 설정 and 로그아웃.
 /// Signed out, it is the plain 계정 icon that opens the account page.
 struct NativeAccountRailButton: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     var selected = false
     let openAccount: () -> Void
     let openSettings: () -> Void

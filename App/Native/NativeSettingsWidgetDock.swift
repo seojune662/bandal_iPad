@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeSettingsWidgetDock: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     @ObservedObject var services: NativePlatformServices
     var availableHeight: CGFloat = 680
     @State private var settings: [String: Any] = [:]
@@ -43,7 +43,7 @@ struct NativeSettingsWidgetDock: View {
 }
 
 private struct NativeWidgetTasks: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let board: Bool
     @State private var tasks: [NativePlannerTask] = []
     @State private var error: String?
@@ -84,7 +84,7 @@ private struct NativeWidgetTasks: View {
 }
 
 private struct NativeWidgetMail: View {
-    @ObservedObject var store: NativeWorkspaceStore
+    var store: NativeWorkspaceStore
     let url: String
     @StateObject private var session: NativeBrowserSession
     init(store: NativeWorkspaceStore, host: DesktopBrowserHost, url: String) {

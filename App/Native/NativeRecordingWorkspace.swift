@@ -153,7 +153,7 @@ final class NativeRecordingPlayback: NSObject, ObservableObject, AVAudioPlayerDe
 }
 
 struct NativeRecordingWorkspace: View {
-  @ObservedObject var store: NativeWorkspaceStore
+  var store: NativeWorkspaceStore
   let workspaceID: String?
   let courseID: String?
   private var effectiveCourseID: String? { courseID ?? store.selectedCourseID }

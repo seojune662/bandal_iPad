@@ -5,7 +5,8 @@ import Combine
 /// Native document chrome. The UIKit body below is the existing PDFKit/Metal
 /// compositor; neither this view nor its persistence owner instantiates WKWebView.
 struct NativePDFWorkspace: View {
-    @StateObject private var model: NativePDFWorkspaceModel
+    @StateObject private var holder: NativeObservableHolder<NativePDFWorkspaceModel>
+    private var model: NativePDFWorkspaceModel { holder.model }
     @Environment(\.nativeEditorVisible) private var visible
     @Environment(\.nativeWorkspaceChromeMode) private var chromeMode
     @Environment(\.nativeWorkspaceControlInset) private var controlInset
@@ -14,7 +15,7 @@ struct NativePDFWorkspace: View {
 
     init(document: NativeDocumentReference, store: NativeWorkspaceStore, onOpenDocument: ((NativeDocumentReference) -> Void)? = nil) {
         tabID = document.id
-        _model = StateObject(wrappedValue: NativePDFWorkspaceModel(document: document, store: store, onOpenDocument: onOpenDocument))
+        _holder = StateObject(wrappedValue: NativeObservableHolder(NativePDFWorkspaceModel(document: document, store: store, onOpenDocument: onOpenDocument)))
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -90,17 +91,17 @@ struct NativePDFWorkspace: View {
         .onChange(of: visible, initial: true) { _, value in model.setVisible(value) }
         .background(NativeDesktopTheme.bgApp)
         .accessibilityElement(children: .contain).accessibilityIdentifier(visible ? "native-pdf-pane-" + tabID : "")
-        .sheet(isPresented: $model.showAnnotationEditor, onDismiss: { model.dismissAnnotation() }) {
+        .sheet(isPresented: Bindable(model).showAnnotationEditor, onDismiss: { model.dismissAnnotation() }) {
             NavigationStack {
                 Form {
                     Section("선택한 원문") { Text(model.annotationQuote).textSelection(.enabled) }
                     Section("형광 색") {
-                        Picker("색", selection: $model.annotationColor) {
+                        Picker("색", selection: Bindable(model).annotationColor) {
                             ForEach(NativePDFWorkspaceModel.annotationColors, id: \.name) { item in Text(item.label).tag(item.name) }
                         }.pickerStyle(.segmented)
                     }
                     Section("메모") {
-                        TextEditor(text: $model.annotationComment).frame(minHeight: 140).accessibilityIdentifier("native-pdf-annotation-editor")
+                        TextEditor(text: Bindable(model).annotationComment).frame(minHeight: 140).accessibilityIdentifier("native-pdf-annotation-editor")
                     }
                     if model.editingAnnotation {
                         Section { Button("주석 삭제", role: .destructive) { model.deleteAnnotation() }.accessibilityIdentifier("native-pdf-delete-annotation") }
@@ -131,28 +132,31 @@ struct NativePDFWorkspace: View {
 }
 
 @MainActor
-final class NativePDFWorkspaceModel: ObservableObject {
+@Observable
+final class NativePDFWorkspaceModel {
     struct InkColor { let name: String, label: String; let color: Color }
     static let colors: [InkColor] = zip(NativePDFPenPreset.colors, ["먹색", "빨강", "주황", "노랑", "초록", "파랑", "보라"]).map {
         InkColor(name: $0.0, label: $0.1, color: Color(uiColor: NativePDFInkSurface.color($0.0)))
     }
     static let annotationColors: [InkColor] = [.init(name: "yellow", label: "노랑", color: .yellow), .init(name: "green", label: "초록", color: .green), .init(name: "blue", label: "파랑", color: .blue), .init(name: "pink", label: "분홍", color: .pink)]
     struct AnnotationItem: Identifiable { let id: String, page: Int, quote: String, comment: String, color: String }
-    @Published var annotationItems: [AnnotationItem] = []
-    @Published var annotationCount = 0
-    @Published var sourceQuote = ""
-    @Published var showAnnotationEditor = false
-    @Published var showAnnotations = false
-    @Published var showPages = false
-    @Published var toolsExpanded = true
-    @Published var zoom = 1.0
-    @Published var opacity = NativePDFPenPreset.pen.opacity
-    @Published var pageDeleteConfirmation: Int?
-    @Published private(set) var thumbnailSource: NativePDFPageThumbnailSource?
+    var annotationItems: [AnnotationItem] = []
+    var annotationCount = 0
+    var sourceQuote = ""
+    var showAnnotationEditor = false
+    var showAnnotations = false
+    var showPages = false
+    var toolsExpanded = true
+    var zoom = 1.0
+    var opacity = NativePDFPenPreset.pen.opacity
+    var pageDeleteConfirmation: Int?
+    private(set) var thumbnailSource: NativePDFPageThumbnailSource?
     /// Per page, so a stroke on one page restarts only that thumbnail's render.
-    @Published private(set) var thumbnailRevisions: [Int: Int] = [:]
-    private var thumbnailDirtyPages = Set<Int>(), thumbnailRefreshTask: Task<Void, Never>?, thumbnailPageCounts: [Int: Int] = [:]
-    private var thumbnailRowCache: [Int: (revision: Int, rows: [[String: Any]])] = [:]
+    private(set) var thumbnailRevisions: [Int: Int] = [:]
+    private var thumbnailDirtyPages = Set<Int>()
+    private var thumbnailRefreshTask: Task<Void, Never>?
+    private var thumbnailPageCounts: [Int: Int] = [:]
+    @ObservationIgnored private var thumbnailRowCache: [Int: (revision: Int, rows: [[String: Any]])] = [:]
     func thumbnailRows(_ page: Int) -> [[String: Any]] {
         let revision = thumbnailRevisions[page] ?? 0
         if let cached = thumbnailRowCache[page], cached.revision == revision { return cached.rows }
@@ -170,17 +174,19 @@ final class NativePDFWorkspaceModel: ObservableObject {
             self.thumbnailDirtyPages = []
         }
     }
-    @Published private(set) var pageCanRestructure = true
+    private(set) var pageCanRestructure = true
     /// New pages at the end only: a synced PDF that cannot be restructured (design §4.6).
-    @Published private(set) var pageCanAppend = true
-    @Published private(set) var pageHistoryCanUndo = false
-    @Published private(set) var pageHistoryCanRedo = false
-    @Published private(set) var pageHistoryCanRecover = false
-    @Published private(set) var pageHistoryReason: String?
-    @Published var draggedPage: Int?
-    @Published var pageDropSlot: Int?
+    private(set) var pageCanAppend = true
+    private(set) var pageHistoryCanUndo = false
+    private(set) var pageHistoryCanRedo = false
+    private(set) var pageHistoryCanRecover = false
+    private(set) var pageHistoryReason: String?
+    var draggedPage: Int?
+    var pageDropSlot: Int?
     private var pageRevision = ""
-    private var pageUndoToken: String?, pageRedoToken: String?, pageRecoverToken: String?
+    private var pageUndoToken: String?
+    private var pageRedoToken: String?
+    private var pageRecoverToken: String?
     private var pageOperation: Task<Void, Never>?
     private final class PendingPageOperation {
         let channel: String, request: [String: Any], goTo: Int?
@@ -195,18 +201,18 @@ final class NativePDFWorkspaceModel: ObservableObject {
     var dragIdentity: String { surfaceID + ":" + generation }
     var hasPageNoteAction: Bool { onOpenDocument != nil }
     private let onOpenDocument: ((NativeDocumentReference) -> Void)?
-    @Published var annotationComment = ""
-    @Published var annotationColor = "yellow"
-    @Published var annotationQuote = ""
-    @Published var editingAnnotation = false
+    var annotationComment = ""
+    var annotationColor = "yellow"
+    var annotationQuote = ""
+    var editingAnnotation = false
     private var sourceSelection: [String: Any]?
     private var annotationDraft: [String: Any]?
-    @Published var tool = "pen"
-    @Published var color = "ink"
-    @Published var width = NativePDFPenPreset.pen.width
-    @Published var showStyle = false { didSet { if showStyle != oldValue { restoreInput() } } }
-    @Published private(set) var favorites = NativePDFPalettePreferences().favorites
-    @Published private(set) var shapeRecognitionEnabled = true
+    var tool = "pen"
+    var color = "ink"
+    var width = NativePDFPenPreset.pen.width
+    var showStyle = false { didSet { if showStyle != oldValue { restoreInput() } } }
+    private(set) var favorites = NativePDFPalettePreferences().favorites
+    private(set) var shapeRecognitionEnabled = true
     var isInkTool: Bool { ["pen", "ballpoint", "highlighter"].contains(tool) }
     /// Ballpoint shares the pen favourites; only its width model differs.
     var isPenLike: Bool { tool == "pen" || tool == "ballpoint" }
@@ -222,41 +228,41 @@ final class NativePDFWorkspaceModel: ObservableObject {
         let value = favorites[index]
         return "pen \(value.color) \(widthLabel(for: value.width, highlighter: false)) \(Int((value.opacity * 100).rounded()))%"
     }
-    @Published var page = 1
-    @Published var pageCount = 1
-    @Published var isLoading = true
-    @Published var isBusy = false
-    @Published var errorMessage: String?
-    @Published var mediaImportError: String?
-    @Published var pendingCount = 0
-    @Published var canUndo = false
-    @Published var canRedo = false
-    @Published var drawingCount = 0
-    @Published private(set) var selectionCount = 0
-    @Published private(set) var selectedText = false
+    var page = 1
+    var pageCount = 1
+    var isLoading = true
+    var isBusy = false
+    var errorMessage: String?
+    var mediaImportError: String?
+    var pendingCount = 0
+    var canUndo = false
+    var canRedo = false
+    var drawingCount = 0
+    private(set) var selectionCount = 0
+    private(set) var selectedText = false
     /// Selection box in the PDF body's coordinates, for the floating action bar.
-    @Published private(set) var selectionFrame: CGRect?
-    @Published private(set) var lassoMode = "freeform"
-    @Published private(set) var canPaste = false
-    @Published private(set) var selectedRegion: CGRect?
-    @Published private(set) var pasteAnchor: CGPoint?
-    @Published private(set) var isCopyingRegion = false
-    @Published private(set) var isCopyingSelection = false
+    private(set) var selectionFrame: CGRect?
+    private(set) var lassoMode = "freeform"
+    private(set) var canPaste = false
+    private(set) var selectedRegion: CGRect?
+    private(set) var pasteAnchor: CGPoint?
+    private(set) var isCopyingRegion = false
+    private(set) var isCopyingSelection = false
     private var selectionCopyTask: Task<Void, Never>?
     var hasSelectionMenu: Bool { selectionCount > 0 || selectedRegion != nil || pasteAnchor != nil }
     private var clipboardEvents: AnyCancellable?
     private var regionCopyTask: Task<Void, Never>?
     static let pasteboardType = "com.bandal.pdf-objects"
-    @Published private(set) var textEditorDraft: NativePDFTextDraft?
+    private(set) var textEditorDraft: NativePDFTextDraft?
     private var textInput: NativePDFTextInput?
     private var textEditorPage: Int?
     private var textEditorPresentedAt = CFAbsoluteTime(0)
     var textSaveNeedsRecovery: Bool { pendingTextSave != nil }
     var isAdditionalTool: Bool { ["lasso", "line", "arrow", "rect", "ellipse", "text"].contains(tool) }
     var additionalToolSymbol: String { ["lasso": "lasso", "line": "line.diagonal", "arrow": "arrow.up.right", "rect": "rectangle", "ellipse": "oval", "text": "textformat"][tool] ?? "square.on.circle" }
-    @Published private(set) var assistantAnnotation: NativeAnnotationCoordinator.Request?
-    @Published private(set) var assistantRegionMode = true
-    @Published private(set) var assistantCapturing = false
+    private(set) var assistantAnnotation: NativeAnnotationCoordinator.Request?
+    private(set) var assistantRegionMode = true
+    private(set) var assistantCapturing = false
     var annotationCoordinator: NativeAnnotationCoordinator { store.annotation }
     private var assistantOriginalTool: (tool: String, lasso: String, previous: String)?
     private var assistantSelectionStart: CGPoint?
@@ -286,23 +292,37 @@ final class NativePDFWorkspaceModel: ObservableObject {
     private var pendingPageToAcknowledge: Int?
     private var layoutRevision = 0
     private var bounds = CGRect.zero
-    private var opened = false, retired = false, writesSuspended = false
-    private var setupComplete = false, exposed = false, blockedForError = false, materialMutating = false
+    private var opened = false
+    private var retired = false
+    private var writesSuspended = false
+    private var setupComplete = false
+    private var exposed = false
+    private var blockedForError = false
+    private var materialMutating = false
     private var storeEvents: AnyCancellable?
     private var previousTool = "pen"
-    private var savedPenStyle = NativePDFPenPreset.pen, savedHighlighterStyle = NativePDFPenPreset.highlighter, savedBallpointStyle = NativePDFPenPreset.ballpoint
+    private var savedPenStyle = NativePDFPenPreset.pen
+    private var savedHighlighterStyle = NativePDFPenPreset.highlighter
+    private var savedBallpointStyle = NativePDFPenPreset.ballpoint
     private var paletteEvents: AnyCancellable?
     private var snapshotTask: Task<Void, Error>?
     private var snapshotRequested = false
-    private var drawingRevision = 0, publishedDrawingRevision = -1
+    private var drawingRevision = 0
+    private var publishedDrawingRevision = -1
     private var displayRows: [[String: Any]] = []
     private var displayRowsByPage: [Int: [[String: Any]]] = [:]
     private var selectedRowCache: (revision: Int, rows: [[String: Any]])?
-    private var selectedIDs = Set<String>(), selectionPage: Int?
-    private var sceneEpoch = 1, sceneRevisions: [Int: Int] = [:], scenePages = Set<Int>(), dirtyScenes = Set<Int>()
+    private var selectedIDs = Set<String>()
+    private var selectionPage: Int?
+    private var sceneEpoch = 1
+    private var sceneRevisions: [Int: Int] = [:]
+    private var scenePages = Set<Int>()
+    private var dirtyScenes = Set<Int>()
     // Patch chains with the host: fingerprints of what it holds, revisions never rewind.
-    private var drawingFingerprints: NativePDFScenePatch.Fingerprints?, drawingPatchRevision = 0
-    private var sceneFingerprints: [Int: NativePDFScenePatch.Fingerprints] = [:], sceneTask: Task<Void, Never>?
+    private var drawingFingerprints: NativePDFScenePatch.Fingerprints?
+    private var drawingPatchRevision = 0
+    private var sceneFingerprints: [Int: NativePDFScenePatch.Fingerprints] = [:]
+    private var sceneTask: Task<Void, Never>?
     /// Eraser engaged by the Pencil double-tap; it lasts one contact.
     private var pencilEraser = false
     private struct Gesture {
@@ -579,7 +599,8 @@ final class NativePDFWorkspaceModel: ObservableObject {
         snapshotTask = task
         try await task.value
     }
-    private var inputSinceFlush = true, lastSavedViewport: [String: Any]?
+    private var inputSinceFlush = true
+    private var lastSavedViewport: [String: Any]?
     private func receive(_ event: [String: Any]) {
         guard event["surfaceId"] as? String == surfaceID, event["generation"] as? String == generation,
               let type = event["type"] as? String, let payload = event["payload"] as? [String: Any] else { return }
@@ -1631,7 +1652,8 @@ final class NativePDFWorkspaceModel: ObservableObject {
         }
     }
     private func refreshHistory() {
-        // @Published fires on every assignment; several refreshes land per stroke.
+        // Observation invalidates readers on every assignment, even of an equal
+        // value; several refreshes land per stroke.
         let undo = persistence?.canUndo == true || (persistence?.pendingCount ?? 0) > 0
         if undo != canUndo { canUndo = undo }
         let redo = persistence?.canRedo == true

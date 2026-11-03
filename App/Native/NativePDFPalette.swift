@@ -17,7 +17,7 @@ import SwiftUI
 /// Anchored inside the PDF body, so a narrow pane or a keyboard can never move
 /// style controls over another document or outside the visible workspace.
 struct NativePDFPaletteOverlay: View {
-    @ObservedObject var model: NativePDFWorkspaceModel
+    var model: NativePDFWorkspaceModel
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
@@ -36,7 +36,7 @@ struct NativePDFPaletteOverlay: View {
 /// The "<tool> 설정" sheet: stroke preview, named colour grid, thickness and
 /// opacity ranges, draw-and-hold switch, and three favourite pens with "현재 펜 저장".
 struct NativePDFPaletteControls: View {
-    @ObservedObject var model: NativePDFWorkspaceModel
+    var model: NativePDFWorkspaceModel
     private var highlighter: Bool { model.tool == "highlighter" }
     var body: some View {
         VStack(spacing: 0) {
@@ -155,7 +155,7 @@ struct NativePDFPaletteControls: View {
 
 /// Second docked row: tools · colours · thickness slider + styles button.
 struct NativePDFPaletteQuickControls: View {
-    @ObservedObject var model: NativePDFWorkspaceModel
+    var model: NativePDFWorkspaceModel
     var showsHistory = false
     private var highlighter: Bool { model.tool == "highlighter" }
     var body: some View {
@@ -221,7 +221,7 @@ struct NativePDFSwatch: View {
 }
 
 private struct NativePDFPaletteColorButton: View {
-    @ObservedObject var model: NativePDFWorkspaceModel
+    var model: NativePDFWorkspaceModel
     let item: NativePDFWorkspaceModel.InkColor
     let id: String
     var body: some View {
