@@ -295,7 +295,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
     /// and Settings › 구독 opens it without asking for a login.
     @MainActor
     func testASecondCourseOpensMembershipOnTheFreeTier() throws {
-        let app = launch(reset: true, pencil: false, extra: ["--native-membership", "--native-free-tier"])
+        let app = launch(reset: true, pencil: false, extra: ["--native-free-tier"])
         createCourse(in: app)
         app.buttons["native-course-add-menu"].tap()
         app.buttons["native-new-course"].tap()
