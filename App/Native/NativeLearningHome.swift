@@ -153,17 +153,11 @@ struct NativeProjectSidebar: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("프로젝트").font(NativeDesktopTheme.font(16, weight: .semibold))
-                Spacer()
-                Button { creating = true } label: { Image(systemName: "plus").frame(width: 44, height: 44).contentShape(Rectangle()) }
+            HStack(spacing: 4) {
+                NativeRailSearchField(prompt: "프로젝트 찾기", text: $query, identifier: "native-project-search")
+                Button { creating = true } label: { Image(systemName: "plus").foregroundStyle(NativeDesktopTheme.secondary).frame(width: 40, height: 40).contentShape(Rectangle()) }
                     .accessibilityLabel("새 프로젝트").accessibilityIdentifier("native-project-create")
-            }.padding(.horizontal, 12)
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(NativeDesktopTheme.muted)
-                TextField("프로젝트 찾기", text: $query).textFieldStyle(.plain).accessibilityIdentifier("native-project-search")
-            }.font(NativeDesktopTheme.font(13)).padding(.horizontal, 12).frame(minHeight: 44)
-                .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 9)).padding(.horizontal, 12).padding(.bottom, 12)
+            }.padding(.leading, 12).padding(.trailing, 6).padding(.bottom, 8)
             if catalog.loading && catalog.projects.isEmpty { ProgressView().frame(maxWidth: .infinity).padding() }
             if let message = error ?? catalog.error { Text(message).font(.caption).foregroundStyle(.red).padding(12) }
             ScrollView {
@@ -215,7 +209,7 @@ struct NativeProjectSidebar: View {
         let context = NativeWorkspaceContext.project(project, courses: store.courses)
         return Button { onOpen(context) } label: {
             HStack(spacing: 10) {
-                Image(systemName: "folder").font(.system(size: 17)).foregroundStyle(NativeDesktopTheme.muted)
+                Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted)
                 Text(context.title).font(NativeDesktopTheme.font(13)).lineLimit(1)
                 Spacer(minLength: 0)
                 if project.dueCardCount > 0 { Text("\(project.dueCardCount)").font(.caption2).foregroundStyle(NativeDesktopTheme.muted) }
