@@ -11,13 +11,7 @@ struct MembershipPaywall: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if let message {
-                    Text(message).font(.headline).multilineTextAlignment(.center).padding().frame(maxWidth: .infinity)
-                        .background(NativeDesktopTheme.accent.opacity(0.1)).accessibilityIdentifier("membership-reason")
-                }
-                store
-            }
+            store
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("닫기", action: close).accessibilityIdentifier("membership-close") } }
         }
         .onChange(of: membership.tier) { old, tier in if tier > old { close() } }
@@ -26,6 +20,11 @@ struct MembershipPaywall: View {
     private var store: some View {
         SubscriptionStoreView(productIDs: Membership.products.keys) {
             VStack(spacing: 14) {
+                // Inside the store's scroll content: as a pinned banner above it, it hid the title.
+                if let message {
+                    Text(message).font(.headline).multilineTextAlignment(.center).padding().frame(maxWidth: .infinity)
+                        .background(NativeDesktopTheme.accent.opacity(0.1), in: .rect(cornerRadius: 12)).accessibilityIdentifier("membership-reason")
+                }
                 Text("반달 플러스").font(.largeTitle.weight(.bold))
                 VStack(alignment: .leading, spacing: 8) {
                     Label("과목과 자료를 개수 제한 없이 만들 수 있어요.", systemImage: "folder.badge.plus")
@@ -33,8 +32,10 @@ struct MembershipPaywall: View {
                 }
                 Text("무료로는 이 iPad에서 과목 \(FreeTier.courses)개와 자료 \(FreeTier.documents)개를 만들고 AI 기능을 매달 \(FreeTier.aiPerMonth)회 쓸 수 있어요. 이미 있는 자료는 구독과 관계없이 계속 열고 고칠 수 있어요.")
                     .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true) // the store's header otherwise cuts it to one line
             }.padding()
         }
+        .subscriptionStoreControlStyle(PlanButtons())
         .storeButton(.visible, for: .restorePurchases)
         .storeButton(.visible, for: .policies)
         .storeButton(.hidden, for: .cancellation) // 닫기 in the toolbar also tells the store the sheet is gone
@@ -60,6 +61,38 @@ struct MembershipPaywall: View {
         controller.modalPresentationStyle = .formSheet
         controller.isModalInPresentation = true
         presenter.present(controller, animated: true)
+    }
+}
+
+/// One button per plan so the trial wording is ours: StoreKit's own button reads 특가 적용 for a free trial.
+private struct PlanButtons: SubscriptionStoreControlStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(spacing: 16) {
+            ForEach(configuration.options.sorted { $0.price < $1.price }) { option in
+                let price = "\(option.displayPrice) / \(option.subscriptionPeriod.map { Self.text($0, single: true) } ?? "")"
+                let trial = option.activeOffer.flatMap { $0.paymentMode == .freeTrial ? Self.text($0.period, single: false) : nil }
+                VStack(spacing: 6) {
+                    Text(option.displayName).font(.headline)
+                    Text(trial.map { "\($0) 무료, 이후 \(price)" } ?? price).font(.subheadline).foregroundStyle(.secondary)
+                    Button { option.subscribe() } label: {
+                        Text(trial.map { "\($0) 무료로 시작" } ?? "구독하기").font(.headline).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    /// 7일, 1개월 … ; `single` drops a leading 1 for a renewal period (월, 년).
+    private static func text(_ period: Product.SubscriptionPeriod, single: Bool) -> String {
+        switch period.unit {
+        case .day: "\(period.value)일"
+        case .week: "\(period.value * 7)일"
+        case .month: single && period.value == 1 ? "월" : "\(period.value)개월"
+        case .year: single && period.value == 1 ? "년" : "\(period.value)년"
+        @unknown default: "\(period.value)"
+        }
     }
 }
 
