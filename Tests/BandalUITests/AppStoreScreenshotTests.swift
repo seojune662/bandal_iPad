@@ -98,11 +98,19 @@ final class AppStoreScreenshotTests: XCTestCase {
         app.dismissNativeTestKeyboard()
         capture("04-planner", app: app)
 
-        // 5. Settings (close the board overlay first)
-        app.buttons["native-section-planner"].tap()
-        app.buttons["native-section-settings"].tap()
-        XCTAssertTrue(app.buttons["native-settings-theme-system"].waitForExistence(timeout: 10), app.debugDescription)
-        capture("05-settings", app: app)
+        // 5. Settings › 동기화 with iCloud on: the simulator must be signed in to iCloud with a test Apple account.
+        // Sync starts only on this relaunch, so 1–4 never show what that account already holds.
+        app.terminate()
+        app.launchArguments = ["--native-ui-testing", "-BandalCloudSync", "icloud", "-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR"]
+        app.launch()
+        let settings = app.buttons["native-section-settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 25), app.debugDescription); settings.tap()
+        let sync = app.buttons["native-settings-category-sync"]
+        XCTAssertTrue(sync.waitForExistence(timeout: 15), app.debugDescription); sync.tap()
+        let status = app.descendants(matching: .any).matching(identifier: "native-sync-status").firstMatch
+        let synced = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND label BEGINSWITH %@", "최신 상태"), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [synced], timeout: 120), .completed, "Sign the simulator in to iCloud with iCloud Drive on. " + app.debugDescription)
+        capture("05-sync", app: app)
     }
 
     private static let markdown = #"""
