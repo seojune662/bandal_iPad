@@ -27,23 +27,16 @@ struct NativeCourseSidebar: View {
     private var visible: [NativeCourse] { courses.filter { query.isEmpty || $0.name.localizedStandardContains(query) } }
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("과목").font(NativeDesktopTheme.font(16, weight: .semibold))
-                Spacer()
+            HStack(spacing: 4) {
+                NativeRailSearchField(prompt: "과목 찾기", text: $query, identifier: "native-course-search")
                 Menu {
                     Button("새 과목 만들기", systemImage: "plus") { onCreate() }.accessibilityIdentifier("native-new-course")
                     Button("폴더에서 추가", systemImage: "folder.badge.plus") { onManage() }
                     Button("과목 그룹 만들기", systemImage: "folder") { draft = ""; editing = Edit(id: "new-group", title: "그룹 이름", channel: "courseGroups:create", key: nil) }
                     Button("보관된 과목 관리", systemImage: "archivebox") { onManage() }
-                } label: { Image(systemName: "plus").frame(width: 44, height: 44).contentShape(Rectangle()) }
+                } label: { Image(systemName: "plus").foregroundStyle(NativeDesktopTheme.secondary).frame(width: 40, height: 40).contentShape(Rectangle()) }
                 .accessibilityLabel("과목 추가").accessibilityIdentifier("native-course-add-menu")
-            }.padding(.horizontal, 12)
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                TextField("과목 찾기", text: $query).textFieldStyle(.plain).accessibilityIdentifier("native-course-search")
-                if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark") }.accessibilityLabel("검색어 지우기") }
-            }.font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 12).frame(minHeight: 44)
-                .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 9)).padding(.horizontal, 12).padding(.bottom, 12)
+            }.padding(.leading, 12).padding(.trailing, 6).padding(.bottom, 8)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     if let error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red).padding(8) }
@@ -91,8 +84,9 @@ struct NativeCourseSidebar: View {
                     onSelect(course.id)
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "folder.fill").foregroundStyle(color(course.color))
+                        Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted)
                         Text(course.name).lineLimit(1)
+                        Circle().fill(color(course.color)).frame(width: 6, height: 6).accessibilityHidden(true)
                         Spacer(minLength: 0)
                         if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
                     }.frame(minHeight: 44).contentShape(Rectangle())

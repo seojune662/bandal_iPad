@@ -22,15 +22,20 @@ struct NativeWorkspaceChromeLayout: Equatable {
     let leftWidth: Double
     let rightWidth: Double
     let compactRightWidth: Double
+    static let editorMinimum: Double = 440
+    /// Below these widths a rail cannot sit beside the editor, so it falls back to a drawer.
+    static func fitsLeft(_ width: Double) -> Bool { width - 48 - 1 - 200 >= editorMinimum }
+    static func fitsRight(_ width: Double) -> Bool { width - 48 - 1 - 320 >= editorMinimum }
+    static func fitsBoth(_ width: Double) -> Bool { width - 48 - 2 - 200 - 320 >= editorMinimum }
 
     init(width: Double, leftOpen: Bool, rightOpen: Bool, leftRequested: Double = 240,
          rightRequested: Double = 360, showsWorkspace: Bool = true) {
         self.width = max(0, width.isFinite ? width : 0)
-        leftPinned = showsWorkspace && leftOpen && self.width >= 1200
-        rightPinned = showsWorkspace && rightOpen && self.width >= 900
+        rightPinned = showsWorkspace && rightOpen && Self.fitsRight(self.width)
+        leftPinned = showsWorkspace && leftOpen && (rightPinned ? Self.fitsBoth(self.width) : Self.fitsLeft(self.width))
         let left = min(360, max(200, leftRequested.isFinite ? leftRequested : 240))
         let right = min(520, max(320, rightRequested.isFinite ? rightRequested : 360))
-        let budget = max(0, self.width - 48 - 480 - (leftPinned ? 1 : 0) - (rightPinned ? 1 : 0))
+        let budget = max(0, self.width - 48 - Self.editorMinimum - (leftPinned ? 1 : 0) - (rightPinned ? 1 : 0))
         leftWidth = leftPinned ? min(left, max(200, budget - (rightPinned ? 320 : 0))) : 0
         rightWidth = rightPinned ? min(right, max(320, budget - leftWidth)) : 0
         compactRightWidth = self.width < 600 ? self.width : min(360, max(0, self.width - 48))
@@ -40,18 +45,40 @@ struct NativeWorkspaceChromeLayout: Equatable {
 struct NativeHomeSectionPicker: View {
     @Binding var selection: NativeHomeSection
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 20) {
             ForEach(NativeHomeSection.allCases) { section in
                 Button { selection = section } label: {
-                    Text(section.title).font(NativeDesktopTheme.font(14, weight: .semibold))
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                    Text(section.title).font(NativeDesktopTheme.font(14, weight: selection == section ? .semibold : .regular))
                         .foregroundStyle(selection == section ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
-                        .background(selection == section ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 9))
+                        .frame(minHeight: 44)
+                        .overlay(alignment: .bottom) {
+                            if selection == section { Capsule().fill(NativeDesktopTheme.text).frame(height: 2) }
+                        }
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("native-home-" + section.rawValue)
                     .accessibilityAddTraits(selection == section ? .isSelected : [])
             }
-        }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 12)
+            Spacer(minLength: 0)
+        }.padding(.horizontal, 16)
+            .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
+            .padding(.bottom, 10)
+    }
+}
+
+/// Search field shared by the course and project rails.
+struct NativeRailSearchField: View {
+    let prompt: String
+    @Binding var text: String
+    let identifier: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12))
+            TextField(prompt, text: $text).textFieldStyle(.plain).foregroundStyle(NativeDesktopTheme.text).accessibilityIdentifier(identifier)
+            if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).accessibilityLabel("검색어 지우기") }
+        }.font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.muted)
+            .padding(.horizontal, 10).frame(minHeight: 36)
+            .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 8))
+            .overlay { RoundedRectangle(cornerRadius: 8).stroke(NativeDesktopTheme.border) }
     }
 }
 

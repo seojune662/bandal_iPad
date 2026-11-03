@@ -96,7 +96,7 @@ struct NativeWorkspaceView: View {
         guard annotation.request == nil else { return }
         if !showsWorkspace || boardOverlayOpen {
             section = .library; auxiliary = nil; boardOverlayOpen = false
-            if width < 900 { compactMaterialsRail = true } else { materialsRailOpen = true }
+            openMaterialsRail(width: width)
         } else { toggleMaterialsRail(width: width) }
     }
 
@@ -185,7 +185,7 @@ struct NativeWorkspaceView: View {
                 leftOpen: courseRailOpen, rightOpen: materialsRailOpen && annotation.request == nil,
                 leftRequested: courseRailWidth, rightRequested: materialsRailWidth, showsWorkspace: showsWorkspace)
             let rightVisible = showsWorkspace && annotation.request == nil &&
-                (chrome.rightPinned || geometry.size.width < 900 && compactMaterialsRail)
+                (chrome.rightPinned || !NativeWorkspaceChromeLayout.fitsRight(geometry.size.width) && compactMaterialsRail)
             HStack(spacing: 0) {
                 globalNavigation(width: geometry.size.width)
                 if chrome.leftPinned {
@@ -236,11 +236,11 @@ struct NativeWorkspaceView: View {
                 }
             }
             .overlay(alignment: .leading) {
-                if compactCourseRail && geometry.size.width < 1200 && showsWorkspace && annotation.request == nil {
+                if compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) && showsWorkspace && annotation.request == nil {
                     HStack(spacing: 0) {
                         courseSidebar.frame(width: min(320, geometry.size.width - 48))
                             .nativeWorkspacePreviewExcluded(occludesContent: true)
-                            .background(NativeDesktopTheme.surface).shadow(color: .black.opacity(0.14), radius: 12, x: 4)
+                            .background(NativeDesktopTheme.surface).overlay(alignment: .trailing) { railDivider }
                         Color.black.opacity(0.12).onTapGesture { compactCourseRail = false }
                     }.padding(.leading, NativeDesktopTheme.navigationWidth)
                 }
@@ -259,7 +259,7 @@ struct NativeWorkspaceView: View {
                         .padding(.top, NativeWorkspaceWindowControls.inspectorTop)
                         .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
                         .background(NativeDesktopTheme.surface)
-                        .shadow(color: rightVisible && !chrome.rightPinned ? .black.opacity(0.14) : .clear, radius: 12, x: -4)
+                        .overlay(alignment: .leading) { if rightVisible && !chrome.rightPinned { railDivider } }
                         .opacity(rightVisible ? 1 : 0).allowsHitTesting(rightVisible).accessibilityHidden(!rightVisible)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
@@ -473,35 +473,53 @@ struct NativeWorkspaceView: View {
     }
 
     private var railDivider: some View { NativeDesktopTheme.border.frame(width: 1) }
-    private func toggleMaterialsRail(width: CGFloat) {
-        if width < 900 { compactMaterialsRail.toggle() } else { materialsRailOpen.toggle() }
-        compactCourseRail = false
+    private static let railAnimation = Animation.easeOut(duration: 0.2)
+    /// Pinned rails push the editor; when only one fits, opening one closes the other.
+    private func setCourseRail(_ open: Bool, width: CGFloat) {
+        guard NativeWorkspaceChromeLayout.fitsLeft(width) else { compactCourseRail = open; if open { compactMaterialsRail = false }; return }
+        withAnimation(Self.railAnimation) {
+            compactCourseRail = false; courseRailOpen = open
+            if open && !NativeWorkspaceChromeLayout.fitsBoth(width) { materialsRailOpen = false }
+        }
     }
+    private func setMaterialsRail(_ open: Bool, width: CGFloat) {
+        compactCourseRail = false
+        guard NativeWorkspaceChromeLayout.fitsRight(width) else { compactMaterialsRail = open; return }
+        withAnimation(Self.railAnimation) {
+            compactMaterialsRail = false; materialsRailOpen = open
+            if open && !NativeWorkspaceChromeLayout.fitsBoth(width) { courseRailOpen = false }
+        }
+    }
+    private func courseRailVisible(width: CGFloat) -> Bool {
+        NativeWorkspaceChromeLayout.fitsLeft(width) ? courseRailOpen && (materialsRailOpen ? NativeWorkspaceChromeLayout.fitsBoth(width) : true) : compactCourseRail
+    }
+    private func materialsRailVisible(width: CGFloat) -> Bool {
+        NativeWorkspaceChromeLayout.fitsRight(width) ? materialsRailOpen : compactMaterialsRail
+    }
+    private func toggleCourseRail(width: CGFloat) { setCourseRail(!courseRailVisible(width: width), width: width) }
+    private func toggleMaterialsRail(width: CGFloat) { setMaterialsRail(!materialsRailVisible(width: width), width: width) }
+    private func openMaterialsRail(width: CGFloat) { setMaterialsRail(true, width: width) }
     private func updateWindowWidth(_ width: CGFloat) {
         if hasWindowWidth {
-            if windowWidth >= 900 && width < 900 { compactMaterialsRail = materialsRailOpen; compactCourseRail = false }
-            if windowWidth < 900 && width >= 900 { materialsRailOpen = compactMaterialsRail; compactMaterialsRail = false }
-            if windowWidth >= 1200 && width < 1200 { compactCourseRail = false }
-            if width >= 1200 { compactCourseRail = false }
+            let fitsRight = NativeWorkspaceChromeLayout.fitsRight
+            if fitsRight(windowWidth) && !fitsRight(width) { compactMaterialsRail = materialsRailOpen; compactCourseRail = false }
+            if !fitsRight(windowWidth) && fitsRight(width) { materialsRailOpen = compactMaterialsRail; compactMaterialsRail = false }
+            if NativeWorkspaceChromeLayout.fitsLeft(windowWidth) != NativeWorkspaceChromeLayout.fitsLeft(width) { compactCourseRail = false }
         }
         windowWidth = width; hasWindowWidth = true
     }
     private func revealInspector(_ tab: NativeInspectorTab) {
         inspectorTab = tab
         section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false
-        compactCourseRail = false
-        if windowWidth < 900 { compactMaterialsRail = true } else { materialsRailOpen = true }
+        openMaterialsRail(width: windowWidth)
     }
     private func globalNavigation(width: CGFloat) -> some View {
         VStack(spacing: 8) {
-            NativeChromeButton(title: "홈", symbol: "house.fill", selected: showsWorkspace && (courseRailOpen || compactCourseRail)) {
-                if showsWorkspace {
-                    if width < 1200 { compactCourseRail.toggle(); compactMaterialsRail = false }
-                    else { courseRailOpen.toggle() }
-                } else {
+            NativeChromeButton(title: "홈", symbol: "house.fill", selected: showsWorkspace && courseRailVisible(width: width)) {
+                if showsWorkspace { toggleCourseRail(width: width) } else {
                     transition {
                         section = .library; auxiliary = nil; learningHome = false
-                        courseRailOpen = true; compactCourseRail = width < 1200; compactMaterialsRail = false
+                        setCourseRail(true, width: width)
                     }
                 }
             }.accessibilityIdentifier("native-section-library")
@@ -526,6 +544,7 @@ struct NativeWorkspaceView: View {
                 NativeSidebarShortcuts(store: store, settings: workspaceSettings, onOpenSettings: openSettings, onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shortcutContentHeight = $0 }
             }.frame(height: min(shortcutContentHeight, windowWidth < 900 ? 200 : 260))
+            NativeDesktopTheme.border.frame(height: 1)
             NativeHomeSectionPicker(selection: $leftPanel)
             switch leftPanel {
             case .courses:
@@ -548,13 +567,20 @@ struct NativeWorkspaceView: View {
             Color.black.opacity(0.24).ignoresSafeArea().onTapGesture { transition { boardOverlayOpen = false } }
             VStack(spacing: 0) {
                 HStack {
+                    Text("학업 보드").font(NativeDesktopTheme.font(14, weight: .semibold))
                     Spacer()
-                    NativeChromeButton(title: "학업 보드 닫기", symbol: "xmark") { transition { boardOverlayOpen = false } }
+                    Button { transition { boardOverlayOpen = false } } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 22)).symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(NativeDesktopTheme.muted).frame(width: 44, height: 44).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityLabel("학업 보드 닫기")
                         .keyboardShortcut(.cancelAction).accessibilityIdentifier("native-board-overlay-close")
-                }.padding(.horizontal, 6).frame(height: 36)
+                }.padding(.leading, 16).padding(.trailing, 4).frame(height: 44)
+                    .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
                 NativeToolsWorkspace(section: .planner, store: store, services: services)
             }
-            .frame(width: min(max(1, size.width - 32), 1280), height: min(max(1, size.height - 32), 768))
+            // Leaves a tappable margin and keeps clear of the top-trailing window controls.
+            .frame(width: min(max(1, size.width - 160), 1040),
+                   height: min(max(1, size.height - 2 * NativeWorkspaceWindowControls.inspectorTop), 680))
             .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 12))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .shadow(color: .black.opacity(0.2), radius: 24, y: 8)
@@ -886,7 +912,7 @@ struct NativeWorkspaceView: View {
             revealInspector(.assistant)
             return
         }
-        if document.kind == "learning-home" { leftPanel = .projects; compactCourseRail = windowWidth < 1200; courseRailOpen = true; return }
+        if document.kind == "learning-home" { leftPanel = .projects; setCourseRail(true, width: windowWidth); return }
         guard !busy else { return }; busy = true
         let current = workspaceContext
         let target = navigation.captureTarget(groupID: groupID)
@@ -979,7 +1005,7 @@ struct NativeWorkspaceView: View {
             } else {
                 try await store.clearCourseSelection()
                 navigation.deactivateWorkspace()
-                leftPanel = .projects; courseRailOpen = true; compactCourseRail = windowWidth < 1200
+                leftPanel = .projects; setCourseRail(true, width: windowWidth)
             }
         } catch { store.errorMessage = error.localizedDescription }
     }
@@ -1159,7 +1185,7 @@ struct NativeWorkspaceView: View {
             case "new-recording-tab": if NativeReleaseFlags.showsRecording { openTool(.recordings, new: true) }
             case "open-study-board": toggleAcademicBoard()
             case "toggle-left-rail":
-                if windowWidth < 1200 { compactCourseRail.toggle(); compactMaterialsRail = false } else { courseRailOpen.toggle() }
+                toggleCourseRail(width: windowWidth)
             case "toggle-right-rail": toggleMaterialsRail(width: windowWidth)
             case "close-tab": if let id = navigation.activeID { closeDocuments([id]) }
             case "new-tab": if store.selectedCourseID == nil { openTool(.browser, new: true) } else { showingNewTabMenu = true }

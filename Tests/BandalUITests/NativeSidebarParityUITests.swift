@@ -142,6 +142,25 @@ final class NativeSidebarParityUITests: XCTestCase {
         capture("New tab menu has no recording entry")
     }
 
+    @MainActor func testRailsPushAndStudyBoardLeavesMarginAndCloses() throws {
+        for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
+            XCUIDevice.shared.orientation = orientation
+            let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
+            openHome(app)
+            capture("Course rail pushes the editor (\(orientation == .portrait ? "portrait" : "landscape"))")
+            app.buttons["native-section-planner"].tap()
+            let board = app.descendants(matching: .any)["native-board-overlay"]
+            XCTAssertTrue(board.waitForExistence(timeout: 10), app.debugDescription)
+            let window = app.windows.firstMatch.frame
+            XCTAssertLessThan(board.frame.width, window.width - 100, "A tappable margin stays around the board")
+            XCTAssertGreaterThanOrEqual(board.frame.minY, 64, "The board stays below the window controls")
+            capture("Study board (\(orientation == .portrait ? "portrait" : "landscape"))")
+            let close = app.buttons["native-board-overlay-close"]
+            XCTAssertTrue(close.isHittable); close.tap()
+            expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: board); waitForExpectations(timeout: 5)
+            app.terminate()
+        }
+    }
     @MainActor private func openHome(_ app: XCUIApplication) {
         let home = app.buttons["native-section-library"]
         XCTAssertTrue(home.waitForExistence(timeout: 25), app.debugDescription)
