@@ -250,7 +250,7 @@ struct NativeWorkspaceView: View {
                 if showsWorkspace && annotation.request == nil {
                     NativeAIRailHandle(open: aiVisible) { toggleAIRail(width: geometry.size.width) }
                         .padding(.leading, aiLeading + (aiVisible ? aiHostWidth + 1 : 0))
-                        .padding(.top, geometry.size.height / 2 - 36)
+                        .padding(.top, geometry.size.height / 2 - NativeAIRailHandle.height / 2)
                         .nativeWorkspacePreviewExcluded()
                 }
             }
@@ -306,6 +306,10 @@ struct NativeWorkspaceView: View {
                 if showBusy { ProgressView().padding(10).background(.regularMaterial, in: Capsule()).padding(.top, 48) }
             }
             .overlay(alignment: .bottom) { NativeSyncMoveNotice(store: store) { openSettings("sync") } }
+            // @AppStorage writes reach the view outside withAnimation's transaction,
+            // so the slide is keyed on what is visible rather than on the toggles.
+            .animation(Self.railAnimation, value: [chrome.leftPinned, aiVisible, chrome.aiPinned, rightVisible, chrome.rightPinned,
+                                                   compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width)])
             .onAppear { updateWindowWidth(geometry.size.width) }
             .onChange(of: geometry.size.width) { _, width in updateWindowWidth(width) }
             .task(id: busy) {
@@ -794,7 +798,6 @@ struct NativeWorkspaceView: View {
     }
     private var inspectorSidebar: some View {
         VStack(spacing: 0) {
-            NativeInspectorHeader()
             if let context = workspaceContext {
                 NativeLibraryView(store: store, sourceTrayModel: librarySources, scope: context,
                     onOpenAI: openAIRail, selectedDocumentID: navigation.active?.storageID,

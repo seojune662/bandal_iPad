@@ -75,41 +75,32 @@ struct NativeLibraryView: View {
 
     private var configuredContent: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 2) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("자료").font(.system(size: 15, weight: .semibold))
-                        Text(scope?.title ?? store.courses.first { $0.id == courseID }?.name ?? "")
-                            .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    if working { ProgressView().scaleEffect(0.7).frame(width: 16) }
-                    Button { beginImport() } label: { Image(systemName: "tray.and.arrow.down").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("파일 가져오기")
-                        .disabled(courseID == nil || working).accessibilityIdentifier("native-library-import")
-                    Menu {
-                        Button("새 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { beginCreation(.ink) }
-                        Button("새 마크다운", systemImage: "doc.badge.plus") { beginCreation(.markdown) }
-                        Button("새 폴더", systemImage: "folder.badge.plus") { beginCreation(.folder) }
-                        if let onOpenAI { Divider(); Button("AI로 만들기", systemImage: "sparkles", action: onOpenAI) }
-                    } label: { Image(systemName: "plus").font(.system(size: 15)).frame(width: 44, height: 44).contentShape(Rectangle()) }
-                        .disabled(courseID == nil || working).accessibilityLabel("추가").accessibilityIdentifier("native-library-create")
-                    Button { Task { await store.refreshMaterials(); await projectLibrary.reload(store: store, scope: scope) } } label: { Image(systemName: "arrow.clockwise").frame(width: 44, height: 44).contentShape(Rectangle()) }
-                        .accessibilityLabel("자료 새로고침").accessibilityIdentifier("native-library-refresh")
-                }
-            }.padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 12)
-            HStack(spacing: 7) {
-                Image(systemName: "magnifyingglass").font(.system(size: 12))
-                TextField("자료 검색", text: $query).font(.system(size: 12)).textFieldStyle(.plain)
-                    .accessibilityIdentifier("native-library-search")
-                if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark").font(.system(size: 10)) }.accessibilityLabel("검색 지우기") }
-            }.foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 8).frame(height: 44)
-                .background(NativeDesktopTheme.raised.opacity(0.65), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 12).padding(.bottom, 12)
+            HStack(spacing: 0) {
+                Text(scope?.title ?? store.courses.first { $0.id == courseID }?.name ?? "자료")
+                    .font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    .accessibilityAddTraits(.isButton).accessibilityIdentifier("native-inspector-materials")
+                Spacer(minLength: 4)
+                if working { ProgressView().scaleEffect(0.7).frame(width: 16) }
+                Button { beginImport() } label: { Image(systemName: "tray.and.arrow.down").frame(width: 40, height: 40).contentShape(Rectangle()) }.accessibilityLabel("파일 가져오기")
+                    .disabled(courseID == nil || working).accessibilityIdentifier("native-library-import")
+                Menu {
+                    Button("새 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { beginCreation(.ink) }
+                    Button("새 마크다운", systemImage: "doc.badge.plus") { beginCreation(.markdown) }
+                    Button("새 폴더", systemImage: "folder.badge.plus") { beginCreation(.folder) }
+                    if let onOpenAI { Divider(); Button("AI로 만들기", systemImage: "sparkles", action: onOpenAI) }
+                } label: { Image(systemName: "plus").font(.system(size: 15)).frame(width: 40, height: 40).contentShape(Rectangle()) }
+                    .disabled(courseID == nil || working).accessibilityLabel("추가").accessibilityIdentifier("native-library-create")
+                Button { Task { await store.refreshMaterials(); await projectLibrary.reload(store: store, scope: scope) } } label: { Image(systemName: "arrow.clockwise").frame(width: 40, height: 40).contentShape(Rectangle()) }
+                    .accessibilityLabel("자료 새로고침").accessibilityIdentifier("native-library-refresh")
+            }.foregroundStyle(NativeDesktopTheme.text).padding(.leading, 16).padding(.trailing, 6).frame(minHeight: 44)
+            NativeRailSearchField(prompt: "자료 검색", text: $query, identifier: "native-library-search")
+                .padding(.horizontal, 12).padding(.bottom, 2)
             HStack(spacing: 8) {
                 Button { if displayMode == .list { filesExpanded.toggle() } } label: {
                     HStack(spacing: 8) {
                         if displayMode == .list { Image(systemName: filesExpanded ? "chevron.down" : "chevron.right").font(.system(size: 10)) }
                         Text("파일").font(.system(size: 12, weight: .medium))
-                    }.frame(minHeight: 44).contentShape(Rectangle())
+                    }.foregroundStyle(NativeDesktopTheme.muted).frame(minHeight: 36).contentShape(Rectangle())
                 }.accessibilityLabel(filesExpanded ? "파일 목록 접기" : "파일 목록 펼치기")
                 Spacer(minLength: 0)
                 viewPicker
@@ -140,7 +131,7 @@ Menu {
                                     .accessibilityIdentifier("native-library-view-" + mode.rawValue)
                             }
                         }
-                    } label: { Image(systemName: displayMode.symbol).font(.system(size: 14)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                    } label: { Image(systemName: displayMode.symbol).font(.system(size: 14)).frame(width: 44, height: 36).contentShape(Rectangle()) }
                         .accessibilityLabel("자료 보기 방식: " + displayMode.title).accessibilityIdentifier("native-library-view-menu")
     }
     private func beginCreation(_ kind: Creation) {

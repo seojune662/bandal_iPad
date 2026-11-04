@@ -59,21 +59,34 @@ struct NativeWorkspaceChromeLayout: Equatable {
     }
 }
 
-/// The small tab on the trailing edge of the left columns that shows or hides AI chat.
+/// The tab on the trailing edge of the left columns that shows or hides AI chat.
 struct NativeAIRailHandle: View {
+    static let height: CGFloat = 96
     let open: Bool
     let action: () -> Void
+    private var shape: UnevenRoundedRectangle { UnevenRoundedRectangle(bottomTrailingRadius: 12, topTrailingRadius: 12) }
     var body: some View {
         Button(action: action) {
-            Image(systemName: open ? "chevron.left" : "sparkles")
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary)
-                .frame(width: 16, height: 56)
-                .background(NativeDesktopTheme.surface, in: UnevenRoundedRectangle(bottomTrailingRadius: 8, topTrailingRadius: 8))
-                .overlay { UnevenRoundedRectangle(bottomTrailingRadius: 8, topTrailingRadius: 8).stroke(NativeDesktopTheme.border) }
-                .frame(width: 44, height: 72, alignment: .leading).contentShape(Rectangle())
-        }.buttonStyle(.plain)
+            VStack(spacing: 6) {
+                Image(systemName: open ? "chevron.left" : "sparkles").font(.system(size: 13, weight: .semibold))
+                if !open { Text("AI").font(.system(size: 10, weight: .bold)) }
+            }
+            .foregroundStyle(open ? NativeDesktopTheme.secondary : NativeDesktopTheme.text)
+            .frame(width: 26, height: 72)
+            .background(open ? NativeDesktopTheme.surface : NativeDesktopTheme.bgApp, in: shape)
+            .overlay { shape.stroke(NativeDesktopTheme.border) }
+            .frame(width: 44, height: Self.height, alignment: .leading).contentShape(Rectangle())
+        }.buttonStyle(NativeAIRailHandleStyle())
             .accessibilityLabel(open ? "AI 닫기" : "AI 열기")
             .accessibilityIdentifier("native-ai-rail-toggle")
+    }
+}
+
+private struct NativeAIRailHandleStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1, anchor: .leading)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 
@@ -117,14 +130,3 @@ struct NativeRailSearchField: View {
     }
 }
 
-struct NativeInspectorHeader: View {
-    var body: some View {
-        HStack {
-            Text("자료").font(NativeDesktopTheme.font(14, weight: .semibold))
-                .accessibilityAddTraits(.isButton).accessibilityIdentifier("native-inspector-materials")
-            Spacer(minLength: 0)
-        }.padding(.horizontal, 16).frame(height: 44)
-            .background(NativeDesktopTheme.surface)
-            .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
-    }
-}
