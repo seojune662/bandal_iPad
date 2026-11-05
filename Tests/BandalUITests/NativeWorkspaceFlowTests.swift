@@ -88,8 +88,10 @@ final class NativeWorkspaceFlowTests: XCTestCase {
             .press(forDuration: 0.05, thenDragTo: pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.60, dy: 0.52)), withVelocity: .slow, thenHoldForDuration: 0.9)
         expectInkCount(1, in: app)
         selectObjectTool("lasso", in: app)
-        // Lasso selects actual stroke/polygon-edge intersections, not overlapping
-        // bounding boxes. Cross the corrected line instead of tracing beside it.
+        // A lasso selects a stroke when most of it is inside (Notability-style).
+        // XCTest drags are straight, so the box lasso draws the enclosing shape.
+        let boxLasso = app.buttons["박스형"].firstMatch
+        XCTAssertTrue(boxLasso.waitForExistence(timeout: 5), app.debugDescription); boxLasso.tap()
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.32, dy: 0.56))
             .press(forDuration: 0.05, thenDragTo: pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.64, dy: 0.28)), withVelocity: .slow, thenHoldForDuration: 0.05)
         let remove = app.buttons["native-pdf-delete-selection"]
@@ -104,10 +106,10 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         app.buttons["선택 해제"].tap()
         let released = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: remove)
         XCTAssertEqual(XCTWaiter.wait(for: [released], timeout: 10), .completed, app.debugDescription)
-        // This crossing is below the original line's endpoint (y=0.52), so
-        // selection also proves the move changed geometry, not merely its count.
-        pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.60))
-            .press(forDuration: 0.05, thenDragTo: pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.76, dy: 0.60)), withVelocity: .slow, thenHoldForDuration: 0.05)
+        // This box holds most of the moved line but only the tip of the original
+        // one (y ≤ 0.52), so selection also proves the move changed geometry.
+        pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.40, dy: 0.50))
+            .press(forDuration: 0.05, thenDragTo: pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.80, dy: 0.70)), withVelocity: .slow, thenHoldForDuration: 0.05)
         XCTAssertTrue(remove.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.buttons["native-pdf-selection-style"].exists, "Floating bar offers restyle")
         tapPDFControl("native-pdf-copy-selection", in: app)

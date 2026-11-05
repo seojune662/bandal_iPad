@@ -1387,6 +1387,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             overlay.selectionBox = scene?.selection
             overlay.selectionResizable = scene?.resizable ?? false
             overlay.selectionTextHandles = scene?.textHandles ?? false
+            overlay.selectionPath = scene?.selectionPath ?? []
             let pendingInputs = pendingOrder.compactMap { pending[$0] }.filter { $0.page == number }
             if !pendingInputs.isEmpty {
                 let present = Set(drawings.flatMap { [$0["id"] as? String, $0["clientMutationId"] as? String].compactMap { $0 } })
@@ -1651,7 +1652,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     @objc private func lassoHeld(_ gesture: UILongPressGestureRecognizer) {
         guard tool.name == "lasso", gesture.state == .began, selectionDragSource == nil,
               let target = locationInPDF(gesture.location(in: pdfView)) else { return }
-        onEvent("bodyTap", ["page": target.page, "x": Double(target.point.x), "y": Double(target.point.y)])
+        onEvent("bodyTap", ["page": target.page, "x": Double(target.point.x), "y": Double(target.point.y), "hold": true])
     }
     func documentLocation(_ point: CGPoint) -> (page: Int, point: CGPoint)? {
         locationInPDF(pdfView.convert(point, from: pdfView.superview))
@@ -1862,6 +1863,8 @@ final class NativePDFEditorScene {
     let selection: [String: Double]?
     let resizable: Bool
     let textHandles: Bool
+    /// The lasso outline that follows the selection (normalized page points).
+    let selectionPath: [CGPoint]
     var visualTokens: [NativePDFCommittedVisualToken] { entries.map(\.token) }
     var identityObjects: [[String: Any]] { entries.map(\.object) }
 
@@ -1870,6 +1873,10 @@ final class NativePDFEditorScene {
         selection = request["selection"] as? [String: Double]
         resizable = request["resizable"] as? Bool ?? false
         textHandles = request["textHandles"] as? Bool ?? false
+        selectionPath = (request["selectionPath"] as? [[String: Double]] ?? []).compactMap { value in
+            guard let x = value["x"], let y = value["y"], x.isFinite, y.isFinite else { return nil }
+            return CGPoint(x: x, y: y)
+        }
     }
 
     convenience init(request: [String: Any], page: Int, pageCount: Int,

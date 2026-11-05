@@ -206,11 +206,12 @@ final class NativePDFWritingUITests: XCTestCase {
         app.terminate(); app.launchArguments = ["--native-ui-testing"]; app.launch()
         XCTAssertTrue(body.waitForExistence(timeout: 25))
         chooseTool("lasso", in: app)
-        body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).tap()
+        // A long press on empty paper offers paste (a plain tap only dismisses).
+        body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.6)).press(forDuration: 0.7)
         let bar = app.descendants(matching: .any).matching(identifier: "native-pdf-selection-bar").firstMatch
         let menuVisible = bar.waitForExistence(timeout: 10)
         capture("Empty-paper finger paste menu")
-        XCTAssertTrue(menuVisible, "A real finger tap on empty paper offers paste\n" + app.debugDescription)
+        XCTAssertTrue(menuVisible, "A long press on empty paper offers paste\n" + app.debugDescription)
         let paste = bar.buttons["native-pdf-paste"]
         XCTAssertTrue(paste.isEnabled); paste.tap(); expectInk(1, in: app)
         capture("Copied PDF area pasted as an editable image")
@@ -224,7 +225,7 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTAssertTrue(copyImage.waitForExistence(timeout: 10)); copyImage.tap()
         let imageCopied = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: copyImage)
         XCTAssertEqual(XCTWaiter.wait(for: [imageCopied], timeout: 15), .completed)
-        body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2)).tap()
+        body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2)).press(forDuration: 0.7)
         XCTAssertTrue(bar.waitForExistence(timeout: 10)); bar.buttons["native-pdf-paste"].tap()
         expectInk(2, in: app)
         capture("A pasted image can be selected and copied again")

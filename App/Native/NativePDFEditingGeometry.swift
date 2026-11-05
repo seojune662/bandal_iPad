@@ -33,19 +33,36 @@ enum NativePDFEditingGeometry {
             return true
         }?["id"] as? String
     }
+    /// Notability-style: a stroke joins the selection when at least half of its
+    /// length is inside the lasso, so grazing a neighbour does not pick it up;
+    /// a box object joins when its centre is inside.
     static func lasso(_ polygon: [CGPoint], rows: [[String: Any]], aspect: Double) -> Set<String> {
         guard polygon.count >= 3 else { return [] }
         return Set(rows.compactMap { row in
             guard let id = row["id"] as? String, let box = bounds(row, aspect: aspect) else { return nil }
-            let corners = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY)]
-            if let points = ((row["data"] as? [String: Any])?["points"] as? [[String: Any]])?.compactMap(point) {
-                if points.contains(where: { contains($0, polygon: polygon) }) { return id }
-                for pair in zip(points, points.dropFirst()) {
-                    for edge in zip(polygon, Array(polygon.dropFirst()) + [polygon[0]]) where intersects(pair.0, pair.1, edge.0, edge.1) { return id }
-                }
-            } else if corners.contains(where: { contains($0, polygon: polygon) }) || contains(CGPoint(x: box.midX, y: box.midY), polygon: polygon) || polygon.contains(where: box.contains) { return id }
-            return nil
+            if let points = ((row["data"] as? [String: Any])?["points"] as? [[String: Any]])?.compactMap(point), !points.isEmpty {
+                let samples = evenlySpaced(points, count: 24)
+                return samples.filter { contains($0, polygon: polygon) }.count * 2 >= samples.count ? id : nil
+            }
+            return contains(CGPoint(x: box.midX, y: box.midY), polygon: polygon) ? id : nil
         })
+    }
+    /// Samples spaced by length, so a long straight segment between two raw
+    /// samples counts as much as a densely sampled curve.
+    private static func evenlySpaced(_ points: [CGPoint], count: Int) -> [CGPoint] {
+        guard points.count > 1 else { return points }
+        var lengths = [0.0]
+        for (a, b) in zip(points, points.dropFirst()) { lengths.append(lengths[lengths.count - 1] + hypot(b.x - a.x, b.y - a.y)) }
+        guard let total = lengths.last, total > 0 else { return [points[0]] }
+        var result: [CGPoint] = [], segment = 1
+        for index in 0..<count {
+            let target = total * Double(index) / Double(count - 1)
+            while segment < lengths.count - 1, lengths[segment] < target { segment += 1 }
+            let start = lengths[segment - 1], span = max(lengths[segment] - start, 1e-12)
+            let t = min(1, max(0, (target - start) / span)), a = points[segment - 1], b = points[segment]
+            result.append(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
+        }
+        return result
     }
     static func translated(_ rows: [[String: Any]], dx: Double, dy: Double, aspect: Double) -> [[String: Any]] {
         guard let box = union(rows, aspect: aspect) else { return rows }
@@ -93,19 +110,34 @@ enum NativePDFEditingGeometry {
                 return CGPoint(x: min(anchor, x) + ratio * abs(anchor - x), y: value.y)
             } }
         }
+        // Proportional, like a notebook app: the dragged corner moves along the
+        // diagonal, the opposite corner stays, and stroke widths scale too.
         let anchor = CGPoint(x: west ? original.maxX : original.minX, y: north ? original.maxY : original.minY)
-        let x = min(1, max(0, west ? min(point.x, anchor.x - 0.005) : max(point.x, anchor.x + 0.005)))
-        let y = min(1, max(0, north ? min(point.y, anchor.y - 0.005) : max(point.y, anchor.y + 0.005)))
         let old = CGPoint(x: west ? original.minX : original.maxX, y: north ? original.minY : original.maxY)
-        let sx = abs(old.x - anchor.x) > 1e-9 ? (x - anchor.x) / (old.x - anchor.x) : 1
-        let sy = abs(old.y - anchor.y) > 1e-9 ? (y - anchor.y) / (old.y - anchor.y) : 1
-        return rows.map { transform($0) { CGPoint(x: anchor.x + ($0.x - anchor.x) * sx, y: anchor.y + ($0.y - anchor.y) * sy) } }
+        let ox = old.x - anchor.x, oy = old.y - anchor.y, length = ox * ox + oy * oy
+        guard length > 1e-12 else { return rows }
+        let projected = ((point.x - anchor.x) * ox + (point.y - anchor.y) * oy) / length
+        // The group stays on the page and never collapses below a usable size.
+        let roomX = abs(ox) > 1e-9 ? (west ? anchor.x : 1 - anchor.x) / abs(ox) : .infinity
+        let roomY = abs(oy) > 1e-9 ? (north ? anchor.y : 1 - anchor.y) / abs(oy) : .infinity
+        let smallest = 0.005 / max(abs(ox), abs(oy), 1e-9)
+        let scale = min(max(projected, smallest), roomX, roomY)
+        return rows.map { row in
+            var value = transform(row) { CGPoint(x: anchor.x + ($0.x - anchor.x) * scale, y: anchor.y + ($0.y - anchor.y) * scale) }
+            if !["textbox", "image"].contains(value["kind"] as? String ?? ""), var style = value["style"] as? [String: Any],
+               let width = number(style["width"]) {
+                style["width"] = min(1, max(0.0005, width * scale)); value["style"] = style
+            }
+            return value
+        }
     }
-    /// `sides` adds the west/east handles a single text box draws; they change its wrap width.
+    /// The handles a selection draws: one proportional handle at the bottom
+    /// right, or for a single text box the west/east handles that set its wrap width.
     static func corner(at point: CGPoint, box: CGRect, aspect: Double, sides: Bool = false) -> String? {
-        var values: [(String, CGPoint)] = [("nw", CGPoint(x: box.minX, y: box.minY)), ("ne", CGPoint(x: box.maxX, y: box.minY)), ("sw", CGPoint(x: box.minX, y: box.maxY)), ("se", CGPoint(x: box.maxX, y: box.maxY))]
-        if sides { values += [("w", CGPoint(x: box.minX, y: box.midY)), ("e", CGPoint(x: box.maxX, y: box.midY))] }
-        return values.first { hypot(point.x - $0.1.x, (point.y - $0.1.y) * aspect) < 0.018 }?.0
+        let values: [(String, CGPoint)] = sides
+            ? [("w", CGPoint(x: box.minX, y: box.midY)), ("e", CGPoint(x: box.maxX, y: box.midY))]
+            : [("se", CGPoint(x: box.maxX, y: box.maxY))]
+        return values.first { hypot(point.x - $0.1.x, (point.y - $0.1.y) * aspect) < 0.022 }?.0
     }
     /// Clipboard form: page/kind/data/style only. Images reference course
     /// assets that may not exist in the destination, so they do not travel.
