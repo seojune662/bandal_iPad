@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct NativeSettingsBrowserPanel: View {
     var store: NativeWorkspaceStore
@@ -16,6 +17,7 @@ struct NativeSettingsBrowserPanel: View {
     @State private var error: String?
     @State private var notice: String?
     @State private var deletion: Deletion?
+    @State private var importingBookmarks = false
     private struct Deletion { let title: String; let channel: String; let request: [String: Any] }
     private var browser: [String: Any] { settings["browser"] as? [String: Any] ?? [:] }
     var body: some View {
@@ -25,6 +27,7 @@ struct NativeSettingsBrowserPanel: View {
             navigation
             protection
             profilePanel
+            importPanel
             siteData
             permissionPanel
         }.disabled(busy)
@@ -69,6 +72,45 @@ struct NativeSettingsBrowserPanel: View {
             }
         }
     }
+    /// iPad apps cannot read another browser's data, so import goes through the
+    /// files every major browser exports: passwords CSV and bookmarks HTML.
+    private var importPanel: some View {
+        NativeSettingsCard(title: "다른 브라우저에서 가져오기", description: "Chrome·Safari·Edge·Firefox에서 내보낸 파일을 선택한 프로필로 가져옵니다.") {
+            Button("비밀번호 가져오기 (CSV)", systemImage: "key") {
+                run {
+                    let result = try await store.invoke("credentials:importCsv", ["profileId": profile]) as? [String: Any] ?? [:]
+                    guard result["cancelled"] as? Bool != true else { return }
+                    notice = "비밀번호 \(result["imported"] as? Int ?? 0)개를 가져왔습니다. 이미 있거나 HTTPS가 아닌 \(result["skipped"] as? Int ?? 0)개는 건너뛰었습니다."
+                }
+            }.accessibilityIdentifier("native-settings-import-passwords")
+            Button("북마크 가져오기 (HTML)", systemImage: "star") { importingBookmarks = true }
+                .accessibilityIdentifier("native-settings-import-bookmarks")
+            Text("Chrome: 비밀번호 관리자 › 설정 › 비밀번호 내보내기, 북마크 관리자 › ⋮ › 북마크 내보내기. Safari(Mac): 파일 › 내보내기. iPhone·iPad 암호 앱: ⋯ › 모든 암호 내보내기. 가져온 뒤 CSV 파일은 삭제하세요.")
+                .font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary)
+        }
+        .fileImporter(isPresented: $importingBookmarks, allowedContentTypes: [.html]) { result in
+            run {
+                let url = try result.get()
+                let scoped = url.startAccessingSecurityScopedResource(); defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= BrowserBookmarkImport.maxBytes,
+                      let html = String(data: try Data(contentsOf: url), encoding: .utf8) else { throw DesktopRuntimeError("10MB 이하 UTF-8 북마크 파일을 선택해 주세요.") }
+                notice = "북마크 \(try await importBookmarks(BrowserBookmarkImport.links(html)))개를 가져왔습니다. 주소창 추천에 표시됩니다."
+            }
+        }
+    }
+    /// Global (course-less) browser favorites; URLs already saved are skipped.
+    private func importBookmarks(_ links: [BrowserBookmarkImport.Link]) async throws -> Int {
+        let existing = try await store.invoke("favorites:list", ["courseId": NSNull()]) as? [[String: Any]] ?? []
+        var saved = Set(existing.compactMap { (($0["descriptor"] as? [String: Any])?["payload"] as? [String: Any])?["initialUrl"] as? String })
+        var imported = 0
+        for link in links where saved.insert(link.url).inserted {
+            _ = try await store.invoke("favorites:add", ["courseId": NSNull(), "label": link.title,
+                "descriptor": ["kind": "browser", "payload": ["initialUrl": link.url, "profileId": profile]]])
+            imported += 1
+        }
+        if imported > 0 { store.events.send(.init(channel: "nativeWorkspace:favoritesChanged", payload: ["courseId": NSNull()])) }
+        return imported
+    }
     private var siteData: some View {
         NativeSettingsCard(title: "브라우징 데이터", description: "선택한 프로필의 방문 기록과 사이트 로그인을 관리합니다.") {
             DisclosureGroup("사이트 로그인 · \(sites.count)개") {
@@ -95,7 +137,7 @@ struct NativeSettingsBrowserPanel: View {
             if permissions.isEmpty { Text("저장된 사이트 권한이 없습니다.").foregroundStyle(NativeDesktopTheme.muted) }
             ForEach(Array(permissions.enumerated()), id: \.offset) { _, permission in
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) { Text(permission["origin"] as? String ?? ""); Text((permission["permission"] as? String ?? "권한") + " · " + (permission["decision"] as? String == "granted" ? "허용" : "차단")).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary) }
+                    VStack(alignment: .leading, spacing: 4) { Text(permission["origin"] as? String ?? ""); Text((permission["permission"] as? String == DesktopBrowserHost.passwordSavePermission ? "비밀번호 저장" : permission["permission"] as? String ?? "권한") + " · " + (permission["decision"] as? String == "granted" ? "허용" : "차단")).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary) }
                     Spacer()
                     Button("재설정") { run { guard let id = permission["id"] as? String else { return }; _ = try await store.invoke("browser:forgetPermission", ["profileId": profile, "id": id]); await loadData() } }
                 }

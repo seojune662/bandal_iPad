@@ -84,7 +84,7 @@ final class BrowserPageActionsTests: XCTestCase {
         XCTAssertEqual(opened, true)
         await fulfillment(of: [reportLoaded], timeout: 15)
         let child = try XCTUnwrap(host.pages[try XCTUnwrap(childID)])
-        XCTAssertTrue(child.tabID.hasPrefix("native-scope.report."))
+        XCTAssertTrue(child.tabID.hasPrefix("native-scope.") && !child.tabID.hasPrefix("native-scope.report."), "A popup becomes its own dock tab")
         XCTAssertTrue(child.dataStore === opener.dataStore); XCTAssertTrue(child.isPrivate)
         XCTAssertEqual(child.webView.url?.scheme, "blob")
         let title = try await child.webView.evaluateJavaScript("document.title") as? String

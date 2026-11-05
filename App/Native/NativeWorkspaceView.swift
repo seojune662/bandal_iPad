@@ -1088,6 +1088,15 @@ struct NativeWorkspaceView: View {
         if pendingContextRefresh { refreshWorkspaceContext() }
     }
 
+    /// The page already exists (window.opener must stay live), so it is placed
+    /// directly rather than through a flushing transition that could refuse it.
+    private func openBrowserChild(tabID: String, workspaceID: String, openerTabID: String, background: Bool) {
+        let opener = navigation.documents.first { $0.kind == "browser" && openerTabID.hasPrefix(NativeBrowserSession.scopePrefix($0.relativePath)) }
+        guard let opener, let child = navigation.openAfter(.init(courseID: opener.courseID, relativePath: workspaceID, title: "브라우저", kind: "browser"),
+                                                          sourceID: opener.id, activate: !background) else { services.browser.destroy(tabID); return }
+        syncNavigationInstances(); saveNavigation()
+        if !background, navigation.target(containing: child.id)?.ref == navigation.currentWindowRef { section = .library; auxiliary = nil; learningHome = false }
+    }
     private func closeDocuments(_ documentIDs: [String]) {
         guard !busy else { return }
         let windowRef = navigation.currentWindowRef
@@ -1151,6 +1160,21 @@ struct NativeWorkspaceView: View {
 
     private func receive(_ event: NativeWorkspaceEvent) {
         if ["learning:changed", "courses:changed"].contains(event.channel) { refreshWorkspaceContext() }
+        if event.channel == "browser:open-url", let payload = event.payload as? [String: Any], let workspaceID = payload["workspaceId"] as? String,
+           let tabID = payload["tabId"] as? String, let openerTabID = payload["openerTabId"] as? String {
+            openBrowserChild(tabID: tabID, workspaceID: workspaceID, openerTabID: openerTabID, background: payload["background"] as? Bool == true); return
+        }
+        if event.channel == "nativeWorkspace:closeBrowserScope", let payload = event.payload as? [String: String], let workspaceID = payload["workspaceID"] {
+            if let document = navigation.documents.first(where: { $0.kind == "browser" && $0.relativePath == workspaceID }) { closeDocuments([document.id]) }
+            return
+        }
+        // A page closed itself (window.close). Handled here rather than in the
+        // tab's session, which may not have started yet for a fast OAuth popup.
+        if event.channel == "browser:close-tab", let payload = event.payload as? [String: Any], let tabID = payload["tabId"] as? String,
+           let document = navigation.documents.first(where: { $0.kind == "browser" && tabID.hasPrefix(NativeBrowserSession.scopePrefix($0.relativePath)) }),
+           !services.browser.pages.keys.contains(where: { NativeBrowserSession.owns($0, workspaceID: document.relativePath) }) {
+            closeDocuments([document.id])
+        }
         if event.channel == "nativeWorkspace:openAssistantResult", let payload = event.payload as? [String: Any],
            let document = payload["document"] as? NativeDocumentReference {
             if let target = payload["nativeWorkspaceTarget"] as? NativeWorkspaceTarget { openCapturedDocument(document, target: target) }

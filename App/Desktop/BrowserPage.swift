@@ -60,6 +60,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
     private var restoring: BrowserPageRestoration?
     private var scrollRestoration: Task<Void, Never>?
     var preventsSuspension = false
+    var loginOffer: BrowserLoginOffer?
     var lastUsedAt = Date()
     var isSuspended: Bool { liveWebView == nil && suspended != nil }
     var dataStore: WKWebsiteDataStore { configuration.websiteDataStore }
@@ -121,6 +122,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         observer.addUserScript(WKUserScript(source: "addEventListener('pointerdown',e=>{globalThis.__bandalContextPoint={x:e.clientX,y:e.clientY}},true)", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
         if !isPrivate {
             observer.addUserScript(WKUserScript(source: BrowserCredentialScripts.capture, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: BrowserCredentialScripts.world))
+            observer.add(host.loginRelay, contentWorld: BrowserCredentialScripts.world, name: BrowserLoginRelay.name)
         }
         host.configurePrivacy(observer)
         configuration.userContentController = observer
