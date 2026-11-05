@@ -145,6 +145,10 @@ struct NativePDFWorkspace: View {
             Button("확인") { model.mediaImportError = nil }
         } message: { Text(model.mediaImportError ?? "") }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in model.saveInBackground() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in model.recordingPausedForBackground() }
+        .alert("녹음", isPresented: Binding(get: { model.recordingNotice != nil }, set: { if !$0 { model.recordingNotice = nil } })) {
+            Button("확인") { model.recordingNotice = nil }
+        } message: { Text(model.recordingNotice ?? "") }
     }
 
 }
@@ -278,6 +282,10 @@ final class NativePDFWorkspaceModel {
     /// The comment pin being written or read: a new pin has no id until saved.
     struct CommentDraft { var page: Int; var box: CGRect; var id: String?; var text: String; var color: String }
     var commentDraft: CommentDraft?
+    /// Lecture recording started from this document's palette, and when it began.
+    private(set) var recordingID: String?
+    private(set) var recordingStartedAt: Date?
+    var recordingNotice: String?
     private(set) var selectionCount = 0
     private(set) var selectedText = false
     /// Selection box in the PDF body's coordinates, for the floating action bar.
@@ -736,6 +744,7 @@ final class NativePDFWorkspaceModel {
                 if gesture == nil, pasteAnchor != nil { clearSelection() }
                 page = next
                 store.events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:pdfPageChanged", payload: ["courseId": document.courseID, "relPath": document.relativePath, "tabID": document.id, "page": next]))
+                anchorRecording(page: next)
             }
         case "pending":
             let next = max(persistence?.pendingCount ?? 0, payload["count"] as? Int ?? 0)
@@ -1221,6 +1230,49 @@ final class NativePDFWorkspaceModel {
         guard let draft = commentDraft, !isBusy else { return }
         commentDraft = nil
         if let id = draft.id, let row = persistence?.rows.first(where: { $0["id"] as? String == id }) { performObjectEdit("delete", values: [row]) }
+    }
+    /// The palette microphone: starts a lecture recording for this course, linked
+    /// to this document's page, or stops it. Playback and transcripts live in the
+    /// recordings tab.
+    func toggleRecording() {
+        if let id = recordingID {
+            recordingID = nil; recordingStartedAt = nil
+            Task { @MainActor in
+                do { _ = try await store.invoke("recordings:control", ["id": id, "action": "stop"]) }
+                catch { recordingNotice = error.localizedDescription }
+            }
+            return
+        }
+        let course = document.courseID, title = (document.title as NSString).deletingPathExtension, number = page
+        recordingStartedAt = Date()
+        Task { @MainActor in
+            do {
+                // Prefer an installed model; SenseVoice transcribes lecture-hall audio better.
+                let models = try await store.invoke("recordings:models") as? [[String: Any]] ?? []
+                let installed = models.filter { $0["status"] as? String == "installed" }.compactMap { $0["id"] as? String }
+                let model = installed.contains("sensevoice") ? "sensevoice" : installed.first ?? "sensevoice"
+                let created = try await store.invoke("recordings:create", ["courseId": course, "title": title + " 녹음", "modelId": model]) as? [String: Any]
+                guard let id = created?["id"] as? String else { throw NativePDFError.invalid("녹음을 만들지 못했습니다.") }
+                _ = try await store.invoke("recordings:control", ["id": id, "action": "start"])
+                recordingID = id
+                anchorRecording(page: number)
+            } catch {
+                recordingStartedAt = nil; recordingNotice = error.localizedDescription
+            }
+        }
+    }
+    /// Marks the moment a page comes into view, so the recording opens at this page.
+    private func anchorRecording(page number: Int) {
+        guard let id = recordingID else { return }
+        Task { @MainActor in
+            _ = try? await store.invoke("recordings:anchor", ["id": id, "label": "\(number)페이지", "relPath": document.relativePath, "page": number])
+        }
+    }
+    /// Leaving the app pauses the recording (no background audio); say so on return.
+    func recordingPausedForBackground() {
+        guard recordingID != nil else { return }
+        recordingID = nil; recordingStartedAt = nil
+        recordingNotice = "앱을 나가서 녹음을 일시 정지했습니다. 녹음 탭에서 이어서 녹음할 수 있어요."
     }
     /// Applies one eraser path segment. Partial mode cuts ink and highlighter
     /// strokes; stroke mode removes whatever the eraser touches.

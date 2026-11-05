@@ -118,8 +118,8 @@ final class NativeSidebarParityUITests: XCTestCase {
         capture("Inspector stays available after rotation")
     }
 
-    /// Lecture recording stays out of store builds (NativeReleaseFlags.showsRecording, App Review 2.5.4).
-    @MainActor func testNewTabMenuHasNoRecordingEntry() throws {
+    /// Lecture recording is back (foreground capture only, NativeReleaseFlags.showsRecording).
+    @MainActor func testNewTabMenuOffersRecording() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
         openHome(app)
@@ -132,13 +132,10 @@ final class NativeSidebarParityUITests: XCTestCase {
         for id in ["new-browser", "new-whiteboard", "new-note", "chat"] {
             XCTAssertTrue(app.buttons["native-new-tab-" + id].waitForExistence(timeout: 5), id + app.debugDescription)
         }
-        XCTAssertFalse(app.buttons["native-new-tab-recording"].exists)
-        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "녹음")).firstMatch.exists)
         let search = app.textFields["native-new-tab-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("녹음")
-        XCTAssertTrue(app.staticTexts["일치하는 항목이 없어요"].waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertFalse(app.buttons["native-new-tab-recording"].exists)
-        capture("New tab menu has no recording entry")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "녹음")).firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        capture("New tab menu offers recording")
     }
 
     @MainActor func testRailsPushAndStudyBoardLeavesMarginAndCloses() throws {

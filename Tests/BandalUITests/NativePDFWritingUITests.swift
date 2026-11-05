@@ -294,6 +294,7 @@ final class NativePDFWritingUITests: XCTestCase {
     func testTapeHidesUntilTappedCommentPinKeepsANoteAndLaserSavesNothing() {
         let app = createDocument("Study Notes")
         let body = app.otherElements["native-pdf-workspace"]
+        XCTAssertTrue(app.buttons["native-pdf-record"].exists, "The palette microphone starts a lecture recording")
         chooseTool("laser", in: app)
         body.coordinate(withNormalizedOffset: .init(dx: 0.3, dy: 0.3)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.7, dy: 0.35)))
