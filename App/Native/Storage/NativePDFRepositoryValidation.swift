@@ -5,7 +5,9 @@ import CoreFoundation
 /// resampling its measured points. Unknown presentation fields never enter a
 /// receipt; raw storage rows remain untouched when they are read.
 enum NativePDFRepositoryValidation {
-    static let kinds = ["ink", "highlighter", "rect", "ellipse", "arrow", "line", "textbox", "image"]
+    /// `tape` (memorisation cover) and `comment` (page pin) are iPad-first;
+    /// other clients hold rows of kinds they do not understand.
+    static let kinds = ["ink", "highlighter", "rect", "ellipse", "arrow", "line", "textbox", "image", "tape", "comment"]
     static let colors = ["ink", "red", "orange", "yellow", "green", "blue", "violet"]
     static let flags = ["bold", "italic", "underline", "strike"]
     static func error(_ message: String) -> DesktopRuntimeError { DesktopRuntimeError(message, code: "VALIDATION_ERROR") }
@@ -116,7 +118,9 @@ enum NativePDFRepositoryValidation {
         }
         let count = (result["points"] as? [[String: Any]])?.count ?? 0
         if ["ink", "highlighter"].contains(kind), count == 0 { throw error("Ink data needs at least one point") }
-        if ["rect", "ellipse", "textbox", "image"].contains(kind), result["box"] == nil { throw error("\(kind) needs a box") }
+        if ["rect", "ellipse", "textbox", "image", "comment"].contains(kind), result["box"] == nil { throw error("\(kind) needs a box") }
+        if kind == "tape", count < 2 { throw error("tape needs two points") }
+        if kind == "comment", result["text"] == nil { throw error("comment needs text") }
         if ["line", "arrow"].contains(kind), result["box"] == nil, count < 2 { throw error("\(kind) needs a box or two points") }
         if kind == "textbox", result["text"] == nil { throw error("textbox needs text") }
         if kind == "image", result["image"] == nil { throw error("image needs a source") }
@@ -147,6 +151,10 @@ enum NativePDFRepositoryValidation {
         if let scale = source["fontScale"] { result["fontScale"] = try number(scale, "fontScale", max: 10, positive: true) }
         if let align = source["align"] {
             guard let align = align as? String, ["left", "center", "right"].contains(align) else { throw error("Invalid text alignment") }; result["align"] = align
+        }
+        if let revealed = source["revealed"] {
+            guard let value = revealed as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else { throw error("revealed must be boolean") }
+            if value.boolValue { result["revealed"] = true }
         }
         if let fill = source["fill"] {
             guard let fill = fill as? String, colors.contains(fill) else { throw error("Invalid drawing fill") }; result["fill"] = fill

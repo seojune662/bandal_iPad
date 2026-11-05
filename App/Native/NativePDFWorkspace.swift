@@ -117,6 +117,24 @@ struct NativePDFWorkspace: View {
                 }
             }.presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: Binding(get: { model.commentDraft != nil }, set: { if !$0, model.commentDraft != nil { model.saveComment() } })) {
+            NavigationStack {
+                Form {
+                    Section("댓글") {
+                        TextEditor(text: Binding(get: { model.commentDraft?.text ?? "" }, set: { model.commentDraft?.text = $0 }))
+                            .frame(minHeight: 140).accessibilityIdentifier("native-pdf-comment-editor")
+                    }
+                    if model.commentDraft?.id != nil {
+                        Section { Button("댓글 삭제", role: .destructive) { model.deleteComment() }.accessibilityIdentifier("native-pdf-delete-comment") }
+                    }
+                }
+                .navigationTitle("댓글").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("취소") { model.commentDraft = nil } }
+                    ToolbarItem(placement: .confirmationAction) { Button("완료") { model.saveComment() }.accessibilityIdentifier("native-pdf-save-comment") }
+                }
+            }.presentationDetents([.medium, .large])
+        }
         .alert("\(model.pageDeleteConfirmation ?? 1)페이지를 삭제할까요?", isPresented: Binding(get: { model.pageDeleteConfirmation != nil }, set: { if !$0 { model.pageDeleteConfirmation = nil } }), presenting: model.pageDeleteConfirmation) { number in
             Button("취소", role: .cancel) { model.pageDeleteConfirmation = nil }
             Button("삭제", role: .destructive) { model.confirmDeletePage(number) }.accessibilityIdentifier("native-pdf-confirm-page-delete")
@@ -224,7 +242,12 @@ final class NativePDFWorkspaceModel {
     var colorSlots: [String] { palette.colors(for: tool) }
     var widthSlots: [Int] { palette.widths(for: tool) }
     /// The width the slots describe: the eraser radius for the eraser.
-    var activeWidth: Double { tool == "eraser" ? palette.eraserRadius : width }
+    var activeWidth: Double { tool == "eraser" ? palette.eraserRadius : tool == "tape" ? palette.tapeWidth : width }
+    /// Tools whose second row shows colour slots, and those with thickness slots.
+    var usesColorSlots: Bool { isInkTool || tool == "tape" }
+    var usesWidthSlots: Bool { isInkTool || tool == "eraser" || tool == "tape" }
+    /// The colour the slots mark as chosen (the tape keeps its own).
+    var activeColor: String { tool == "tape" ? palette.tapeColor : color }
     /// The slot holding the active width; nil for a width between steps (an older slider value).
     var selectedWidthSlot: Int? {
         let steps = NativePDFPaletteStyle.steps(for: tool)
@@ -249,6 +272,12 @@ final class NativePDFWorkspaceModel {
     var canUndo = false
     var canRedo = false
     var drawingCount = 0
+    /// Memorisation tape on this document, and whether every piece is peeled back.
+    private(set) var hasTapes = false
+    private(set) var allTapesRevealed = false
+    /// The comment pin being written or read: a new pin has no id until saved.
+    struct CommentDraft { var page: Int; var box: CGRect; var id: String?; var text: String; var color: String }
+    var commentDraft: CommentDraft?
     private(set) var selectionCount = 0
     private(set) var selectedText = false
     /// Selection box in the PDF body's coordinates, for the floating action bar.
@@ -659,6 +688,14 @@ final class NativePDFWorkspaceModel {
         case "bodyTap":
             guard assistantAnnotation == nil else { return }
             guard errorMessage == nil, !isBusy else { return }
+            if textEditorDraft == nil, payload["hold"] as? Bool != true, !["lasso", "text"].contains(tool),
+               let number = payload["page"] as? Int, let x = payload["x"] as? Double, let y = payload["y"] as? Double {
+                // A finger tap on a pin opens it; on tape (outside select) it peels the tape back.
+                let point = CGPoint(x: x, y: y)
+                if tool == "comment" { openComment(at: point, page: number); return }
+                if let pin = comment(at: point, page: number) { openComment(pin, page: number); return }
+                if tool != "select", let id = tape(at: point, page: number) { toggleTape(id); return }
+            }
             if textEditorDraft != nil {
                 let location = (payload["page"] as? Int).flatMap { number in
                     (payload["x"] as? Double).flatMap { x in (payload["y"] as? Double).map { (page: number, point: CGPoint(x: x, y: $0)) } }
@@ -725,7 +762,7 @@ final class NativePDFWorkspaceModel {
             if showStyle { showStyle = false }
             // A contact that begins after this editor was flushed must extend
             // a store-wide transition barrier even before its completion event.
-            if assistantAnnotation == nil && (tool != "select" || selectionCount > 0) { store.markDocumentChanged() }
+            if assistantAnnotation == nil && tool != "laser" && (tool != "select" || selectionCount > 0) { store.markDocumentChanged() }
         default: break
         }
     }
@@ -748,19 +785,23 @@ final class NativePDFWorkspaceModel {
         updateStyle()
     }
     func chooseColor(_ next: String) {
-        guard NativePDFWorkspacePreferences.colors.contains(next), isInkTool else { return }
+        guard NativePDFWorkspacePreferences.colors.contains(next), usesColorSlots else { return }
+        if tool == "tape" {
+            palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.tapeColor = next }
+            return
+        }
         if color == next { showStyle = true; return }
         color = next; rememberActiveStyle(); updateStyle()
     }
     /// A slot tap selects its thickness; tapping the selected slot opens its twelve steps.
     func chooseWidthSlot(_ index: Int) {
-        guard widthSlots.indices.contains(index), isInkTool || tool == "eraser" else { return }
+        guard widthSlots.indices.contains(index), usesWidthSlots else { return }
         if selectedWidthSlot == index { editingWidthSlot = index; return }
         applyWidthStep(widthSlots[index])
     }
     /// Picks one of the twelve steps and, when a slot is open, keeps it in that slot.
     func setWidthStep(_ step: Int, slot: Int?) {
-        guard NativePDFPaletteStyle.steps(for: tool).indices.contains(step), isInkTool || tool == "eraser" else { return }
+        guard NativePDFPaletteStyle.steps(for: tool).indices.contains(step), usesWidthSlots else { return }
         if let slot, widthSlots.indices.contains(slot) {
             let key = tool
             palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) {
@@ -774,19 +815,21 @@ final class NativePDFWorkspaceModel {
         if tool == "eraser" {
             palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.eraserRadius = value }
             updateStyle()
+        } else if tool == "tape" {
+            palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.tapeWidth = value }
         } else { setWidth(value) }
     }
     /// `+` adds one of the seven colours to this tool's slots and selects it.
     func addColorSlot(_ next: String) {
-        guard isInkTool, NativePDFWorkspacePreferences.colors.contains(next) else { return }
+        guard usesColorSlots, NativePDFWorkspacePreferences.colors.contains(next) else { return }
         let key = tool
         palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) {
             var slots = $0.colors(for: key); if !slots.contains(next) { slots.append(next) }; $0.colorSlots[key] = slots
         }
-        if color != next { chooseColor(next) }
+        if activeColor != next { chooseColor(next) }
     }
     func removeColorSlot(_ value: String) {
-        guard isInkTool, colorSlots.count > 1 else { return }
+        guard usesColorSlots, colorSlots.count > 1 else { return }
         let key = tool
         palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) {
             $0.colorSlots[key] = $0.colors(for: key).filter { $0 != value }
@@ -1005,6 +1048,27 @@ final class NativePDFWorkspaceModel {
         }
         guard var contact = gesture, contact.page == number else { return }
         if phase == "cancel" { clearGesture(); publishDirtyScenes(); return }
+        if contact.tool == "tape" {
+            contact.points += raw.compactMap(NativePDFEditingGeometry.point)
+            let distance = hypot(last.x - contact.start.x, (last.y - contact.start.y) * aspect(number))
+            if phase == "up", distance < 0.006 {
+                // A Pencil tap on tape peels it back (or covers it again).
+                gesture = nil; requestScene(number)
+                if let id = tape(at: last, page: number) { toggleTape(id) }
+                return
+            }
+            contact.preview = distance < 0.006 ? [] : [tapeRow(contact.points, page: number, id: contact.id)]
+            gesture = contact
+            if phase == "up" {
+                var row = tapeRow(contact.points, page: number, id: contact.id); row.removeValue(forKey: "id")
+                performObjectEdit("create", values: [row])
+            } else { dirtyScenes.insert(number); publishDirtyScenes() }
+            return
+        }
+        if contact.tool == "comment" {
+            if phase == "up" { gesture = nil; openComment(at: last, page: number) }
+            return
+        }
         if contact.tool == "eraser" {
             // The partial eraser, and the whole-object eraser when the native one is unavailable.
             let path = (contact.lastErasePoint.map { [$0] } ?? []) + raw.compactMap(NativePDFEditingGeometry.point)
@@ -1066,6 +1130,97 @@ final class NativePDFWorkspaceModel {
             }
         }
         requestScene(number)
+    }
+    /// A tape band along the drawn path; a nearly straight drag becomes a straight strip.
+    private func tapeRow(_ points: [CGPoint], page: Int, id: String) -> [String: Any] {
+        let width = palette.tapeWidth, ratio = aspect(page)
+        var samples = points
+        if let first = points.first, let last = points.last {
+            let dx = Double(last.x - first.x), dy = Double(last.y - first.y) * ratio, length = max(hypot(dx, dy), 1e-9)
+            let offsets: [Double] = points.map { abs(Double($0.x - first.x) * dy - Double($0.y - first.y) * ratio * dx) / length }
+            if (offsets.max() ?? 0) < width * 0.8 { samples = [first, last] }
+            else {
+                // Keep the shape, not every Pencil sample.
+                var kept = [first]
+                for point in points.dropFirst() where hypot(point.x - kept[kept.count - 1].x, (point.y - kept[kept.count - 1].y) * ratio) >= width / 2 { kept.append(point) }
+                if kept.last != last { kept.append(last) }
+                samples = kept
+            }
+        }
+        let data: [String: Any] = ["points": samples.map { ["x": min(1, max(0, Double($0.x))), "y": min(1, max(0, Double($0.y))), "p": 0.5] }]
+        return ["id": id, "page": page, "kind": "tape", "data": data, "style": ["color": palette.tapeColor, "width": width, "opacity": 1.0]]
+    }
+    private func tape(at point: CGPoint, page: Int) -> String? {
+        rows(on: page).reversed().first { row in
+            row["kind"] as? String == "tape" && NativePDFEraseSplit.touches(row, path: [point], radius: 0.003, aspect: aspect(page))
+        }?["id"] as? String
+    }
+    /// The same tap can arrive as a Pencil pointer and as a PDF tap; toggle once.
+    private var lastTapeToggle: (id: String, at: CFAbsoluteTime)?
+    /// Peeling tape back is not an edit to undo: no history entry.
+    private func toggleTape(_ id: String) {
+        let now = CFAbsoluteTimeGetCurrent()
+        if let last = lastTapeToggle, last.id == id, now - last.at < 0.5 { return }
+        lastTapeToggle = (id, now)
+        guard let row = persistence?.rows.first(where: { $0["id"] as? String == id }) else { return }
+        setTapes([row], revealed: (row["style"] as? [String: Any])?["revealed"] as? Bool != true)
+    }
+    func setAllTapes(revealed: Bool) {
+        setTapes((persistence?.rows ?? []).filter { $0["kind"] as? String == "tape" }, revealed: revealed)
+    }
+    private func setTapes(_ rows: [[String: Any]], revealed: Bool) {
+        let values = rows.compactMap { row -> [String: Any]? in
+            var style = row["style"] as? [String: Any] ?? [:]
+            guard (style["revealed"] as? Bool == true) != revealed else { return nil }
+            if revealed { style["revealed"] = true } else { style.removeValue(forKey: "revealed") }
+            var value = row; value["style"] = style; return value
+        }
+        guard !values.isEmpty else { return }
+        performObjectEdit("reveal", values: values, expected: rows.filter { row in values.contains { $0["id"] as? String == row["id"] as? String } })
+    }
+    private func comment(at point: CGPoint, page: Int) -> [String: Any]? {
+        rows(on: page).reversed().first { row in
+            guard row["kind"] as? String == "comment", let box = NativePDFEditingGeometry.bounds(row) else { return false }
+            return box.insetBy(dx: -0.008, dy: -0.008 / aspect(page)).contains(point)
+        }
+    }
+    /// A tap with the comment tool opens a pin there, or the pin already there.
+    private func openComment(at point: CGPoint, page: Int) {
+        if let pin = comment(at: point, page: page) { openComment(pin, page: page); return }
+        let side = 0.032, ratio = aspect(page)
+        let box = CGRect(x: min(1 - side, max(0, point.x - side / 2)), y: min(1 - side / ratio, max(0, point.y - side / ratio / 2)), width: side, height: side / ratio)
+        commentDraft = CommentDraft(page: page, box: box, id: nil, text: "", color: "yellow")
+    }
+    private func openComment(_ row: [String: Any], page: Int) {
+        guard let box = NativePDFEditingGeometry.bounds(row) else { return }
+        let data = row["data"] as? [String: Any], style = row["style"] as? [String: Any]
+        commentDraft = CommentDraft(page: page, box: box, id: row["id"] as? String, text: data?["text"] as? String ?? "", color: style?["color"] as? String ?? "yellow")
+    }
+    /// 완료: an empty note removes the pin; otherwise the pin is created or updated.
+    func saveComment() {
+        guard let draft = commentDraft, !isBusy else { return }
+        commentDraft = nil
+        let text = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let existing = draft.id.flatMap { id in persistence?.rows.first { $0["id"] as? String == id } }
+        if text.isEmpty {
+            if let existing { performObjectEdit("delete", values: [existing]) }
+            return
+        }
+        if let original = existing {
+            var row = original, data = original["data"] as? [String: Any] ?? [:]
+            guard data["text"] as? String != draft.text else { return }
+            data["text"] = draft.text; row["data"] = data
+            performObjectEdit("update", values: [row], expected: [original])
+        } else {
+            performObjectEdit("create", values: [["page": draft.page, "kind": "comment",
+                "data": ["box": NativePDFEditingGeometry.dictionary(draft.box), "text": draft.text],
+                "style": ["color": draft.color, "width": 0.002, "opacity": 1.0]]])
+        }
+    }
+    func deleteComment() {
+        guard let draft = commentDraft, !isBusy else { return }
+        commentDraft = nil
+        if let id = draft.id, let row = persistence?.rows.first(where: { $0["id"] as? String == id }) { performObjectEdit("delete", values: [row]) }
     }
     /// Applies one eraser path segment. Partial mode cuts ink and highlighter
     /// strokes; stroke mode removes whatever the eraser touches.
@@ -1151,6 +1306,7 @@ final class NativePDFWorkspaceModel {
             case "update": try await persistence.updateObjects(values, expected: expected)
             case "delete": try await persistence.deleteObjects(ids: Set(values.compactMap { $0["id"] as? String }), expected: expected)
             case "batch": try await persistence.batchObjects(values, expected: expected)
+            case "reveal": try await persistence.updateObjects(values, expected: expected, recordsHistory: false)
             default: throw NativePDFError.invalid("지원하지 않는 개체 편집입니다.")
             }
             self.clearGesture()
@@ -1893,6 +2049,10 @@ final class NativePDFWorkspaceModel {
         if redo != canRedo { canRedo = redo }
         let count = persistence?.rows.count ?? 0
         if count != drawingCount { drawingCount = count }
+        let tapes = (persistence?.rows ?? []).filter { $0["kind"] as? String == "tape" }
+        let hidden = tapes.contains { ($0["style"] as? [String: Any])?["revealed"] as? Bool != true }
+        if hasTapes != !tapes.isEmpty { hasTapes = !tapes.isEmpty }
+        if allTapesRevealed != (!tapes.isEmpty && !hidden) { allTapesRevealed = !tapes.isEmpty && !hidden }
         let pending = persistence?.pendingCount ?? 0
         if pending != pendingCount { pendingCount = pending }
     }

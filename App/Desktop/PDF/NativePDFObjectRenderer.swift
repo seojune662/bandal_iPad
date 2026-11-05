@@ -54,6 +54,20 @@ enum NativePDFObjectRenderer {
             context.addPath(path); context.fillPath(); return
         }
         let kind = object["kind"] as? String ?? ""
+        if kind == "tape" {
+            guard let outline = tapeOutline(data, strokeWidth: finite(style["width"], fallback: 0.018), width: width, height: height) else { return }
+            let tint = tapeColor(style["color"] as? String ?? "blue")
+            context.addPath(outline)
+            if style["revealed"] as? Bool == true {
+                // Peeled back: the covered text shows through a faint band.
+                context.setFillColor(tint.withAlphaComponent(0.16).cgColor); context.fillPath()
+                context.addPath(outline); context.setStrokeColor(tint.withAlphaComponent(0.9).cgColor)
+                context.setLineWidth(1); context.setLineDash(phase: 0, lengths: [4, 3]); context.strokePath()
+            } else {
+                context.setFillColor(tint.cgColor); context.fillPath()
+            }
+            return
+        }
         if ["line", "arrow", "rect", "ellipse"].contains(kind) {
             let normalizedWidth = max(0, finite(style["width"], fallback: 0.003))
             guard let outline = shapeOutline(kind: kind, data: data, strokeWidth: normalizedWidth, aspect: height / width) else { return }
@@ -67,6 +81,26 @@ enum NativePDFObjectRenderer {
         }
         guard let box = physicalBox(data, width: width, height: height), box.width > 0, box.height > 0 else { return }
         switch kind {
+        case "comment":
+            // A speech-bubble pin drawn as paths (symbol images fill their whole
+            // box when recorded into the PDF texture). The note opens in a sheet.
+            let side = min(box.width, box.height), x = box.midX - side / 2, y = box.midY - side / 2
+            let body = CGRect(x: x, y: y, width: side, height: side * 0.78)
+            let bubble = CGMutablePath()
+            bubble.addRoundedRect(in: body, cornerWidth: side * 0.2, cornerHeight: side * 0.2)
+            bubble.move(to: CGPoint(x: x + side * 0.2, y: body.maxY - 1))
+            bubble.addLine(to: CGPoint(x: x + side * 0.16, y: y + side))
+            bubble.addLine(to: CGPoint(x: x + side * 0.46, y: body.maxY - 1))
+            bubble.closeSubpath()
+            context.setFillColor(color(style["color"] as? String ?? "yellow").cgColor)
+            context.addPath(bubble); context.fillPath()
+            context.setStrokeColor(UIColor.white.withAlphaComponent(0.95).cgColor)
+            context.setLineWidth(side * 0.08); context.setLineCap(.round)
+            for (row, length) in [(0.3, 0.56), (0.52, 0.38)] {
+                context.move(to: CGPoint(x: x + side * 0.22, y: y + side * row))
+                context.addLine(to: CGPoint(x: x + side * (0.22 + length), y: y + side * row))
+            }
+            context.strokePath()
         case "image", "clip":
             UIGraphicsPushContext(context); defer { UIGraphicsPopContext() }
             if let image, image.size.width > 0, image.size.height > 0 {
@@ -119,6 +153,9 @@ enum NativePDFObjectRenderer {
             return path.boundingBoxOfPath.applying(transform)
         }
         let kind = object["kind"] as? String ?? ""
+        if kind == "tape" {
+            return tapeOutline(data, strokeWidth: finite(style["width"], fallback: 0.018), width: width, height: height)?.boundingBoxOfPath.applying(transform)
+        }
         if ["line", "arrow", "rect", "ellipse"].contains(kind) {
             let normalizedWidth = max(0, finite(style["width"], fallback: 0.003))
             guard let outline = shapeOutline(kind: kind, data: data, strokeWidth: normalizedWidth, aspect: height / width) else { return nil }
@@ -127,6 +164,24 @@ enum NativePDFObjectRenderer {
         return physicalBox(data, width: width, height: height)?.insetBy(dx: -margin, dy: -margin).applying(transform)
     }
 
+    /// A tape is a flat band along its points, `strokeWidth` page widths thick.
+    nonisolated static func tapeOutline(_ data: [String: Any], strokeWidth: Double, width: CGFloat, height: CGFloat) -> CGPath? {
+        guard strokeWidth.isFinite, strokeWidth > 0, let samples = data["points"] as? [[String: Any]], samples.count >= 2 else { return nil }
+        let points = samples.compactMap { value -> CGPoint? in
+            guard let x = value["x"] as? NSNumber, let y = value["y"] as? NSNumber else { return nil }
+            return CGPoint(x: x.doubleValue * width, y: y.doubleValue * height)
+        }
+        guard points.count >= 2 else { return nil }
+        let path = CGMutablePath(); path.addLines(between: points)
+        return path.copy(strokingWithWidth: strokeWidth * width, lineCap: .butt, lineJoin: .round, miterLimit: 10)
+    }
+    /// The seven ink colours, lightened to the pastel of masking tape.
+    nonisolated static func tapeColor(_ name: String) -> UIColor {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        color(name).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        let lift: CGFloat = name == "ink" ? 0.72 : 0.55
+        return UIColor(red: red + (1 - red) * lift, green: green + (1 - green) * lift, blue: blue + (1 - blue) * lift, alpha: 1)
+    }
     nonisolated private static func shapeOutline(kind: String, data: [String: Any], strokeWidth: Double, aspect: Double) -> CGPath? {
         guard strokeWidth.isFinite, strokeWidth > 0,
               let path = shapePath(kind: kind, data: data, strokeWidth: strokeWidth, aspect: aspect) else { return nil }

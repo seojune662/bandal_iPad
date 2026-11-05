@@ -1144,7 +1144,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         let epoch: Int?
         if request["objectSceneEpoch"] != nil {
             guard let value = NativePDFEditorScene.integer(request["objectSceneEpoch"]), let nextTool,
-                  ["select", "lasso", "pen", "highlighter", "eraser", "line", "arrow", "rect", "ellipse", "text"].contains(nextTool.name),
+                  ["select", "lasso", "pen", "highlighter", "eraser", "line", "arrow", "rect", "ellipse", "text", "tape", "laser", "comment"].contains(nextTool.name),
                   value >= (objectSceneEpoch ?? 0),
                   value != objectSceneEpoch || nextTool.name == tool.name else { throw NativePDFEditorScene.invalid() }
             epoch = value

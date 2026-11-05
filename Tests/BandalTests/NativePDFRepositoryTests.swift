@@ -23,6 +23,24 @@ final class NativePDFRepositoryTests: XCTestCase {
         _ = try fixture.context.db.run("UPDATE pdf_drawings SET deleted_at='external' WHERE id=?", params: [original["id"]!])
         XCTAssertTrue((try fixture.call("drawings:listForFile", identity) as! [[String: Any]]).isEmpty)
     }
+    func testRevealingTapeIsSavedWithoutAnUndoStep() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let path = try fixture.paper()
+        let binding = try fixture.call("nativePDF:binding", fixture.identity(path)) as! [String: Any]
+        let owner = NativePDFPersistence(courseID: fixture.course, relativePath: path,
+            documentRevision: binding["documentRevision"] as! String,
+            backend: { try fixture.call($0, $1) }, host: { _, _ in [:] })
+        try await owner.createObjects([["page": 1, "kind": "tape",
+            "data": ["points": [["x": 0.1, "y": 0.3, "p": 0.5], ["x": 0.5, "y": 0.3, "p": 0.5]]],
+            "style": ["color": "blue", "width": 0.022, "opacity": 1.0]]])
+        let tape = try XCTUnwrap(owner.rows.first)
+        var revealed = tape, style = try XCTUnwrap(tape["style"] as? [String: Any]); style["revealed"] = true; revealed["style"] = style
+        try await owner.updateObjects([revealed], expected: [tape], recordsHistory: false)
+        XCTAssertEqual((owner.rows.first?["style"] as? [String: Any])?["revealed"] as? Bool, true, "The reveal is saved")
+        try await owner.undo()
+        XCTAssertTrue(owner.rows.isEmpty, "Undo skips the reveal and removes the tape itself")
+        XCTAssertFalse(owner.canUndo)
+    }
     func testPartialEraseBatchUpdatesCreatesAndDeletesAsOneUndoStep() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }
         let path = try fixture.paper()
