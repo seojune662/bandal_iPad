@@ -89,14 +89,16 @@ enum NativePDFObjectRenderer {
             }
         case "textbox":
             context.saveGState(); defer { context.restoreGState() }
-            context.clip(to: box)
+            // Clip the sides only: a box saved shorter than its text (another
+            // device's layout, an older row) shows every line instead of the first.
+            context.clip(to: CGRect(x: box.minX, y: box.minY - 100_000, width: box.width, height: 200_000))
             if let fill = style["fill"] as? String { context.setFillColor(color(fill).withAlphaComponent(0.18).cgColor); context.fill(box) }
             let fontSize = baseFontSize(style, surfaceWidth: width)
             // The desktop transparent border occupies 0.06em before 0.3em
             // inner padding; preserve that offset even without a visible frame.
             let padding = fontSize * 0.36
             let content = box.insetBy(dx: padding, dy: padding)
-            guard content.width > 0, content.height > 0 else { return }
+            guard content.width > 0 else { return }
             let layout = textLayout(data: data, style: style, surfaceWidth: width, contentWidth: content.width)
             UIGraphicsPushContext(context); defer { UIGraphicsPopContext() }
             layout.manager.drawBackground(forGlyphRange: layout.glyphRange, at: content.origin)

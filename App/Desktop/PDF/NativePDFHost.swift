@@ -527,8 +527,9 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             container.bringSubviewToFront(item.pdfView)
             // The live text box is a sibling of PDFView. Keep it above the
             // paper after presentation/layout changes so taps can focus it.
-            if let editor = item.textEditor?.view, editor.superview === container {
-                container.bringSubviewToFront(editor)
+            if item.textEditor != nil, item.textClip.superview === container {
+                item.textClip.frame = frame
+                container.bringSubviewToFront(item.textClip)
             }
             let offsetX = unclipped.minX - frame.minX, offsetY = unclipped.minY - frame.minY
             let localHoles: [CGRect] = (holes[identifier] ?? []).map { hole in
@@ -699,15 +700,32 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private var revealOffset: CGPoint?
     /// The text view sits beside the PDF view in the host container, above it,
     /// so UIKit hit-testing and accessibility reach it directly.
+    /// Clips the live text box to the visible PDF area, so a box scrolled under
+    /// the toolbar or the format bar never draws over them.
+    let textClip = NativePDFTextClipView()
     private func applyTextEditor() {
+        textClip.isHidden = textEditor == nil
         if let view = textEditor?.view, let container = pdfView.superview {
-            if view.superview !== container {
-                view.isHidden = true; container.addSubview(view)
+            if textClip.superview !== container { container.addSubview(textClip) }
+            textClip.frame = pdfView.frame
+            if view.superview !== textClip {
+                view.isHidden = true; textClip.addSubview(view)
                 DispatchQueue.main.async { [weak view] in view?.becomeFirstResponder() }
             }
-            container.bringSubviewToFront(view)
+            view.onCaretChange = { [weak self] in self?.revealCaret() }
+            container.bringSubviewToFront(textClip)
         }
         for (number, overlay) in overlays { overlay.textEditor = textEditor?.page == number ? textEditor?.view : nil }
+    }
+    /// Keeps the caret above the keyboard while the box grows or the caret moves.
+    private func revealCaret() {
+        guard let view = textEditor?.view, view.window != nil, !view.isHidden, let scroll = scrollView,
+              let position = view.selectedTextRange?.end else { return }
+        let caret = view.caretRect(for: position)
+        guard caret.minY.isFinite, caret.height > 0 else { return }
+        let before = scroll.contentOffset
+        scroll.scrollRectToVisible(view.convert(caret, to: scroll).insetBy(dx: -8, dy: -24), animated: false)
+        if scroll.contentOffset != before, revealOffset == nil { revealOffset = before }
     }
     /// One-shot: once the keyboard is up, scroll the box above it.
     func revealTextEditorWhenKeyboardShows() {
@@ -1648,7 +1666,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             let box = CGRect(x: x, y: y, width: w, height: h)
             let coordinates = NativePDFPageCoordinates(page: sourcePage), aspect = coordinates.height / coordinates.width
             if box.insetBy(dx: -0.018, dy: -0.018 / aspect).contains(point),
-               NativePDFEditingGeometry.corner(at: point, box: box, aspect: aspect) == nil {
+               NativePDFEditingGeometry.corner(at: point, box: box, aspect: aspect, sides: overlay.selectionTextHandles) == nil {
                 selectionDragSource = number; overlay.retainsObjectDrag = true
                 let link = CADisplayLink(target: self, selector: #selector(scrollSelectionDrag))
                 link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
@@ -1938,5 +1956,15 @@ final class NativePDFEditorScene {
     }
     static func invalid() -> NativePDFError {
         .invalid("PDF 개체 화면의 변경 순서를 확인할 수 없습니다. 전체 화면 자료를 다시 보내 주세요.")
+    }
+}
+
+/// Passes every touch outside its subviews through to the PDF view below.
+final class NativePDFTextClipView: UIView {
+    override init(frame: CGRect) { super.init(frame: frame); clipsToBounds = true; backgroundColor = .clear }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        return hit === self ? nil : hit
     }
 }

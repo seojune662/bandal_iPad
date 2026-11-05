@@ -59,9 +59,9 @@ struct NativePDFTextStyle: Codable, Equatable {
 final class NativePDFTextDraft: ObservableObject {
     static let inlineKey = NSAttributedString.Key("app.bandal.pdf.text.inline")
     static let inlineFields: Set<String> = ["color", "fontSizePt", "bold", "italic", "underline", "strike"]
-    let original: [String: Any]
+    private(set) var original: [String: Any]
     let pageSize: CGSize
-    let existing: Bool
+    private(set) var existing: Bool
     private let defaults: UserDefaults
     private let onChange: () -> Void
     private var data: [String: Any], base: [String: Any]
@@ -188,6 +188,8 @@ final class NativePDFTextDraft: ObservableObject {
         var row = original; row["data"] = data; row["style"] = base; row.removeValue(forKey: "nativePath")
         return Self.fittedObject(row, pageSize: pageSize)
     }
+    /// After a save that keeps the box open, later saves update the saved row.
+    func rebase(onto saved: [String: Any]) { original = saved; existing = true }
     private func changed() {
         revision += 1; savedDefaults = false
         if !editingPoint { pointDraft = Self.pointLabel(style.fontSizePt) }
@@ -234,8 +236,9 @@ final class NativePDFTextDraft: ObservableObject {
     static func newObject(at point: CGPoint, page: Int, pageSize: CGSize, defaults: UserDefaults = .standard) -> [String: Any] {
         let style = NativePDFTextStyle.load(defaults: defaults), width = max(1, pageSize.width), height = max(1, pageSize.height)
         let inset = style.fontSizePt * 0.36
-        let x = min(0.98, max(0, point.x - inset / width))
-        let boxWidth = max(0.02, min(1 - x, max(0.26, min(0.72, 10 * style.fontSizePt / width))))
+        let boxWidth = max(0.02, min(1, max(0.26, min(0.72, 10 * style.fontSizePt / width))))
+        // Near the right edge the box shifts left instead of shrinking to a few characters.
+        let x = min(1 - boxWidth, max(0, point.x - inset / width))
         let boxHeight = min(1, (style.fontSizePt * 1.35 + inset * 2) / height)
         let y = max(0, min(1 - boxHeight, point.y - (inset + style.fontSizePt * 1.35 / 2) / height))
         return ["page": page, "kind": "textbox", "data": ["text": "", "box": ["x": Double(x), "y": Double(y), "width": Double(boxWidth), "height": Double(boxHeight)]], "style": style.dictionary]

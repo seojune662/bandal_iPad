@@ -26,7 +26,7 @@ struct NativePDFTextEditor: View {
                 Spacer(minLength: 0)
                 Button("취소", action: onCancel).disabled(isBusy || !canCancel).frame(minHeight: 44).padding(.horizontal, 6)
                     .accessibilityIdentifier("native-pdf-cancel-text")
-                Button(errorMessage == nil ? "완료" : "다시 저장", action: finish).disabled(isBusy || !draft.hasText)
+                Button(errorMessage == nil ? "완료" : "다시 저장", action: finish).disabled(isBusy || (!draft.hasText && !draft.existing))
                     .font(.system(size: 15, weight: .semibold)).frame(minHeight: 44).padding(.horizontal, 6)
                     .accessibilityIdentifier("native-pdf-save-text")
             }.padding(.trailing, 8)
@@ -204,8 +204,11 @@ struct NativePDFTextSizeField: UIViewRepresentable {
     private var appliedScale: CGFloat = 0
     private var updating = false
     private var revisions: AnyCancellable?
-    init(draft: NativePDFTextDraft, onSave: @escaping () -> Void, onCancel: @escaping () -> Void) {
-        self.draft = draft
+    /// Normalized page point of the tap that opened the box; the caret starts
+    /// at the nearest character (or at the end without a point).
+    private var initialCaret: CGPoint?
+    init(draft: NativePDFTextDraft, caretAt point: CGPoint? = nil, onSave: @escaping () -> Void, onCancel: @escaping () -> Void) {
+        self.draft = draft; self.initialCaret = point
         super.init()
         view.delegate = self
         view.textContainer.lineFragmentPadding = 0
@@ -225,7 +228,10 @@ struct NativePDFTextSizeField: UIViewRepresentable {
         // @Published emits before the value lands; apply after the mutation settled.
         revisions = draft.$revision.dropFirst().receive(on: DispatchQueue.main).sink { [weak self] _ in
             guard let self else { return }
-            view.pageBox = draft.box; view.superview?.setNeedsLayout(); update()
+            // Frame first: the typography scale is the new frame width over the new
+            // physical width. Then refit the height to the new attributes.
+            view.pageBox = draft.box; view.requestLayout(); update(); view.requestLayout()
+            view.onCaretChange?()
         }
     }
     func update() {
@@ -233,16 +239,37 @@ struct NativePDFTextSizeField: UIViewRepresentable {
         let scale = max(0.01, view.bounds.width / draft.physicalWidth)
         guard appliedRevision != draft.revision || abs(appliedScale - scale) > 0.0001 else { return }
         updating = true; defer { updating = false }
+        let first = appliedRevision < 0
         let selected = draft.selection
-        view.attributedText = draft.attributedText(scale: scale)
+        let next = draft.attributedText(scale: scale)
+        if !first, view.textStorage.string == next.string {
+            // Formatting or zoom only: restyle in place so the box's own undo stack survives.
+            view.textStorage.beginEditing()
+            next.enumerateAttributes(in: NSRange(location: 0, length: next.length)) { attributes, range, _ in
+                view.textStorage.setAttributes(attributes, range: range)
+            }
+            view.textStorage.endEditing()
+        } else { view.attributedText = next }
         let padding = NativePDFObjectRenderer.baseFontSize(draft.boxStyle.dictionary, surfaceWidth: draft.pageSize.width) * 0.36 * scale
         view.textContainerInset = UIEdgeInsets(top: padding, left: padding, bottom: padding, right: padding)
         view.textContainer.size = CGSize(width: max(1, view.bounds.width - padding * 2), height: .greatestFiniteMagnitude)
-        view.selectedRange = selected
+        if first {
+            let caret = NSRange(location: caretOffset(), length: 0)
+            view.selectedRange = caret; draft.setSelection(caret)
+        } else { view.selectedRange = selected }
         view.typingAttributes = draft.typingAttributes(scale: scale)
         view.backgroundColor = draft.boxStyle.fill.map { NativePDFObjectRenderer.color($0).withAlphaComponent(0.18) } ?? .clear
         view.alpha = draft.boxStyle.opacity
         appliedRevision = draft.revision; appliedScale = scale
+    }
+    /// The character nearest the opening tap; the end of the text otherwise.
+    private func caretOffset() -> Int {
+        let end = (view.text as NSString).length
+        guard let point = initialCaret, let box = view.pageBox, box.width > 0, box.height > 0, end > 0 else { return end }
+        view.layoutManager.ensureLayout(for: view.textContainer)
+        let local = CGPoint(x: (point.x - box.minX) / box.width * view.bounds.width, y: (point.y - box.minY) / box.height * view.bounds.height)
+        guard let position = view.closestPosition(to: local) else { return end }
+        return min(end, max(0, view.offset(from: view.beginningOfDocument, to: position)))
     }
     func accept() {
         // Before the first layout the view is empty; reading it back would wipe the draft.
@@ -253,17 +280,25 @@ struct NativePDFTextSizeField: UIViewRepresentable {
     func detach() {
         draft.finishPendingInput = nil; revisions = nil
         view.delegate = nil; view.onLayout = nil; view.onSave = nil; view.onCancel = nil
+        view.onNeedsLayout = nil; view.onCaretChange = nil
     }
     func textViewDidChange(_ textView: UITextView) { accept() }
     func textViewDidChangeSelection(_ textView: UITextView) {
         guard !updating else { return }
         draft.setSelection(textView.selectedRange, composing: textView.markedTextRange != nil)
+        view.onCaretChange?()
     }
 }
 
 final class NativePDFTextInputView: UITextView {
     /// Normalized page box the overlay maps to this view's frame.
     var pageBox: CGRect?
+    /// Installed by the page overlay that positions this view. The view lives
+    /// in the host container, so `setNeedsLayout` on its superview never reaches it.
+    var onNeedsLayout: (() -> Void)?
+    /// Installed by the host: keeps the caret inside the visible page area.
+    var onCaretChange: (() -> Void)?
+    func requestLayout() { onNeedsLayout?() }
     var onLayout: (() -> Void)?
     var onSave: (() -> Void)?
     var onCancel: (() -> Void)?

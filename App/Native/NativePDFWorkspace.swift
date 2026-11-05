@@ -257,6 +257,12 @@ final class NativePDFWorkspaceModel {
     private var textInput: NativePDFTextInput?
     private var textEditorPage: Int?
     private var textEditorPresentedAt = CFAbsoluteTime(0)
+    /// Where the opening tap landed. The same tap can arrive a second time
+    /// (PDFView tap recognizer and overlay pointer); only that echo is ignored.
+    private var textEditorPresentedPoint: (page: Int, point: CGPoint)?
+    /// A box tapped while another was open: opened once the open one is saved.
+    private var textAfterCommit: (page: Int, point: CGPoint)?
+    var isEditingText: Bool { textInput != nil }
     var textSaveNeedsRecovery: Bool { pendingTextSave != nil }
     var isAdditionalTool: Bool { ["lasso", "line", "arrow", "rect", "ellipse", "text"].contains(tool) }
     var additionalToolSymbol: String { ["lasso": "lasso", "line": "line.diagonal", "arrow": "arrow.up.right", "rect": "rectangle", "ellipse": "oval", "text": "textformat"][tool] ?? "square.on.circle" }
@@ -330,6 +336,8 @@ final class NativePDFWorkspaceModel {
         var points: [CGPoint], rows: [[String: Any]], preview: [[String: Any]]
         var box: CGRect?, corner: String?
         var destinationPage: Int?
+        /// The contact began on an already selected object (a second tap edits a text box).
+        var onSelection = false
     }
     private var gesture: Gesture?
     private var textObject: [String: Any]?
@@ -381,7 +389,10 @@ final class NativePDFWorkspaceModel {
             suspendWrites: { [weak self] in self?.writesSuspended = true },
             resume: { [weak self] in self?.writesSuspended = false; self?.setMaterialMutating(false) },
             retire: { [weak self] in self?.retire() },
-            refreshDrawings: { [weak self] in try await self?.receiveStoredDrawings() }) { [self] in try await flush() }
+            refreshDrawings: { [weak self] in try await self?.receiveStoredDrawings() }) { [self] in
+                // Leaving the app saves an open text box without closing it.
+                try await flush(keepingText: UIApplication.shared.applicationState != .active)
+            }
         do {
             let native = try NativePDFHost(root: store.root, directEnabled: true) { [store] channel, request in
                 try await store.invokePrivate(channel, request)
@@ -624,8 +635,10 @@ final class NativePDFWorkspaceModel {
             guard assistantAnnotation == nil else { return }
             guard errorMessage == nil, !isBusy else { return }
             if textEditorDraft != nil {
-                // The tap that opened a box can also arrive here; only a later tap commits.
-                if CFAbsoluteTimeGetCurrent() - textEditorPresentedAt > 0.4 { finishText() }
+                let location = (payload["page"] as? Int).flatMap { number in
+                    (payload["x"] as? Double).flatMap { x in (payload["y"] as? Double).map { (page: number, point: CGPoint(x: x, y: $0)) } }
+                }
+                finishTextOnOutsideContact(at: location)
             } else if tool == "text", gesture == nil, let number = payload["page"] as? Int, number > 0, number <= pageCount,
                       let x = payload["x"] as? Double, let y = payload["y"] as? Double {
                 openText(at: CGPoint(x: x, y: y), page: number)
@@ -897,20 +910,20 @@ final class NativePDFWorkspaceModel {
         if phase == "down" {
             guard !isBusy, gesture == nil else { return }
             if textEditorDraft != nil {
-                // The contact that opened the box also reaches here; only a later one commits.
-                if CFAbsoluteTimeGetCurrent() - textEditorPresentedAt > 0.4 { finishText() }
+                finishTextOnOutsideContact(at: (page: number, point: first))
                 return
             }
-            var rows: [[String: Any]] = [], box: CGRect?, corner: String?
+            var rows: [[String: Any]] = [], box: CGRect?, corner: String?, onSelection = false
             if ["select", "lasso"].contains(tool) {
                 if selectionPage == number, let selected = NativePDFEditingGeometry.union(selectedRows, aspect: aspect(number)),
                    selected.insetBy(dx: -0.018, dy: -0.018 / aspect(number)).contains(first) {
-                    rows = selectedRows; box = selected; corner = NativePDFEditingGeometry.corner(at: first, box: selected, aspect: aspect(number))
+                    rows = selectedRows; box = selected; corner = NativePDFEditingGeometry.corner(at: first, box: selected, aspect: aspect(number), sides: selectedText)
+                    onSelection = true
                 } else if tool == "select", let id = NativePDFEditingGeometry.hit(first, rows: self.rows(on: number), aspect: aspect(number)) {
                     setSelection([id], page: number); rows = selectedRows; box = NativePDFEditingGeometry.union(rows, aspect: aspect(number))
                 } else { setSelection([], page: number) }
             } else { clearSelection() }
-            gesture = Gesture(page: number, tool: tool, start: first, id: "native-preview-" + UUID().uuidString, points: [first], rows: rows, preview: [], box: box, corner: corner)
+            gesture = Gesture(page: number, tool: tool, start: first, id: "native-preview-" + UUID().uuidString, points: [first], rows: rows, preview: [], box: box, corner: corner, onSelection: onSelection)
             store.markDocumentChanged()
         }
         guard var contact = gesture, contact.page == number else { return }
@@ -930,6 +943,7 @@ final class NativePDFWorkspaceModel {
                 contact.preview = NativePDFEditingGeometry.movedAcrossPages(contact.rows,
                     from: pageSize(number), to: pageSize(destinationPage), grabbedAt: contact.start,
                     droppedAt: destinationPoint, page: destinationPage)
+                    .map { NativePDFTextDraft.fittedObject($0, pageSize: pageSize(destinationPage)) }
                 dirtyScenes.insert(destinationPage)
             }
         } else if ["line", "arrow", "rect", "ellipse"].contains(contact.tool), distance > 0.003 {
@@ -958,6 +972,8 @@ final class NativePDFWorkspaceModel {
                 } else { showPasteMenu(at: last, page: number) }
             } else if contact.tool == "text" {
                 openText(at: last, page: number)
+            } else if contact.tool == "select", contact.onSelection, contact.corner == nil, selectedText, distance <= 0.002 {
+                editSelectedText(at: last)
             }
         }
         requestScene(number)
@@ -1005,7 +1021,10 @@ final class NativePDFWorkspaceModel {
         guard !isBusy, let selectionPage else { return }
         performObjectEdit("create", values: NativePDFEditingGeometry.translated(selectedRows, dx: 0.025, dy: 0.025, aspect: aspect(selectionPage)).map { value in var value = value; value.removeValue(forKey: "id"); return value })
     }
-    func editSelectedText() { guard selectedText, let row = selectedRows.first, !isBusy else { return }; presentText(row, existing: true) }
+    func editSelectedText(at point: CGPoint? = nil) {
+        guard selectedText, let row = selectedRows.first, !isBusy else { return }
+        presentText(row, existing: true, caretAt: point)
+    }
     private static var clipboardHasContent: Bool {
         UIPasteboard.general.contains(pasteboardTypes: [pasteboardType, NativePDFObjectClipboard.type]) || UIPasteboard.general.hasImages
     }
@@ -1216,7 +1235,7 @@ final class NativePDFWorkspaceModel {
             let dx = pasteAnchor.map { Double($0.x - (box?.midX ?? 0)) } ?? (samePage ? 0.025 : 0)
             let dy = pasteAnchor.map { Double($0.y - (box?.midY ?? 0)) } ?? (samePage ? 0.025 : 0)
             let values = NativePDFEditingGeometry.translated(rows, dx: dx, dy: dy, aspect: aspect(destination))
-                .map { row in var row = row; row["page"] = destination; return row }
+                .map { row in var row = row; row["page"] = destination; return NativePDFTextDraft.fittedObject(row, pageSize: pageSize(destination)) }
             performObjectEdit("create", values: values)
         } else if let image = UIPasteboard.general.image {
             pasteImage(image, at: pasteAnchor, page: destination)
@@ -1331,20 +1350,21 @@ final class NativePDFWorkspaceModel {
     private func openText(at point: CGPoint, page number: Int) {
         let boxes = rows(on: number).filter { $0["kind"] as? String == "textbox" }
         if let target = NativePDFEditingGeometry.hit(point, rows: boxes, aspect: aspect(number)), let row = boxes.first(where: { $0["id"] as? String == target }) {
-            presentText(row, existing: true)
+            presentText(row, existing: true, caretAt: point)
         } else {
-            presentText(NativePDFTextDraft.newObject(at: point, page: number, pageSize: pageSize(number), defaults: defaults), existing: false)
+            presentText(NativePDFTextDraft.newObject(at: point, page: number, pageSize: pageSize(number), defaults: defaults), existing: false, caretAt: point)
         }
     }
     /// Edits in place: the page overlay hosts the text view, the pane shows the format bar.
-    private func presentText(_ object: [String: Any], existing: Bool) {
+    private func presentText(_ object: [String: Any], existing: Bool, caretAt point: CGPoint? = nil) {
         if textEditorDraft != nil { clearTextEditor() }
         textObject = object; editingExistingText = existing; pendingTextSave = nil; textCreateMutationID = UUID().uuidString
         let number = (object["page"] as? NSNumber)?.intValue ?? page
         let draft = NativePDFTextDraft(object: object, pageSize: pageSize(number), existing: existing, defaults: defaults,
             onChange: { [weak self] in self?.markDraftChanged() })
         textEditorDraft = draft; textEditorPage = number; textEditorPresentedAt = CFAbsoluteTimeGetCurrent()
-        let input = NativePDFTextInput(draft: draft, onSave: { [weak self] in self?.finishText() }, onCancel: { [weak self] in self?.cancelText() })
+        textEditorPresentedPoint = point.map { (page: number, point: $0) }
+        let input = NativePDFTextInput(draft: draft, caretAt: point, onSave: { [weak self] in self?.finishText() }, onCancel: { [weak self] in self?.cancelText() })
         textInput = input
         clearSelection(); showStyle = false
         host?.setTextEditor(surfaceID: surfaceID, generation: generation, page: number, view: input.view)
@@ -1354,14 +1374,45 @@ final class NativePDFWorkspaceModel {
         if let page = textEditorPage { host?.setTextEditor(surfaceID: surfaceID, generation: generation, page: page, view: nil); dirtyScenes.insert(page) }
         textInput?.detach(); textInput = nil; textObject = nil; textEditorDraft = nil; textEditorPage = nil
     }
+    /// A tap or pen-down outside the open box. The echo of the opening tap is
+    /// ignored; a tap on another text box saves this one, then opens that one.
+    private func finishTextOnOutsideContact(at location: (page: Int, point: CGPoint)?) {
+        if CFAbsoluteTimeGetCurrent() - textEditorPresentedAt < 0.4 {
+            guard let opening = textEditorPresentedPoint, let location else { return }
+            if opening.page == location.page, hypot(opening.point.x - location.point.x, (opening.point.y - location.point.y) * aspect(location.page)) < 0.02 { return }
+        }
+        textAfterCommit = location.flatMap { location in
+            let boxes = rows(on: location.page).filter { $0["kind"] as? String == "textbox" && $0["id"] as? String != textObject?["id"] as? String }
+            return NativePDFEditingGeometry.hit(location.point, rows: boxes, aspect: aspect(location.page)) == nil ? nil : location
+        }
+        finishText()
+        // Cancel and delete close the editor synchronously; a commit opens it on success.
+        if textEditorDraft == nil, let next = textAfterCommit { textAfterCommit = nil; openText(at: next.point, page: next.page) }
+    }
     /// 완료 / tap outside / tool switch: keep text, drop an emptied box.
     func finishText() {
         guard let draft = textEditorDraft, !isBusy else { return }
         host?.restoreTextScroll(surfaceID: surfaceID, generation: generation)
         draft.finishComposition()
+        if editingExistingText, draft.revision == 0, let id = textObject?["id"] as? String {
+            // Opened and closed without an edit: no rewrite and no undo entry.
+            let number = textEditorPage ?? page
+            clearTextEditor(); textAfterCommit = nil
+            if tool == "text" { chooseTool("select") }
+            if tool == "select" { setSelection([id], page: number) }
+            requestScene(number); restoreInput()
+            return
+        }
         if draft.hasText { commitText() } else if editingExistingText { deleteText() } else { cancelText() }
     }
-    func commitText() {
+    /// Leaving the app saves the box but keeps it open, with the same tool.
+    private func saveTextKeepingEditor() {
+        guard let draft = textEditorDraft, !isBusy else { return }
+        host?.restoreTextScroll(surfaceID: surfaceID, generation: generation)
+        draft.finishComposition()
+        if draft.hasText, draft.revision > 0 || !editingExistingText { commitText(keepEditing: true) }
+    }
+    func commitText(keepEditing: Bool = false) {
         guard let object = textObject, let draft = textEditorDraft, let persistence, editorTask == nil else { return }
         if pendingTextSave == nil {
             guard let value = draft.objectForSave() else { return }
@@ -1397,15 +1448,32 @@ final class NativePDFWorkspaceModel {
                     throw NativePDFError.invalid("다른 PDF 창에서 저장된 텍스트를 변경했습니다. 최신 내용을 확인해 주세요.")
                 }
             }
-            try await self.publishSnapshot(); self.refreshHistory()
             guard let id = saved["id"] as? String else {
                 throw NativePDFError.invalid("텍스트 저장 결과를 확인하지 못했습니다. 다시 저장해 주세요.")
             }
+            // Hide the saved row under the live editor; drawing both doubles the text.
+            self.textObject = saved
+            try await self.publishSnapshot(); self.refreshHistory()
             self.pendingTextSave = nil
-            self.clearTextEditor()
-            self.errorMessage = nil; self.blockedForError = false; self.isBusy = self.materialMutating
-            if self.tool == "text" { self.chooseTool("select") }
+            self.errorMessage = nil; self.blockedForError = false
             let number = (saved["page"] as? NSNumber)?.intValue ?? self.page
+            if keepEditing {
+                self.editingExistingText = true; draft.rebase(onto: saved)
+                self.isBusy = self.materialMutating; self.restoreInput()
+                return
+            }
+            // Draw the saved row before removing the editor that covers it, so the
+            // box never blanks for a frame.
+            self.textObject = nil
+            try await self.publishScene(number)
+            self.clearTextEditor()
+            self.isBusy = self.materialMutating
+            if let next = self.textAfterCommit {
+                self.textAfterCommit = nil
+                self.openText(at: next.point, page: next.page)
+                return
+            }
+            if self.tool == "text" { self.chooseTool("select") }
             if self.tool == "select" { self.setSelection([id], page: number) }
             self.requestScene(number); self.restoreInput()
         }
@@ -1416,6 +1484,7 @@ final class NativePDFWorkspaceModel {
                 if !persistence.hasUnsettledEdits, persistence.pendingCount == 0 {
                     self.pendingTextSave = nil
                 }
+                self.textAfterCommit = nil
                 self.isBusy = self.materialMutating; self.fail(error)
             }
         }
@@ -1427,6 +1496,11 @@ final class NativePDFWorkspaceModel {
     }
     func deleteText() {
         guard let object = textObject, editingExistingText, !isBusy, pendingTextSave == nil else { return }
+        // performObjectEdit drops an edit while another one runs; the box would come back.
+        if let editorTask {
+            Task { @MainActor [weak self] in _ = try? await editorTask.value; self?.deleteText() }
+            return
+        }
         clearTextEditor()
         performObjectEdit("delete", values: [object])
     }
@@ -1527,8 +1601,10 @@ final class NativePDFWorkspaceModel {
             } catch { isBusy = materialMutating; fail(error) }
         }
     }
-    func undo() { runHistory(undo: true) }
-    func redo() { runHistory(undo: false) }
+    /// While a box is open, undo and redo act on its text, not on the document:
+    /// document history could revert the very row being edited.
+    func undo() { if let input = textInput { input.view.undoManager?.undo() } else { runHistory(undo: true) } }
+    func redo() { if let input = textInput { input.view.undoManager?.redo() } else { runHistory(undo: false) } }
     private func runHistory(undo: Bool) {
         guard !isBusy, !isLoading, errorMessage == nil else { return }
         store.markDocumentChanged()
@@ -1550,9 +1626,9 @@ final class NativePDFWorkspaceModel {
             } catch { isBusy = materialMutating; fail(error) }
         }
     }
-    func flush() async throws {
+    func flush(keepingText: Bool = false) async throws {
         if showAnnotationEditor, annotationDraft != nil { commitAnnotation() }
-        if textEditorDraft != nil { finishText() }
+        if textEditorDraft != nil { if keepingText { saveTextKeepingEditor() } else { finishText() } }
         repeat {
             if let historyTask { try await historyTask.value }
             if let editorTask { try await editorTask.value }
@@ -1648,7 +1724,7 @@ final class NativePDFWorkspaceModel {
         let identifier = UIApplication.shared.beginBackgroundTask(withName: "Save native PDF")
         Task { @MainActor in
             defer { if identifier != .invalid { UIApplication.shared.endBackgroundTask(identifier) } }
-            do { try await flush() } catch { fail(error) }
+            do { try await flush(keepingText: true) } catch { fail(error) }
         }
     }
     private func refreshHistory() {

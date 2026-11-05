@@ -101,8 +101,10 @@ enum NativePDFEditingGeometry {
         let sy = abs(old.y - anchor.y) > 1e-9 ? (y - anchor.y) / (old.y - anchor.y) : 1
         return rows.map { transform($0) { CGPoint(x: anchor.x + ($0.x - anchor.x) * sx, y: anchor.y + ($0.y - anchor.y) * sy) } }
     }
-    static func corner(at point: CGPoint, box: CGRect, aspect: Double) -> String? {
-        let values: [(String, CGPoint)] = [("nw", CGPoint(x: box.minX, y: box.minY)), ("ne", CGPoint(x: box.maxX, y: box.minY)), ("sw", CGPoint(x: box.minX, y: box.maxY)), ("se", CGPoint(x: box.maxX, y: box.maxY))]
+    /// `sides` adds the west/east handles a single text box draws; they change its wrap width.
+    static func corner(at point: CGPoint, box: CGRect, aspect: Double, sides: Bool = false) -> String? {
+        var values: [(String, CGPoint)] = [("nw", CGPoint(x: box.minX, y: box.minY)), ("ne", CGPoint(x: box.maxX, y: box.minY)), ("sw", CGPoint(x: box.minX, y: box.maxY)), ("se", CGPoint(x: box.maxX, y: box.maxY))]
+        if sides { values += [("w", CGPoint(x: box.minX, y: box.midY)), ("e", CGPoint(x: box.maxX, y: box.midY))] }
         return values.first { hypot(point.x - $0.1.x, (point.y - $0.1.y) * aspect) < 0.018 }?.0
     }
     /// Clipboard form: page/kind/data/style only. Images reference course

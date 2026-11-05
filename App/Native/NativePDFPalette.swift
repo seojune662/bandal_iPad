@@ -165,9 +165,9 @@ struct NativePDFPaletteQuickControls: View {
                 HStack(spacing: 2) {
                     if showsHistory {
                         Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward").frame(width: 44, height: 44) }
-                            .disabled(!model.canUndo).accessibilityLabel("되돌리기").accessibilityIdentifier("native-pdf-undo")
+                            .disabled(!model.canUndo && !model.isEditingText).accessibilityLabel("되돌리기").accessibilityIdentifier("native-pdf-undo")
                         Button { model.redo() } label: { Image(systemName: "arrow.uturn.forward").frame(width: 44, height: 44) }
-                            .disabled(!model.canRedo).accessibilityLabel("다시 실행").accessibilityIdentifier("native-pdf-redo")
+                            .disabled(!model.canRedo && !model.isEditingText).accessibilityLabel("다시 실행").accessibilityIdentifier("native-pdf-redo")
                     }
                     HStack(spacing: 0) { ForEach(NativePDFToolbar.tools, id: \.0) { NativePDFToolbar.toolButton(model, $0) } }
                     if model.isInkTool {

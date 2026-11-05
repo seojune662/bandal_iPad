@@ -50,8 +50,8 @@ struct NativePDFToolbar: View {
     private func navigate() { model.go(to: Int(entry) ?? model.page); entry = String(model.page) }
     private var history: some View {
         HStack(spacing: 0) {
-            icon("되돌리기", "arrow.uturn.backward", id: "native-pdf-undo") { model.undo() }.disabled(!model.canUndo)
-            icon("다시 실행", "arrow.uturn.forward", id: "native-pdf-redo") { model.redo() }.disabled(!model.canRedo)
+            icon("되돌리기", "arrow.uturn.backward", id: "native-pdf-undo") { model.undo() }.disabled(!model.canUndo && !model.isEditingText)
+            icon("다시 실행", "arrow.uturn.forward", id: "native-pdf-redo") { model.redo() }.disabled(!model.canRedo && !model.isEditingText)
             icon("필기 포함 PDF 내보내기", "square.and.arrow.up", id: "native-pdf-export") { model.exportPDF() }
         }.fixedSize(horizontal: true, vertical: false)
     }
