@@ -17,7 +17,9 @@ final class NativePDFWritingUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(button.frame.height, 44)
         }
         app.buttons["native-pdf-color-blue"].firstMatch.tap()
-        app.buttons["native-pdf-palette-width-2"].firstMatch.tap()
+        // Thickness is one of three slots, each one of twelve steps (no millimetre slider).
+        app.buttons["native-pdf-width-slot-2"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["native-pdf-width-slot-2"].firstMatch.isSelected)
         app.sliders["native-pdf-opacity-slider"].adjust(toNormalizedSliderPosition: 0.8)
         let saveFavorite = app.buttons["native-pdf-save-favorite-0"]
         let settingsScroll = app.scrollViews["native-pdf-palette-scroll"]
@@ -31,7 +33,7 @@ final class NativePDFWritingUITests: XCTestCase {
         chooseTool("highlighter", in: app)
         openPalette(in: app)
         app.buttons["native-pdf-color-green"].firstMatch.tap()
-        app.buttons["native-pdf-palette-width-0"].firstMatch.tap()
+        app.buttons["native-pdf-width-slot-0"].firstMatch.tap()
         app.sliders["native-pdf-opacity-slider"].adjust(toNormalizedSliderPosition: 0.5)
         capture("Swift highlighter physical width and effective opacity")
         closePalette(in: app)
@@ -42,7 +44,15 @@ final class NativePDFWritingUITests: XCTestCase {
         chooseTool("highlighter", in: app)
         XCTAssertEqual(app.buttons["native-pdf-style"].value as? String, markerStyle)
         chooseTool("ballpoint", in: app)
-        app.sliders["native-pdf-quick-width"].adjust(toNormalizedSliderPosition: 0.9)
+        app.buttons["native-pdf-width-slot-2"].firstMatch.tap()
+        // A second tap on the chosen slot opens its twelve steps; pick step 10.
+        app.buttons["native-pdf-width-slot-2"].firstMatch.tap()
+        let steps = app.descendants(matching: .any)["native-pdf-width-steps"].firstMatch
+        XCTAssertTrue(steps.waitForExistence(timeout: 5), app.debugDescription)
+        steps.coordinate(withNormalizedOffset: CGVector(dx: 9.5 / 12, dy: 0.5)).tap()
+        XCTAssertEqual(steps.value as? String, "10단계")
+        capture("Twelve-step thickness bar for a ballpoint slot")
+        app.buttons["native-pdf-width-slot-2"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).withOffset(CGVector(dx: 0, dy: 300)).tap()
         let ballpointStyle = app.buttons["native-pdf-style"].value as? String
         XCTAssertNotEqual(ballpointStyle, penStyle, "볼펜 keeps its own width")
         capture("Swift ballpoint with its own fixed-width style")
@@ -80,7 +90,7 @@ final class NativePDFWritingUITests: XCTestCase {
             XCTAssertTrue(tools.exists, app.debugDescription)
             XCTAssertGreaterThan(tools.frame.width, pane.frame.width - 24, "Editing tools use the width previously occupied by numbered presets")
             tools.swipeLeft()
-            XCTAssertTrue(pane.sliders["native-pdf-quick-width"].isHittable, app.debugDescription)
+            XCTAssertTrue(pane.buttons["native-pdf-width-slot-2"].isHittable, app.debugDescription)
         }
         right.buttons["native-pdf-style"].tap()
         let rightSettings = right.scrollViews["native-pdf-palette-scroll"]
@@ -253,6 +263,29 @@ final class NativePDFWritingUITests: XCTestCase {
         tap("native-pdf-redo", in: app); expectPages(movedPages)
         app.terminate(); app.launchArguments = arguments(reset: false) + ["--native-pages-fixture"]; app.launch()
         expectInk(1, in: app); expectPages(movedPages)
+    }
+    @MainActor
+    func testPartialEraserCutsAStrokeInTwoAsOneUndoStep() {
+        let app = createDocument("Eraser Notes")
+        chooseTool("pen", in: app)
+        let body = app.otherElements["native-pdf-workspace"]
+        body.coordinate(withNormalizedOffset: .init(dx: 0.25, dy: 0.42)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.75, dy: 0.42)))
+        expectInk(1, in: app)
+        chooseTool("eraser", in: app)
+        let partial = app.buttons["부분"].firstMatch
+        XCTAssertTrue(partial.waitForExistence(timeout: 5), app.debugDescription); partial.tap()
+        tap("native-pdf-width-slot-0", in: app)
+        body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.32)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.52)))
+        expectInk(2, in: app)
+        capture("Partial eraser leaves the two ends of the stroke")
+        tap("native-pdf-undo", in: app); expectInk(1, in: app)
+        tap("native-pdf-redo", in: app); expectInk(2, in: app)
+        app.buttons["획 전체"].firstMatch.tap()
+        body.coordinate(withNormalizedOffset: .init(dx: 0.32, dy: 0.32)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.32, dy: 0.52)))
+        expectInk(1, in: app)
     }
     private func arguments(reset: Bool) -> [String] {
         ["--native-ui-testing", "--native-pencil-dispatch-fixture"] + (reset ? ["--reset-native-ui-testing"] : [])

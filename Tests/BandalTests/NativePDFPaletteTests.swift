@@ -32,13 +32,64 @@ final class NativePDFPaletteTests: XCTestCase {
         XCTAssertEqual(latest.favorites[2].color, "green"); XCTAssertFalse(latest.drawAndHold)
     }
 
-    func testMillimetresUseActualPageWidthAndEffectiveHighlighterWidth() throws {
-        let points = 210.0 / 25.4 * 72
-        XCTAssertEqual(try XCTUnwrap(NativePDFPaletteStyle.millimetres(width: 0.004, highlighter: false, pageWidthPoints: points)), 0.84, accuracy: 0.000001)
-        XCTAssertEqual(try XCTUnwrap(NativePDFPaletteStyle.millimetres(width: 0.006, highlighter: true, pageWidthPoints: points)), 5.04, accuracy: 0.000001)
-        XCTAssertEqual(NativePDFPaletteStyle.widthLabel(0.0035, highlighter: true, pageWidthPoints: points), "2.94 mm")
-        XCTAssertEqual(NativePDFPaletteStyle.widthLabel(0.004, highlighter: false, pageWidthPoints: nil), "— mm")
-        XCTAssertNil(NativePDFPaletteStyle.millimetres(width: 0.004, highlighter: false, pageWidthPoints: .nan))
+    func testTwelveStepsHoldEveryEarlierDefaultAndLabelTheNearestStep() {
+        for tool in ["pen", "ballpoint", "highlighter", "eraser"] {
+            let steps = NativePDFPaletteStyle.steps(for: tool)
+            XCTAssertEqual(steps.count, 12, tool)
+            XCTAssertEqual(steps, steps.sorted(), tool)
+            XCTAssertEqual(Set(steps).count, 12, tool)
+            let slots = NativePDFPalettePreferences().widths(for: tool)
+            XCTAssertEqual(slots.count, 3, tool); XCTAssertTrue(slots.allSatisfy(steps.indices.contains), tool)
+        }
+        for width in [NativePDFPenPreset.pen.width, NativePDFPenPreset.ballpoint.width, 0.002, 0.004, 0.008] {
+            XCTAssertTrue(NativePDFPaletteStyle.penSteps.contains(width), "\(width)")
+        }
+        for width in [NativePDFPenPreset.highlighter.width, 0.0035, 0.006, 0.01] {
+            XCTAssertTrue(NativePDFPaletteStyle.highlighterSteps.contains(width), "\(width)")
+        }
+        XCTAssertEqual(NativePDFPaletteStyle.eraserSteps[3], 0.005, "The eraser keeps its old radius by default")
+        XCTAssertEqual(NativePDFPaletteStyle.nearestStep(0.0043, tool: "pen"), 5, "An old slider width shows its nearest step")
+        XCTAssertEqual(NativePDFPaletteStyle.stepLabel(0), "1단계"); XCTAssertEqual(NativePDFPaletteStyle.stepLabel(11), "12단계")
+    }
+
+    func testSlotPreferencesDecodeFromOlderVersionTwoDataAndRejectBadSlots() throws {
+        let old = try JSONDecoder().decode(NativePDFPalettePreferences.self, from: Data(#"{"version":2,"favorites":[],"drawAndHold":true}"#.utf8))
+        XCTAssertEqual(old.colors(for: "pen"), ["ink", "blue", "red", "green"])
+        XCTAssertEqual(old.widths(for: "highlighter"), [0, 5, 9])
+        XCTAssertEqual(old.eraserMode, "stroke"); XCTAssertEqual(old.eraserRadius, 0.005)
+        let bad = try JSONDecoder().decode(NativePDFPalettePreferences.self, from: Data(#"{"version":2,"colorSlots":{"pen":["pink","red","red"]},"widthSlots":{"pen":[1,99,2]},"eraserMode":"laser","eraserRadius":3}"#.utf8))
+        XCTAssertEqual(bad.colors(for: "pen"), ["red"], "Unknown and repeated colours are dropped")
+        XCTAssertEqual(bad.widths(for: "pen"), [2, 5, 8], "An out-of-range step falls back to the defaults")
+        XCTAssertEqual(bad.eraserMode, "stroke"); XCTAssertEqual(bad.eraserRadius, 0.005)
+        var value = NativePDFPalettePreferences()
+        value.colorSlots["pen"] = ["violet"]; value.widthSlots["eraser"] = [0, 4, 11]; value.eraserMode = "partial"; value.eraserRadius = 0.012
+        let again = try JSONDecoder().decode(NativePDFPalettePreferences.self, from: JSONEncoder().encode(value))
+        XCTAssertEqual(again, value)
+    }
+
+    @MainActor
+    func testWidthAndColorSlotsAreSharedAndTheOpenSlotKeepsItsStep() {
+        let suite = "NativePDFPaletteSlots.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = NativeWorkspaceStore(storageRoot: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let a = NativePDFWorkspaceModel(document: .init(courseID: "c", relativePath: "a.pdf", title: "A", kind: "pdf"), store: store, defaults: defaults)
+        let b = NativePDFWorkspaceModel(document: .init(courseID: "c", relativePath: "b.pdf", title: "B", kind: "pdf"), store: store, defaults: defaults)
+        XCTAssertEqual(a.widthSlots, [2, 5, 8]); XCTAssertEqual(a.selectedWidthSlot, 1, "The default pen width is the middle slot")
+        a.chooseWidthSlot(0); XCTAssertEqual(a.width, 0.002); XCTAssertNil(a.editingWidthSlot)
+        a.chooseWidthSlot(0); XCTAssertEqual(a.editingWidthSlot, 0, "Tapping the chosen slot opens its twelve steps")
+        XCTAssertFalse(a.showStyle)
+        a.setWidthStep(3, slot: 0)
+        XCTAssertEqual(a.width, 0.0025); XCTAssertEqual(a.widthSlots, [3, 5, 8]); XCTAssertEqual(a.selectedWidthSlot, 0)
+        XCTAssertEqual(b.widthSlots, [3, 5, 8], "Slots are workspace-wide"); XCTAssertEqual(b.width, 0.004, "A peer keeps its active width")
+        a.addColorSlot("orange"); XCTAssertEqual(a.color, "orange"); XCTAssertTrue(b.colorSlots.contains("orange"))
+        a.removeColorSlot("orange"); XCTAssertFalse(a.colorSlots.contains("orange")); XCTAssertEqual(a.color, "orange", "Removing a slot keeps the active colour")
+        a.chooseTool("highlighter"); XCTAssertEqual(a.widthSlots, [0, 5, 9]); XCTAssertEqual(a.selectedWidthSlot, 1)
+        a.chooseTool("eraser"); XCTAssertEqual(a.widthSlots, [1, 3, 6]); XCTAssertEqual(a.selectedWidthSlot, 1)
+        a.chooseWidthSlot(2); XCTAssertEqual(a.palette.eraserRadius, 0.012); XCTAssertEqual(b.palette.eraserRadius, 0.012)
+        a.setEraserMode("partial"); XCTAssertEqual(b.palette.eraserMode, "partial")
+        a.setEraserMode("laser"); XCTAssertEqual(a.palette.eraserMode, "partial")
+        let stored = NativePDFPalettePreferences.load(root: store.root, defaults: defaults)
+        XCTAssertEqual(stored.eraserMode, "partial"); XCTAssertEqual(stored.widths(for: "pen"), [3, 5, 8])
     }
 
     func testMalformedFavoriteDoesNotDiscardOtherUserSlots() throws {
@@ -49,8 +100,6 @@ final class NativePDFPaletteTests: XCTestCase {
     }
 
     func testLegacySliderValuesStayReachableWithoutChangingActualStroke() {
-        XCTAssertEqual(NativePDFPaletteStyle.widthRange(0.0317, highlighter: true), 0.0035...0.0317)
-        XCTAssertEqual(NativePDFPaletteStyle.widthRange(0.0017, highlighter: true), 0.0017...0.01)
         XCTAssertEqual(NativePDFPaletteStyle.opacityRange(0.05, highlighter: true), 0.05...0.34)
         var prefs = NativePDFWorkspacePreferences()
         prefs.tool = "highlighter"; prefs.width = 0.0017; prefs.opacity = 0.05
@@ -129,7 +178,7 @@ final class NativePDFPaletteTests: XCTestCase {
         model.chooseTool("pen"); XCTAssertTrue(model.showStyle); XCTAssertEqual(model.currentPreset, original)
         model.chooseTool("pen"); XCTAssertFalse(model.showStyle)
         model.chooseColor("ink"); XCTAssertTrue(model.showStyle)
-        model.showStyle = false; model.chooseQuickWidth(0.004); XCTAssertTrue(model.showStyle)
+        model.showStyle = false; model.chooseWidthSlot(1); XCTAssertEqual(model.editingWidthSlot, 1); XCTAssertFalse(model.showStyle)
         model.chooseTool("highlighter"); model.setOpacity(0.9)
         XCTAssertEqual(model.opacity, 0.34)
         for tool in ["eraser", "lasso", "select", "text"] {

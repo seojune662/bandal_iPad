@@ -212,21 +212,32 @@ final class NativePDFWorkspaceModel {
     var width = NativePDFPenPreset.pen.width
     var showStyle = false { didSet { if showStyle != oldValue { restoreInput() } } }
     private(set) var favorites = NativePDFPalettePreferences().favorites
+    /// Workspace-wide colour and thickness slots and eraser settings.
+    private(set) var palette = NativePDFPalettePreferences()
+    /// The slot whose twelve-step thickness bar is open.
+    var editingWidthSlot: Int?
     private(set) var shapeRecognitionEnabled = true
     var isInkTool: Bool { ["pen", "ballpoint", "highlighter"].contains(tool) }
     /// Ballpoint shares the pen favourites; only its width model differs.
     var isPenLike: Bool { tool == "pen" || tool == "ballpoint" }
-    var quickWidths: [Double] { tool == "highlighter" ? NativePDFPaletteStyle.highlighterWidths : NativePDFPaletteStyle.penWidths }
-    var currentPageWidthPoints: Double? { pageWidths.indices.contains(page - 1) ? pageWidths[page - 1] : nil }
     var currentPreset: NativePDFPenPreset { .init(color: color, width: width, opacity: opacity) }
-    func widthLabel(for width: Double, highlighter: Bool? = nil) -> String {
-        NativePDFPaletteStyle.widthLabel(width, highlighter: highlighter ?? (tool == "highlighter"), pageWidthPoints: currentPageWidthPoints)
+    var colorSlots: [String] { palette.colors(for: tool) }
+    var widthSlots: [Int] { palette.widths(for: tool) }
+    /// The width the slots describe: the eraser radius for the eraser.
+    var activeWidth: Double { tool == "eraser" ? palette.eraserRadius : width }
+    /// The slot holding the active width; nil for a width between steps (an older slider value).
+    var selectedWidthSlot: Int? {
+        let steps = NativePDFPaletteStyle.steps(for: tool)
+        return widthSlots.firstIndex { abs(steps[$0] - activeWidth) < 0.0000001 }
+    }
+    func widthLabel(for width: Double, tool: String? = nil) -> String {
+        NativePDFPaletteStyle.stepLabel(NativePDFPaletteStyle.nearestStep(width, tool: tool ?? self.tool))
     }
     var styleAccessibilityValue: String { "\(tool) \(color) \(widthLabel(for: width)) \(Int((opacity * 100).rounded()))%" }
     func favoriteAccessibilityValue(_ index: Int) -> String {
         guard favorites.indices.contains(index) else { return "" }
         let value = favorites[index]
-        return "pen \(value.color) \(widthLabel(for: value.width, highlighter: false)) \(Int((value.opacity * 100).rounded()))%"
+        return "pen \(value.color) \(widthLabel(for: value.width, tool: "pen")) \(Int((value.opacity * 100).rounded()))%"
     }
     var page = 1
     var pageCount = 1
@@ -338,6 +349,11 @@ final class NativePDFWorkspaceModel {
         var destinationPage: Int?
         /// The contact began on an already selected object (a second tap edits a text box).
         var onSelection = false
+        /// Eraser contact: surviving pieces per touched row (empty: erased whole),
+        /// rows hidden from the scene, and the last point already applied.
+        var erased: [String: [[[String: Any]]]] = [:]
+        var hidden: Set<String> = []
+        var lastErasePoint: CGPoint?
     }
     private var gesture: Gesture?
     private var textObject: [String: Any]?
@@ -356,7 +372,7 @@ final class NativePDFWorkspaceModel {
             saved.color = palette.recentPen.color; saved.width = palette.recentPen.width; saved.opacity = palette.recentPen.opacity
         }
         saved.shapeRecognitionEnabled = palette.drawAndHold
-        favorites = palette.favorites; shapeRecognitionEnabled = palette.drawAndHold
+        favorites = palette.favorites; shapeRecognitionEnabled = palette.drawAndHold; self.palette = palette
         if preferenceID != document.id { saved.pendingPage = nil; saved.save(root: store.root, documentID: document.id, defaults: defaults) }
         preferences = saved
         tool = saved.tool; color = saved.color; width = saved.width; opacity = saved.opacity
@@ -375,6 +391,11 @@ final class NativePDFWorkspaceModel {
                   let changedDefaults = event.object as? UserDefaults, changedDefaults === self.defaults else { return }
             let shared = NativePDFPalettePreferences.load(root: self.store.root, defaults: self.defaults)
             self.favorites = shared.favorites
+            if shared != self.palette {
+                let eraserChanged = shared.eraserRadius != self.palette.eraserRadius || shared.eraserMode != self.palette.eraserMode
+                self.palette = shared
+                if eraserChanged { self.updateStyle() }
+            }
             if self.shapeRecognitionEnabled != shared.drawAndHold {
                 self.shapeRecognitionEnabled = shared.drawAndHold; self.updateStyle()
             }
@@ -579,7 +600,8 @@ final class NativePDFWorkspaceModel {
                 let style = self.currentPreferences.drawingStyle
                 let epoch = self.sceneEpoch
                 payload.merge(["nativeInkErase": true, "loading": false, "active": true,
-                    "annotations": self.annotations, "tool": ["name": self.tool == "ballpoint" ? "pen" : self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled, "lassoMode": self.lassoMode], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
+                    "annotations": self.annotations, "tool": ["name": self.tool == "ballpoint" ? "pen" : self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled, "lassoMode": self.lassoMode,
+                        "eraserRadius": self.palette.eraserRadius, "eraserMode": self.palette.eraserMode], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
                 do { _ = try await self.call("snapshot", payload) }
                 catch where drawingPrints != nil && self.drawingFingerprints != nil {
                     // The host lost the patch chain; resend the whole document once.
@@ -706,6 +728,7 @@ final class NativePDFWorkspaceModel {
     }
     func chooseTool(_ next: String) {
         guard assistantAnnotation == nil, NativePDFWorkspacePreferences.tools.contains(next), !isBusy else { return }
+        editingWidthSlot = nil
         if next == tool { if isInkTool { showStyle.toggle() }; return }
         host?.flush()
         guard !isBusy, errorMessage == nil else { return }
@@ -726,8 +749,50 @@ final class NativePDFWorkspaceModel {
         if color == next { showStyle = true; return }
         color = next; rememberActiveStyle(); updateStyle()
     }
-    func chooseQuickWidth(_ next: Double) {
-        if abs(width - next) < 0.0000001 { showStyle = true } else { setWidth(next) }
+    /// A slot tap selects its thickness; tapping the selected slot opens its twelve steps.
+    func chooseWidthSlot(_ index: Int) {
+        guard widthSlots.indices.contains(index), isInkTool || tool == "eraser" else { return }
+        if selectedWidthSlot == index { editingWidthSlot = index; return }
+        applyWidthStep(widthSlots[index])
+    }
+    /// Picks one of the twelve steps and, when a slot is open, keeps it in that slot.
+    func setWidthStep(_ step: Int, slot: Int?) {
+        guard NativePDFPaletteStyle.steps(for: tool).indices.contains(step), isInkTool || tool == "eraser" else { return }
+        if let slot, widthSlots.indices.contains(slot) {
+            let key = tool
+            palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) {
+                var slots = $0.widths(for: key); slots[slot] = step; $0.widthSlots[key] = slots
+            }
+        }
+        applyWidthStep(step)
+    }
+    private func applyWidthStep(_ step: Int) {
+        let value = NativePDFPaletteStyle.steps(for: tool)[step]
+        if tool == "eraser" {
+            palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.eraserRadius = value }
+            updateStyle()
+        } else { setWidth(value) }
+    }
+    /// `+` adds one of the seven colours to this tool's slots and selects it.
+    func addColorSlot(_ next: String) {
+        guard isInkTool, NativePDFWorkspacePreferences.colors.contains(next) else { return }
+        let key = tool
+        palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) {
+            var slots = $0.colors(for: key); if !slots.contains(next) { slots.append(next) }; $0.colorSlots[key] = slots
+        }
+        if color != next { chooseColor(next) }
+    }
+    func removeColorSlot(_ value: String) {
+        guard isInkTool, colorSlots.count > 1 else { return }
+        let key = tool
+        palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) {
+            $0.colorSlots[key] = $0.colors(for: key).filter { $0 != value }
+        }
+    }
+    func setEraserMode(_ mode: String) {
+        guard NativePDFPaletteStyle.eraserModes.contains(mode), mode != palette.eraserMode else { return }
+        palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.eraserMode = mode }
+        updateStyle()
     }
     func setWidth(_ value: Double) {
         guard value.isFinite, isInkTool else { return }
@@ -850,13 +915,15 @@ final class NativePDFWorkspaceModel {
         var selection = selectionPage == page ? (NativePDFEditingGeometry.union(selectedRows, aspect: aspect(page)) ?? selectedRegion) : nil
         if selectionPage == page, let anchor = pasteAnchor { selection = CGRect(origin: anchor, size: .zero) }
         var volatile = Set<String>()
-        if let gesture, !gesture.preview.isEmpty {
+        if let gesture, !gesture.preview.isEmpty || !gesture.hidden.isEmpty {
             let destination = gesture.destinationPage ?? gesture.page
             if page == gesture.page || page == destination {
                 volatile = Set(gesture.preview.compactMap { $0["id"] as? String })
-                values.removeAll { volatile.contains($0["id"] as? String ?? "") }
+                values.removeAll { volatile.contains($0["id"] as? String ?? "") || gesture.hidden.contains($0["id"] as? String ?? "") }
                 if page == destination { values += gesture.preview }
-                selection = page == destination ? NativePDFEditingGeometry.union(gesture.preview, aspect: aspect(page)) : nil
+                if gesture.tool != "eraser" {
+                    selection = page == destination ? NativePDFEditingGeometry.union(gesture.preview, aspect: aspect(page)) : nil
+                }
             }
         }
         // Claim the revision before awaiting: a concurrent publish of this page must not reuse it.
@@ -928,6 +995,15 @@ final class NativePDFWorkspaceModel {
         }
         guard var contact = gesture, contact.page == number else { return }
         if phase == "cancel" { clearGesture(); publishDirtyScenes(); return }
+        if contact.tool == "eraser" {
+            // The partial eraser, and the whole-object eraser when the native one is unavailable.
+            let path = (contact.lastErasePoint.map { [$0] } ?? []) + raw.compactMap(NativePDFEditingGeometry.point)
+            erase(&contact, path: path, page: number)
+            contact.lastErasePoint = path.last ?? contact.lastErasePoint
+            gesture = contact
+            if phase == "up" { commitErase(contact) } else { dirtyScenes.insert(number); publishDirtyScenes() }
+            return
+        }
         if phase != "down", contact.rows.isEmpty, contact.tool == "lasso" { contact.points += raw.compactMap(NativePDFEditingGeometry.point) }
         let distance = hypot(last.x - contact.start.x, (last.y - contact.start.y) * aspect(number))
         let destinationPage = (payload["destinationPage"] as? Int).flatMap { (1...pageCount).contains($0) ? $0 : nil } ?? number
@@ -978,6 +1054,67 @@ final class NativePDFWorkspaceModel {
         }
         requestScene(number)
     }
+    /// Applies one eraser path segment. Partial mode cuts ink and highlighter
+    /// strokes; stroke mode removes whatever the eraser touches.
+    private func erase(_ contact: inout Gesture, path: [CGPoint], page number: Int) {
+        guard !path.isEmpty else { return }
+        let partial = palette.eraserMode == "partial", radius = palette.eraserRadius, aspect = aspect(number)
+        let rows = rows(on: number)
+        for row in rows {
+            guard let id = row["id"] as? String else { continue }
+            if partial {
+                guard NativePDFEraseSplit.cuttableKinds.contains(row["kind"] as? String ?? ""),
+                      let points = (row["data"] as? [String: Any])?["points"] as? [[String: Any]] else { continue }
+                let current = contact.erased[id] ?? [points]
+                guard !current.isEmpty else { continue }
+                let width = ((row["style"] as? [String: Any])?["width"] as? NSNumber)?.doubleValue ?? 0
+                let reach = radius + width / 2
+                var next: [[[String: Any]]] = [], changed = false
+                for piece in current {
+                    if let cut = NativePDFEraseSplit.cut(piece, path: path, reach: reach, aspect: aspect) { next += cut; changed = true }
+                    else { next.append(piece) }
+                }
+                if changed { contact.erased[id] = next }
+            } else if contact.erased[id] == nil, NativePDFEraseSplit.touches(row, path: path, radius: radius, aspect: aspect) {
+                contact.erased[id] = []
+            }
+        }
+        var preview: [[String: Any]] = [], hidden = Set<String>()
+        for row in rows {
+            guard let id = row["id"] as? String, let pieces = contact.erased[id] else { continue }
+            if pieces.isEmpty { hidden.insert(id) }
+            for (index, value) in erasedPieces(row, pieces).enumerated() {
+                var value = value
+                if index > 0 { value["id"] = id + "#piece-\(index)" }
+                preview.append(value)
+            }
+        }
+        contact.preview = preview; contact.hidden = hidden
+    }
+    private func erasedPieces(_ row: [String: Any], _ pieces: [[[String: Any]]]) -> [[String: Any]] {
+        pieces.map { piece in
+            var value = row, data = row["data"] as? [String: Any] ?? [:]
+            data["points"] = piece; value["data"] = data; value.removeValue(forKey: "nativePath")
+            return value
+        }
+    }
+    /// One undo step: each cut stroke keeps its row for the first piece; further
+    /// pieces are new rows; fully erased rows are deleted.
+    private func commitErase(_ contact: Gesture) {
+        let originals = rows(on: contact.page).filter { ($0["id"] as? String).map { contact.erased[$0] != nil } == true }
+        var values: [[String: Any]] = []
+        for row in originals {
+            guard let id = row["id"] as? String, let pieces = contact.erased[id] else { continue }
+            if pieces.isEmpty { values.append(["_op": "delete", "id": id, "page": row["page"] ?? contact.page]); continue }
+            for (index, piece) in erasedPieces(row, pieces).enumerated() {
+                var value = piece
+                if index == 0 { value["_op"] = "update" } else { value.removeValue(forKey: "id"); value["_op"] = "create" }
+                values.append(value)
+            }
+        }
+        guard !values.isEmpty else { clearGesture(); publishDirtyScenes(); return }
+        performObjectEdit("batch", values: values, expected: originals)
+    }
     private func shape(tool: String, start: CGPoint, end: CGPoint, page: Int, id: String) -> [String: Any] {
         let data: [String: Any]
         if ["line", "arrow"].contains(tool) { data = ["points": [start, end].map { ["x": Double($0.x), "y": Double($0.y), "p": 0.5] }] }
@@ -998,6 +1135,7 @@ final class NativePDFWorkspaceModel {
             case "create": try await persistence.createObjects(values)
             case "update": try await persistence.updateObjects(values, expected: expected)
             case "delete": try await persistence.deleteObjects(ids: Set(values.compactMap { $0["id"] as? String }), expected: expected)
+            case "batch": try await persistence.batchObjects(values, expected: expected)
             default: throw NativePDFError.invalid("지원하지 않는 개체 편집입니다.")
             }
             self.clearGesture()

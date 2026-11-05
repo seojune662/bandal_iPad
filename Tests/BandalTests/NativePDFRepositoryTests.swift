@@ -23,6 +23,36 @@ final class NativePDFRepositoryTests: XCTestCase {
         _ = try fixture.context.db.run("UPDATE pdf_drawings SET deleted_at='external' WHERE id=?", params: [original["id"]!])
         XCTAssertTrue((try fixture.call("drawings:listForFile", identity) as! [[String: Any]]).isEmpty)
     }
+    func testPartialEraseBatchUpdatesCreatesAndDeletesAsOneUndoStep() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let path = try fixture.paper()
+        let binding = try fixture.call("nativePDF:binding", fixture.identity(path)) as! [String: Any]
+        let owner = NativePDFPersistence(courseID: fixture.course, relativePath: path,
+            documentRevision: binding["documentRevision"] as! String,
+            backend: { try fixture.call($0, $1) }, host: { _, _ in [:] })
+        func points(_ xs: [Double], y: Double) -> [[String: Any]] { xs.map { ["x": $0, "y": y, "p": 0.5] } }
+        func stroke(_ y: Double) -> [String: Any] {
+            ["page": 1, "kind": "ink", "data": ["points": points([0.1, 0.5, 0.9], y: y), "inkVersion": 5],
+             "style": ["color": "ink", "width": 0.004, "opacity": 1.0]]
+        }
+        func y(_ row: [String: Any]) -> Double? { (((row["data"] as? [String: Any])?["points"] as? [[String: Any]])?.first?["y"] as? Double) }
+        func xs(_ row: [String: Any]) -> [Double] { ((row["data"] as? [String: Any])?["points"] as? [[String: Any]] ?? []).compactMap { $0["x"] as? Double } }
+        try await owner.createObjects([stroke(0.2), stroke(0.6)])
+        let cut = try XCTUnwrap(owner.rows.first { y($0) == 0.2 }), gone = try XCTUnwrap(owner.rows.first { y($0) == 0.6 })
+        var left = cut; left["data"] = ["points": points([0.1, 0.3], y: 0.2), "inkVersion": 5]; left["_op"] = "update"
+        var right = cut; right.removeValue(forKey: "id"); right["data"] = ["points": points([0.7, 0.9], y: 0.2), "inkVersion": 5]; right["_op"] = "create"
+        try await owner.batchObjects([left, right, ["_op": "delete", "id": gone["id"]!, "page": 1]], expected: [cut, gone])
+        XCTAssertEqual(owner.rows.map(xs).sorted { $0[0] < $1[0] }, [[0.1, 0.3], [0.7, 0.9]])
+        XCTAssertEqual(owner.rows.first { xs($0) == [0.1, 0.3] }?["id"] as? String, cut["id"] as? String, "The first piece keeps the stroke's row")
+        try await owner.undo()
+        XCTAssertEqual(owner.rows.count, 2)
+        XCTAssertEqual(owner.rows.map(xs), [[0.1, 0.5, 0.9], [0.1, 0.5, 0.9]], "One undo restores both strokes whole")
+        XCTAssertEqual(Set(owner.rows.compactMap(y)), [0.2, 0.6])
+        try await owner.redo()
+        XCTAssertEqual(owner.rows.map(xs).sorted { $0[0] < $1[0] }, [[0.1, 0.3], [0.7, 0.9]])
+        try await owner.undo()
+        XCTAssertEqual(owner.rows.map(xs), [[0.1, 0.5, 0.9], [0.1, 0.5, 0.9]], "Undo after redo resolves the re-created ids")
+    }
     func testMovingDrawingToAnotherPagePersistsInSQLiteAndRestoresWithUndo() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }
         let path = try fixture.paper(), url = try fixture.context.materialURL(courseID: fixture.course, relativePath: path)

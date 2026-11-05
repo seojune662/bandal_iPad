@@ -1136,7 +1136,10 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         if let value = request["tool"] as? [String: Any], let name = value["name"] as? String,
            let data = try? JSONSerialization.data(withJSONObject: value["style"] as? [String: Any] ?? [:]),
            let style = try? JSONDecoder().decode(NativePDFInkStyle.self, from: data), style.isValid {
-            nextTool = .init(name: name, drawAndHold: value["drawAndHold"] as? Bool ?? true, style: style, lassoBox: value["lassoMode"] as? String == "box")
+            let radius = (value["eraserRadius"] as? NSNumber)?.doubleValue ?? 0.005
+            nextTool = .init(name: name, drawAndHold: value["drawAndHold"] as? Bool ?? true, style: style, lassoBox: value["lassoMode"] as? String == "box",
+                             eraserRadius: radius.isFinite && radius > 0 && radius <= 0.1 ? radius : 0.005,
+                             partialErase: value["eraserMode"] as? String == "partial")
         }
         let epoch: Int?
         if request["objectSceneEpoch"] != nil {

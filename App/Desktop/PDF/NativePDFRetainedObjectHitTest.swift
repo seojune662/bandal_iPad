@@ -101,7 +101,8 @@ enum NativePDFRetainedObjectHitTest {
     /// Results are an ordered subset of entries. No String equality/set is used:
     /// canonically-equivalent but distinct UTF8 IDs and aliases remain distinct.
     /// The scene owner validates identity uniqueness before calling this helper.
-    static func hits(entries: [Entry], points: [CGPoint], previous: CGPoint? = nil) -> [Entry] {
+    /// `extra` widens (or narrows) every prepared threshold for a larger or smaller eraser.
+    static func hits(entries: [Entry], points: [CGPoint], previous: CGPoint? = nil, extra: CGFloat = 0) -> [Entry] {
         guard !points.isEmpty, points.allSatisfy(finite), previous.map(finite) ?? true else { return [] }
         let source = previous.map { [$0] + points } ?? points
         var byAspect: [Double: [Segment]] = [:]
@@ -115,23 +116,24 @@ enum NativePDFRetainedObjectHitTest {
                 guard metric.allSatisfy(finite), let prepared = makeSegments(metric) else { continue }
                 segments = prepared; byAspect[geometry.aspect] = prepared
             }
-            if segments.contains(where: { hit(geometry, segment: $0) }) { result.append(entry) }
+            if segments.contains(where: { hit(geometry, segment: $0, extra: extra) }) { result.append(entry) }
         }
         return result
     }
 
-    private static func hit(_ geometry: Geometry, segment: Segment) -> Bool {
-        guard overlaps(geometry.bounds, segment.bounds) else { return false }
+    private static func hit(_ geometry: Geometry, segment: Segment, extra: CGFloat = 0) -> Bool {
+        let threshold = max(0.001, geometry.threshold + extra)
+        guard overlaps(geometry.bounds.insetBy(dx: -max(0, extra), dy: -max(0, extra)), segment.bounds) else { return false }
         if let box = geometry.filledBox,
            contains(box, segment.start) || contains(box, segment.end) { return true }
         let points = geometry.points
-        if points.count == 1 { return pointDistance(points[0], segment.start, segment.end) <= geometry.threshold }
+        if points.count == 1 { return pointDistance(points[0], segment.start, segment.end) <= threshold }
         for index in 1..<points.count {
             let a = points[index - 1], b = points[index]
             if intersects(segment.start, segment.end, a, b) { return true }
             let distance = min(min(pointDistance(segment.start, a, b), pointDistance(segment.end, a, b)),
                                min(pointDistance(a, segment.start, segment.end), pointDistance(b, segment.start, segment.end)))
-            if distance <= geometry.threshold { return true }
+            if distance <= threshold { return true }
         }
         return false
     }

@@ -427,6 +427,9 @@ final class NativePDFPersistence {
         return try await task.value
     }
     func updateObjects(_ values: [[String: Any]], expected: [[String: Any]]? = nil) async throws { try await edit("update", values, expected: expected) }
+    /// One undo step that updates, deletes and creates rows together (the partial
+    /// eraser). Each row names its operation in `_op`: update, delete or create.
+    func batchObjects(_ values: [[String: Any]], expected: [[String: Any]]? = nil) async throws { try await edit("batch", values, expected: expected) }
     func deleteObjects(ids: Set<String>, expected: [[String: Any]]? = nil) async throws {
         try await reloadDrawingIDs(ids)
         try await edit("delete", rows.filter { ids.contains($0["id"] as? String ?? "") }, expected: expected)
@@ -448,7 +451,7 @@ final class NativePDFPersistence {
         }
         let action = HistoryAction(kind, rows: values)
         action.creationMutationIDs = creationMutationIDs
-        if ["update", "annotationUpdate", "delete", "annotationDelete"].contains(kind) { action.expected = original ?? expected }
+        if ["update", "annotationUpdate", "delete", "annotationDelete", "batch"].contains(kind) { action.expected = original ?? expected }
         pendingHistory = PendingHistory(action: action, direction: 0)
         try await finishPendingHistory()
     }
@@ -642,7 +645,7 @@ final class NativePDFPersistence {
             if ["delete", "annotationDelete"].contains(action.kind) {
                 let ids = Set(action.rows.compactMap { $0["id"] as? String }.map(resolve))
                 selected = sourceRows.filter { ($0["id"] as? String).map(ids.contains) == true }
-            } else if ["update", "replace", "annotationUpdate"].contains(action.kind) {
+            } else if ["update", "replace", "annotationUpdate", "batch"].contains(action.kind) {
                 selected = action.rows.map { row in
                     var value = row
                     if let id = row["id"] as? String { value["id"] = resolve(id) }
@@ -659,7 +662,7 @@ final class NativePDFPersistence {
         if action.kind.hasPrefix("annotation") { try await reloadAnnotationIDs(changedIDs); try await onAnnotationsChanged?() }
         else { try await reloadDrawingIDs(changedIDs); try await onRowsChanged?() }
         try recovery?.remove(record)
-        let inverseKind = ["replace": "replace", "update": "update", "delete": "restore", "restore": "delete", "annotationUpdate": "annotationUpdate", "annotationDelete": "annotationRestore", "annotationRestore": "annotationDelete"][action.kind]!
+        let inverseKind = ["replace": "replace", "update": "update", "delete": "restore", "restore": "delete", "batch": "batch", "annotationUpdate": "annotationUpdate", "annotationDelete": "annotationRestore", "annotationRestore": "annotationDelete"][action.kind]!
         let inverse = HistoryAction(inverseKind, rows: changed)
         if pending.direction == -1 { undoStack.removeLast(); redoStack.append(inverse) }
         else if pending.direction == 1 { redoStack.removeLast(); undoStack.append(inverse) }
@@ -682,13 +685,24 @@ final class NativePDFPersistence {
             let ids = Set(rows.compactMap { $0["id"] as? String })
             result["before"] = (kind == "annotationUpdate" ? annotations : self.rows).filter { ids.contains($0["id"] as? String ?? "") }
             if kind == "replace" { result["replacementIDs"] = rows.map { _ in UUID().uuidString } }
+        } else if kind == "batch" {
+            let ids = Set(rows.filter { $0["_op"] as? String != "create" }.compactMap { $0["id"] as? String })
+            result["before"] = self.rows.filter { ids.contains($0["id"] as? String ?? "") }
+            // One entry per row; only creates use theirs. A stable receipt makes a replay idempotent.
+            result["inputs"] = rows.map { row -> [String: Any] in
+                guard row["_op"] as? String == "create" else { return [:] }
+                var input = identity
+                for key in ["page", "kind", "data", "style"] { input[key] = row[key] }
+                input["clientMutationId"] = UUID().uuidString; input["documentRevision"] = documentRevision
+                return input
+            }
         }
         return result
     }
     private func validateRecovery(_ record: [String: Any]) throws {
         guard record["version"] as? Int == 1, record["courseId"] as? String == courseID,
               record["relPath"] as? String == relativePath, record["documentRevision"] as? String == documentRevision,
-              ["delete", "restore", "update", "replace", "annotationDelete", "annotationRestore", "annotationUpdate"].contains(record["kind"] as? String ?? ""), record["rows"] is [[String: Any]] else {
+              ["delete", "restore", "update", "replace", "batch", "annotationDelete", "annotationRestore", "annotationUpdate"].contains(record["kind"] as? String ?? ""), record["rows"] is [[String: Any]] else {
             throw NativePDFError.invalid("PDF 원본이 바뀌어 이전 편집 작업을 보존했습니다. 원본을 복구한 후 다시 열어 주세요.")
         }
     }
@@ -713,6 +727,7 @@ final class NativePDFPersistence {
             }
             return before
         }
+        if record["kind"] as? String == "batch" { return try await applyBatchRecovery(record, rows: original) }
         if record["kind"] as? String == "update" {
             guard let before = record["before"] as? [[String: Any]], before.count == original.count,
                   Set(before.compactMap { $0["id"] as? String }) == Set(original.compactMap { $0["id"] as? String }) else {
@@ -754,6 +769,45 @@ final class NativePDFPersistence {
             restored.append(value)
         }
         return restored
+    }
+    /// Deletes, updates, then creates. Returns the inverse batch: the old values
+    /// of updated rows, deletes of created rows and creates of deleted rows.
+    private func applyBatchRecovery(_ record: [String: Any], rows original: [[String: Any]]) async throws -> [[String: Any]] {
+        guard let before = record["before"] as? [[String: Any]], let inputs = record["inputs"] as? [[String: Any]],
+              inputs.count == original.count,
+              original.allSatisfy({ ["update", "delete", "create"].contains($0["_op"] as? String ?? "") }) else {
+            throw NativePDFError.invalid("지우기 편집의 복구 기록을 확인하지 못했습니다.")
+        }
+        func old(_ id: String) -> [String: Any]? { before.first { $0["id"] as? String == id } }
+        var inverse: [[String: Any]] = []
+        let deletes = original.filter { $0["_op"] as? String == "delete" }.compactMap { $0["id"] as? String }
+        if !deletes.isEmpty {
+            try await reloadDrawingIDs(Set(deletes))
+            let live = Set(rows.compactMap { $0["id"] as? String })
+            let ids = deletes.filter(live.contains)
+            if !ids.isEmpty { _ = try await backend("drawings:delete", ["ids": ids]) }
+            for id in deletes {
+                guard var value = old(id) else { continue }
+                value["_op"] = "create"; inverse.append(value)
+            }
+        }
+        for value in original where value["_op"] as? String == "update" {
+            guard let id = value["id"] as? String, let data = value["data"], let style = value["style"], var previous = old(id) else {
+                throw NativePDFError.invalid("지우기 편집의 복구 대상을 확인하지 못했습니다.")
+            }
+            var update: [String: Any] = ["id": id, "data": data, "style": style]
+            if let page = value["page"] { update["page"] = page }
+            _ = try await backend("drawings:update", update)
+            previous["_op"] = "update"; inverse.append(previous)
+        }
+        for (value, input) in zip(original, inputs) where value["_op"] as? String == "create" {
+            guard var created = try await backend("drawings:create", input) as? [String: Any], let id = created["id"] as? String else {
+                throw NativePDFError.invalid("지운 필기의 나머지를 저장하지 못했습니다.")
+            }
+            if let previous = value["id"] as? String { aliases[previous] = id }
+            created["_op"] = "delete"; inverse.append(created)
+        }
+        return inverse
     }
     private func applyAnnotationRecovery(_ record: [String: Any], rows: [[String: Any]]) async throws -> [[String: Any]] {
         switch record["kind"] as? String {
