@@ -738,8 +738,8 @@ final class NativeWorkspaceStore {
                 var copyError: Error?
                 NSFileCoordinator().coordinate(readingItemAt: source, options: .withoutChanges, error: &coordinationError) { available in
                     do {
-                        let values = try available.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-                        guard values.isRegularFile == true, values.isSymbolicLink != true else { throw DesktopRuntimeError("일반 파일만 가져올 수 있습니다.") }
+                        let values = try available.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey])
+                        guard values.isRegularFile == true || values.isDirectory == true, values.isSymbolicLink != true else { throw DesktopRuntimeError("일반 파일이나 폴더만 가져올 수 있습니다.") }
                         try FileManager.default.copyItem(at: available, to: target)
                     } catch { copyError = error }
                 }

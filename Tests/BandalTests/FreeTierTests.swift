@@ -78,6 +78,9 @@ final class FreeTierTests: XCTestCase {
         XCTAssertEqual(try FreeTier.usage(library: library).documents, 9)
         XCTAssertEqual(refused("materials:duplicate", ["courseId": id, "relPath": "묶음"]), "무료로는 자료를 1개 더 추가할 수 있어요.")
         XCTAssertNil(refused("materials:duplicate", ["courseId": id, "relPath": "묶음/가.md"]))
+        // An imported folder (a note-app backup) counts the documents inside it.
+        _ = try ["백업/a.pdf", "백업/과목/b.pdf", "백업/과목/c.png"].map(source)
+        XCTAssertEqual(refused("materials:import", ["courseId": id, "paths": [root.appendingPathComponent("Inbox/백업").path]]), "무료로는 자료를 1개 더 추가할 수 있어요.")
     }
 
     /// Courses and documents sync made (`origin = 'remote'`) are not made on this iPad; what this iPad

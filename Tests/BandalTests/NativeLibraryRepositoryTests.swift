@@ -66,6 +66,21 @@ final class NativeLibraryRepositoryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(files.first)), bytes)
         XCTAssertEqual(try Data(contentsOf: input), bytes)
     }
+    func testImportFolderKeepsTreeAndRefusesLinks() throws {
+        let id = try course(), backup = root.appendingPathComponent("Backup/수학", isDirectory: true), nested = backup.appendingPathComponent("1학기/미적분", isDirectory: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try Data("%PDF-1.4\n".utf8).write(to: backup.appendingPathComponent("표지.pdf"))
+        try Data("%PDF-1.4\n".utf8).write(to: nested.appendingPathComponent("극한.pdf"))
+        let imported = try XCTUnwrap(call("materials:import", ["courseId": id, "paths": [backup.path]]) as? [String: Any])
+        XCTAssertEqual(imported["imported"] as? [String], ["수학"])
+        let folder = try context.courseFolder(id).appendingPathComponent("수학")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("1학기/미적분/극한.pdf").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("표지.pdf").path))
+        try FileManager.default.createSymbolicLink(at: nested.appendingPathComponent("밖"), withDestinationURL: root)
+        let linked = try XCTUnwrap(call("materials:import", ["courseId": id, "paths": [backup.path]]) as? [String: Any])
+        XCTAssertEqual((linked["imported"] as? [String])?.count, 0)
+        XCTAssertEqual((linked["failed"] as? [[String: Any]])?.count, 1)
+    }
     func testRenameRepointsNotesAndRowsAndPreservesReceipt() throws {
         let id = try course(), old = try note(id), backlink = try note(id, title: "연결 노트")
         _ = try call("notes:write", ["courseId": id, "relPath": old, "markdown": "# 기존 제목\n[[기존 제목]]"])

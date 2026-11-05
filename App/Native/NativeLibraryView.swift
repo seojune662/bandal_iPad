@@ -21,6 +21,8 @@ struct NativeLibraryView: View {
     @State private var expandedFolders = Set<String>()
     @State private var filesExpanded = true
     @State private var importing = false
+    @State private var importTypes: [UTType] = [.item]
+    @State private var showingMigrationGuide = false
     @State private var creation: CreationRequest?
     @State private var renaming: NativeMaterial?
     @State private var moving: NativeMaterial?
@@ -87,6 +89,8 @@ struct NativeLibraryView: View {
                     Button("새 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { beginCreation(.ink) }
                     Button("새 마크다운", systemImage: "doc.badge.plus") { beginCreation(.markdown) }
                     Button("새 폴더", systemImage: "folder.badge.plus") { beginCreation(.folder) }
+                    Divider()
+                    Button("GoodNotes·Notability에서 가져오기", systemImage: "arrow.down.doc") { showingMigrationGuide = true }
                     if let onOpenAI { Divider(); Button("AI로 만들기", systemImage: "sparkles", action: onOpenAI) }
                 } label: { Image(systemName: "plus").font(.system(size: 15)).frame(width: 40, height: 40).contentShape(Rectangle()) }
                     .disabled(courseID == nil || working).accessibilityLabel("추가").accessibilityIdentifier("native-library-create")
@@ -111,7 +115,13 @@ struct NativeLibraryView: View {
         }
         .background(NativeDesktopTheme.surface)
         .buttonStyle(.plain)
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+        .alert("다른 노트 앱에서 가져오기", isPresented: $showingMigrationGuide) {
+            Button("백업 폴더 선택") { beginImport(types: [.folder]) }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("GoodNotes: 설정 › 자동 백업 › 형식 PDF\nNotability: 설정 › 자동 백업 › 형식 PDF\n\n백업이 끝나면 iCloud Drive 등의 백업 폴더를 선택하세요. 폴더 구조 그대로 복사됩니다. 기존 필기는 PDF에 합쳐져 있어 다시 편집할 수는 없지만, 그 위에 이어서 필기할 수 있습니다.")
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: importTypes, allowsMultipleSelection: true) { result in
             let destination = importDestination
             importDestination = nil
             switch result {
@@ -139,9 +149,10 @@ Menu {
         creation = .init(kind: kind, destination: .init(courseID: courseID, folder: folderPath),
                          markdownTitle: markdownTitlePrefix, open: captureOpen?() ?? onOpen)
     }
-    private func beginImport() {
+    private func beginImport(types: [UTType] = [.item]) {
         guard let courseID else { return }
         importDestination = .init(courseID: courseID, folder: folderPath)
+        importTypes = types
         importing = true
     }
 

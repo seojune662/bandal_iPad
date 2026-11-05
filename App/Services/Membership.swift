@@ -110,7 +110,7 @@ enum FreeTier {
         func counted(_ name: Any?) -> Bool { ["pdf", "note"].contains(NativeLibraryRepository.kind(for: name as? String ?? "")) }
         switch channel {
         case "notes:create", "pdfNotes:create", "pdf:recoverPagesCopy": return 1
-        case "materials:import": return (request["paths"] as? [String] ?? []).filter(counted).count
+        case "materials:import": return NativeLibraryRepository.importedDocumentCount(request["paths"] as? [String] ?? [])
         case "materials:importShared", "materials:writeFile", "materials:adoptFile": return counted(request["fileName"]) ? 1 : 0
         case "materials:duplicate":
             // A folder copies every document under it.
