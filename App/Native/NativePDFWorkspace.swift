@@ -256,6 +256,9 @@ final class NativePDFWorkspaceModel {
     private(set) var lassoMode = "freeform"
     private(set) var canPaste = false
     private(set) var selectedRegion: CGRect?
+    /// The lasso shape around the current selection and the selection box it
+    /// was drawn around; it is redrawn relative to the box as that moves or scales.
+    private var selectionOutline: (points: [CGPoint], box: CGRect)?
     private(set) var pasteAnchor: CGPoint?
     private(set) var isCopyingRegion = false
     private(set) var isCopyingSelection = false
@@ -668,10 +671,10 @@ final class NativePDFWorkspaceModel {
                 let point = CGPoint(x: x, y: y)
                 let box = selectedRegion ?? NativePDFEditingGeometry.union(selectedRows, aspect: aspect(number))
                 let inside = selectionPage == number && (box?.insetBy(dx: -0.018, dy: -0.018 / aspect(number)).contains(point) ?? false)
-                if !inside {
-                    clearSelection()
-                    if tool == "lasso" { showPasteMenu(at: point, page: number) }
-                }
+                if payload["hold"] as? Bool == true, tool == "lasso", !inside {
+                    // Long press on empty paper offers paste; a plain tap only dismisses.
+                    clearSelection(); showPasteMenu(at: point, page: number)
+                } else if !inside { clearSelection() }
             }
         case "selectionFrame":
             guard hasSelectionMenu, let x = payload["x"] as? Double, let y = payload["y"] as? Double,
@@ -895,12 +898,13 @@ final class NativePDFWorkspaceModel {
     }
     private func setSelection(_ ids: Set<String>, page: Int) {
         if let previous = selectionPage { dirtyScenes.insert(previous) }
+        if ids != selectedIDs || ids.isEmpty { selectionOutline = nil }
         selectionPage = page; selectedIDs = ids; selectedRowCache = nil; selectedRegion = nil; pasteAnchor = nil
         pruneSelection(); dirtyScenes.insert(page)
     }
     func clearSelection() {
         if let selectionPage { dirtyScenes.insert(selectionPage) }
-        selectedIDs.removeAll(); selectionPage = nil; selectionCount = 0; selectedText = false; selectionFrame = nil
+        selectedIDs.removeAll(); selectionPage = nil; selectionCount = 0; selectedText = false; selectionFrame = nil; selectionOutline = nil
         selectedRowCache = nil; selectedRegion = nil; pasteAnchor = nil
         publishDirtyScenes()
     }
@@ -934,6 +938,12 @@ final class NativePDFWorkspaceModel {
         objectPatch["upserts"] = try (objectPatch["upserts"] as? [[String: Any]] ?? []).map(legacyPrepared)
         var payload: [String: Any] = ["page": page, "objectSceneEpoch": sceneEpoch, "objectSceneRevision": revision, "objectPatch": objectPatch, "resizable": selection != nil && !selectedIDs.isEmpty, "textHandles": selectedText]
         if let selection { payload["selection"] = NativePDFEditingGeometry.dictionary(selection) }
+        if let selection, let outline = selectionOutline, !selectedIDs.isEmpty, outline.box.width > 1e-9, outline.box.height > 1e-9 {
+            payload["selectionPath"] = outline.points.map { point -> [String: Double] in
+                ["x": Double(selection.minX + (point.x - outline.box.minX) / outline.box.width * selection.width),
+                 "y": Double(selection.minY + (point.y - outline.box.minY) / outline.box.height * selection.height)]
+            }
+        }
         do { _ = try await call("objectScene", payload) }
         catch where sceneFingerprints[page] != nil {
             // The host lost this page's patch chain; resend the page once.
@@ -1045,7 +1055,10 @@ final class NativePDFWorkspaceModel {
                 let region = NativePDFEditingGeometry.regionBounds(polygon)
                 if !ids.isEmpty || region != nil {
                     setSelection(ids, page: number); selectedRegion = region
-                } else { showPasteMenu(at: last, page: number) }
+                    if !ids.isEmpty, let box = NativePDFEditingGeometry.union(selectedRows, aspect: aspect(number)) {
+                        selectionOutline = (polygon, box)
+                    }
+                }
             } else if contact.tool == "text" {
                 openText(at: last, page: number)
             } else if contact.tool == "select", contact.onSelection, contact.corner == nil, selectedText, distance <= 0.002 {
@@ -1121,7 +1134,8 @@ final class NativePDFWorkspaceModel {
         else { data = ["box": NativePDFEditingGeometry.dictionary(CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))) ] }
         return ["id": id, "page": page, "kind": tool, "data": data, "style": ["color": color, "width": width, "opacity": opacity]]
     }
-    private func performObjectEdit(_ action: String, values: [[String: Any]], expected original: [[String: Any]]? = nil, keepSelection: Bool = false) {
+    /// `selectCreated` selects the rows a create added (duplicate, paste), ready to move.
+    private func performObjectEdit(_ action: String, values: [[String: Any]], expected original: [[String: Any]]? = nil, keepSelection: Bool = false, selectCreated: Bool = false) {
         guard editorTask == nil, let persistence, !values.isEmpty else { clearGesture(); return }
         let ids = Set(values.compactMap { $0["id"] as? String })
         let expected = original ?? persistence.rows.filter { ids.contains($0["id"] as? String ?? "") }
@@ -1131,6 +1145,7 @@ final class NativePDFWorkspaceModel {
             // Defer freezing until the contact completion callback has returned.
             self.host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
             try await self.flushInput()
+            let before = Set(persistence.rows.compactMap { $0["id"] as? String })
             switch action {
             case "create": try await persistence.createObjects(values)
             case "update": try await persistence.updateObjects(values, expected: expected)
@@ -1141,6 +1156,9 @@ final class NativePDFWorkspaceModel {
             self.clearGesture()
             if keepSelection, let destination = (values.first?["page"] as? NSNumber)?.intValue {
                 self.setSelection(ids, page: destination)
+            } else if selectCreated, let destination = (values.first?["page"] as? NSNumber)?.intValue {
+                let created = Set(persistence.rows.compactMap { $0["id"] as? String }).subtracting(before)
+                if created.isEmpty { self.clearSelection() } else { self.setSelection(created, page: destination) }
             } else { self.clearSelection() }
             try await self.publishSnapshot(); self.refreshHistory()
         }
@@ -1157,7 +1175,8 @@ final class NativePDFWorkspaceModel {
     func deleteSelection() { guard !isBusy else { return }; performObjectEdit("delete", values: selectedRows) }
     func duplicateSelection() {
         guard !isBusy, let selectionPage else { return }
-        performObjectEdit("create", values: NativePDFEditingGeometry.translated(selectedRows, dx: 0.025, dy: 0.025, aspect: aspect(selectionPage)).map { value in var value = value; value.removeValue(forKey: "id"); return value })
+        performObjectEdit("create", values: NativePDFEditingGeometry.translated(selectedRows, dx: 0.025, dy: 0.025, aspect: aspect(selectionPage)).map { value in var value = value; value.removeValue(forKey: "id"); return value },
+                          selectCreated: true)
     }
     func editSelectedText(at point: CGPoint? = nil) {
         guard selectedText, let row = selectedRows.first, !isBusy else { return }
@@ -1374,7 +1393,7 @@ final class NativePDFWorkspaceModel {
             let dy = pasteAnchor.map { Double($0.y - (box?.midY ?? 0)) } ?? (samePage ? 0.025 : 0)
             let values = NativePDFEditingGeometry.translated(rows, dx: dx, dy: dy, aspect: aspect(destination))
                 .map { row in var row = row; row["page"] = destination; return NativePDFTextDraft.fittedObject(row, pageSize: pageSize(destination)) }
-            performObjectEdit("create", values: values)
+            performObjectEdit("create", values: values, selectCreated: true)
         } else if let image = UIPasteboard.general.image {
             pasteImage(image, at: pasteAnchor, page: destination)
         } else { canPaste = false }
@@ -2025,7 +2044,7 @@ final class NativePDFWorkspaceModel {
     private func reopen() async throws {
         guard host != nil, !retired else { return }
         clearTextEditor(); gesture = nil; sourceQuote = ""; sourceSelection = nil
-        selectedIDs.removeAll(); selectionPage = nil; selectionCount = 0; selectedText = false; selectionFrame = nil
+        selectedIDs.removeAll(); selectionPage = nil; selectionCount = 0; selectedText = false; selectionFrame = nil; selectionOutline = nil
         persistence?.invalidateHistory(root: store.root)
         persistence?.onPeerChanged = nil; persistence?.onRowsChanged = nil; persistence?.onAnnotationsChanged = nil
         persistence = nil

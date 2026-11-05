@@ -317,6 +317,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     var selectedTextRects: [[String: Double]] = [] { didSet { if selectedTextRects != oldValue { decorations.setNeedsDisplay() } } }
     var selectionResizable = false
     var selectionTextHandles = false
+    var selectionPath: [CGPoint] = [] { didSet { if selectionPath != oldValue { decorations.setNeedsDisplay() } } }
     var isLoading = true
     var imageForObject: (([String: Any]) -> UIImage?)?
     private let metal: NativePDFMetalInk
@@ -2188,12 +2189,20 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         if let box = selectionBox, let x = box["x"], let y = box["y"], let w = box["width"], let h = box["height"], [x,y,w,h].allSatisfy(\.isFinite) {
             let a = point(x,y), b = point(x+w,y+h)
             let frame = CGRect(x: min(a.x,b.x), y: min(a.y,b.y), width: abs(b.x-a.x), height: abs(b.y-a.y))
-            context.setStrokeColor(UIColor.systemBlue.cgColor); context.setLineWidth(1)
-            context.stroke(frame)
+            // The lasso's own outline, dashed, around what it selected (a padded box without one).
+            let outline = CGMutablePath()
+            if selectionPath.count >= 3, frame.width > 0 || frame.height > 0 {
+                outline.move(to: point(selectionPath[0].x, selectionPath[0].y))
+                for sample in selectionPath.dropFirst() { outline.addLine(to: point(sample.x, sample.y)) }
+                outline.closeSubpath()
+            } else { outline.addRoundedRect(in: frame.insetBy(dx: -6, dy: -6), cornerWidth: 6, cornerHeight: 6) }
+            context.setStrokeColor(UIColor.systemBlue.cgColor); context.setLineWidth(1.5); context.setLineDash(phase: 0, lengths: [6, 4])
+            context.addPath(outline); context.strokePath(); context.setLineDash(phase: 0, lengths: [])
+            context.setLineWidth(1)
             if selectionResizable {
-                var centers = [CGPoint(x: frame.minX, y: frame.minY), CGPoint(x: frame.maxX, y: frame.minY), CGPoint(x: frame.minX, y: frame.maxY), CGPoint(x: frame.maxX, y: frame.maxY)]
-                if selectionTextHandles { centers += [CGPoint(x: frame.minX, y: frame.midY), CGPoint(x: frame.maxX, y: frame.midY)] }
-                centers.forEach(roundHandle)
+                // One proportional handle; a text box gets its two width handles instead.
+                (selectionTextHandles ? [CGPoint(x: frame.minX, y: frame.midY), CGPoint(x: frame.maxX, y: frame.midY)]
+                                      : [CGPoint(x: frame.maxX, y: frame.maxY)]).forEach(roundHandle)
             }
         }
         if let frame = textEditorLocalFrame {

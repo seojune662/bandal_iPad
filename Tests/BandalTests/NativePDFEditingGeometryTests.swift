@@ -7,16 +7,20 @@ final class NativePDFEditingGeometryTests: XCTestCase {
         XCTAssertNil(NativePDFEditingGeometry.hit(CGPoint(x: 0.1, y: 0.9), rows: [row], aspect: 1.4))
         XCTAssertEqual(NativePDFEditingGeometry.hit(CGPoint(x: 0.5, y: 0.5), rows: [row], aspect: 1.4), "ink")
     }
-    func testLassoFindsCrossingSegmentAndRejectsEmptyStrokeInterior() {
+    func testLassoNeedsMostOfAStrokeInsideAndRejectsGrazingAndEmptyInterior() {
         let row = stroke([["x": 0.1, "y": 0.1, "p": 0.4], ["x": 0.9, "y": 0.9, "p": 0.8]])
-        let crossing = [CGPoint(x: 0.45, y: 0.45), CGPoint(x: 0.55, y: 0.45), CGPoint(x: 0.55, y: 0.55), CGPoint(x: 0.45, y: 0.55)]
-        XCTAssertEqual(NativePDFEditingGeometry.lasso(crossing, rows: [row], aspect: 1.4), ["ink"])
+        let grazing = [CGPoint(x: 0.45, y: 0.45), CGPoint(x: 0.55, y: 0.45), CGPoint(x: 0.55, y: 0.55), CGPoint(x: 0.45, y: 0.55)]
+        XCTAssertTrue(NativePDFEditingGeometry.lasso(grazing, rows: [row], aspect: 1.4).isEmpty, "Crossing a stroke no longer picks it up")
+        let most = [CGPoint(x: 0.3, y: 0.3), CGPoint(x: 0.95, y: 0.3), CGPoint(x: 0.95, y: 0.95), CGPoint(x: 0.3, y: 0.95)]
+        XCTAssertEqual(NativePDFEditingGeometry.lasso(most, rows: [row], aspect: 1.4), ["ink"], "Three quarters of its length is inside")
         let empty = [CGPoint(x: 0.08, y: 0.85), CGPoint(x: 0.15, y: 0.85), CGPoint(x: 0.15, y: 0.95), CGPoint(x: 0.08, y: 0.95)]
         XCTAssertTrue(NativePDFEditingGeometry.lasso(empty, rows: [row], aspect: 1.4).isEmpty)
+        let text: [String: Any] = ["id": "t", "kind": "textbox", "data": ["box": ["x": 0.2, "y": 0.2, "width": 0.4, "height": 0.1]], "style": ["width": 0.002]]
+        XCTAssertEqual(NativePDFEditingGeometry.lasso(most.map { CGPoint(x: $0.x - 0.2, y: $0.y - 0.15) }, rows: [text], aspect: 1.4), ["t"], "A box joins when its centre is inside")
     }
-    func testBoxLassoCornersSelectCrossingStrokeAndPortableRowsDropIdentityAndImages() {
+    func testBoxLassoAroundAStrokeSelectsItAndPortableRowsDropIdentityAndImages() {
         let row = stroke([["x": 0.1, "y": 0.1, "p": 0.4], ["x": 0.9, "y": 0.9, "p": 0.8]])
-        let start = CGPoint(x: 0.4, y: 0.6), end = CGPoint(x: 0.6, y: 0.4)
+        let start = CGPoint(x: 0.05, y: 0.95), end = CGPoint(x: 0.95, y: 0.05)
         let box = [start, CGPoint(x: end.x, y: start.y), end, CGPoint(x: start.x, y: end.y)]
         XCTAssertEqual(NativePDFEditingGeometry.lasso(box, rows: [row], aspect: 1.4), ["ink"])
         var stale = row; stale["nativePath"] = "stale"; stale["_nativeInk"] = "cache"
@@ -58,7 +62,23 @@ final class NativePDFEditingGeometryTests: XCTestCase {
         XCTAssertLessThanOrEqual(box.maxX, 1); XCTAssertLessThanOrEqual(box.maxY, 1)
         let resized = NativePDFEditingGeometry.resized(moved, original: box, corner: "nw", to: CGPoint(x: -2, y: -2))
         let next = try XCTUnwrap(NativePDFEditingGeometry.union(resized))
-        XCTAssertEqual(next.minX, 0); XCTAssertEqual(next.minY, 0); XCTAssertLessThanOrEqual(next.maxX, 1); XCTAssertLessThanOrEqual(next.maxY, 1)
+        XCTAssertGreaterThanOrEqual(next.minX, -1e-9); XCTAssertGreaterThanOrEqual(next.minY, -1e-9)
+        XCTAssertLessThanOrEqual(next.maxX, 1); XCTAssertLessThanOrEqual(next.maxY, 1)
+        XCTAssertEqual(next.width / next.height, box.width / box.height, accuracy: 1e-6, "Resizing keeps the proportions")
+        XCTAssertEqual(min(next.minX, next.minY), 0, accuracy: 1e-9, "It grows until one side reaches the page edge")
+    }
+    func testProportionalResizeScalesStrokeWidthButNotTextGeometry() throws {
+        let line = stroke([["x": 0.2, "y": 0.2, "p": 0.5], ["x": 0.4, "y": 0.3, "p": 0.5]])
+        let box = try XCTUnwrap(NativePDFEditingGeometry.union([line]))
+        let doubled = try XCTUnwrap(NativePDFEditingGeometry.resized([line], original: box, corner: "se",
+            to: CGPoint(x: box.minX + box.width * 2, y: box.minY + box.height * 2)).first)
+        let width = try XCTUnwrap(((line["style"] as? [String: Any])?["width"] as? NSNumber)?.doubleValue)
+        XCTAssertEqual(try XCTUnwrap(((doubled["style"] as? [String: Any])?["width"] as? NSNumber)?.doubleValue), width * 2, accuracy: 1e-9)
+        let grown = try XCTUnwrap(NativePDFEditingGeometry.union([doubled]))
+        XCTAssertEqual(grown.minX, box.minX, accuracy: 1e-9, "The opposite corner stays")
+        XCTAssertEqual(NativePDFEditingGeometry.corner(at: CGPoint(x: box.maxX, y: box.maxY), box: box, aspect: 1), "se")
+        XCTAssertNil(NativePDFEditingGeometry.corner(at: CGPoint(x: box.minX, y: box.minY), box: box, aspect: 1), "Only the drawn handle resizes")
+        XCTAssertEqual(NativePDFEditingGeometry.corner(at: CGPoint(x: box.minX, y: box.midY), box: box, aspect: 1, sides: true), "w")
     }
     func testCrossPageMovePreservesPhysicalStrokeSizeGrabPointAndMetadata() throws {
         var row = stroke([["x": 0.2, "y": 0.3, "p": 0.7, "t": 123.5], ["x": 0.4, "y": 0.5, "p": 0.4, "t": 124.0]])
