@@ -287,6 +287,8 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     /// this overlay only maps `pageBox` into its frame on every layout pass.
     var textEditor: NativePDFTextInputView? { didSet {
         guard textEditor !== oldValue else { return }
+        // Text changes relayout the editor directly; no viewport pass is coming.
+        textEditor?.onNeedsLayout = { [weak self] in self?.layoutTextEditor() }
         setNeedsLayout(); decorations.setNeedsDisplay()
     } }
     private var textEditorLocalFrame: CGRect? {
@@ -300,7 +302,11 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     private func layoutTextEditor() {
         guard let editor = textEditor, let host = editor.superview else { return }
         guard let mapper, let box = editor.pageBox, renderViewport != nil, window != nil else { editor.isHidden = true; return }
-        let frame = convert(Self.textEditorFrame(box: box, mapper: mapper).insetBy(dx: 0, dy: -1), to: host)
+        var local = Self.textEditorFrame(box: box, mapper: mapper)
+        // At other zooms the scaled system font can wrap a little taller than the
+        // fitted box; grow rather than clip the last line.
+        local.size.height = max(local.height, ceil(editor.sizeThatFits(CGSize(width: local.width, height: .greatestFiniteMagnitude)).height))
+        let frame = convert(local, to: host)
         editor.isHidden = false
         if editor.frame != frame { editor.frame = frame; decorations.setNeedsDisplay() }
     }
@@ -2161,8 +2167,6 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         }
         if let frame = textEditorLocalFrame {
             context.setStrokeColor(UIColor.systemBlue.cgColor); context.setLineWidth(1); context.stroke(frame)
-            [CGPoint(x: frame.minX, y: frame.minY), CGPoint(x: frame.maxX, y: frame.minY), CGPoint(x: frame.minX, y: frame.maxY), CGPoint(x: frame.maxX, y: frame.maxY),
-             CGPoint(x: frame.minX, y: frame.midY), CGPoint(x: frame.maxX, y: frame.midY)].forEach(roundHandle)
         }
     }
     /// The renderer supplies the original shared strokePath for historical ink,

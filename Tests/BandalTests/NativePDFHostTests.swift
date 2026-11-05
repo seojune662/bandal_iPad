@@ -130,13 +130,71 @@ final class NativePDFHostTests: XCTestCase {
         for _ in 0..<3 {
             host.setPresentation(blocked: false, inputBlocked: false, overlays: [])
             host.layout()
-            let editorIndex = try XCTUnwrap(controller.view.subviews.firstIndex(of: editor))
+            // The editor sits in a clip view that is itself a sibling above the PDF view.
+            let editorIndex = try XCTUnwrap(controller.view.subviews.firstIndex(of: try XCTUnwrap(editor.superview)))
             let pdfIndex = try XCTUnwrap(controller.view.subviews.firstIndex(of: pdf))
             XCTAssertGreaterThan(editorIndex, pdfIndex)
             let point = editor.convert(CGPoint(x: editor.bounds.midX, y: editor.bounds.midY), to: controller.view)
             let hit = try XCTUnwrap(controller.view.hitTest(point, with: nil))
             XCTAssertTrue(hit === editor || hit.isDescendant(of: editor), "A tap in the live box must reach its text view after host layout")
         }
+    }
+    /// Typing a newline grows the box through the draft; nothing scrolls or
+    /// zooms, so no host layout pass runs. The editor must still grow, or every
+    /// line after the first is clipped by the non-scrolling text view.
+    func testTextEditorGrowsWithTypedLinesWithoutHostLayout() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-text-grow-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("paper.pdf")
+        try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 600, height: 800)).pdfData { $0.beginPage() }.write(to: url)
+        let deadline = CACurrentMediaTime() + 2
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }), CACurrentMediaTime() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first { $0.isKeyWindow }, window = UIWindow(windowScene: scene)
+        let controller = UIViewController(); window.rootViewController = controller; window.makeKeyAndVisible(); window.layoutIfNeeded()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        let host = try NativePDFHost(root: root, directEnabled: true) { channel, _ in
+            if channel == "nativePDF:binding" { return try NativePDFTestBinding.respond(root: root, file: url, materialID: "text-grow") }
+            return url.path
+        }
+        host.attach(to: controller.view); defer { host.closeAll() }
+        let identity: [String: Any] = ["surfaceId": "text-grow", "generation": "one", "courseId": "course", "relPath": "paper.pdf"]
+        _ = try await host.handle("pdfNative:open", request: identity)
+        _ = try await host.handle("pdfNative:layout", request: identity.merging(["visible": true,
+            "rect": ["x": 0.0, "y": 0.0, "width": 600.0, "height": 700.0]]) { _, new in new })
+        _ = try await host.handle("pdfNative:snapshot", request: identity.merging([
+            "loading": false, "active": true, "drawings": [], "annotations": [],
+            "tool": ["name": "text", "style": ["color": "ink", "width": 0.003, "opacity": 1.0]]]) { _, new in new })
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "pdf-text-grow-" + UUID().uuidString))
+        let pageSize = CGSize(width: 600, height: 800)
+        let draft = NativePDFTextDraft(object: NativePDFTextDraft.newObject(at: CGPoint(x: 0.2, y: 0.2), page: 1, pageSize: pageSize, defaults: defaults),
+                                       pageSize: pageSize, existing: false, defaults: defaults)
+        let input = NativePDFTextInput(draft: draft, onSave: {}, onCancel: {})
+        defer { input.detach() }
+        let editor = input.view
+        host.setTextEditor(surfaceID: "text-grow", generation: "one", page: 1, view: editor)
+        let layoutDeadline = CACurrentMediaTime() + 5
+        repeat {
+            controller.view.setNeedsLayout(); controller.view.layoutIfNeeded(); host.layout()
+            if !editor.isHidden, editor.bounds.width > 0 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        } while CACurrentMediaTime() < layoutDeadline
+        editor.layoutIfNeeded()
+        let oneLine = editor.frame.height
+        XCTAssertGreaterThan(oneLine, 0)
+
+        editor.insertText("first\nsecond\nthird"); input.textViewDidChange(editor)
+        let growDeadline = CACurrentMediaTime() + 3
+        while editor.frame.height < oneLine * 1.8, CACurrentMediaTime() < growDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(editor.frame.height, oneLine * 1.8, "Three lines need a taller editor without a scroll or zoom")
+        let needed = editor.sizeThatFits(CGSize(width: editor.bounds.width, height: .greatestFiniteMagnitude)).height
+        XCTAssertLessThanOrEqual(needed, editor.frame.height + 0.5, "The last line must not be clipped")
+        XCTAssertEqual(editor.text, "first\nsecond\nthird")
     }
     func testLocalPrivateDocumentReplayInvestigatesRepeatedLayouts() async throws {
         // Opt-in local diagnostic. The directory contains paper.pdf and rows.json;
