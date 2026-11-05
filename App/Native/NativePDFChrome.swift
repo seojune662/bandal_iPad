@@ -115,7 +115,7 @@ struct NativePDFSelectionBar: View {
                     if model.selectionCount > 0 {
                         Menu {
                             Menu("색") { ForEach(NativePDFWorkspaceModel.colors, id: \.name) { item in Button(item.label) { model.restyleSelection(color: item.name) } } }
-                            Menu("굵기") { ForEach(Array(NativePDFPaletteStyle.penWidths.enumerated()), id: \.offset) { index, width in Button(NativePDFPaletteLook.sizeNames[index]) { model.restyleSelection(width: width) } } }
+                            Menu("굵기") { ForEach(model.palette.widths(for: "pen"), id: \.self) { step in Button("굵기 " + NativePDFPaletteStyle.stepLabel(step)) { model.restyleSelection(width: NativePDFPaletteStyle.penSteps[step]) } } }
                             Menu("불투명도") { ForEach([1.0, 0.6, 0.3], id: \.self) { value in Button("\(Int(value * 100))%") { model.restyleSelection(opacity: value) } } }
                         } label: { action("스타일") }.accessibilityIdentifier("native-pdf-selection-style")
                         if model.selectedText { Button { model.editSelectedText() } label: { action("텍스트 편집") }.accessibilityIdentifier("native-pdf-edit-text") }

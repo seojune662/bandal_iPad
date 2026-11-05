@@ -5,13 +5,11 @@ import SwiftUI
 /// thickness on the second; a "<tool> 설정" sheet anchored inside the PDF body.
 @MainActor enum NativePDFPaletteLook {
     static let colorNames = ["ink": "먹색", "red": "빨강", "orange": "주황", "yellow": "노랑", "green": "초록", "blue": "파랑", "violet": "보라"]
-    static let sizeNames = ["가는 선", "중간 선", "굵은 선"]
     static func toolName(_ tool: String) -> String {
         ["pen": "펜", "ballpoint": "볼펜", "highlighter": "형광펜", "eraser": "지우개", "lasso": "올가미", "select": "손", "text": "텍스트"][tool] ?? "필기 도구"
     }
     static func colorName(_ color: String) -> String { colorNames[color] ?? color }
     static func uiColor(_ color: String) -> Color { Color(uiColor: NativePDFInkSurface.color(color)) }
-    static func swatchSize(_ width: Double) -> CGFloat { CGFloat(12 + (width * 1000).rounded()) }
 }
 
 /// Anchored inside the PDF body, so a narrow pane or a keyboard can never move
@@ -85,16 +83,15 @@ struct NativePDFPaletteControls: View {
                         .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }.padding(.vertical, 12)
-            // Hidden quick-stop buttons keep the stable identifiers the UI flows use.
-            HStack(spacing: 0) {
-                ForEach(Array(model.quickWidths.enumerated()), id: \.offset) { index, width in
-                    Button { model.chooseQuickWidth(width) } label: { Color.clear.frame(width: 1, height: 1) }
-                        .accessibilityLabel(NativePDFPaletteLook.sizeNames[index] + " · " + model.widthLabel(for: width)).accessibilityIdentifier("native-pdf-palette-width-\(index)")
-                        .accessibilityAddTraits(abs(model.width - width) < 0.0000001 ? .isSelected : [])
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("선 굵기").font(.system(size: 13, weight: .semibold)); Spacer()
+                    Text(model.widthLabel(for: model.width)).font(.system(size: 13, weight: .semibold)).monospacedDigit().foregroundStyle(NativeDesktopTheme.accent)
                 }
-            }.frame(height: 1)
-            range("선 굵기", value: model.widthLabel(for: model.width), id: "native-pdf-width-slider",
-                  binding: Binding(get: { model.width }, set: { model.setWidth($0) }), in: NativePDFPaletteStyle.widthRange(model.width, highlighter: highlighter))
+                // Edits the selected slot, like its popover in the palette row.
+                NativePDFWidthSteps(color: NativePDFPaletteLook.uiColor(model.color), selected: model.selectedWidthSlot.map { model.widthSlots[$0] } ?? NativePDFPaletteStyle.nearestStep(model.width, tool: model.tool),
+                                    id: "native-pdf-sheet-width-steps") { model.setWidthStep($0, slot: model.selectedWidthSlot) }
+            }.padding(.horizontal, 4).padding(.top, 14).padding(.bottom, 6)
             range("불투명도", value: "\(Int((model.opacity * 100).rounded()))%", id: "native-pdf-opacity-slider",
                   binding: Binding(get: { model.opacity }, set: { model.setOpacity($0) }), in: NativePDFPaletteStyle.opacityRange(model.opacity, highlighter: highlighter))
             Divider().padding(.top, 8)
@@ -130,7 +127,7 @@ struct NativePDFPaletteControls: View {
                         Button { model.chooseFavorite(index) } label: {
                             HStack(spacing: 7) {
                                 Circle().fill(NativePDFPaletteLook.uiColor(preset.color)).frame(width: 22, height: 22).overlay(Circle().stroke(.black.opacity(0.07), lineWidth: 1))
-                                Text("\(index + 1) · " + model.widthLabel(for: preset.width, highlighter: false)).font(.system(size: 12)).monospacedDigit().foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
+                                Text("\(index + 1) · " + model.widthLabel(for: preset.width, tool: "pen")).font(.system(size: 12)).monospacedDigit().foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
                             }.frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
                         }.accessibilityLabel("즐겨찾는 펜 \(index + 1): " + NativePDFPaletteLook.colorName(preset.color)).accessibilityValue(model.favoriteAccessibilityValue(index))
                             .accessibilityIdentifier("native-pdf-palette-favorite-\(index)")
@@ -157,7 +154,6 @@ struct NativePDFPaletteControls: View {
 struct NativePDFPaletteQuickControls: View {
     var model: NativePDFWorkspaceModel
     var showsHistory = false
-    private var highlighter: Bool { model.tool == "highlighter" }
     var body: some View {
         HStack(spacing: 0) {
             // Let the editing controls use the full width, including in split panes.
@@ -172,22 +168,39 @@ struct NativePDFPaletteQuickControls: View {
                     HStack(spacing: 0) { ForEach(NativePDFToolbar.tools, id: \.0) { NativePDFToolbar.toolButton(model, $0) } }
                     if model.isInkTool {
                         group(leadingDivider: true) {
-                            ForEach(NativePDFWorkspaceModel.colors, id: \.name) { item in
-                                NativePDFPaletteColorButton(model: model, item: item, id: "native-pdf-quick-color-" + item.name)
+                            ForEach(model.colorSlots, id: \.self) { name in
+                                NativePDFPaletteColorButton(model: model, name: name, id: "native-pdf-quick-color-" + name)
+                                    .contextMenu {
+                                        if model.colorSlots.count > 1 {
+                                            Button("이 색 빼기", role: .destructive) { model.removeColorSlot(name) }
+                                        }
+                                    }
+                            }
+                            let missing = NativePDFWorkspaceModel.colors.filter { !model.colorSlots.contains($0.name) }
+                            if !missing.isEmpty {
+                                Menu {
+                                    ForEach(missing, id: \.name) { item in Button(item.label) { model.addColorSlot(item.name) } }
+                                } label: {
+                                    Image(systemName: "plus").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary)
+                                        .frame(width: 28, height: 28).background(Circle().fill(NativeDesktopTheme.raised)).frame(width: 40, height: 44).contentShape(Rectangle())
+                                }.accessibilityLabel("색 추가").accessibilityIdentifier("native-pdf-color-add")
                             }
                         }
                         group(leadingDivider: true) {
-                            Slider(value: Binding(get: { model.width }, set: { model.setWidth($0) }), in: NativePDFPaletteStyle.widthRange(model.width, highlighter: highlighter))
-                                .tint(NativeDesktopTheme.accent).frame(width: 96, height: 44)
-                                .accessibilityLabel("선 굵기").accessibilityValue(model.widthLabel(for: model.width)).accessibilityIdentifier("native-pdf-quick-width")
-                            Text(model.widthLabel(for: model.width)).font(.system(size: 10)).monospacedDigit().lineLimit(1)
-                                .foregroundStyle(NativeDesktopTheme.secondary).frame(width: 46).padding(.leading, 2)
+                            NativePDFWidthSlots(model: model)
                             Button { model.showStyle.toggle() } label: {
                                 Image(systemName: "slider.horizontal.3").font(.system(size: 17)).frame(width: 44, height: 44)
                                     .foregroundStyle(model.showStyle ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary)
                                     .background(model.showStyle ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 10)).contentShape(Rectangle())
                             }.accessibilityLabel("필기 스타일").accessibilityValue(model.styleAccessibilityValue).accessibilityIdentifier("native-pdf-style")
                         }
+                    } else if model.tool == "eraser" {
+                        group(leadingDivider: true) {
+                            Picker("지우개 방식", selection: Binding(get: { model.palette.eraserMode }, set: { model.setEraserMode($0) })) {
+                                Text("획 전체").tag("stroke"); Text("부분").tag("partial")
+                            }.pickerStyle(.segmented).frame(width: 150).padding(.horizontal, 4).accessibilityIdentifier("native-pdf-eraser-mode")
+                        }
+                        group(leadingDivider: true) { NativePDFWidthSlots(model: model) }
                     } else if model.tool == "lasso" {
                         Picker("올가미 방식", selection: Binding(get: { model.lassoMode }, set: { model.setLassoMode($0) })) {
                             Text("자유형").tag("freeform"); Text("박스형").tag("box")
@@ -222,16 +235,90 @@ struct NativePDFSwatch: View {
 
 private struct NativePDFPaletteColorButton: View {
     var model: NativePDFWorkspaceModel
-    let item: NativePDFWorkspaceModel.InkColor
+    let name: String
     let id: String
     var body: some View {
-        let selected = model.isInkTool && model.color == item.name
+        let selected = model.isInkTool && model.color == name
         Button {
-            if selected { model.showStyle.toggle() } else { model.chooseColor(item.name) }
+            if selected { model.showStyle.toggle() } else { model.chooseColor(name) }
         } label: {
-            NativePDFSwatch(color: item.name, ring: selected).frame(width: 36, height: 44).contentShape(Rectangle())
-        }.accessibilityLabel(NativePDFPaletteLook.colorName(item.name)).accessibilityIdentifier(id)
+            NativePDFSwatch(color: name, size: 26, ring: selected).frame(width: 40, height: 44).contentShape(Rectangle())
+        }.accessibilityLabel(NativePDFPaletteLook.colorName(name)).accessibilityIdentifier(id)
             .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Three thickness slots. A tap picks one; tapping the picked one opens its
+/// twelve steps, so nobody has to guess a millimetre value.
+struct NativePDFWidthSlots: View {
+    var model: NativePDFWorkspaceModel
+    var body: some View {
+        let selected = model.selectedWidthSlot
+        let tint = model.tool == "eraser" ? NativeDesktopTheme.secondary : NativePDFPaletteLook.uiColor(model.color)
+        ForEach(Array(model.widthSlots.enumerated()), id: \.offset) { index, step in
+            Button { model.chooseWidthSlot(index) } label: {
+                ZStack {
+                    Circle().fill(NativeDesktopTheme.raised).frame(width: 30, height: 30)
+                    Circle().fill(tint).frame(width: Self.dot(step), height: Self.dot(step))
+                    Circle().stroke(NativeDesktopTheme.accent, lineWidth: 2).frame(width: 35, height: 35).opacity(selected == index ? 1 : 0)
+                }.frame(width: 42, height: 44).contentShape(Rectangle())
+            }
+            .accessibilityLabel("굵기 \(index + 1)").accessibilityValue(NativePDFPaletteStyle.stepLabel(step))
+            .accessibilityIdentifier("native-pdf-width-slot-\(index)")
+            .accessibilityAddTraits(selected == index ? .isSelected : [])
+            .popover(isPresented: Binding(get: { model.editingWidthSlot == index },
+                                          set: { if !$0, model.editingWidthSlot == index { model.editingWidthSlot = nil } })) {
+                NativePDFWidthSteps(color: tint, selected: model.widthSlots.indices.contains(index) ? model.widthSlots[index] : step) {
+                    model.setWidthStep($0, slot: index)
+                }.padding(.horizontal, 18).padding(.vertical, 12).frame(width: 400)
+                    .presentationCompactAdaptation(.popover)
+            }
+        }
+    }
+    static func dot(_ step: Int) -> CGFloat { 4 + 17 * CGFloat(step) / 11 }
+}
+
+/// Twelve segments that thicken left to right, filled up to the chosen step.
+/// Tap or drag along it; VoiceOver adjusts it one step at a time.
+struct NativePDFWidthSteps: View {
+    let color: Color
+    let selected: Int
+    var id = "native-pdf-width-steps"
+    let onSelect: (Int) -> Void
+    private let count = 12
+    var body: some View {
+        GeometryReader { geometry in
+            let cell = geometry.size.width / CGFloat(count)
+            HStack(spacing: 3) {
+                ForEach(0..<count, id: \.self) { index in
+                    Capsule().fill(index <= selected ? color : color.opacity(0.18)).frame(height: 3 + CGFloat(index) * 1.3)
+                }
+            }
+            .frame(maxHeight: .infinity)
+            .overlay(alignment: .leading) {
+                Text("\(selected + 1)").font(.system(size: 13, weight: .semibold)).monospacedDigit().foregroundStyle(NativeDesktopTheme.text)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(NativeDesktopTheme.surface).shadow(color: .black.opacity(0.18), radius: 3, y: 1))
+                    .offset(x: cell * (CGFloat(selected) + 0.5) - 16)
+                    .animation(.easeOut(duration: 0.12), value: selected)
+            }
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                let index = min(count - 1, max(0, Int(value.location.x / max(1, cell))))
+                if index != selected { onSelect(index) }
+            })
+        }
+        .frame(height: 44)
+        .accessibilityElement()
+        .accessibilityLabel("선 굵기").accessibilityValue(NativePDFPaletteStyle.stepLabel(selected))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: onSelect(min(count - 1, selected + 1))
+            case .decrement: onSelect(max(0, selected - 1))
+            @unknown default: break
+            }
+        }
+        .accessibilityIdentifier(id)
     }
 }
 

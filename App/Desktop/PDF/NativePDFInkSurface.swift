@@ -62,6 +62,10 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         var drawAndHold = false
         var style = NativePDFInkStyle(color: "ink", width: 0.003, opacity: 1)
         var lassoBox = false
+        /// Eraser radius in page-width units.
+        var eraserRadius = 0.005
+        /// The partial eraser cuts strokes in the editor (pointer events), not natively.
+        var partialErase = false
     }
     var tool = Tool() { didSet { if tool != oldValue { finishMeasuredStroke(); reviewBackdropDependency() } } }
     var retainedInkEnabled = false { didSet { if oldValue != retainedInkEnabled { retainedModelDirty = true; schedulePreview() } } }
@@ -743,12 +747,12 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         onInputOwnership?(true)
         measured = []; redrawLassoPreview(); predicted = []; estimated = [:]; ending = false
         resetHoldSnap()
-        nativeEraseContact = tool.name == "eraser" && nativeErasingEnabled && prepareRetainedScene()
+        nativeEraseContact = tool.name == "eraser" && !tool.partialErase && nativeErasingEnabled && prepareRetainedScene()
         if nativeEraseContact {
             erasingTargets = []; erasingKeys = []; eraserPreviousPoint = nil; onEraseBegin?()
         }
         backdropDependencyNeedsReview = true
-        append(event?.coalescedTouches(for: touch) ?? [touch]); updateHoldSnap(from: 0); schedulePreview()
+        append(event?.coalescedTouches(for: touch) ?? [touch]); updateHoldSnap(from: 0); schedulePreview(); updateEraserCursor()
         if nativeEraseContact { updateNativeErasure(points: measured) }
         // Put the first dot on the GPU before completion work. Further
         // coalesced samples share UIKit's normal/low-latency update phases.
@@ -1164,7 +1168,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         guard nativeEraseContact, let model = retainedModel else { return }
         let path = points.map { CGPoint(x: $0.x, y: $0.y) }
         let alreadyRemoved = Set(erasedIdentifiers.map { Data($0.utf8) })
-        for entry in model.hits(points: path, previous: eraserPreviousPoint) {
+        for entry in model.hits(points: path, previous: eraserPreviousPoint, radius: CGFloat(tool.eraserRadius)) {
             guard let drawingID = entry.drawingID else { continue }
             let key = Data(drawingID.utf8)
             guard !erasingKeys.contains(key), !alreadyRemoved.contains(key),
@@ -2121,7 +2125,34 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
             context.restoreGState()
         }
     }
-    private func redrawLassoPreview() { if strokeTool.name == "lasso" || tool.name == "lasso" { decorations.setNeedsDisplay() } }
+    private func redrawLassoPreview() {
+        if strokeTool.name == "lasso" || tool.name == "lasso" { decorations.setNeedsDisplay() }
+        updateEraserCursor()
+    }
+    /// A ring of the eraser's size under the Pencil while erasing. A layer, so
+    /// moving it never repaints the viewport-sized decorations bitmap.
+    private lazy var eraserCursor: CAShapeLayer = {
+        let cursor = CAShapeLayer()
+        cursor.fillColor = UIColor.systemGray.withAlphaComponent(0.12).cgColor
+        cursor.strokeColor = UIColor.systemGray.withAlphaComponent(0.85).cgColor
+        cursor.lineWidth = 1; cursor.zPosition = 10; cursor.isHidden = true
+        layer.addSublayer(cursor)
+        return cursor
+    }()
+    private var eraserCursorShown = false
+    private func updateEraserCursor() {
+        guard tool.name == "eraser", active != nil, let mapper, let last = measured.last else {
+            if eraserCursorShown { eraserCursor.isHidden = true; eraserCursorShown = false }
+            return
+        }
+        let center = mapper.canvasPoint(InkPoint(x: last.x, y: last.y, p: 0.5))
+        let edge = mapper.canvasPoint(InkPoint(x: last.x + tool.eraserRadius, y: last.y, p: 0.5))
+        let radius = max(2, hypot(edge.x - center.x, edge.y - center.y))
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        eraserCursor.path = UIBezierPath(ovalIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)).cgPath
+        eraserCursor.isHidden = false; eraserCursorShown = true
+        CATransaction.commit()
+    }
     /// Mirrors drawDecorations: an empty layer is not repainted on scroll or refresh.
     private var hasDecorations: Bool {
         (active != nil && strokeTool.name == "lasso") || !selectedTextRects.isEmpty || selectionBox != nil || textEditorLocalFrame != nil

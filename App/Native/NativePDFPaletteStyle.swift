@@ -1,8 +1,8 @@
 import Foundation
 import CryptoKit
 
-/// The width remains a PDF page-width fraction on disk. Only the presentation
-/// converts it to physical millimetres; zoom never changes the stored stroke.
+/// The width remains a PDF page-width fraction on disk. The palette shows it as
+/// one of twelve steps; zoom never changes the stored stroke.
 struct NativePDFPenPreset: Codable, Equatable {
     var color: String
     var width: Double
@@ -25,23 +25,32 @@ struct NativePDFPenPreset: Codable, Equatable {
 }
 
 enum NativePDFPaletteStyle {
-    static let penWidths = [0.002, 0.004, 0.008]
-    static let highlighterWidths = [0.0035, 0.006, 0.01]
+    /// Twelve thickness steps per tool, stored as the usual page-width fraction.
+    /// Every earlier default and quick width is one of the steps.
+    static let penSteps = [0.001, 0.0015, 0.002, 0.0025, 0.003, 0.004, 0.005, 0.006, 0.008, 0.010, 0.013, 0.017]
+    /// Stored highlighter widths; the drawn width is `effectiveWidth`.
+    static let highlighterSteps = [0.0035, 0.004, 0.0045, 0.005, 0.0055, 0.006, 0.007, 0.008, 0.009, 0.010, 0.0115, 0.013]
+    /// Eraser radius; 0.005 (index 3) is the radius the eraser always had.
+    static let eraserSteps = [0.002, 0.003, 0.004, 0.005, 0.007, 0.009, 0.012, 0.015, 0.020, 0.025, 0.032, 0.040]
+    static let slotTools = ["pen", "ballpoint", "highlighter", "eraser"]
+    static let defaultWidthSlots: [String: [Int]] = ["pen": [2, 5, 8], "ballpoint": [2, 4, 8], "highlighter": [0, 5, 9], "eraser": [1, 3, 6]]
+    static let defaultColorSlots: [String: [String]] = ["pen": ["ink", "blue", "red", "green"], "ballpoint": ["ink", "blue", "red"], "highlighter": ["yellow", "green", "blue", "violet"]]
+    static let eraserModes = ["stroke", "partial"]
+    static func steps(for tool: String) -> [Double] {
+        switch tool {
+        case "highlighter": highlighterSteps
+        case "eraser": eraserSteps
+        default: penSteps
+        }
+    }
+    /// The step closest to a stored width, so widths saved by the old slider still show a step.
+    static func nearestStep(_ width: Double, tool: String) -> Int {
+        let values = steps(for: tool)
+        return values.indices.min { abs(values[$0] - width) < abs(values[$1] - width) } ?? 0
+    }
+    static func stepLabel(_ index: Int) -> String { "\(index + 1)단계" }
     static func effectiveWidth(_ width: Double, highlighter: Bool) -> Double {
         highlighter ? max(0.014, width * 4) : width
-    }
-    static func millimetres(width: Double, highlighter: Bool, pageWidthPoints: Double?) -> Double? {
-        guard let points = pageWidthPoints, points.isFinite, points > 0, width.isFinite else { return nil }
-        return effectiveWidth(width, highlighter: highlighter) * points * 25.4 / 72
-    }
-    static func widthLabel(_ width: Double, highlighter: Bool, pageWidthPoints: Double?) -> String {
-        guard let value = millimetres(width: width, highlighter: highlighter, pageWidthPoints: pageWidthPoints) else { return "— mm" }
-        return String(format: "%.2f mm", locale: Locale(identifier: "en_US_POSIX"), value)
-    }
-    static func widthRange(_ width: Double, highlighter: Bool) -> ClosedRange<Double> {
-        // Existing values between steps or beyond the new quick choices remain
-        // selectable without snapping on the first slider interaction.
-        min(width, highlighter ? 0.0035 : 0.001)...max(width, highlighter ? 0.01 : 0.025)
     }
     static func opacityRange(_ opacity: Double, highlighter: Bool) -> ClosedRange<Double> {
         min(opacity, 0.1)...(highlighter ? 0.34 : 1)
@@ -58,10 +67,27 @@ struct NativePDFPalettePreferences: Codable, Equatable {
     var recentHighlighter = NativePDFPenPreset.highlighter
     var recentBallpoint = NativePDFPenPreset.ballpoint
     var drawAndHold = true
+    /// Per tool: up to seven colour names and three thickness steps (Notability-style slots).
+    var colorSlots: [String: [String]] = [:]
+    var widthSlots: [String: [Int]] = [:]
+    var eraserMode = "stroke"
+    var eraserRadius = 0.005
+    func colors(for tool: String) -> [String] {
+        var seen = Set<String>()
+        let value = (colorSlots[tool] ?? []).filter { NativePDFPenPreset.colors.contains($0) && seen.insert($0).inserted }
+        return value.isEmpty ? NativePDFPaletteStyle.defaultColorSlots[tool] ?? ["ink"] : value
+    }
+    func widths(for tool: String) -> [Int] {
+        let value = widthSlots[tool] ?? []
+        guard value.count == 3, value.allSatisfy(NativePDFPaletteStyle.steps(for: tool).indices.contains) else {
+            return NativePDFPaletteStyle.defaultWidthSlots[tool] ?? [2, 5, 8]
+        }
+        return value
+    }
     static let changed = Notification.Name("NativePDFPalettePreferences.changed")
 
     init() {}
-    private enum CodingKeys: String, CodingKey { case version, favorites, presets, recentPen, recentHighlighter, recentBallpoint, drawAndHold }
+    private enum CodingKeys: String, CodingKey { case version, favorites, presets, recentPen, recentHighlighter, recentBallpoint, drawAndHold, colorSlots, widthSlots, eraserMode, eraserRadius }
     private struct Candidate: Decodable {
         let value: NativePDFPenPreset?
         init(from decoder: Decoder) throws { value = try? NativePDFPenPreset(from: decoder) }
@@ -83,6 +109,12 @@ struct NativePDFPalettePreferences: Codable, Equatable {
         if let value = try? values.decode(NativePDFPenPreset.self, forKey: .recentHighlighter), value.isValid { recentHighlighter = value.validated(highlighter: true) }
         if let value = try? values.decode(NativePDFPenPreset.self, forKey: .recentBallpoint), value.isValid { recentBallpoint = value }
         drawAndHold = (try? values.decode(Bool.self, forKey: .drawAndHold)) ?? true
+        // Added within version 2: older builds ignore these keys instead of resetting everything.
+        colorSlots = (try? values.decode([String: [String]].self, forKey: .colorSlots)) ?? [:]
+        widthSlots = (try? values.decode([String: [Int]].self, forKey: .widthSlots)) ?? [:]
+        if let mode = try? values.decode(String.self, forKey: .eraserMode), NativePDFPaletteStyle.eraserModes.contains(mode) { eraserMode = mode }
+        if let radius = try? values.decode(Double.self, forKey: .eraserRadius), radius.isFinite,
+           (NativePDFPaletteStyle.eraserSteps.first!...NativePDFPaletteStyle.eraserSteps.last!).contains(radius) { eraserRadius = radius }
     }
     func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
@@ -90,6 +122,8 @@ struct NativePDFPalettePreferences: Codable, Equatable {
         try values.encode(recentPen, forKey: .recentPen); try values.encode(recentHighlighter, forKey: .recentHighlighter)
         try values.encode(recentBallpoint, forKey: .recentBallpoint)
         try values.encode(drawAndHold, forKey: .drawAndHold)
+        try values.encode(colorSlots, forKey: .colorSlots); try values.encode(widthSlots, forKey: .widthSlots)
+        try values.encode(eraserMode, forKey: .eraserMode); try values.encode(eraserRadius, forKey: .eraserRadius)
     }
     static func key(root: URL, documentsRoot: URL? = nil) -> String {
         key(rootIdentity: NativePDFPreferenceScope.identity(root: root, documentsRoot: documentsRoot))

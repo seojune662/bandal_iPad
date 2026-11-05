@@ -11,6 +11,7 @@
 		0139E709683A56D039383F70 /* NativePDFNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FECFFD1B7D9AF54347643466 /* NativePDFNavigationView.swift */; };
 		01F0F17042D1101E0DE594B7 /* NativeSettingsSystemPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3CC986C5B25E8DF87343922 /* NativeSettingsSystemPanels.swift */; };
 		0213E5135059B36C3F5703B5 /* NativeBrowserShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF5ABE5918CF17821D0A200 /* NativeBrowserShortcuts.swift */; };
+		02DA8B79AE2281EF5CB08927 /* NativePDFEraseSplit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AD8C41CECDFCF142C6B43D6 /* NativePDFEraseSplit.swift */; };
 		03A5064DD9BEAE5390A4D67F /* NativePDFHostNavigationInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D2E273B0AFBD0553FD7978D /* NativePDFHostNavigationInputTests.swift */; };
 		03AD162C81C8FF256960FD38 /* SyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D91B7189B31E1D1A25CF110D /* SyncStore.swift */; };
 		0488665168A6F9CBD3D31098 /* NativePDFAsynchronousEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF9B9E3F6A7C6DC4F971247 /* NativePDFAsynchronousEditTests.swift */; };
@@ -231,6 +232,7 @@
 		6FE440FB01035E243406B943 /* NativeSettingsPlatformService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D8B6B05941B73CA7D07B41A /* NativeSettingsPlatformService.swift */; };
 		70046B10DDD58BB8FFF70F46 /* BandalShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6277C0760F03717479CE2941 /* BandalShareInbox.swift */; };
 		708DBF49D5ACF876DA526B7F /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE5F2423E3FD256DA190118E /* Models.swift */; };
+		709BE0EC6F2FFF0EB123F8D3 /* NativePDFEraseSplitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6798DD6245EBD85EB818FEF5 /* NativePDFEraseSplitTests.swift */; };
 		71548CA616DC20C4217C2F94 /* DesktopNative in Resources */ = {isa = PBXBuildFile; fileRef = 24D9C7FB7F1E310FF294B8C6 /* DesktopNative */; };
 		717C0325EECAB66B40AF131A /* BrowserWebsiteCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F1996F6CDC67B13A51E5014 /* BrowserWebsiteCompatibilityTests.swift */; };
 		7198BE3760541B0E38B992AE /* NativePDFJournalQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79E377F95FB4E1FD439BE367 /* NativePDFJournalQueueTests.swift */; };
@@ -741,9 +743,11 @@
 		6584D74EE0DFE37DC66FDFD9 /* BrowserImageCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserImageCopyTests.swift; sourceTree = "<group>"; };
 		6673D0AFCAAEF6475AF94DCB /* NativePDFRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRepository.swift; sourceTree = "<group>"; };
 		66E575649E541A80859A8E02 /* NativeBrowserTabStripUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBrowserTabStripUITests.swift; sourceTree = "<group>"; };
+		6798DD6245EBD85EB818FEF5 /* NativePDFEraseSplitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFEraseSplitTests.swift; sourceTree = "<group>"; };
 		68CB17B4872D54F405D447BC /* DesktopScribble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopScribble.swift; sourceTree = "<group>"; };
 		698576C06CEBF7C0C2B39811 /* NativePDFCombinedLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFCombinedLifecycleTests.swift; sourceTree = "<group>"; };
 		69F870F08A17DF859365631B /* DesktopProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopProfileTests.swift; sourceTree = "<group>"; };
+		6AD8C41CECDFCF142C6B43D6 /* NativePDFEraseSplit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFEraseSplit.swift; sourceTree = "<group>"; };
 		6AF2E259B9D5E808EC500B0E /* NativePDFPageTestFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageTestFixture.swift; sourceTree = "<group>"; };
 		6B00DBD9BB5C5FCBCB3803E1 /* GoogleDriveAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDriveAuth.swift; sourceTree = "<group>"; };
 		6B1A22BEB310DB12EC6FC35A /* NativeAuxiliaryDestinations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAuxiliaryDestinations.swift; sourceTree = "<group>"; };
@@ -1251,6 +1255,7 @@
 				9C788A3062F4A76A0A257725 /* NativePanelViewState.swift */,
 				C5E67573E792B01010064FA2 /* NativePDFChrome.swift */,
 				B5AC0C853B562BA4205C28E2 /* NativePDFEditingGeometry.swift */,
+				6AD8C41CECDFCF142C6B43D6 /* NativePDFEraseSplit.swift */,
 				00259B4F6C8199734C4A4C0A /* NativePDFFileCoordinator.swift */,
 				27078D8527372E114B83CC7B /* NativePDFObjectClipboard.swift */,
 				A01B7CF78F23029323B2D1AF /* NativePDFPageEditing.swift */,
@@ -1453,6 +1458,7 @@
 				F7D689E2CF8EA772EC539117 /* NativePDFDrawingSnapshotStoreTests.swift */,
 				BA11CE94AA82D26B81ED7372 /* NativePDFEditingGeometryTests.swift */,
 				F43D025E309B0AF80C5DC25A /* NativePDFEditorSceneTests.swift */,
+				6798DD6245EBD85EB818FEF5 /* NativePDFEraseSplitTests.swift */,
 				9C946E36374431C33274EC75 /* NativePDFErasureIdentityTests.swift */,
 				DDB2388ACFB138B0D7851F3F /* NativePDFErasureLatencyTests.swift */,
 				43F02E9653065D8C04E79820 /* NativePDFErasureLifecycleTests.swift */,
@@ -1959,6 +1965,7 @@
 				216AD88F3717B445834D90F4 /* NativePDFDrawingSnapshotStoreTests.swift in Sources */,
 				D8AD580BC7E56DD4283DB269 /* NativePDFEditingGeometryTests.swift in Sources */,
 				A5A75ED2F680B1CF1DFCF461 /* NativePDFEditorSceneTests.swift in Sources */,
+				709BE0EC6F2FFF0EB123F8D3 /* NativePDFEraseSplitTests.swift in Sources */,
 				A5029C373BFDF96B1228A65E /* NativePDFErasureIdentityTests.swift in Sources */,
 				CA567A77996EA9C1CA5A19C0 /* NativePDFErasureLatencyTests.swift in Sources */,
 				50CCE42BA5E9DF83D55FBE87 /* NativePDFErasureLifecycleTests.swift in Sources */,
@@ -2243,6 +2250,7 @@
 				234706EE5AF20ADDC9A01C5A /* NativePDFDrawingDecodeCache.swift in Sources */,
 				F19F7C4CE8AD67B4A740735D /* NativePDFDrawingSnapshotStore.swift in Sources */,
 				885BEE3EAB741F8BF1A8E606 /* NativePDFEditingGeometry.swift in Sources */,
+				02DA8B79AE2281EF5CB08927 /* NativePDFEraseSplit.swift in Sources */,
 				32A66EA4324D950A6BA32FF3 /* NativePDFExport.swift in Sources */,
 				24BD979D13E1808205B95517 /* NativePDFFileCoordinator.swift in Sources */,
 				52A7D269F4B85C217DA5FDF8 /* NativePDFHeavyInkFixture.swift in Sources */,

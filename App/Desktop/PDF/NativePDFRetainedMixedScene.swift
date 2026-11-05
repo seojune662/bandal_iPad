@@ -231,14 +231,15 @@ final class NativePDFRetainedMixedScene {
         }
     }
 
-    func hits(points: [CGPoint], previous: CGPoint?) -> [NativePDFEraseTarget] {
+    func hits(points: [CGPoint], previous: CGPoint?, radius: CGFloat = 0.005) -> [NativePDFEraseTarget] {
         let nodes = presentation()
         let modern = nodes.compactMap { node -> InkEntry? in if case .ink(let entry) = node { return entry }; return nil }
         let nonInk = nodes.compactMap { node -> NativePDFRetainedObjectHitTest.Entry? in
             if case .object(let entry) = node { return .init(savedID: entry.id, mutationID: entry.alias, geometry: entry.hit) }; return nil
         }
-        let inkKeys = Set(inkHit.hits(entries: modern, points: points, previous: previous).map { Data($0.savedID.utf8) })
-        let objectKeys = Set(NativePDFRetainedObjectHitTest.hits(entries: nonInk, points: points, previous: previous).map { Data($0.savedID.utf8) })
+        let inkKeys = Set(inkHit.hits(entries: modern, points: points, previous: previous, radius: radius).map { Data($0.savedID.utf8) })
+        // Object thresholds were prepared for the default 0.005 radius.
+        let objectKeys = Set(NativePDFRetainedObjectHitTest.hits(entries: nonInk, points: points, previous: previous, extra: radius - 0.005).map { Data($0.savedID.utf8) })
         return nodes.compactMap { node in
             guard inkKeys.contains(Data(node.id.utf8)) || objectKeys.contains(Data(node.id.utf8)) else { return nil }
             return .init(drawingID: node.id, mutationID: node.alias)
