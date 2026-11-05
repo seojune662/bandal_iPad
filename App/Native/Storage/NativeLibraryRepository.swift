@@ -214,6 +214,20 @@ final class NativeLibraryRepository {
         if create, !context.files.fileExists(atPath: url.path) { try context.files.createDirectory(at: url, withIntermediateDirectories: true) }
         guard (try C.identity(url)["directory"] as? Bool) == true else { throw C.notFound("directory", relative) }; return url
     }
+    static func containsSymlink(_ folder: URL) throws -> Bool {
+        guard let walk = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isSymbolicLinkKey]) else { throw C.validation("폴더를 읽을 수 없습니다.") }
+        for case let url as URL in walk where try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true { return true }
+        return false
+    }
+    /// Documents an import request adds, folders counted by their contents.
+    static func importedDocumentCount(_ paths: [String]) -> Int {
+        paths.reduce(0) { total, path in
+            let url = URL(fileURLWithPath: path)
+            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return total + (["pdf", "note"].contains(kind(for: path)) ? 1 : 0) }
+            let walk = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil)
+            return total + (walk?.compactMap { $0 as? URL }.filter { ["pdf", "note"].contains(kind(for: $0.path)) }.count ?? 0)
+        }
+    }
     private func recordAdded(course: String, relative: String, directory: Bool = false) throws {
         try ensureBaseline(course)
         try context.run("INSERT INTO material_added_state(course_id,rel_path,added_at,pending_children) VALUES(?,?,?,?) ON CONFLICT(course_id,rel_path) DO UPDATE SET added_at=excluded.added_at,pending_children=excluded.pending_children", [course, relative, Date().timeIntervalSince1970 * 1000, directory ? 1 : 0])
@@ -346,10 +360,12 @@ final class NativeLibraryRepository {
                 for source in sources {
                     do {
                         guard source.hasPrefix("/") else { throw C.validation("Import source must be absolute") }
-                        let original = URL(fileURLWithPath: source); guard try C.identity(original)["directory"] as? Bool == false else { throw C.validation("Import source must be a file") }
+                        let original = URL(fileURLWithPath: source), isDirectory = try C.identity(original)["directory"] as? Bool == true
+                        // A folder (e.g. a GoodNotes/Notability PDF backup) keeps its tree; links could escape the course.
+                        if isDirectory, try Self.containsSymlink(original) { throw C.validation("폴더 안의 바로가기(심볼릭 링크)는 가져올 수 없습니다.") }
                         let name = try freeName(in: target, requested: basename(original.lastPathComponent)), dest = target.appendingPathComponent(name), rel = path(relative, name)
                         try context.files.copyItem(at: original, to: dest); try context.syncDirectory(target)
-                        try recordAdded(course: course, relative: rel); imported.append(rel)
+                        try recordAdded(course: course, relative: rel, directory: isDirectory); imported.append(rel)
                     } catch { failed.append(["path": source, "reason": error.localizedDescription]) }
                 }
                 return ["imported": imported, "failed": failed]
