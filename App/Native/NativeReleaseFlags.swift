@@ -15,8 +15,8 @@ enum NativeReleaseFlags {
     static let membership = true
     /// The study market uploads materials to Supabase Storage; its channels are refused while off.
     static let showsMarketplace = false
-    /// Lecture recording is left out of iPad 1.0 (App Review 2.5.4): the audio capture service,
-    /// microphone permission and background audio mode were removed, so flipping this alone
-    /// does not bring recording back. Restore DesktopRecordingService from git history first.
-    static let showsRecording = false
+    /// Lecture recording, back with foreground-only capture: no UIBackgroundModes audio (App
+    /// Review 2.5.4 rejected 1.0.0 (5) for declaring it). Recording stops and saves when the
+    /// app leaves the foreground.
+    static let showsRecording = true
 }

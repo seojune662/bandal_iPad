@@ -167,6 +167,7 @@ struct NativePDFPaletteQuickControls: View {
                             .disabled(!model.canRedo && !model.isEditingText).accessibilityLabel("다시 실행").accessibilityIdentifier("native-pdf-redo")
                     }
                     HStack(spacing: 0) { ForEach(NativePDFToolbar.tools, id: \.0) { NativePDFToolbar.toolButton(model, $0) } }
+                    if NativeReleaseFlags.showsRecording { NativePDFRecordButton(model: model) }
                     if model.usesColorSlots {
                         group(leadingDivider: true) {
                             ForEach(model.colorSlots, id: \.self) { name in
@@ -362,4 +363,29 @@ struct NativePDFStrokePreview: View {
 private extension CGPoint {
     /// Smooth-curve reflection: the next control point mirrors the previous one.
     func reflected(over control: CGPoint) -> CGPoint { CGPoint(x: 2 * x - control.x, y: 2 * y - control.y) }
+}
+
+/// The palette microphone: a toggle, not a tool. While recording it shows a
+/// red dot and the elapsed time.
+private struct NativePDFRecordButton: View {
+    var model: NativePDFWorkspaceModel
+    var body: some View {
+        Button { model.toggleRecording() } label: {
+            if let started = model.recordingStartedAt {
+                HStack(spacing: 5) {
+                    Circle().fill(Color.red).frame(width: 8, height: 8)
+                    TimelineView(.periodic(from: started, by: 1)) { context in
+                        Text(Duration.seconds(max(0, context.date.timeIntervalSince(started))).formatted(.time(pattern: .minuteSecond)))
+                            .font(.system(size: 12, weight: .semibold)).monospacedDigit()
+                    }
+                }.padding(.horizontal, 8).frame(height: 32)
+                    .background(Color.red.opacity(0.12), in: Capsule()).frame(height: 44).contentShape(Rectangle())
+            } else {
+                Image(systemName: "mic").font(.system(size: 17)).frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+        }
+        .foregroundStyle(model.recordingStartedAt == nil ? NativeDesktopTheme.text : Color.red)
+        .accessibilityLabel(model.recordingStartedAt == nil ? "녹음 시작" : "녹음 정지")
+        .accessibilityIdentifier("native-pdf-record")
+    }
 }
