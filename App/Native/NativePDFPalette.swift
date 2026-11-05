@@ -6,7 +6,8 @@ import SwiftUI
 @MainActor enum NativePDFPaletteLook {
     static let colorNames = ["ink": "먹색", "red": "빨강", "orange": "주황", "yellow": "노랑", "green": "초록", "blue": "파랑", "violet": "보라"]
     static func toolName(_ tool: String) -> String {
-        ["pen": "펜", "ballpoint": "볼펜", "highlighter": "형광펜", "eraser": "지우개", "lasso": "올가미", "select": "손", "text": "텍스트"][tool] ?? "필기 도구"
+        ["pen": "펜", "ballpoint": "볼펜", "highlighter": "형광펜", "eraser": "지우개", "lasso": "올가미", "select": "손", "text": "텍스트",
+         "tape": "테이프", "laser": "레이저 포인터", "comment": "댓글"][tool] ?? "필기 도구"
     }
     static func colorName(_ color: String) -> String { colorNames[color] ?? color }
     static func uiColor(_ color: String) -> Color { Color(uiColor: NativePDFInkSurface.color(color)) }
@@ -166,7 +167,7 @@ struct NativePDFPaletteQuickControls: View {
                             .disabled(!model.canRedo && !model.isEditingText).accessibilityLabel("다시 실행").accessibilityIdentifier("native-pdf-redo")
                     }
                     HStack(spacing: 0) { ForEach(NativePDFToolbar.tools, id: \.0) { NativePDFToolbar.toolButton(model, $0) } }
-                    if model.isInkTool {
+                    if model.usesColorSlots {
                         group(leadingDivider: true) {
                             ForEach(model.colorSlots, id: \.self) { name in
                                 NativePDFPaletteColorButton(model: model, name: name, id: "native-pdf-quick-color-" + name)
@@ -188,11 +189,18 @@ struct NativePDFPaletteQuickControls: View {
                         }
                         group(leadingDivider: true) {
                             NativePDFWidthSlots(model: model)
+                            if model.tool == "tape" {
+                                Button { model.setAllTapes(revealed: !model.allTapesRevealed) } label: {
+                                    Label(model.allTapesRevealed ? "모두 가리기" : "모두 보기", systemImage: model.allTapesRevealed ? "eye.slash" : "eye")
+                                        .font(.system(size: 12)).frame(height: 44).padding(.horizontal, 8).contentShape(Rectangle())
+                                }.disabled(!model.hasTapes).opacity(model.hasTapes ? 1 : 0.4).accessibilityIdentifier("native-pdf-tape-all")
+                            } else {
                             Button { model.showStyle.toggle() } label: {
                                 Image(systemName: "slider.horizontal.3").font(.system(size: 17)).frame(width: 44, height: 44)
                                     .foregroundStyle(model.showStyle ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary)
                                     .background(model.showStyle ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 10)).contentShape(Rectangle())
                             }.accessibilityLabel("필기 스타일").accessibilityValue(model.styleAccessibilityValue).accessibilityIdentifier("native-pdf-style")
+                            }
                         }
                     } else if model.tool == "eraser" {
                         group(leadingDivider: true) {
@@ -225,8 +233,10 @@ struct NativePDFSwatch: View {
     let color: String
     var size: CGFloat = 22
     var ring = false
+    /// Tape swatches show the pastel the tape is drawn in.
+    var tape = false
     var body: some View {
-        Circle().fill(NativePDFPaletteLook.uiColor(color)).frame(width: size, height: size)
+        Circle().fill(tape ? Color(uiColor: NativePDFObjectRenderer.tapeColor(color)) : NativePDFPaletteLook.uiColor(color)).frame(width: size, height: size)
             .overlay(Circle().stroke(.black.opacity(0.07), lineWidth: 1))
             .background(Circle().stroke(NativeDesktopTheme.accent, lineWidth: 2).padding(-4).opacity(ring ? 1 : 0))
             .background(Circle().stroke(NativeDesktopTheme.surface, lineWidth: 2).padding(-2).opacity(ring ? 1 : 0))
@@ -238,11 +248,11 @@ private struct NativePDFPaletteColorButton: View {
     let name: String
     let id: String
     var body: some View {
-        let selected = model.isInkTool && model.color == name
+        let selected = model.usesColorSlots && model.activeColor == name
         Button {
-            if selected { model.showStyle.toggle() } else { model.chooseColor(name) }
+            if selected, model.isInkTool { model.showStyle.toggle() } else { model.chooseColor(name) }
         } label: {
-            NativePDFSwatch(color: name, size: 26, ring: selected).frame(width: 40, height: 44).contentShape(Rectangle())
+            NativePDFSwatch(color: name, size: 26, ring: selected, tape: model.tool == "tape").frame(width: 40, height: 44).contentShape(Rectangle())
         }.accessibilityLabel(NativePDFPaletteLook.colorName(name)).accessibilityIdentifier(id)
             .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -254,7 +264,8 @@ struct NativePDFWidthSlots: View {
     var model: NativePDFWorkspaceModel
     var body: some View {
         let selected = model.selectedWidthSlot
-        let tint = model.tool == "eraser" ? NativeDesktopTheme.secondary : NativePDFPaletteLook.uiColor(model.color)
+        let tint = model.tool == "eraser" ? NativeDesktopTheme.secondary
+            : model.tool == "tape" ? Color(uiColor: NativePDFObjectRenderer.tapeColor(model.activeColor)) : NativePDFPaletteLook.uiColor(model.color)
         ForEach(Array(model.widthSlots.enumerated()), id: \.offset) { index, step in
             Button { model.chooseWidthSlot(index) } label: {
                 ZStack {

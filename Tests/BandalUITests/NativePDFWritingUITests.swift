@@ -18,7 +18,7 @@ final class NativePDFWritingUITests: XCTestCase {
         }
         app.buttons["native-pdf-color-blue"].firstMatch.tap()
         // Thickness is one of three slots, each one of twelve steps (no millimetre slider).
-        app.buttons["native-pdf-width-slot-2"].firstMatch.tap()
+        tap("native-pdf-width-slot-2", in: app)
         XCTAssertTrue(app.buttons["native-pdf-width-slot-2"].firstMatch.isSelected)
         app.sliders["native-pdf-opacity-slider"].adjust(toNormalizedSliderPosition: 0.8)
         let saveFavorite = app.buttons["native-pdf-save-favorite-0"]
@@ -33,7 +33,7 @@ final class NativePDFWritingUITests: XCTestCase {
         chooseTool("highlighter", in: app)
         openPalette(in: app)
         app.buttons["native-pdf-color-green"].firstMatch.tap()
-        app.buttons["native-pdf-width-slot-0"].firstMatch.tap()
+        tap("native-pdf-width-slot-0", in: app)
         app.sliders["native-pdf-opacity-slider"].adjust(toNormalizedSliderPosition: 0.5)
         capture("Swift highlighter physical width and effective opacity")
         closePalette(in: app)
@@ -44,9 +44,11 @@ final class NativePDFWritingUITests: XCTestCase {
         chooseTool("highlighter", in: app)
         XCTAssertEqual(app.buttons["native-pdf-style"].value as? String, markerStyle)
         chooseTool("ballpoint", in: app)
-        app.buttons["native-pdf-width-slot-2"].firstMatch.tap()
+        // The helper scrolls the tool row until the slot is hittable.
+        tap("native-pdf-width-slot-2", in: app)
+        XCTAssertTrue(app.buttons["native-pdf-width-slot-2"].firstMatch.isSelected)
         // A second tap on the chosen slot opens its twelve steps; pick step 10.
-        app.buttons["native-pdf-width-slot-2"].firstMatch.tap()
+        tap("native-pdf-width-slot-2", in: app)
         let steps = app.descendants(matching: .any)["native-pdf-width-steps"].firstMatch
         XCTAssertTrue(steps.waitForExistence(timeout: 5), app.debugDescription)
         steps.coordinate(withNormalizedOffset: CGVector(dx: 9.5 / 12, dy: 0.5)).tap()
@@ -287,6 +289,46 @@ final class NativePDFWritingUITests: XCTestCase {
         body.coordinate(withNormalizedOffset: .init(dx: 0.32, dy: 0.32)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.32, dy: 0.52)))
         expectInk(1, in: app)
+    }
+    @MainActor
+    func testTapeHidesUntilTappedCommentPinKeepsANoteAndLaserSavesNothing() {
+        let app = createDocument("Study Notes")
+        let body = app.otherElements["native-pdf-workspace"]
+        chooseTool("laser", in: app)
+        body.coordinate(withNormalizedOffset: .init(dx: 0.3, dy: 0.3)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.7, dy: 0.35)))
+        capture("Laser pointer trail")
+        expectInk(0, in: app)
+
+        chooseTool("tape", in: app)
+        body.coordinate(withNormalizedOffset: .init(dx: 0.25, dy: 0.5)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.7, dy: 0.5)))
+        expectInk(1, in: app)
+        let all = app.buttons["native-pdf-tape-all"]
+        XCTAssertTrue(all.waitForExistence(timeout: 10)); XCTAssertEqual(all.label, "모두 보기")
+        capture("Memorisation tape covers the line")
+        body.coordinate(withNormalizedOffset: .init(dx: 0.45, dy: 0.5)).tap()
+        let peeled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "모두 가리기"), object: all)
+        XCTAssertEqual(XCTWaiter.wait(for: [peeled], timeout: 10), .completed, "A tap peels the tape back" + app.debugDescription)
+        capture("Peeled-back tape")
+        all.tap()
+        let covered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "모두 보기"), object: all)
+        XCTAssertEqual(XCTWaiter.wait(for: [covered], timeout: 10), .completed)
+
+        chooseTool("comment", in: app)
+        body.coordinate(withNormalizedOffset: .init(dx: 0.8, dy: 0.25)).tap()
+        let note = app.textViews["native-pdf-comment-editor"]
+        XCTAssertTrue(note.waitForExistence(timeout: 10), app.debugDescription)
+        note.tap(); note.typeText("시험 범위")
+        app.buttons["native-pdf-save-comment"].tap(); expectInk(2, in: app)
+        capture("Comment pin on the page")
+        app.terminate(); app.launchArguments = arguments(reset: false); app.launch(); expectInk(2, in: app)
+        chooseTool("comment", in: app)
+        body.coordinate(withNormalizedOffset: .init(dx: 0.8, dy: 0.25)).tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(note.value as? String, "시험 범위")
+        app.buttons["native-pdf-delete-comment"].tap(); expectInk(1, in: app)
+        tap("native-pdf-undo", in: app); expectInk(2, in: app) // the deleted pin comes back
     }
     private func arguments(reset: Bool) -> [String] {
         ["--native-ui-testing", "--native-pencil-dispatch-fixture"] + (reset ? ["--reset-native-ui-testing"] : [])

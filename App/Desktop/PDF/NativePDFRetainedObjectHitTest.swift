@@ -76,7 +76,16 @@ enum NativePDFRetainedObjectHitTest {
                 guard let box = metricBox(data["box"], aspect: aspect) else { return nil }
                 points = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY)]
             }
-        case "rect", "ellipse", "textbox", "image", "clip":
+        case "tape":
+            // The eraser removes a tape anywhere along its band.
+            guard let source = data["points"] as? [[String: Any]], source.count >= 2, source.count <= maximumPointCount else { return nil }
+            var copied: [CGPoint] = []; copied.reserveCapacity(source.count)
+            for value in source {
+                guard let point = metricPoint(value, aspect: aspect) else { return nil }
+                copied.append(point)
+            }
+            points = copied
+        case "rect", "ellipse", "textbox", "image", "clip", "comment":
             guard let box = metricBox(data["box"], aspect: aspect) else { return nil }
             if kind == "ellipse" {
                 points = (0...32).map { index in
@@ -88,7 +97,7 @@ enum NativePDFRetainedObjectHitTest {
                 points = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY),
                           CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY),
                           CGPoint(x: box.minX, y: box.minY)]
-                if kind == "textbox" { filledBox = box }
+                if kind == "textbox" || kind == "comment" { filledBox = box }
             }
         default: return nil
         }

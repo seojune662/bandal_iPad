@@ -32,14 +32,18 @@ enum NativePDFPaletteStyle {
     static let highlighterSteps = [0.0035, 0.004, 0.0045, 0.005, 0.0055, 0.006, 0.007, 0.008, 0.009, 0.010, 0.0115, 0.013]
     /// Eraser radius; 0.005 (index 3) is the radius the eraser always had.
     static let eraserSteps = [0.002, 0.003, 0.004, 0.005, 0.007, 0.009, 0.012, 0.015, 0.020, 0.025, 0.032, 0.040]
-    static let slotTools = ["pen", "ballpoint", "highlighter", "eraser"]
-    static let defaultWidthSlots: [String: [Int]] = ["pen": [2, 5, 8], "ballpoint": [2, 4, 8], "highlighter": [0, 5, 9], "eraser": [1, 3, 6]]
-    static let defaultColorSlots: [String: [String]] = ["pen": ["ink", "blue", "red", "green"], "ballpoint": ["ink", "blue", "red"], "highlighter": ["yellow", "green", "blue", "violet"]]
+    /// Memorisation tape band thickness.
+    static let tapeSteps = [0.006, 0.008, 0.010, 0.012, 0.015, 0.018, 0.022, 0.026, 0.031, 0.037, 0.044, 0.052]
+    static let slotTools = ["pen", "ballpoint", "highlighter", "eraser", "tape"]
+    static let defaultWidthSlots: [String: [Int]] = ["pen": [2, 5, 8], "ballpoint": [2, 4, 8], "highlighter": [0, 5, 9], "eraser": [1, 3, 6], "tape": [3, 6, 9]]
+    static let defaultColorSlots: [String: [String]] = ["pen": ["ink", "blue", "red", "green"], "ballpoint": ["ink", "blue", "red"], "highlighter": ["yellow", "green", "blue", "violet"],
+                                                        "tape": ["blue", "red", "orange", "violet"]]
     static let eraserModes = ["stroke", "partial"]
     static func steps(for tool: String) -> [Double] {
         switch tool {
         case "highlighter": highlighterSteps
         case "eraser": eraserSteps
+        case "tape": tapeSteps
         default: penSteps
         }
     }
@@ -72,6 +76,8 @@ struct NativePDFPalettePreferences: Codable, Equatable {
     var widthSlots: [String: [Int]] = [:]
     var eraserMode = "stroke"
     var eraserRadius = 0.005
+    var tapeColor = "blue"
+    var tapeWidth = 0.022
     func colors(for tool: String) -> [String] {
         var seen = Set<String>()
         let value = (colorSlots[tool] ?? []).filter { NativePDFPenPreset.colors.contains($0) && seen.insert($0).inserted }
@@ -87,7 +93,7 @@ struct NativePDFPalettePreferences: Codable, Equatable {
     static let changed = Notification.Name("NativePDFPalettePreferences.changed")
 
     init() {}
-    private enum CodingKeys: String, CodingKey { case version, favorites, presets, recentPen, recentHighlighter, recentBallpoint, drawAndHold, colorSlots, widthSlots, eraserMode, eraserRadius }
+    private enum CodingKeys: String, CodingKey { case version, favorites, presets, recentPen, recentHighlighter, recentBallpoint, drawAndHold, colorSlots, widthSlots, eraserMode, eraserRadius, tapeColor, tapeWidth }
     private struct Candidate: Decodable {
         let value: NativePDFPenPreset?
         init(from decoder: Decoder) throws { value = try? NativePDFPenPreset(from: decoder) }
@@ -115,6 +121,9 @@ struct NativePDFPalettePreferences: Codable, Equatable {
         if let mode = try? values.decode(String.self, forKey: .eraserMode), NativePDFPaletteStyle.eraserModes.contains(mode) { eraserMode = mode }
         if let radius = try? values.decode(Double.self, forKey: .eraserRadius), radius.isFinite,
            (NativePDFPaletteStyle.eraserSteps.first!...NativePDFPaletteStyle.eraserSteps.last!).contains(radius) { eraserRadius = radius }
+        if let color = try? values.decode(String.self, forKey: .tapeColor), NativePDFPenPreset.colors.contains(color) { tapeColor = color }
+        if let width = try? values.decode(Double.self, forKey: .tapeWidth), width.isFinite,
+           (NativePDFPaletteStyle.tapeSteps.first!...NativePDFPaletteStyle.tapeSteps.last!).contains(width) { tapeWidth = width }
     }
     func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
@@ -124,6 +133,7 @@ struct NativePDFPalettePreferences: Codable, Equatable {
         try values.encode(drawAndHold, forKey: .drawAndHold)
         try values.encode(colorSlots, forKey: .colorSlots); try values.encode(widthSlots, forKey: .widthSlots)
         try values.encode(eraserMode, forKey: .eraserMode); try values.encode(eraserRadius, forKey: .eraserRadius)
+        try values.encode(tapeColor, forKey: .tapeColor); try values.encode(tapeWidth, forKey: .tapeWidth)
     }
     static func key(root: URL, documentsRoot: URL? = nil) -> String {
         key(rootIdentity: NativePDFPreferenceScope.identity(root: root, documentsRoot: documentsRoot))

@@ -133,8 +133,8 @@ final class NativePDFRetainedObjectTextures {
             NativePDFObjectRenderer.path($0, width: pageSize.width, height: pageSize.height)
         }
         if native == nil && legacy == nil {
-            guard ["line", "arrow", "rect", "ellipse", "textbox", "image", "clip"].contains(kind) else { return nil }
-            if ["textbox", "image", "clip"].contains(kind) {
+            guard ["line", "arrow", "rect", "ellipse", "textbox", "image", "clip", "tape", "comment"].contains(kind) else { return nil }
+            if ["textbox", "image", "clip", "comment"].contains(kind) {
                 guard let box = data["box"] as? [String: Any],
                       let x = number(box["x"]), let y = number(box["y"]),
                       let width = number(box["width"]), let height = number(box["height"]),

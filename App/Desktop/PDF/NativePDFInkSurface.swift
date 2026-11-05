@@ -660,7 +660,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         guard !isLoading else { recordInput("blocked.loading"); return nil }
         guard !journalBlocked else { recordInput("blocked.journal"); return nil }
         guard mapper != nil else { recordInput("blocked.mapper"); return nil }
-        guard ["select", "lasso", "pen", "highlighter", "eraser", "line", "arrow", "rect", "ellipse", "text"].contains(tool.name) else { recordInput("blocked.tool"); return nil }
+        guard ["select", "lasso", "pen", "highlighter", "eraser", "line", "arrow", "rect", "ellipse", "text", "tape", "laser", "comment"].contains(tool.name) else { recordInput("blocked.tool"); return nil }
         recordInput("target"); return self
     }
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -1505,6 +1505,8 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         }
     }
     private func publishPointer(_ phase: String, points: [NativePDFPoint]) {
+        // The laser is drawn here and never saved, so the editor never sees it.
+        if strokeTool.name == "laser" { return }
         if nativeEraseContact {
             if phase == "move" { updateNativeErasure(points: points) }
             return
@@ -2128,7 +2130,39 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     }
     private func redrawLassoPreview() {
         if strokeTool.name == "lasso" || tool.name == "lasso" { decorations.setNeedsDisplay() }
-        updateEraserCursor()
+        updateEraserCursor(); updateLaser()
+    }
+    /// The laser pointer: a glowing red trail of the last moments of the
+    /// contact that fades on lift. Nothing is saved.
+    private lazy var laserTrail: CAShapeLayer = {
+        let trail = CAShapeLayer()
+        trail.fillColor = nil; trail.strokeColor = UIColor.systemRed.cgColor
+        trail.lineWidth = 4; trail.lineCap = .round; trail.lineJoin = .round
+        trail.shadowColor = UIColor.systemRed.cgColor; trail.shadowRadius = 6; trail.shadowOpacity = 0.9; trail.shadowOffset = .zero
+        trail.zPosition = 11
+        layer.addSublayer(trail)
+        return trail
+    }()
+    private var laserVisible = false
+    private static let laserTrailMilliseconds = 600.0
+    private func updateLaser() {
+        guard strokeTool.name == "laser" || laserVisible else { return }
+        guard active != nil, strokeTool.name == "laser", let mapper, let last = measured.last else {
+            guard laserVisible else { return }
+            laserVisible = false
+            let fade = CABasicAnimation(keyPath: "opacity"); fade.fromValue = 1; fade.toValue = 0; fade.duration = 0.5
+            laserTrail.opacity = 0; laserTrail.add(fade, forKey: "fade")
+            return
+        }
+        let cutoff = (last.t ?? 0) - Self.laserTrailMilliseconds
+        let recent = measured.filter { ($0.t ?? cutoff) >= cutoff }
+        let path = CGMutablePath()
+        path.addLines(between: recent.map { mapper.canvasPoint(InkPoint(x: $0.x, y: $0.y, p: 0.5)) })
+        if recent.count == 1 { path.addLine(to: mapper.canvasPoint(InkPoint(x: last.x, y: last.y, p: 0.5))) }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        laserTrail.removeAnimation(forKey: "fade"); laserTrail.opacity = 1; laserTrail.path = path
+        CATransaction.commit()
+        laserVisible = true
     }
     /// A ring of the eraser's size under the Pencil while erasing. A layer, so
     /// moving it never repaints the viewport-sized decorations bitmap.

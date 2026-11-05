@@ -58,6 +58,8 @@ final class NativePDFPersistence {
         let rows: [[String: Any]]
         var recovery: [String: Any]?
         var creationMutationIDs: [String]?
+        /// False for view-state edits (peeling tape back) that undo should skip.
+        var recordsHistory = true
         init(_ kind: String, rows: [[String: Any]]) { self.kind = kind; self.rows = rows }
     }
     private struct PendingHistory { let action: HistoryAction; let direction: Int }
@@ -426,7 +428,9 @@ final class NativePDFPersistence {
         defer { creationFlights.removeValue(forKey: mutationID) }
         return try await task.value
     }
-    func updateObjects(_ values: [[String: Any]], expected: [[String: Any]]? = nil) async throws { try await edit("update", values, expected: expected) }
+    func updateObjects(_ values: [[String: Any]], expected: [[String: Any]]? = nil, recordsHistory: Bool = true) async throws {
+        try await edit("update", values, expected: expected, recordsHistory: recordsHistory)
+    }
     /// One undo step that updates, deletes and creates rows together (the partial
     /// eraser). Each row names its operation in `_op`: update, delete or create.
     func batchObjects(_ values: [[String: Any]], expected: [[String: Any]]? = nil) async throws { try await edit("batch", values, expected: expected) }
@@ -440,7 +444,7 @@ final class NativePDFPersistence {
         try await reloadAnnotationIDs([id])
         try await edit("annotationDelete", annotations.filter { $0["id"] as? String == id })
     }
-    private func edit(_ kind: String, _ values: [[String: Any]], expected original: [[String: Any]]? = nil, creationMutationIDs: [String]? = nil) async throws {
+    private func edit(_ kind: String, _ values: [[String: Any]], expected original: [[String: Any]]? = nil, creationMutationIDs: [String]? = nil, recordsHistory: Bool = true) async throws {
         let ids = Set(values.compactMap { $0["id"] as? String })
         let expected = (kind.hasPrefix("annotation") ? annotations : rows).filter { ids.contains($0["id"] as? String ?? "") }
         try await drain()
@@ -450,7 +454,7 @@ final class NativePDFPersistence {
             if let path = value["relPath"] as? String, path != relativePath { throw NativePDFError.invalid("다른 문서의 개체를 편집할 수 없습니다.") }
         }
         let action = HistoryAction(kind, rows: values)
-        action.creationMutationIDs = creationMutationIDs
+        action.creationMutationIDs = creationMutationIDs; action.recordsHistory = recordsHistory
         if ["update", "annotationUpdate", "delete", "annotationDelete", "batch"].contains(kind) { action.expected = original ?? expected }
         pendingHistory = PendingHistory(action: action, direction: 0)
         try await finishPendingHistory()
@@ -666,7 +670,7 @@ final class NativePDFPersistence {
         let inverse = HistoryAction(inverseKind, rows: changed)
         if pending.direction == -1 { undoStack.removeLast(); redoStack.append(inverse) }
         else if pending.direction == 1 { redoStack.removeLast(); undoStack.append(inverse) }
-        else { undoStack.append(inverse); redoStack.removeAll() }
+        else if action.recordsHistory { undoStack.append(inverse); redoStack.removeAll() }
         pendingHistory = nil
         if action.kind.hasPrefix("annotation") { publishAnnotations() }
         else { publishDrawings() }
