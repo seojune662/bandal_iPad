@@ -41,12 +41,33 @@ extension DesktopBrowserHost {
     func openLinkTab(_ url: URL, from opener: DesktopBrowserPage) throws -> DesktopBrowserPage {
         guard pages[opener.tabID] === opener, pages.count < 64 else { throw DesktopBrowserError.unavailable("새 탭을 열 수 없습니다. 사용하지 않는 탭을 닫아 주세요.") }
         _ = try Self.navigationURL(url.absoluteString)
-        let scope = opener.tabID.hasPrefix("native-scope.") ? opener.tabID.split(separator: ".").dropLast().joined(separator: ".") + "." : ""
-        let tabID = scope + UUID().uuidString
-        let child = try createPage(tabID: tabID, profileID: opener.profileID, isPrivate: opener.isPrivate, courseID: opener.courseID)
-        emit("browser:open-url", ["tabId": tabID, "openerTabId": opener.tabID, "courseId": opener.courseID as Any? ?? NSNull(),
-            "url": url.absoluteString, "isPrivate": opener.isPrivate, "profileId": opener.profileID, "webContentsId": child.id])
+        let slot = childTab(of: opener)
+        let child = try createPage(tabID: slot.tabID, profileID: opener.profileID, isPrivate: opener.isPrivate, courseID: opener.courseID)
+        announce(child, opener: opener, url: url.absoluteString, workspaceID: slot.workspaceID, background: true)
         child.load(navigationRequest(url))
         return child
+    }
+    /// ⌘T / "새 탭" inside a dock browser tab: same route as a link, so the
+    /// new page becomes a dock tab instead of a nested one.
+    func openNewTab(from opener: DesktopBrowserPage, isPrivate: Bool, url: String) throws {
+        guard pages[opener.tabID] === opener, pages.count < 64 else { throw DesktopBrowserError.unavailable("새 탭을 열 수 없습니다. 사용하지 않는 탭을 닫아 주세요.") }
+        let target = try Self.navigationURL(url)
+        let slot = childTab(of: opener)
+        let child = try createPage(tabID: slot.tabID, profileID: opener.profileID, isPrivate: isPrivate, courseID: opener.courseID)
+        announce(child, opener: opener, url: url, workspaceID: slot.workspaceID, background: false)
+        if url != "about:blank" { child.load(navigationRequest(target)) }
+    }
+    /// Chrome never nests tabs: a link or popup from a dock browser tab becomes
+    /// its own dock tab. It gets a fresh scope, which the dock adopts as a new
+    /// browser document. The standalone (unscoped) browser keeps its own strip.
+    func childTab(of opener: DesktopBrowserPage) -> (tabID: String, workspaceID: String?) {
+        guard opener.tabID.hasPrefix("native-scope.") else { return (UUID().uuidString, nil) }
+        let workspaceID = UUID().uuidString.lowercased()
+        return (NativeBrowserSession.scopePrefix(workspaceID) + UUID().uuidString, workspaceID)
+    }
+    func announce(_ child: DesktopBrowserPage, opener: DesktopBrowserPage, url: String, workspaceID: String?, background: Bool) {
+        emit("browser:open-url", ["tabId": child.tabID, "openerTabId": opener.tabID, "courseId": opener.courseID as Any? ?? NSNull(),
+            "url": url, "isPrivate": child.isPrivate, "profileId": child.profileID, "webContentsId": child.id,
+            "workspaceId": workspaceID as Any? ?? NSNull(), "background": background])
     }
 }

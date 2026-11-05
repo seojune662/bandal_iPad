@@ -260,6 +260,21 @@ final class NativeWorkspaceNavigation: ObservableObject {
         }
         return document
     }
+    /// Chrome's placement for a tab a page opened: right after its opener.
+    @discardableResult
+    func openAfter(_ document: NativeDocumentReference, sourceID: String, activate: Bool) -> NativeDocumentReference? {
+        guard let target = target(containing: sourceID) else { return nil }
+        if !documents.contains(where: { $0.id == document.id }) { documents.append(document) }
+        edit(in: target.ref) { layout in
+            guard let group = layout.root.groups.first(where: { $0.tabs.contains(sourceID) }) else { return }
+            layout.updateGroup(group.id) { pane in
+                pane.tabs.insert(document.id, at: (pane.tabs.firstIndex(of: sourceID) ?? pane.tabs.count - 1) + 1)
+                if activate { pane.activeID = document.id }
+            }
+            if activate { layout.focusedGroupID = group.id }
+        }
+        return document
+    }
     @discardableResult
     func duplicate(_ documentID: String, inGroup groupID: String? = nil, direction: NativeDockDirection = .within) -> NativeDocumentReference? {
         guard let source = document(documentID), source.supportsDuplicate,

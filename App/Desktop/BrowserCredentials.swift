@@ -1,7 +1,62 @@
 import Foundation
 import WebKit
 
+/// A login the user just submitted, held in native memory until they answer
+/// the save prompt. It never crosses into SwiftUI state or the page world.
+struct BrowserLoginOffer {
+    let origin: String
+    let username: String
+    let password: String
+    let expires: Date
+}
+
+/// Reachable only from BrowserCredentialScripts.world (registered there), so
+/// the page's own scripts cannot post fake submissions.
+@MainActor
+final class BrowserLoginRelay: NSObject, WKScriptMessageHandler {
+    static let name = "bandalLoginSubmitted"
+    weak var host: DesktopBrowserHost?
+    init(host: DesktopBrowserHost) { self.host = host }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame, let view = message.webView, let host,
+              let page = host.pages.values.first(where: { $0.liveWebView === view }), !page.isPrivate,
+              let body = message.body as? [String: Any], let username = body["username"] as? String, let password = body["password"] as? String,
+              !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, username.utf8.count <= 10_000,
+              !password.isEmpty, password.utf8.count <= 100_000 else { return }
+        let frame = message.frameInfo.securityOrigin
+        guard frame.protocol == "https", !frame.host.isEmpty,
+              let origin = try? DesktopCredentialsService.origin("https://" + frame.host + (frame.port == 0 ? "" : ":\(frame.port)")),
+              let address = view.url, (try? DesktopCredentialsService.origin(address.absoluteString)) == origin,
+              !host.neverSavesPasswords(profileID: page.profileID, origin: origin) else { return }
+        page.loginOffer = BrowserLoginOffer(origin: origin, username: username, password: password, expires: Date().addingTimeInterval(300))
+        host.emit("browser:login-offer", ["tabId": page.tabID, "origin": origin])
+    }
+}
+
 extension DesktopBrowserHost {
+    static let passwordSavePermission = "password-save"
+    func neverSavesPasswords(profileID: String, origin: String) -> Bool {
+        persistence?.state.permissions.contains { $0.profileID == profileID && $0.origin == origin && $0.permission == Self.passwordSavePermission && $0.decision == "denied" } == true
+    }
+    /// Returns the unexpired offer for a tab and its profile, if any.
+    func loginOffer(tabID: String) -> (profileID: String, offer: BrowserLoginOffer)? {
+        guard let page = pages[tabID], !page.isPrivate, let offer = page.loginOffer else { return nil }
+        guard offer.expires > Date() else { page.loginOffer = nil; return nil }
+        return (page.profileID, offer)
+    }
+    func clearLoginOffer(tabID: String) { pages[tabID]?.loginOffer = nil }
+    /// The current top document's credential target, for autofill after load.
+    func credentialTarget(tabID: String) -> DesktopCredentialTarget? {
+        guard let page = pages[tabID], let address = page.liveWebView?.url,
+              let origin = try? DesktopCredentialsService.origin(address.absoluteString) else { return nil }
+        return try? credentialTarget(guestID: page.id, origin: origin)
+    }
+    func hasLoginForm(_ target: DesktopCredentialTarget) async -> Bool {
+        guard let page = pages[target.tabID], page.id == target.guestID, let view = page.liveWebView else { return false }
+        let found = try? await view.callAsyncJavaScript("return window.top===window && location.origin===origin && !!document.querySelector('input[type=\"password\"]:not([disabled]):not([readonly])')",
+            arguments: ["origin": target.origin], in: nil, contentWorld: BrowserCredentialScripts.world)
+        return found as? Bool == true
+    }
     func credentialTarget(guestID: Int, origin: String) throws -> DesktopCredentialTarget {
         let expected = try DesktopCredentialsService.origin(origin)
         guard expected == origin, let page = pages.values.first(where: { $0.id == guestID }), !page.isPrivate,
@@ -70,6 +125,27 @@ enum BrowserCredentialScripts {
         } else if (captured && event.target === found.username && captured.passwordNode === found.password) {
           captured.username = found.username.value;
         }
+      }, true);
+      // Chrome-style "save password?": a trusted submit, Enter in a login
+      // field, or a click on a button of the login form offers the values.
+      let lastOffer = 0;
+      const offer = () => {
+        const found = fields();
+        if (!found || !found.username.value.trim() || !found.password.value || Date.now() - lastOffer < 1000) return;
+        lastOffer = Date.now();
+        try { window.webkit.messageHandlers.bandalLoginSubmitted.postMessage({ username: found.username.value, password: found.password.value }); } catch {}
+      };
+      document.addEventListener('submit', event => { if (event.isTrusted) offer(); }, true);
+      document.addEventListener('keydown', event => {
+        if (!event.isTrusted || event.key !== 'Enter' || event.isComposing || !(event.target instanceof HTMLInputElement)) return;
+        const found = fields();
+        if (found && (event.target === found.password || event.target === found.username)) offer();
+      }, true);
+      document.addEventListener('click', event => {
+        if (!event.isTrusted || !(event.target instanceof Element)) return;
+        const button = event.target.closest('button, input[type="submit"], input[type="button"], [role="button"]');
+        const found = fields();
+        if (button && found && (!found.password.form || button.form === found.password.form || found.password.form.contains(button))) offer();
       }, true);
       Object.defineProperty(globalThis, '__bandalNativeLoginCapture', { value: () => {
         const found = fields();

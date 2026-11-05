@@ -119,7 +119,10 @@ final class BrowserEngineImprovementsTests: XCTestCase {
         var opened: [String: Any]?
         host.emit = { channel, value in if channel == "browser:open-url" { opened = value as? [String: Any] } }
         let child = try host.openLinkTab(URL(string: "about:blank")!, from: page)
-        XCTAssertTrue(child.tabID.hasPrefix("native-scope.fixture.")); XCTAssertNotEqual(child.tabID, page.tabID)
+        // Chrome-style: a new tab from a dock tab is its own dock tab (new scope).
+        let workspaceID = try XCTUnwrap(opened?["workspaceId"] as? String)
+        XCTAssertTrue(child.tabID.hasPrefix(NativeBrowserSession.scopePrefix(workspaceID))); XCTAssertFalse(child.tabID.hasPrefix("native-scope.fixture."))
+        XCTAssertEqual(opened?["background"] as? Bool, true)
         XCTAssertEqual(child.courseID, "course"); XCTAssertTrue(child.isPrivate)
         XCTAssertTrue(child.dataStore === page.dataStore)
         XCTAssertEqual(opened?["openerTabId"] as? String, page.tabID)

@@ -44,6 +44,8 @@ final class NativeBrowserSession: ObservableObject {
     @Published var findStates: [String: NativeBrowserFindState] = [:]
     @Published var zoomLevels: [String: Double] = [:]
     @Published var sessionChanging = false
+    @Published var loginPrompts: [String: NativeBrowserLoginPrompt] = [:]
+    @Published var loginChoices: [String: NativeBrowserLoginChoices] = [:]
     var findTasks: [String: Task<Void, Never>] = [:]
     var favoriteRequest = UUID()
     var profileRequest = UUID()
@@ -171,9 +173,10 @@ final class NativeBrowserSession: ObservableObject {
             if !tabs.contains(where: { $0.id == activeID }) { activeID = tabs.first?.id }
             guard !retired else { throw CancellationError() }
             ready = true
-            await reloadFeatures()
             publishOuterTitle()
+            // The requested page first; favorites and downloads only feed chrome.
             await consumePendingURL()
+            await reloadFeatures()
             #if DEBUG
             if let id = activeID { await loadUITestFixture(id: id) }
             #endif
@@ -199,6 +202,17 @@ final class NativeBrowserSession: ObservableObject {
         }
         return id
     }
+    /// A dock browser tab opens new tabs as dock tabs (Chrome has one strip).
+    func openTab(isPrivate: Bool = false) async throws {
+        guard workspaceID != nil, let opener = active.flatMap({ host.pages[$0.id] }) else { try await add(isPrivate: isPrivate); return }
+        try host.openNewTab(from: opener, isPrivate: isPrivate, url: newTabURL(isPrivate: isPrivate))
+    }
+    /// A dock tab whose last page closed itself (window.close, ⌘W) goes away,
+    /// like a Chrome tab, instead of lingering as an empty browser.
+    private func closeScopeIfEmpty() {
+        guard let workspaceID, tabs.isEmpty, !retired else { return }
+        store.events.send(.init(channel: "nativeWorkspace:closeBrowserScope", payload: ["workspaceID": workspaceID]))
+    }
     private func newTabURL(isPrivate: Bool) -> String {
         #if DEBUG
         // Local browser UI fixtures must never race an unrelated remote page.
@@ -220,6 +234,7 @@ final class NativeBrowserSession: ObservableObject {
         if activeID == id { activeID = tabs.last?.id }
         publishOuterTitle()
         try save()
+        closeScopeIfEmpty()
     }
     func navigate(_ address: String) async throws {
         guard !retired else { throw CancellationError() }
@@ -266,6 +281,7 @@ final class NativeBrowserSession: ObservableObject {
         }
         guard !retired else { return }
         receiveFeatureEvent(event)
+        receiveLoginEvent(event)
         if event.channel == "nativeBrowser:scopeAction", let payload = event.payload as? [String: String], payload["workspaceID"] == scopeKey, payload["action"] == "reload" {
             Task { do { try await action("reload") } catch { self.error = error.localizedDescription } }; return
         }
@@ -350,6 +366,7 @@ struct NativeBrowserWorkspace: View {
                 HStack { NativeToolError(message: error); Button("닫기", systemImage: "xmark") { session.error = nil }.buttonStyle(NativeBrowserIconStyle()) }
             }
             if session.findState.visible && chromeMode != .toolsHidden { NativeBrowserFindBar(session: session) }
+            NativeBrowserLoginBar(session: session, perform: perform)
             if annotationRequest != nil {
                 NativeAnnotationToolbar(coordinator: annotation, regionMode: $annotationRegionMode,
                     supportsElement: true, busy: annotationBusy, attachText: { captureAnnotation() })
@@ -462,7 +479,7 @@ struct NativeBrowserWorkspace: View {
     }
     private var tabs: some View {
         NativeBrowserTabStrip(tabs: session.tabs, activeID: session.activeID, select: session.select,
-            close: { id in perform { try await session.close(id) } }, add: { perform { try await session.add() } })
+            close: { id in perform { try await session.close(id) } }, add: { perform { try await session.openTab() } })
     }
     private func toolbar(width: CGFloat) -> some View {
         let expanded = width >= 650
@@ -568,7 +585,7 @@ struct NativeBrowserWorkspace: View {
         } else {
             VStack(spacing: 16) {
                 NativeToolEmptyState(title: "열린 탭이 없습니다", message: "새 탭에서 웹사이트를 열어보세요.", symbol: "square.on.square")
-                Button("새 탭 열기") { perform { try await session.add() } }.buttonStyle(NativeToolButtonStyle(primary: true)).padding(.bottom, 32)
+                Button("새 탭 열기") { perform { try await session.openTab() } }.buttonStyle(NativeToolButtonStyle(primary: true)).padding(.bottom, 32)
             }
         }
     }
@@ -632,8 +649,8 @@ struct NativeBrowserWorkspace: View {
     }
     private var browserMenu: some View {
         Menu {
-            Button("새 탭", systemImage: "plus") { perform { try await session.add() } }
-            Button("새 개인정보 보호 탭", systemImage: "hand.raised") { perform { try await session.add(isPrivate: true) } }
+            Button("새 탭", systemImage: "plus") { perform { try await session.openTab() } }
+            Button("새 개인정보 보호 탭", systemImage: "hand.raised") { perform { try await session.openTab(isPrivate: true) } }
             Divider()
             Button("앞으로", systemImage: "chevron.right") { perform { try await session.action("goForward") } }.disabled(session.active?.canGoForward != true)
             reloadButton
@@ -697,7 +714,7 @@ struct NativeBrowserWorkspace: View {
         switch action {
         case "focus-address": addressFocused = true
         case "find": session.setFindVisible(true)
-        case "new-tab": perform { try await session.add() }
+        case "new-tab": perform { try await session.openTab() }
         case "close-tab": if let id = session.activeID { perform { try await session.close(id) } }
         case "browser-back": perform { try await session.action("goBack") }
         case "browser-forward": perform { try await session.action("goForward") }

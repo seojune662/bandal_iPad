@@ -86,6 +86,13 @@ final class NativePlatformServices: ObservableObject {
             guard let browser else { throw CancellationError() }
             return try await browser.fillLogin(target, username: username, password: password, autoSubmit: submit)
         }
+        credentials.offer = { [weak browser] in browser?.loginOffer(tabID: $0) }
+        credentials.clearOffer = { [weak browser] in browser?.clearLoginOffer(tabID: $0) }
+        credentials.neverSave = { [weak browser] profile, origin in
+            try browser?.savePermission(profile: profile, origin: origin, permission: DesktopBrowserHost.passwordSavePermission, decision: "denied")
+        }
+        credentials.tabTarget = { [weak browser] in browser?.credentialTarget(tabID: $0) }
+        credentials.hasLoginForm = { [weak browser] in await browser?.hasLoginForm($0) ?? false }
         browser.onDeleteProfile = { [weak credentials] profile in
             guard let credentials else { throw CancellationError() }
             try credentials.deleteProfile(profile)
@@ -149,6 +156,9 @@ final class NativePlatformServices: ObservableObject {
                 browser.applyShortcuts(NativeBrowserShortcuts.resolve(settings))
                 settingsService.apply(settings)
             }
+            // The engine identity probe (~0.6 s, one throwaway web view) otherwise
+            // runs when the first browser tab opens. Failure is retried there.
+            Task { try? await DesktopBrowserIdentity.prepare() }
             _ = try await account.handle(channel:"auth:getState",request:[:])
             sync?.start()
         } catch { store.errorMessage = error.localizedDescription }

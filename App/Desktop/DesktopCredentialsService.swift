@@ -53,13 +53,19 @@ final class DesktopCredentialsService: NSObject, UIDocumentPickerDelegate {
     var target: (Int, String) throws -> DesktopCredentialTarget = { _, _ in throw DesktopRuntimeError("브라우저 탭을 먼저 열어 주세요.") }
     var capture: (DesktopCredentialTarget) async throws -> [String: String]? = { _ in nil }
     var fill: (DesktopCredentialTarget, String, String, Bool) async throws -> [String: Bool] = { _, _, _, _ in ["filled": false, "submitted": false] }
+    var offer: (String) -> (profileID: String, offer: BrowserLoginOffer)? = { _ in nil }
+    var clearOffer: (String) -> Void = { _ in }
+    var neverSave: (String, String) throws -> Void = { _, _ in }
+    var tabTarget: (String) -> DesktopCredentialTarget? = { _ in nil }
+    var hasLoginForm: (DesktopCredentialTarget) async -> Bool = { _ in false }
     init(namespace: String = "", environment: Environment = .live) { self.namespace = namespace; self.environment = environment }
     private func account(_ profile: String) -> String { namespace.isEmpty ? profile : namespace + ":" + profile }
     nonisolated static func keychainQuery(_ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "app.bandal.ipad.browser-logins", kSecAttrAccount as String: account, kSecAttrSynchronizable as String: false]
     }
     func canHandle(_ channel: String) -> Bool {
-        ["credentials:availability", "credentials:list", "credentials:save", "credentials:capture", "credentials:forget", "credentials:fill", "credentials:importCsv"].contains(channel)
+        ["credentials:availability", "credentials:list", "credentials:save", "credentials:capture", "credentials:forget", "credentials:fill", "credentials:importCsv",
+         "credentials:reviewOffer", "credentials:resolveOffer", "credentials:autofill"].contains(channel)
     }
     static func origin(_ input: String) throws -> String {
         guard let parts = URLComponents(string: input), parts.scheme?.lowercased() == "https", let host = parts.host?.lowercased(), !host.isEmpty, parts.user == nil, parts.password == nil else { throw DesktopRuntimeError("로그인은 사용자 정보가 없는 HTTPS 사이트에만 저장할 수 있습니다.") }
@@ -112,6 +118,10 @@ final class DesktopCredentialsService: NSObject, UIDocumentPickerDelegate {
     func handle(channel: String, request: [String: Any]) async throws -> Any {
         staged = staged.filter { $0.value.expires > environment.now() }
         if channel == "credentials:capture" || channel == "credentials:fill" { return try await pageRequest(channel, request: request) }
+        if ["credentials:reviewOffer", "credentials:resolveOffer", "credentials:autofill"].contains(channel) {
+            guard let tab = request["tabId"] as? String, tab.utf8.count <= 512 else { throw DesktopRuntimeError("브라우저 탭을 확인해 주세요.") }
+            return channel == "credentials:autofill" ? try await autofill(tab) : try resolveOffer(channel, tab: tab, decision: request["decision"] as? String)
+        }
         let profile = try profile(request)
         switch channel {
         case "credentials:availability":
@@ -174,6 +184,31 @@ final class DesktopCredentialsService: NSObject, UIDocumentPickerDelegate {
             return ["id": "staged:\(guest)", "origin": origin, "username": username, "autoSubmit": false, "updatedAt": ISO8601DateFormatter().string(from: environment.now())]
         }
         return try save(["origin": origin, "username": username, "password": password, "autoSubmit": request["autoSubmit"] as? Bool ?? false], profile: page.profileID).summary
+    }
+    /// nil (NSNull) means "show nothing": no offer, or the same login is saved.
+    private func resolveOffer(_ channel: String, tab: String, decision: String?) throws -> Any {
+        guard let (profile, offer) = offer(tab) else { return NSNull() }
+        let existing = try load(profile).first { $0.origin == offer.origin && $0.username == offer.username }
+        if channel == "credentials:reviewOffer" {
+            if existing?.password == offer.password { clearOffer(tab); return NSNull() }
+            return ["origin": offer.origin, "username": offer.username, "update": existing != nil]
+        }
+        clearOffer(tab)
+        switch decision {
+        case "save": return try save(["origin": offer.origin, "username": offer.username, "password": offer.password, "autoSubmit": existing?.autoSubmit ?? false], profile: profile).summary
+        case "never": try neverSave(profile, offer.origin); return ["ok": true]
+        default: return NSNull()
+        }
+    }
+    /// Chrome fills a single saved login on load; with several it lets the
+    /// user pick. Never submits. Returns the accounts for the picker.
+    private func autofill(_ tab: String) async throws -> Any {
+        guard let page = tabTarget(tab), profileExists(page.profileID) else { return ["filled": false, "accounts": []] }
+        let matching = try load(page.profileID).filter { $0.origin == page.origin }
+        guard !matching.isEmpty, await hasLoginForm(page), tabTarget(tab) == page else { return ["filled": false, "accounts": []] }
+        var filled = false
+        if matching.count == 1 { filled = try await fill(page, matching[0].username, matching[0].password, false)["filled"] == true }
+        return ["filled": filled, "accounts": matching.count > 1 ? matching.map(\.summary) : [], "guestWebContentsId": page.guestID, "origin": page.origin]
     }
     func importCSV(_ text: String, profile: String) throws -> [String: Any] {
         let rows = try Self.csvRows(text), header = rows.first?.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() } ?? []

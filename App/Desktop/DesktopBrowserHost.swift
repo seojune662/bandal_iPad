@@ -56,6 +56,7 @@ final class DesktopBrowserHost: NSObject {
     private var privacyTask: Task<Void, Error>?
     private var privacyGeneration = 0
     lazy var observationRelay = BrowserObservationRelay(host: self)
+    lazy var loginRelay = BrowserLoginRelay(host: self)
 
     init(root: URL) {
         self.root = root.appendingPathComponent("DesktopBrowser", isDirectory: true)
@@ -581,12 +582,11 @@ final class DesktopBrowserHost: NSObject {
             emit("browser:popup-blocked", ["tabId": opener.tabID, "profileId": opener.profileID, "isPrivate": opener.isPrivate, "url": url.absoluteString, "origin": origin, "reason": rejection!]); return nil
         }
         opener.preventsSuspension = true // Preserve window.opener authentication flows.
-        let scope = opener.tabID.hasPrefix("native-scope.") ? opener.tabID.split(separator: ".").dropLast().joined(separator: ".") + "." : ""
-        let tabID = scope + UUID().uuidString
-        guard let child = try? createPage(tabID: tabID, profileID: opener.profileID, isPrivate: opener.isPrivate, courseID: opener.courseID, configuration: configuration) else { popupAdmission.release(owner: opener.id); return nil }
-        popupOwners[tabID] = opener.id
+        let slot = childTab(of: opener)
+        guard let child = try? createPage(tabID: slot.tabID, profileID: opener.profileID, isPrivate: opener.isPrivate, courseID: opener.courseID, configuration: configuration) else { popupAdmission.release(owner: opener.id); return nil }
+        popupOwners[slot.tabID] = opener.id
         child.expectPopupRequest(action.request)
-        emit("browser:open-url", ["tabId": tabID, "openerTabId": opener.tabID, "courseId": opener.courseID as Any? ?? NSNull(), "url": url.absoluteString, "isPrivate": opener.isPrivate, "profileId": opener.profileID, "webContentsId": child.id])
+        announce(child, opener: opener, url: url.absoluteString, workspaceID: slot.workspaceID, background: false)
         return child.webView
     }
     func savePermission(profile: String, origin: String, permission: String, decision: String) throws {

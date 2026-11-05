@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import Security
 
 /// Each caller waits for its own fresh snapshot to be applied. A later refresh
 /// cannot invalidate an earlier selection's awaited load or publish stale data.
@@ -139,6 +140,8 @@ final class NativeWorkspaceStore {
             // Each explicitly reset UI fixture starts with visible desktop rails.
             // Normal launches and restart tests preserve the user's preference.
             for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.home.section", "native.desktop.aiRail", "native.inspector.width"] { UserDefaults.standard.removeObject(forKey: key) }
+            // Browser logins live in the Keychain, outside the reset folder.
+            SecItemDelete(DesktopCredentialsService.keychainQuery(folder.lastPathComponent + ":default") as CFDictionary)
             #endif
         }
         let legacy = storageRoot != nil ? folder.appendingPathComponent("Legacy", isDirectory: true)
