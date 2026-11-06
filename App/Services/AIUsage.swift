@@ -23,9 +23,23 @@ final class AIUsage: ObservableObject {
         creditUcents = (usage["creditUcents"] as? NSNumber)?.int64Value ?? creditUcents
     }
 
+    /// Where a refusal sends the user: free → membership (Plus first), Plus → Pro (with a credit link),
+    /// Pro → credit. A task cap only stops that task; the chat says so and nothing opens.
+    enum Destination: Equatable { case none, membership, upgrade, credit }
+    static func destination(_ code: String, plan: String) -> Destination {
+        guard code == "BUDGET_EXHAUSTED" else { return .none }
+        switch plan { case "pro": return .credit; case "plus": return .upgrade; default: return .membership }
+    }
+
     /// A budget or task-cap refusal from the proxy.
     static func presentLimit(_ code: String, usage: [String: Any]) {
         shared.update(usage)
-        MembershipPaywall.present(message: AIError.describe(code, usage))
+        let message = AIError.describe(code, usage)
+        switch destination(code, plan: usage["plan"] as? String ?? shared.plan) {
+        case .none: break
+        case .membership: MembershipPaywall.present(message: message, variant: .all)
+        case .upgrade: MembershipPaywall.present(message: message, variant: .upgrade)
+        case .credit: AICreditSheet.present(message: message)
+        }
     }
 }

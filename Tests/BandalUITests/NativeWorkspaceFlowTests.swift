@@ -319,8 +319,12 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let open = app.buttons["native-membership-open"]
         XCTAssertTrue(open.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS '로그인'")).firstMatch.exists)
+        XCTAssertEqual(app.staticTexts["native-membership-state"].label.contains("무료") || app.otherElements["native-membership-state"].exists, true)
+        attachScreenshot(app, name: "Settings subscription panel (free)")
         open.tap()
         XCTAssertTrue(app.buttons["membership-close"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["membership-trial-note"].waitForExistence(timeout: 5), app.debugDescription)
+        attachScreenshot(app, name: "Membership paywall (Plus and Pro)")
         XCTAssertFalse(reason.exists)
     }
 

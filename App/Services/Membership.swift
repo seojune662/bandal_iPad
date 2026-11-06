@@ -3,13 +3,17 @@ import StoreKit
 import os
 
 /// 반달 멤버십 (design §8.1): the App Store subscription group "Bandal Membership", judged on this iPad from
-/// StoreKit's signed entitlements, which work offline and carry expiry and refunds. Login and sync play no
-/// part in it: purchase and restore never need a 반달 account, and no transaction is sent anywhere.
+/// StoreKit's signed entitlements, which work offline and carry expiry and refunds. Courses and documents
+/// need no account. The AI budget is the server's: signed in, transactions are reported to ipad-store
+/// (StoreSync), and credit packs are finished only after the server paid them.
 @MainActor
 final class Membership: ObservableObject {
-    /// The group's tiers, lowest first. Pro joins above Plus later, with its own products below.
-    enum Tier: Comparable { case free, plus }
-    nonisolated static let products: [String: Tier] = ["app.bandal.ipad.plus.monthly": .plus, "app.bandal.ipad.plus.yearly": .plus]
+    /// The group's tiers, lowest first. Plus and Pro differ only in the AI budget.
+    enum Tier: Comparable { case free, plus, pro }
+    nonisolated static let products: [String: Tier] = [
+        "app.bandal.ipad.plus.monthly": .plus, "app.bandal.ipad.plus.yearly": .plus,
+        "app.bandal.ipad.pro.monthly": .pro, "app.bandal.ipad.pro.yearly": .pro,
+    ]
     static let shared = Membership()
     @Published private(set) var tier = Tier.free
     /// The signed-in 반달 user id, sent as `appAccountToken` when there is one. Signed out, purchases go through the same.
@@ -37,13 +41,26 @@ final class Membership: ObservableObject {
         guard updates == nil else { return }
         updates = Task { [weak self] in
             for await update in Transaction.updates {
-                if case .verified(let transaction) = update { await transaction.finish() }
+                await Self.settle(update)
                 await self?.refresh()
+                await StoreSync.shared.syncSubscriptions()
             }
         }
         Task {
-            for await result in Transaction.unfinished { if case .verified(let transaction) = result { await transaction.finish() } }
+            for await result in Transaction.unfinished { await Self.settle(result) }
             await refresh()
+            await StoreSync.shared.syncSubscriptions()
+        }
+    }
+
+    /// Finishes a transaction once it is accounted for: a credit pack only after the server paid it
+    /// (otherwise it stays unfinished and is redeemed at the next launch or sign-in).
+    static func settle(_ result: VerificationResult<Transaction>) async {
+        guard case .verified(let transaction) = result else { return }
+        if transaction.productType == .consumable {
+            if await StoreSync.shared.redeem(result) { await transaction.finish() }
+        } else {
+            await transaction.finish()
         }
     }
 
