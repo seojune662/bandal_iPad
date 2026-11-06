@@ -118,6 +118,9 @@ final class NativeWorkspaceStore {
         }
     }
     private struct Selection: Codable { let courseID: String? }
+    /// Reset once per launch: a later store (a profile switch) resetting again would delete the folder
+    /// under a database that is still open ("disk I/O error").
+    private static var resetUITesting = false
 
     init(storageRoot: URL? = nil) {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -133,7 +136,8 @@ final class NativeWorkspaceStore {
         let folder = storageRoot ?? selectedRoot ?? documents.appendingPathComponent(testing ? testingFolder : "BandalDesktop", isDirectory: true)
         // An explicit test directory is never reset implicitly, so restart tests
         // and existing course data use exactly the same startup path.
-        if storageRoot == nil, testing, arguments.contains("--reset-native-ui-testing") {
+        if storageRoot == nil, testing, arguments.contains("--reset-native-ui-testing"), !Self.resetUITesting {
+            Self.resetUITesting = true
             do { if FileManager.default.fileExists(atPath: folder.path) { try FileManager.default.removeItem(at: folder) } }
             catch { initializationFailure = error }
             #if DEBUG

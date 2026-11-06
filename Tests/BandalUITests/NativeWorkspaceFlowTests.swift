@@ -319,6 +319,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let open = app.buttons["native-membership-open"]
         XCTAssertTrue(open.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS '로그인'")).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'I/O'")).firstMatch.exists, "a second reset deleted the live database")
         XCTAssertEqual(app.staticTexts["native-membership-state"].label.contains("무료") || app.otherElements["native-membership-state"].exists, true)
         attachScreenshot(app, name: "Settings subscription panel (free)")
         open.tap()

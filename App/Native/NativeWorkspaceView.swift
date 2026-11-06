@@ -49,8 +49,7 @@ struct NativeWorkspaceView: View {
     @State private var restored = false
     @State private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
-    init() {
-        let store = NativeWorkspaceStore()
+    init(store: NativeWorkspaceStore) {
         _storeHolder = StateObject(wrappedValue: NativeObservableHolder(store))
         _services = StateObject(wrappedValue: NativePlatformServices(store: store))
         _annotation = ObservedObject(wrappedValue: store.annotation)
