@@ -659,7 +659,11 @@ struct NativeWorkspaceView: View {
             openAIRail()
         }
     }
-    private func openSettings(_ category: String) { transition { windowsOverviewOpen = false; boardOverlayOpen = false; settingsCategory = category; section = .settings; auxiliary = nil } }
+    private func openSettings(_ category: String) {
+        transition { windowsOverviewOpen = false; boardOverlayOpen = false; settingsCategory = category; section = .settings; auxiliary = nil }
+        // Settings may already be open on that category and moved on; pick it again.
+        store.events.send(.init(channel: "nativeSettings:select", payload: ["category": category]))
+    }
     private func favoriteDescriptor(_ document: NativeDocumentReference) -> [String: Any]? {
         let url = document.kind == "browser" ? NativeBrowserSession.currentPage(workspaceID: document.relativePath, store: store, host: services.browser)?.url : nil
         return NativeSidebarDescriptor.document(document, browserURL: url, conversationID: NativeToolSelection.conversationID(workspaceID: document.relativePath, root: store.root), recordingID: NativeToolSelection.recordingID(workspaceID: document.relativePath, courseID: document.courseID))

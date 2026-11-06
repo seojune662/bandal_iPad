@@ -212,10 +212,8 @@ private final class NativeAssistantSession: ObservableObject {
         defer { sending = false }
         await checkAvailability()
         guard configured else { throw DesktopRuntimeError("AI를 쓰려면 로그인이 필요해요. 초안은 그대로 있어요.",code:"SIGN_IN_REQUIRED") }
-        // A new conversation starts on the last model picked anywhere.
-        if model.isEmpty, NativeAIPreferences.model != "default", catalog.contains(NativeAIPreferences.model) {
-            try await configure(model:NativeAIPreferences.model,effort:NativeAIPreferences.effort)
-        }
+        // A new conversation starts on the last model picked anywhere; older ones keep theirs.
+        if let inherited = inheritedModel { try await configure(model:inherited,effort:NativeAIPreferences.effort) }
         _ = try NativeAssistantPayload.validatedAttachments(captured.attachments.map(\.request))
         try await store.flushDocuments()
         var request = requestIdentity
@@ -279,14 +277,21 @@ private final class NativeAssistantSession: ObservableObject {
     }
     func restoreAttempt() { if let lastAttempt, draft.text.isEmpty { draft = lastAttempt; draft.studyRunID = nil; draft.studyBinding = nil } }
     func loadCatalog() async {
+        #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--native-ai-catalog-fixture") { catalog = NativeAIModelCatalog.fixture; return }
+        #endif
         guard let config = try? await store.invokePrivate("native:aiConfig") as? [String: Any] else { return }
         catalog = NativeAIModelCatalog(config)
     }
     /// Auto is stored as "default"; a model keeps the provider the proxy lists it under.
-    /// This conversation's model, or the last one picked anywhere when it never chose one.
-    var effectiveModel: String { model.isEmpty ? NativeAIPreferences.model : model }
-    var effectiveEffort: String? { effectiveModel == "default" ? nil : (model.isEmpty ? NativeAIPreferences.effort : effort) }
+    /// The remembered pick a conversation would start on: only before its first message, and only a listed model.
+    private var inheritedModel: String? {
+        guard model.isEmpty, messages.isEmpty, NativeAIPreferences.model != "default", catalog.contains(NativeAIPreferences.model) else { return nil }
+        return NativeAIPreferences.model
+    }
+    /// What the pill shows and what generation uses: this conversation's model, else the inherited one, else Auto.
+    var effectiveModel: String { inheritedModel ?? (model.isEmpty || (model != "default" && !catalog.contains(model)) ? "default" : model) }
+    var effectiveEffort: String? { effectiveModel == "default" ? nil : (inheritedModel != nil ? NativeAIPreferences.effort : effort) }
     func configure(model: String, effort: String?) async throws {
         let choice = catalog.models.first { $0.id == model }
         if let provider = choice?.appProvider, self.provider != provider { _ = try await store.invoke("chat:setProvider",identity.merging(["provider":provider]) { _,new in new }) }
@@ -331,7 +336,9 @@ private final class NativeAssistantSession: ObservableObject {
             else if let workspace = value["workspaceID"] as? String, let id = NativeToolSelection.conversationID(workspaceID:workspace,root:store.root) { Task { await selectID(id) } }
             return
         }
-        if ["settings:changed","agent:changed","auth:changed"].contains(event.channel) { Task { await checkAvailability(); if configured { await loadCatalog() } }; return }
+        if ["settings:changed","agent:changed","auth:changed"].contains(event.channel) {
+            Task { await checkAvailability(); if configured { await loadCatalog() } else if event.channel == "auth:changed" { catalog = NativeAIModelCatalog() } }; return
+        }
         guard value["sessionId"] as? String == sessionID else { return }
         if event.channel == "nativeAssistant:studyFinished" {
             Task { do { try await open(); try await reloadConversations(); if messages.last?.interrupted == true { restoreAttempt() } } catch { self.error = error.localizedDescription } }; return
@@ -377,9 +384,9 @@ struct NativeAssistantPanel: View {
     @State private var showingDelete = false
     @State private var renamingConversation = false
     @ObservedObject private var usage = AIUsage.shared
-    @State private var preview: NativeAssistantAttachment?
+    /// "<message or draft>:<attachment id>": the same capture can sit in a message and in the draft.
+    @State private var previewKey: String?
     @State private var showingArticleImport = false
-    @State private var articleURL = ""
     @Environment(\.scenePhase) private var scenePhase
     init(store: NativeWorkspaceStore, context: NativeWorkspaceContext, sourceDocument: NativeDocumentReference?, attachments: [NativeAssistantAttachment] = [], onConsumeAttachments: @escaping () -> Void = {}, onOpenDocument: @escaping (NativeDocumentReference) -> Void, onOpenSettings: @escaping (String) -> Void, onAnnotate: @escaping () -> Void) {
         self.store = store; self.context = context; self.sourceDocument = sourceDocument; self.attachments = attachments
@@ -498,7 +505,7 @@ struct NativeAssistantPanel: View {
     private func messageRow(_ message: NativeChatMessage) -> some View {
         VStack(alignment:.leading,spacing:10) {
             if message.role == "assistant" { Label("반달",systemImage:"sparkle").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
-            ForEach(message.attachments) { attachment in attachmentChip(attachment,removable:false) }
+            ForEach(message.attachments) { attachment in attachmentChip(attachment,removable:false,owner:"message-\(message.id)") }
             if !message.text.isEmpty {
                 Text(.init(message.text)).font(.system(size:15)).lineSpacing(6).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
                     .padding(message.role == "user" ? 13 : 0)
@@ -551,10 +558,9 @@ struct NativeAssistantPanel: View {
                         Button("지목해서 질문",action:onAnnotate).disabled(!canAnnotate)
                     } label: { Image(systemName:"plus").frame(width:44,height:44).contentShape(Rectangle()) }.accessibilityLabel("자료 첨부")
                     Button(action:onAnnotate) { Image(systemName:"scope").frame(width:44,height:44).contentShape(Rectangle()) }.disabled(!canAnnotate).accessibilityLabel("지목해서 질문").accessibilityIdentifier("native-ai-annotate")
-                    NativeAIModelPill(catalog:session.catalog,model:session.effectiveModel,effort:session.effectiveEffort,disabled:session.running || session.loading,
+                    NativeAIModelPill(catalog:session.catalog,model:session.effectiveModel,effort:session.effectiveEffort,disabled:session.running || session.loading || session.sending,
                                       onSelect:{ model,effort in
-                                          NativeAIPreferences.remember(model:model,effort:effort)
-                                          perform { try await session.configure(model:model,effort:effort) }
+                                          perform { try await session.configure(model:model,effort:effort); NativeAIPreferences.remember(model:model,effort:effort) }
                                       },
                                       onOpenUsage:{ onOpenSettings("subscription") },
                                       onAppear:{ await session.loadCatalog() })
@@ -579,12 +585,13 @@ struct NativeAssistantPanel: View {
             }
         }.padding(.horizontal,12).padding(.top,8).background(Color(uiColor:.systemBackground))
     }
-    private func attachmentChip(_ attachment: NativeAssistantAttachment, removable: Bool) -> some View {
-        HStack(spacing:7) {
-            Button { preview = attachment } label: {
+    private func attachmentChip(_ attachment: NativeAssistantAttachment, removable: Bool, owner: String = "draft") -> some View {
+        let key = owner + ":" + attachment.id
+        return HStack(spacing:7) {
+            Button { previewKey = key } label: {
                 HStack(spacing:7) { Image(systemName:attachment.imageDataURL == nil ? "text.quote" : "viewfinder"); Text(attachment.title + (attachment.page.map { " · \($0)p" } ?? "")).lineLimit(1).frame(maxWidth:180,alignment:.leading) }.frame(minHeight:44)
             }.buttonStyle(.plain).accessibilityIdentifier("native-ai-attachment-" + attachment.id)
-                .bandalPopover(isPresented:Binding(get:{ preview?.id == attachment.id },set:{ if !$0 && preview?.id == attachment.id { preview = nil } }),width:360) { attachmentPreview(attachment) }
+                .bandalPopover(isPresented:Binding(get:{ previewKey == key },set:{ if !$0 && previewKey == key { previewKey = nil } }),width:360) { attachmentPreview(attachment) }
             if removable { Button { session.draft.attachments.removeAll { $0.id == attachment.id } } label: { Image(systemName:"xmark").frame(width:44,height:44).contentShape(Rectangle()) }.buttonStyle(.plain).accessibilityLabel("첨부 제거") }
         }.font(.caption).padding(.leading,10).padding(.trailing,removable ? 0 : 10).background(Color.primary.opacity(0.05),in:RoundedRectangle(cornerRadius:11))
     }
@@ -610,7 +617,10 @@ struct NativeAssistantPanel: View {
     private func submit() {
         Task {
             if !session.configured { await session.checkAvailability() }
-            guard session.configured else { signInError = nil; showingSignIn = true; return }
+            if !session.configured {
+                let state = (try? await store.invoke("auth:getState")) as? [String: Any]
+                if state?["phase"] as? String != "signed-in" { signInError = nil; showingSignIn = true; return }
+            }
             do { try await session.send() }
             catch let error as DesktopRuntimeError where error.code == "SIGN_IN_REQUIRED" { showingSignIn = true }
             catch { session.error = error.localizedDescription }
