@@ -101,7 +101,8 @@ roots (`_shared/store/certificates.ts`), production first and sandbox when Apple
   DID_RENEW/EXPIRED/GRACE_PERIOD_EXPIRED/REFUND/REVOKE clear grace, a refunded pack
   takes its credit back. Applying is idempotent, so retries are harmless.
 - Sandbox (TestFlight/Xcode) purchases are free, so they count only for accounts listed in
-  `APPLE_SANDBOX_ALLOWED_USER_IDS` (comma-separated user ids); others get
+  `APPLE_SANDBOX_ALLOWED_USER_IDS` (comma-separated user ids, or `*` for everyone, which
+  App Review needs: reviewers buy in the sandbox with their own accounts); others get
   `sandbox_tester_required`. Family-shared copies are ignored (Family Sharing is off).
 - A pack refunded before it was redeemed is recorded in `ipad_pack_revocations` and never pays.
 - Secrets: `APPLE_APP_ID` (6824053530), `APPLE_SANDBOX_ALLOWED_USER_IDS`. ASC → App Information → App Store Server

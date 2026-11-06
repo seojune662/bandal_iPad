@@ -27,6 +27,7 @@ final class NativePlatformServices: ObservableObject {
     private var billing: DesktopBillingService?
     private let profile: DesktopProfileService
     private var syncError: Error?
+    private var foreground: NSObjectProtocol?
     private weak var store: NativeWorkspaceStore?
     private var subscription: AnyCancellable?
     private var started = false
@@ -73,6 +74,17 @@ final class NativePlatformServices: ObservableObject {
         recording = DesktopRecordingService(root:runtime.legacyRoot,invoke:{ channel,request in try await runtime.invokePrivate(channel,request:request) })
         connectAccount()
         Membership.shared.accountToken = { [weak account] in account?.userID.flatMap(UUID.init(uuidString:)) }
+        StoreSync.shared.post = { [weak account] body in
+            guard let account, account.userID != nil else { throw AIError.server(code: "SIGN_IN_REQUIRED", info: [:]) }
+            return try await account.serviceRequest(path: "/functions/v1/ipad-store", body: body)
+        }
+        foreground = NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in if NativeReleaseFlags.membership { await StoreSync.shared.redeemPending() } }
+        }
+        StoreSync.shared.onStatus = { [weak self] status in
+            AIUsage.shared.update(status)
+            self?.ai.invalidate()
+        }
         profile.prepare = { [weak self, weak store] in
             await self?.sync?.suspendForProfileOperation()
             await self?.cloudSync.suspend()
@@ -160,6 +172,7 @@ final class NativePlatformServices: ObservableObject {
             if let state = value as? [String:Any] {
                 self?.sync?.accountChanged(state); self?.billing?.accountChanged()
                 if state["phase"] as? String != "signed-in" { AIUsage.shared.reset() }
+                if NativeReleaseFlags.membership { StoreSync.shared.accountChanged(self?.account.userID) }
             }
         }
     }

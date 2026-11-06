@@ -22,7 +22,8 @@ export function runtime(env: (key: string) => string | undefined) {
   }
   const testers = new Set((env('APPLE_SANDBOX_ALLOWED_USER_IDS') ?? '').split(',').map(id => id.trim().toLowerCase()).filter(Boolean))
   return createStore({
-    sandboxAllowed: actor => testers.has(actor.toLowerCase()),
+    // '*' lets every account use sandbox purchases (App Review buys in the sandbox with its own account).
+    sandboxAllowed: actor => testers.has('*') || testers.has(actor.toLowerCase()),
     db: store,
     verifier: createAppleVerifier(Number(env('APPLE_APP_ID') ?? '6824053530')),
     async authenticate(token) {

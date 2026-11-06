@@ -178,6 +178,9 @@ final class DesktopAIService {
         }
     }
 
+    /// The plan changed (purchase, restore, renewal): the next request reloads models and usage.
+    func invalidate() { config = nil; loading = nil }
+
     /// Merges a newer usage status into the cached config (an event may carry only part of it).
     private func remember(_ usage: [String: Any]) {
         guard var current = config else { return }
