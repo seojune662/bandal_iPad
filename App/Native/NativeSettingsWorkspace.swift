@@ -132,6 +132,7 @@ struct NativeSettingsWorkspace: View {
     }
     .refreshable { await load() }
     .onReceive(store.events) { event in
+      if event.channel == "nativeSettings:select", let value = (event.payload as? [String: Any])?["category"] as? String { category = value; query = "" }
       if event.channel == "auth:changed", let state = event.payload as? [String: Any] {
         account = state
         setNicknameFromAccount()

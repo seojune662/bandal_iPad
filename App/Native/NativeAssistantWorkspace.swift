@@ -211,7 +211,9 @@ private final class NativeAssistantSession: ObservableObject {
         sending = true; error = nil; stream = ""; activity = ""
         defer { sending = false }
         await checkAvailability()
-        guard configured else { throw DesktopRuntimeError("AI를 쓰려면 설정 › 반달 계정에서 로그인해 주세요. 초안은 보관됩니다.") }
+        guard configured else { throw DesktopRuntimeError("AI를 쓰려면 로그인이 필요해요. 초안은 그대로 있어요.",code:"SIGN_IN_REQUIRED") }
+        // A new conversation starts on the last model picked anywhere; older ones keep theirs.
+        if let inherited = inheritedModel { try await configure(model:inherited,effort:NativeAIPreferences.effort) }
         _ = try NativeAssistantPayload.validatedAttachments(captured.attachments.map(\.request))
         try await store.flushDocuments()
         var request = requestIdentity
@@ -223,7 +225,7 @@ private final class NativeAssistantSession: ObservableObject {
         if let pack = captured.mode.pack {
             let source = try NativeAssistantPayload.generationSource(document:captured.document,selection:captured.selection,attachments:captured.attachments)
             let sourceCourse = captured.document?.courseID ?? destination.courseID
-            var generationRequest: [String: Any] = ["courseId":sourceCourse,"packId":pack,"generationMode":captured.mode.rawValue,"questionCount":captured.count,"difficulty":captured.difficulty,"scope":captured.scope,"source":source,"prompt":text,"attachments":captured.attachments.map(\.request),"chat":requestIdentity,"ai":["provider":provider,"model":model.isEmpty ? "default" : model,"effort":effort as Any? ?? NSNull()]]
+            var generationRequest: [String: Any] = ["courseId":sourceCourse,"packId":pack,"generationMode":captured.mode.rawValue,"questionCount":captured.count,"difficulty":captured.difficulty,"scope":captured.scope,"source":source,"prompt":text,"attachments":captured.attachments.map(\.request),"chat":requestIdentity,"ai":["provider":provider,"model":effectiveModel,"effort":effectiveEffort as Any? ?? NSNull()]]
             generationRequest["documentContext"] = request["documentContext"]
             if let binding = destination.binding { generationRequest["binding"] = binding.request }
             let result = try await store.invoke("study:generate",generationRequest) as? [String: Any] ?? [:]
@@ -275,10 +277,21 @@ private final class NativeAssistantSession: ObservableObject {
     }
     func restoreAttempt() { if let lastAttempt, draft.text.isEmpty { draft = lastAttempt; draft.studyRunID = nil; draft.studyBinding = nil } }
     func loadCatalog() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--native-ai-catalog-fixture") { catalog = NativeAIModelCatalog.fixture; return }
+        #endif
         guard let config = try? await store.invokePrivate("native:aiConfig") as? [String: Any] else { return }
         catalog = NativeAIModelCatalog(config)
     }
     /// Auto is stored as "default"; a model keeps the provider the proxy lists it under.
+    /// The remembered pick a conversation would start on: only before its first message, and only a listed model.
+    private var inheritedModel: String? {
+        guard model.isEmpty, messages.isEmpty, NativeAIPreferences.model != "default", catalog.contains(NativeAIPreferences.model) else { return nil }
+        return NativeAIPreferences.model
+    }
+    /// What the pill shows and what generation uses: this conversation's model, else the inherited one, else Auto.
+    var effectiveModel: String { inheritedModel ?? (model.isEmpty || (model != "default" && !catalog.contains(model)) ? "default" : model) }
+    var effectiveEffort: String? { effectiveModel == "default" ? nil : (inheritedModel != nil ? NativeAIPreferences.effort : effort) }
     func configure(model: String, effort: String?) async throws {
         let choice = catalog.models.first { $0.id == model }
         if let provider = choice?.appProvider, self.provider != provider { _ = try await store.invoke("chat:setProvider",identity.merging(["provider":provider]) { _,new in new }) }
@@ -323,7 +336,9 @@ private final class NativeAssistantSession: ObservableObject {
             else if let workspace = value["workspaceID"] as? String, let id = NativeToolSelection.conversationID(workspaceID:workspace,root:store.root) { Task { await selectID(id) } }
             return
         }
-        if event.channel == "settings:changed" || event.channel == "agent:changed" { Task { await checkAvailability() }; return }
+        if ["settings:changed","agent:changed","auth:changed"].contains(event.channel) {
+            Task { await checkAvailability(); if configured { await loadCatalog() } else if event.channel == "auth:changed" { catalog = NativeAIModelCatalog() } }; return
+        }
         guard value["sessionId"] as? String == sessionID else { return }
         if event.channel == "nativeAssistant:studyFinished" {
             Task { do { try await open(); try await reloadConversations(); if messages.last?.interrupted == true { restoreAttempt() } } catch { self.error = error.localizedDescription } }; return
@@ -359,21 +374,21 @@ struct NativeAssistantPanel: View {
     let attachments: [NativeAssistantAttachment]
     let onConsumeAttachments: () -> Void
     let onOpenDocument: (NativeDocumentReference) -> Void
-    let onOpenSettings: () -> Void
+    /// Opens Settings at a section ("subscription" for 사용량).
+    let onOpenSettings: (String) -> Void
     let onAnnotate: () -> Void
     @StateObject private var session: NativeAssistantSession
-    @State private var showingConfiguration = false
+    @State private var showingSignIn = false
+    @State private var signInError: String?
     @State private var showingOptions = false
     @State private var showingDelete = false
     @State private var renamingConversation = false
-    @State private var model = ""
-    @State private var effort = "medium"
     @ObservedObject private var usage = AIUsage.shared
-    @State private var preview: NativeAssistantAttachment?
+    /// "<message or draft>:<attachment id>": the same capture can sit in a message and in the draft.
+    @State private var previewKey: String?
     @State private var showingArticleImport = false
-    @State private var articleURL = ""
     @Environment(\.scenePhase) private var scenePhase
-    init(store: NativeWorkspaceStore, context: NativeWorkspaceContext, sourceDocument: NativeDocumentReference?, attachments: [NativeAssistantAttachment] = [], onConsumeAttachments: @escaping () -> Void = {}, onOpenDocument: @escaping (NativeDocumentReference) -> Void, onOpenSettings: @escaping () -> Void, onAnnotate: @escaping () -> Void) {
+    init(store: NativeWorkspaceStore, context: NativeWorkspaceContext, sourceDocument: NativeDocumentReference?, attachments: [NativeAssistantAttachment] = [], onConsumeAttachments: @escaping () -> Void = {}, onOpenDocument: @escaping (NativeDocumentReference) -> Void, onOpenSettings: @escaping (String) -> Void, onAnnotate: @escaping () -> Void) {
         self.store = store; self.context = context; self.sourceDocument = sourceDocument; self.attachments = attachments
         self.onConsumeAttachments = onConsumeAttachments; self.onOpenDocument = onOpenDocument; self.onOpenSettings = onOpenSettings; self.onAnnotate = onAnnotate
         _session = StateObject(wrappedValue:NativeAssistantSession(store:store,context:context))
@@ -405,14 +420,10 @@ struct NativeAssistantPanel: View {
             .onChange(of:context) { _,value in session.context = value }
             .onChange(of:store.pendingAssistantConversationIDs[context.id]) { _,_ in Task { await consumePendingConversation() } }
             .onChange(of:scenePhase) { _,phase in if phase == .active { Task { await session.checkAvailability() } } else { session.flushDraft() } }
-            .sheet(isPresented:$showingConfiguration,onDismiss:{ Task { await session.checkAvailability() } }) { configuration }
-            .sheet(isPresented:$showingOptions) { options }
-            .alert("기사 주소",isPresented:$showingArticleImport) {
-                TextField("https://…",text:$articleURL).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                Button("취소",role:.cancel) { }
-                Button("가져오기") { perform { try await session.importArticle(articleURL); articleURL = "" } }
-            } message: { Text("원문을 현재 공간에 보관하고 읽기·표현 수집을 이어갑니다.") }
-            .sheet(item:$preview) { attachment in attachmentPreview(attachment) }
+            .onReceive(store.events) { event in
+                // Signed in from the prompt: back to the same panel with the draft untouched.
+                if event.channel == "auth:changed", showingSignIn { Task { await session.checkAvailability(); if session.configured { showingSignIn = false } } }
+            }
     }
     private var header: some View {
         HStack(spacing:4) {
@@ -494,7 +505,7 @@ struct NativeAssistantPanel: View {
     private func messageRow(_ message: NativeChatMessage) -> some View {
         VStack(alignment:.leading,spacing:10) {
             if message.role == "assistant" { Label("반달",systemImage:"sparkle").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
-            ForEach(message.attachments) { attachment in attachmentChip(attachment,removable:false) }
+            ForEach(message.attachments) { attachment in attachmentChip(attachment,removable:false,owner:"message-\(message.id)") }
             if !message.text.isEmpty {
                 Text(.init(message.text)).font(.system(size:15)).lineSpacing(6).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
                     .padding(message.role == "user" ? 13 : 0)
@@ -517,11 +528,17 @@ struct NativeAssistantPanel: View {
         VStack(alignment:.leading,spacing:8) {
             if session.draft.mode == .english {
                 Button { showingArticleImport = true } label: { Label("기사 주소 추가",systemImage:"link").font(.system(size:13,weight:.medium)).frame(minHeight:44) }.buttonStyle(.plain).disabled(session.running || session.sending).accessibilityIdentifier("native-ai-import-article")
+                    .bandalPopover(isPresented:$showingArticleImport,width:320) {
+                        BandalTextEntry(title:"기사 주소",prompt:"https://…",actionTitle:"가져오기",keyboard:.URL,identifier:"native-ai-article-url") { url in
+                            showingArticleImport = false; perform { try await session.importArticle(url) }
+                        }
+                    }
             }
             if session.draft.mode.pack != nil {
                 Button { showingOptions = true } label: {
                     HStack { Text(session.draft.mode.title); Text("· \(session.draft.count)개 · \(session.draft.difficulty)").foregroundStyle(.secondary); Spacer(); Image(systemName:"slider.horizontal.3") }.font(.caption).frame(minHeight:44)
-                }.buttonStyle(.plain)
+                }.buttonStyle(.plain).accessibilityIdentifier("native-ai-mode-options")
+                    .bandalPopover(isPresented:$showingOptions,width:300) { options }
             }
             if let document = session.draft.document {
                 HStack(spacing:8) {
@@ -541,16 +558,21 @@ struct NativeAssistantPanel: View {
                         Button("지목해서 질문",action:onAnnotate).disabled(!canAnnotate)
                     } label: { Image(systemName:"plus").frame(width:44,height:44).contentShape(Rectangle()) }.accessibilityLabel("자료 첨부")
                     Button(action:onAnnotate) { Image(systemName:"scope").frame(width:44,height:44).contentShape(Rectangle()) }.disabled(!canAnnotate).accessibilityLabel("지목해서 질문").accessibilityIdentifier("native-ai-annotate")
+                    NativeAIModelPill(catalog:session.catalog,model:session.effectiveModel,effort:session.effectiveEffort,disabled:session.running || session.loading || session.sending,
+                                      onSelect:{ model,effort in
+                                          perform { try await session.configure(model:model,effort:effort); NativeAIPreferences.remember(model:model,effort:effort) }
+                                      },
+                                      onOpenUsage:{ onOpenSettings("subscription") },
+                                      onAppear:{ await session.loadCatalog() })
                     Spacer(minLength:0)
-                    if !session.configured && !session.loading {
-                        Button("AI 연결") { Task { await session.checkAvailability(); if !session.configured { onOpenSettings() } } }.font(.system(size:13,weight:.semibold)).frame(minHeight:44).padding(.horizontal,8).accessibilityIdentifier("native-ai-connect")
-                    } else {
+                    do {
                         Button {
-                            perform { if session.running { try await session.cancel() } else { try await session.send() } }
+                            if session.running { perform { try await session.cancel() } } else { submit() }
                         } label: {
                             Image(systemName:session.running ? "stop.fill" : "arrow.up").font(.system(size:16,weight:.semibold)).foregroundStyle(Color(uiColor:.systemBackground)).frame(width:34,height:34).background(Color.primary,in:Circle()).frame(width:44,height:44).contentShape(Rectangle())
                         }.disabled(!session.running && (session.loading || session.sending || (session.draft.mode.pack == nil && session.draft.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && session.draft.attachments.isEmpty)))
                             .accessibilityLabel(session.running ? "응답 중지" : "보내기").accessibilityIdentifier("native-chat-send")
+                            .bandalPopover(isPresented:$showingSignIn,arrowEdge:.bottom,width:264) { signInPrompt }
                     }
                 }.padding(.horizontal,5).padding(.bottom,4).buttonStyle(.plain)
             }.background(Color.primary.opacity(0.045),in:RoundedRectangle(cornerRadius:20)).overlay(RoundedRectangle(cornerRadius:20).strokeBorder(Color.primary.opacity(0.065)))
@@ -560,91 +582,61 @@ struct NativeAssistantPanel: View {
                 if let percent = usage.percent {
                     Text("AI \(percent)%").font(.system(size:10)).foregroundStyle(percent >= 90 ? .orange : .secondary).accessibilityIdentifier("native-ai-usage-compact")
                 }
-                Button { model = session.model.isEmpty ? "default" : session.model; effort = session.effort ?? "medium"; showingConfiguration = true } label: {
-                    HStack(spacing:4) { Text(session.catalog.label(session.model)).lineLimit(1); Image(systemName:"chevron.down").font(.system(size:8)) }.font(.system(size:11)).foregroundStyle(.secondary).frame(minHeight:44)
-                }.buttonStyle(.plain).disabled(session.running || session.loading).accessibilityLabel("AI 모델 설정")
             }
         }.padding(.horizontal,12).padding(.top,8).background(Color(uiColor:.systemBackground))
     }
-    private func attachmentChip(_ attachment: NativeAssistantAttachment, removable: Bool) -> some View {
-        HStack(spacing:7) {
-            Button { preview = attachment } label: {
+    private func attachmentChip(_ attachment: NativeAssistantAttachment, removable: Bool, owner: String = "draft") -> some View {
+        let key = owner + ":" + attachment.id
+        return HStack(spacing:7) {
+            Button { previewKey = key } label: {
                 HStack(spacing:7) { Image(systemName:attachment.imageDataURL == nil ? "text.quote" : "viewfinder"); Text(attachment.title + (attachment.page.map { " · \($0)p" } ?? "")).lineLimit(1).frame(maxWidth:180,alignment:.leading) }.frame(minHeight:44)
             }.buttonStyle(.plain).accessibilityIdentifier("native-ai-attachment-" + attachment.id)
+                .bandalPopover(isPresented:Binding(get:{ previewKey == key },set:{ if !$0 && previewKey == key { previewKey = nil } }),width:360) { attachmentPreview(attachment) }
             if removable { Button { session.draft.attachments.removeAll { $0.id == attachment.id } } label: { Image(systemName:"xmark").frame(width:44,height:44).contentShape(Rectangle()) }.buttonStyle(.plain).accessibilityLabel("첨부 제거") }
         }.font(.caption).padding(.leading,10).padding(.trailing,removable ? 0 : 10).background(Color.primary.opacity(0.05),in:RoundedRectangle(cornerRadius:11))
     }
     private func attachmentPreview(_ attachment: NativeAssistantAttachment) -> some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment:.leading,spacing:16) {
-                    if let image = attachment.imageInput, let value = image["dataBase64"], let bytes = Data(base64Encoded:value), let uiImage = UIImage(data:bytes) { Image(uiImage:uiImage).resizable().scaledToFit().accessibilityLabel("지목한 영역 이미지").accessibilityIdentifier("native-ai-attachment-preview-image") }
-                    if let text = attachment.text { Text(text).textSelection(.enabled).accessibilityIdentifier("native-ai-attachment-preview-text") }
-                    Text(attachment.url ?? attachment.relativePath ?? "선택한 영역").font(.caption).foregroundStyle(.secondary)
-                }.padding()
-            }.navigationTitle(attachment.title).navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement:.confirmationAction) { Button("닫기") { preview = nil } } }
-        }
-    }
-    private var configuration: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    modelRow(id:"default",title:"Auto",detail:"빠르고 가장 적게 써요. 반달이 모델을 골라요.",badge:nil)
-                } footer: { Text("어떤 모델이든 같은 월 사용량에서 원가대로 차감돼요. 배지는 Auto보다 최대 몇 배 빨리 닳는지예요.") }
-                ForEach(session.catalog.providers,id:\.self) { provider in
-                    Section(provider == "anthropic" ? "Anthropic" : "OpenAI") {
-                        ForEach(session.catalog.models.filter { $0.provider == provider }) { row in
-                            modelRow(id:row.id,title:row.label,detail:nil,badge:row.badge > 1 ? row.badge : nil)
-                        }
-                    }
-                }
-                if selectedModel != "default" {
-                    Section {
-                        Picker("생각의 깊이",selection:$effort) {
-                            Text("낮음").tag("low"); Text("보통").tag("medium"); Text("높음").tag("high"); Text("최대").tag("max")
-                        }.pickerStyle(.segmented).accessibilityIdentifier("native-ai-effort")
-                    } footer: {
-                        Text("깊게 생각할수록 답이 좋아질 수 있지만 사용량이 몇 배 빨리 닳아요.")
-                    }
-                    if usage.plan == "plus" || usage.trial, (session.catalog.models.first { $0.id == selectedModel }?.badge ?? 1) > 1 {
-                        Text("플러스(와 체험)는 긴 작업이 중간에 멈출 수 있어요. 긴 작업에는 Auto를 권해요.").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Button("AI 설정") { showingConfiguration = false; onOpenSettings() }
-                if let error = session.error { Text(error).foregroundStyle(.red).font(.caption) }
-            }.navigationTitle("AI 선택").toolbar {
-                ToolbarItem(placement:.cancellationAction) { Button("취소") { showingConfiguration = false } }
-                // A stored model the list has not confirmed yet (offline, still loading) is never replaced by Auto.
-                ToolbarItem(placement:.confirmationAction) { Button("적용") { perform { try await session.configure(model:selectedModel,effort:effort); showingConfiguration = false } }
-                    .disabled(selectedModel != "default" && !session.catalog.contains(selectedModel)).accessibilityIdentifier("native-ai-apply") }
+        ScrollView {
+            VStack(alignment:.leading,spacing:10) {
+                Text(attachment.title).font(.system(size:BandalMetrics.bodySize,weight:.semibold)).lineLimit(2)
+                if let image = attachment.imageInput, let value = image["dataBase64"], let bytes = Data(base64Encoded:value), let uiImage = UIImage(data:bytes) { Image(uiImage:uiImage).resizable().scaledToFit().accessibilityLabel("지목한 영역 이미지").accessibilityIdentifier("native-ai-attachment-preview-image") }
+                if let text = attachment.text { Text(text).font(.system(size:12)).textSelection(.enabled).accessibilityIdentifier("native-ai-attachment-preview-text") }
+                Text(attachment.url ?? attachment.relativePath ?? "선택한 영역").font(.system(size:11)).foregroundStyle(NativeDesktopTheme.muted)
             }
-            .task { await session.loadCatalog() }
+        }.frame(maxHeight:420)
+    }
+    /// Signed out: ask right where the button was pressed; the draft stays as typed.
+    private var signInPrompt: some View {
+        VStack(alignment:.leading,spacing:8) {
+            Text("AI를 쓰려면 로그인이 필요해요").font(.system(size:BandalMetrics.bodySize,weight:.semibold))
+            NativeSignInButtons(store:store,error:$signInError,identifierPrefix:"native-ai-sign-in")
+            if let signInError { Text(signInError).font(.system(size:11)).foregroundStyle(.red) }
+        }.accessibilityElement(children:.contain).accessibilityIdentifier("native-ai-sign-in-prompt")
+    }
+    /// Send, quiz, flashcards, expected exam: signed out opens the sign-in prompt instead of an error.
+    private func submit() {
+        Task {
+            if !session.configured { await session.checkAvailability() }
+            if !session.configured {
+                let state = (try? await store.invoke("auth:getState")) as? [String: Any]
+                if state?["phase"] as? String != "signed-in" { signInError = nil; showingSignIn = true; return }
+            }
+            do { try await session.send() }
+            catch let error as DesktopRuntimeError where error.code == "SIGN_IN_REQUIRED" { showingSignIn = true }
+            catch { session.error = error.localizedDescription }
         }
     }
-    /// The sheet's choice; empty until the first presentation has read the state, which means Auto.
-    private var selectedModel: String { model.isEmpty ? "default" : model }
-    private func modelRow(id: String, title: String, detail: String?, badge: Int?) -> some View {
-        Button { model = id } label: {
-            HStack {
-                VStack(alignment:.leading,spacing:2) {
-                    Text(title)
-                    if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
-                }
-                Spacer()
-                if let badge { Text("최대 \(badge)×").font(.caption.monospacedDigit()).padding(.horizontal,6).padding(.vertical,2).background(Color.primary.opacity(0.06),in:Capsule()) }
-                if selectedModel == id { Image(systemName:"checkmark").foregroundStyle(NativeDesktopTheme.accent) }
-            }.contentShape(Rectangle())
-        }.buttonStyle(.plain).frame(minHeight:44).accessibilityIdentifier("native-ai-model-" + id)
-    }
+    /// Quiz / flashcards / expected exam options: applied as they change.
     private var options: some View {
-        NavigationStack {
-            Form {
-                TextField("범위",text:$session.draft.scope)
-                Stepper("\(session.draft.count)개",value:$session.draft.count,in:1...30)
-                Picker("난이도",selection:$session.draft.difficulty) { ForEach(["쉬움","보통","어려움"],id:\.self) { Text($0).tag($0) } }
-                if session.draft.mode == .expectedExam { Text("선택한 범위를 종합한 시험지를 만들고 제출 후 정답과 해설을 확인합니다. 수정 요청은 새 시험지로 저장됩니다.").font(.caption).foregroundStyle(.secondary) }
-            }.navigationTitle("\(session.draft.mode.title) 설정").toolbar { ToolbarItem(placement:.confirmationAction) { Button("완료") { showingOptions = false } } }
-        }.presentationDetents([.medium,.large])
+        VStack(alignment:.leading,spacing:8) {
+            BandalSectionHeader(session.draft.mode.title)
+            TextField("범위 (예: 3장, 행렬식)",text:$session.draft.scope).font(.system(size:BandalMetrics.bodySize)).textFieldStyle(.plain)
+                .padding(.horizontal,8).frame(minHeight:32).background(NativeDesktopTheme.bgApp,in:RoundedRectangle(cornerRadius:BandalMetrics.radiusSmall))
+                .overlay { RoundedRectangle(cornerRadius:BandalMetrics.radiusSmall).stroke(NativeDesktopTheme.border) }
+            Stepper("\(session.draft.count)개",value:$session.draft.count,in:1...30).font(.system(size:BandalMetrics.bodySize))
+            Picker("난이도",selection:$session.draft.difficulty) { ForEach(["쉬움","보통","어려움"],id:\.self) { Text($0).tag($0) } }.pickerStyle(.segmented)
+            if session.draft.mode == .expectedExam { Text("범위를 종합한 시험지를 만들고, 제출하면 정답과 해설을 보여 줘요.").font(.system(size:11)).foregroundStyle(NativeDesktopTheme.muted) }
+        }
     }
     private func consumePendingConversation() async {
         guard session.ready, let id = store.pendingAssistantConversationIDs[context.id] else { return }
@@ -663,7 +655,7 @@ struct NativeAssistantWorkspace: View {
     var sourceDocument: NativeDocumentReference? = nil
     var body: some View {
         if let course = store.courses.first(where:{ $0.id == (courseID ?? store.selectedCourseID) }) {
-            NativeAssistantPanel(store:store,context:.course(course),sourceDocument:sourceDocument,onOpenDocument:{ store.events.send(.init(channel:"nativeWorkspace:openAssistantResult",payload:["document":$0])) },onOpenSettings:{ store.events.send(.init(channel:"nativeWorkspace:openAISettings",payload:[:])) },onAnnotate:{ store.events.send(.init(channel:"nativeWorkspace:annotate",payload:[:])) })
+            NativeAssistantPanel(store:store,context:.course(course),sourceDocument:sourceDocument,onOpenDocument:{ store.events.send(.init(channel:"nativeWorkspace:openAssistantResult",payload:["document":$0])) },onOpenSettings:{ store.events.send(.init(channel:"nativeWorkspace:openSettings",payload:["category":$0])) },onAnnotate:{ store.events.send(.init(channel:"nativeWorkspace:annotate",payload:[:])) })
                 .id(course.id)
         } else { NativeToolEmptyState(title:"공간을 선택하세요",message:"자료와 함께 대화를 시작하세요.",symbol:"bubble.left.and.bubble.right") }
     }
@@ -690,6 +682,13 @@ struct NativeAIModelCatalog {
             return Model(id: id, provider: provider, label: $0["label"] as? String ?? id, badge: ($0["badge"] as? NSNumber)?.intValue ?? 1)
         }
     }
+    /// UI tests only: the live list as of 1.4.0, without a signed-in account.
+    static let fixture = NativeAIModelCatalog(["models": [
+        ["id": "claude-haiku-5-5", "provider": "anthropic", "label": "Haiku 5.5", "badge": 1],
+        ["id": "claude-sonnet-5-5", "provider": "anthropic", "label": "Sonnet 5.5", "badge": 4],
+        ["id": "gpt-6-luna", "provider": "openai", "label": "GPT-6 Luna", "badge": 1],
+        ["id": "gpt-6-sol", "provider": "openai", "label": "GPT-6 Sol", "badge": 4],
+        ["id": "gpt-6-astra", "provider": "openai", "label": "GPT-6 Astra", "badge": 20]]])
     var providers: [String] { models.reduce(into: []) { if !$0.contains($1.provider) { $0.append($1.provider) } } }
     func contains(_ id: String) -> Bool { models.contains { $0.id == id } }
     /// What the composer shows: the model's name, or Auto for anything else (old BYOK names included).

@@ -76,8 +76,10 @@ struct NativeAccountRailButton: View {
             }.padding(.horizontal, 8).padding(.vertical, 6)
             BandalMenuDivider()
             BandalMenuRow("설정", symbol: "gearshape") { close(); openSettings("general") }.accessibilityIdentifier("native-account-app-settings")
-            BandalMenuRow("사용량", symbol: "chart.bar", detail: usage.percent.map { "이번 달 AI \($0)%" }) { close(); openSettings("subscription") }
-                .accessibilityIdentifier("native-account-usage")
+            if NativeReleaseFlags.membership {
+                BandalMenuRow("사용량", symbol: "chart.bar", detail: usage.percent.map { "이번 달 AI \($0)%" }) { close(); openSettings("subscription") }
+                    .accessibilityIdentifier("native-account-usage")
+            }
             helpRows
             BandalMenuRow("플랜 보기", symbol: "sparkles") { close(); MembershipPaywall.present(message: nil, variant: membership.tier == .plus ? .upgrade : .all) }
                 .accessibilityIdentifier("native-account-plans")
@@ -112,9 +114,11 @@ struct NativeAccountRailButton: View {
 
     private func loadAccount() async {
         guard store.isReady else { return }
+        #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--native-account-fixture") {
             account = ["phase": "signed-in", "email": "seojun@bandal.io", "profile": ["nickname": "서준", "avatarEmoji": "🌙"]]; return
         }
+        #endif
         account = (try? await store.invoke("auth:getState")) as? [String: Any] ?? [:]
     }
 
@@ -175,8 +179,13 @@ struct NativeSignInButtons: View {
             defer { busy = nil }
             do {
                 let result = try await store.invoke("auth:signIn", ["provider": provider]) as? [String: Any]
-                if result?["ok"] as? Bool != true { error = "로그인을 시작하지 못했어요. 연결을 확인해 주세요." }
-            } catch { self.error = error.localizedDescription }
+                guard result?["ok"] as? Bool != true else { return }
+                switch result?["reason"] as? String {
+                case "already-signed-in": break
+                case "provider": error = "다른 로그인이 진행 중이에요. 잠시 뒤 다시 해 주세요."
+                default: error = "지금은 로그인할 수 없어요. 연결을 확인해 주세요."
+                }
+            } catch { self.error = "로그인하지 못했어요. 다시 시도해 주세요." }
         }
     }
 }
