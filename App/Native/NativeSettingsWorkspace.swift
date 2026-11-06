@@ -221,6 +221,7 @@ struct NativeSettingsWorkspace: View {
                       in: RoundedRectangle(cornerRadius: 6))
                   }.buttonStyle(.plain).accessibilityIdentifier(
                     "native-settings-category-" + item.id)
+                  .accessibilityAddTraits(category == item.id ? .isSelected : [])
                 }
               }
             }
