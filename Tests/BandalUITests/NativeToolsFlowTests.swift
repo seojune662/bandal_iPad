@@ -15,14 +15,16 @@ final class NativeToolsFlowTests: XCTestCase {
         let title = app.textFields["native-task-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         title.tap(); title.typeText("Review native workspace")
-        // With the simulator keyboard up, the form sheet's reported frame (raised for the
-        // keyboard) can disagree with where it is drawn, so the 저장 tap misses. Lower it first.
-        app.dismissNativeTestKeyboard()
-        app.buttons["native-task-save"].tap()
+        // 1.4.0: the task editor is a popover; Enter adds the task (no sheet, no 저장 under the keyboard).
+        title.typeText("\n")
         XCTAssertTrue(taskEditor(in: app, title: "Review native workspace").waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(app.webViews.count, 0)
         closeBoard(app) // The study board is modal; its backdrop covers the navigation rail.
         app.buttons["native-section-settings"].tap()
+        // Settings opens on 일반 (1.4.0); the theme lives under 화면.
+        let appearance = app.buttons["native-settings-category-appearance"]
+        XCTAssertTrue(appearance.waitForExistence(timeout: 15), app.debugDescription)
+        for _ in 0..<5 where !app.buttons["native-settings-theme-system"].exists { appearance.tap(); _ = app.buttons["native-settings-theme-system"].waitForExistence(timeout: 2) }
         XCTAssertTrue(app.buttons["native-settings-theme-system"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(app.webViews.count, 0)
         app.terminate(); app.launchArguments = ["--native-ui-testing"]; app.launch()
