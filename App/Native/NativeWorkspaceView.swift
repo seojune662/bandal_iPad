@@ -39,11 +39,8 @@ struct NativeWorkspaceView: View {
     @AppStorage("native.restoreLastCourse") private var restoreLastCourse = true
     @AppStorage("native.fontScale") private var fontScale = 1.0
     @AppStorage("native.density") private var density = "comfortable"
-    @State private var showingCourseSheet = false
     @State private var showingNewTabMenu = false
     @State private var workspaceSettings: [String: Any] = [:]
-    @State private var showingCourseManager = false
-    @State private var courseName = ""
     @State private var busy = false
     @State private var showBusy = false
     @State private var restored = false
@@ -319,14 +316,6 @@ struct NativeWorkspaceView: View {
         .disabled(store.isApplyingExternalChanges)
         .background(NativeWorkspaceKeyboardBridge(store: store))
         .background(NativePresentationAnchor(services: services).allowsHitTesting(false))
-        .sheet(isPresented: $showingNewTabMenu) {
-            NativeNewTabMenu(store: store, courseID: store.selectedCourseID ?? "", onAction: { action in
-                showingNewTabMenu = false
-                openNewTab(action, navigation.focusedGroupID ?? "")
-            }, onClose: { showingNewTabMenu = false }).presentationDetents([.medium, .large])
-        }
-        .sheet(isPresented: $showingCourseSheet) { courseSheet }
-        .sheet(isPresented: $showingCourseManager) { NativeCourseManager(store: store) }
         .bandalToast(Binding(get: { store.errorMessage }, set: { store.errorMessage = $0 }))
         .task {
             await store.start()
@@ -592,7 +581,7 @@ struct NativeWorkspaceView: View {
             switch leftPanel {
             case .courses:
                 NativeCourseSidebar(store: store, navigation: navigation, settings: workspaceSettings, onSelect: changeCourse,
-                    onCreate: { showingCourseSheet = true }, onManage: { showingCourseManager = true }, onOpenSettings: openSettings,
+                    onCreate: createCourse, onOpenSettings: openSettings,
                     onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb, descriptor: favoriteDescriptor, onOpenFavorite: openFavorite)
             case .projects:
                 NativeProjectSidebar(store: store, selectedID: workspaceContext?.id, onOpen: changeWorkspace)
@@ -846,6 +835,12 @@ struct NativeWorkspaceView: View {
                     VStack(spacing: 8) { emptyActions }.frame(maxWidth: 280)
                 }.padding(.top, 12)
                 Button("새 탭 열기", systemImage: "plus") { showingNewTabMenu = true }.font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).padding(.top, 8)
+                    .popover(isPresented: $showingNewTabMenu, arrowEdge: .top) {
+                        NativeNewTabMenu(store: store, courseID: store.selectedCourseID ?? "", onAction: { action in
+                            showingNewTabMenu = false
+                            openNewTab(action, navigation.focusedGroupID ?? "")
+                        }, onClose: { showingNewTabMenu = false }).presentationCompactAdaptation(.popover)
+                    }
             }
             Spacer()
         }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -908,42 +903,14 @@ struct NativeWorkspaceView: View {
         catch { store.errorMessage = error.localizedDescription }
     }
 
-    private var courseSheet: some View {
-        NavigationStack {
-            Form {
-                TextField("과목 이름", text: $courseName)
-                    .accessibilityIdentifier("native-course-name")
-                    .submitLabel(.done)
-                    .onSubmit(createCourse)
-            }
-            .navigationTitle("새 과목")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("취소") { showingCourseSheet = false }.disabled(busy) }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("만들기", action: createCourse)
-                        .disabled(courseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
-                        .accessibilityIdentifier("native-create-course")
-                }
-            }
-        }
-        .presentationDetents([.medium])
-        .interactiveDismissDisabled(busy)
-    }
-
-    private func createCourse() {
-        guard !busy, !courseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    private func createCourse(_ name: String) async throws {
+        guard !busy else { throw DesktopRuntimeError("이전 작업을 마치는 중이에요. 잠시 뒤 다시 해 주세요.") }
         busy = true
-        Task {
-            defer { finishWorkspaceTransition() }
-            do {
-                try await store.createCourse(name: courseName)
-                if let course = store.courses.first(where: { $0.id == store.selectedCourseID }) { navigation.activateWorkspace(.course(course)) }
-                section = .library; auxiliary = nil; learningHome = false; leftPanel = .courses; compactCourseRail = false; compactMaterialsRail = false
-                try navigation.save(to: navigationURL)
-                courseName = ""; showingCourseSheet = false
-            }
-            catch { store.errorMessage = error.localizedDescription }
-        }
+        defer { finishWorkspaceTransition() }
+        try await store.createCourse(name: name)
+        if let course = store.courses.first(where: { $0.id == store.selectedCourseID }) { navigation.activateWorkspace(.course(course)) }
+        section = .library; auxiliary = nil; learningHome = false; leftPanel = .courses; compactCourseRail = false; compactMaterialsRail = false
+        try navigation.save(to: navigationURL)
     }
 
     private func open(_ document: NativeDocumentReference) { openInGroup(document, groupID: nil) }
@@ -1260,7 +1227,14 @@ struct NativeWorkspaceView: View {
                 toggleCourseRail(width: windowWidth)
             case "toggle-right-rail": toggleMaterialsRail(width: windowWidth)
             case "close-tab": if let id = navigation.activeID { closeDocuments([id]) }
-            case "new-tab": if store.selectedCourseID == nil { openTool(.browser, new: true) } else { showingNewTabMenu = true }
+            case "new-tab":
+                if store.selectedCourseID == nil { openTool(.browser, new: true) }
+                else if let group = navigation.focusedGroupID, !navigation.documents.isEmpty {
+                    // The dock's + must be on screen to anchor its menu: come back to the workspace first.
+                    if !showsWorkspace { transition { section = .library; auxiliary = nil; learningHome = false } }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + (showsWorkspace ? 0 : 0.4)) { store.events.send(.init(channel: "nativeDock:newTab", payload: ["groupID": group])) }
+                }
+                else { if !showsWorkspace { transition { section = .library; auxiliary = nil; learningHome = false } }; showingNewTabMenu = true }
             case "new-markdown": openNewTab(.markdown(title: nil), navigation.focusedGroupID ?? "")
             case "new-whiteboard": openNewTab(.note, navigation.focusedGroupID ?? "")
             case "next-tab", "previous-tab", "prev-tab":

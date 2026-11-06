@@ -91,55 +91,56 @@ struct NativePDFWorkspace: View {
         .onChange(of: visible, initial: true) { _, value in model.setVisible(value) }
         .background(NativeDesktopTheme.bgApp)
         .accessibilityElement(children: .contain).accessibilityIdentifier(visible ? "native-pdf-pane-" + tabID : "")
-        .sheet(isPresented: Bindable(model).showAnnotationEditor, onDismiss: { model.dismissAnnotation() }) {
-            NavigationStack {
-                Form {
-                    Section("선택한 원문") { Text(model.annotationQuote).textSelection(.enabled) }
-                    Section("형광 색") {
-                        Picker("색", selection: Bindable(model).annotationColor) {
-                            ForEach(NativePDFWorkspaceModel.annotationColors, id: \.name) { item in Text(item.label).tag(item.name) }
-                        }.pickerStyle(.segmented)
-                    }
-                    Section("메모") {
-                        TextEditor(text: Bindable(model).annotationComment).frame(minHeight: 140).accessibilityIdentifier("native-pdf-annotation-editor")
-                    }
-                    if model.editingAnnotation {
-                        Section { Button("주석 삭제", role: .destructive) { model.deleteAnnotation() }.accessibilityIdentifier("native-pdf-delete-annotation") }
-                    }
+        // 원문 메모 and 댓글 open over the page; closing keeps the edit (Esc cancels, 실행 취소 undoes).
+        .popover(isPresented: Binding(get: { model.showAnnotationEditor }, set: { if !$0, model.showAnnotationEditor { model.closeAnnotationEditor() } }),
+                 attachmentAnchor: .point(UnitPoint(x: 0.5, y: 0.3)), arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 8) {
+                BandalSectionHeader("원문 메모")
+                Text(model.annotationQuote).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(3).textSelection(.enabled)
+                Picker("색", selection: Bindable(model).annotationColor) {
+                    ForEach(NativePDFWorkspaceModel.annotationColors, id: \.name) { item in Text(item.label).tag(item.name) }
+                }.pickerStyle(.segmented)
+                TextEditor(text: Bindable(model).annotationComment).font(.system(size: BandalMetrics.bodySize)).frame(minHeight: 96)
+                    .scrollContentBackground(.hidden).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: BandalMetrics.radiusSmall))
+                    .accessibilityIdentifier("native-pdf-annotation-editor")
+                HStack {
+                    if model.editingAnnotation { Button("주석 삭제", role: .destructive) { model.deleteAnnotation() }.font(.system(size: 12)).accessibilityIdentifier("native-pdf-delete-annotation") }
+                    Spacer()
+                    Button("완료") { model.commitAnnotation() }.font(.system(size: BandalMetrics.bodySize, weight: .semibold)).accessibilityIdentifier("native-pdf-save-annotation")
                 }
-                .disabled(model.isBusy)
-                .onChange(of: model.annotationComment) { _, _ in model.markDraftChanged() }
-                .onChange(of: model.annotationColor) { _, _ in model.markDraftChanged() }
-                .navigationTitle("원문 메모").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("취소") { model.cancelAnnotation() } }
-                    ToolbarItem(placement: .confirmationAction) { Button("저장") { model.commitAnnotation() }.accessibilityIdentifier("native-pdf-save-annotation") }
-                }
-            }.presentationDetents([.medium, .large])
+            }
+            .disabled(model.isBusy)
+            .onChange(of: model.annotationComment) { _, _ in model.markDraftChanged() }
+            .onChange(of: model.annotationColor) { _, _ in model.markDraftChanged() }
+            .background { BandalEscapeKey { model.cancelAnnotation() } }
+            .padding(BandalMetrics.padding).frame(width: 340).presentationCompactAdaptation(.popover)
         }
-        .sheet(isPresented: Binding(get: { model.commentDraft != nil }, set: { if !$0, model.commentDraft != nil { model.saveComment() } })) {
-            NavigationStack {
-                Form {
-                    Section("댓글") {
-                        TextEditor(text: Binding(get: { model.commentDraft?.text ?? "" }, set: { model.commentDraft?.text = $0 }))
-                            .frame(minHeight: 140).accessibilityIdentifier("native-pdf-comment-editor")
-                    }
-                    if model.commentDraft?.id != nil {
-                        Section { Button("댓글 삭제", role: .destructive) { model.deleteComment() }.accessibilityIdentifier("native-pdf-delete-comment") }
-                    }
+        .onChange(of: model.showAnnotationEditor) { _, shown in if !shown { model.dismissAnnotation() } }
+        .popover(isPresented: Binding(get: { model.commentDraft != nil }, set: { if !$0, model.commentDraft != nil { model.saveComment() } }),
+                 attachmentAnchor: .point(UnitPoint(x: 0.5, y: 0.3)), arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 8) {
+                BandalSectionHeader("댓글")
+                TextEditor(text: Binding(get: { model.commentDraft?.text ?? "" }, set: { model.commentDraft?.text = $0 }))
+                    .font(.system(size: BandalMetrics.bodySize)).frame(minHeight: 96)
+                    .scrollContentBackground(.hidden).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: BandalMetrics.radiusSmall))
+                    .accessibilityIdentifier("native-pdf-comment-editor")
+                HStack {
+                    if model.commentDraft?.id != nil { Button("댓글 삭제", role: .destructive) { model.deleteComment() }.font(.system(size: 12)).accessibilityIdentifier("native-pdf-delete-comment") }
+                    Spacer()
+                    Button("완료") { model.saveComment() }.font(.system(size: BandalMetrics.bodySize, weight: .semibold)).accessibilityIdentifier("native-pdf-save-comment")
                 }
-                .navigationTitle("댓글").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("취소") { model.commentDraft = nil } }
-                    ToolbarItem(placement: .confirmationAction) { Button("완료") { model.saveComment() }.accessibilityIdentifier("native-pdf-save-comment") }
-                }
-            }.presentationDetents([.medium, .large])
+            }
+            .background { BandalEscapeKey { model.commentDraft = nil } }
+            .padding(BandalMetrics.padding).frame(width: 340).presentationCompactAdaptation(.popover)
         }
-        .alert("\(model.pageDeleteConfirmation ?? 1)페이지를 삭제할까요?", isPresented: Binding(get: { model.pageDeleteConfirmation != nil }, set: { if !$0 { model.pageDeleteConfirmation = nil } }), presenting: model.pageDeleteConfirmation) { number in
-            Button("취소", role: .cancel) { model.pageDeleteConfirmation = nil }
-            Button("삭제", role: .destructive) { model.confirmDeletePage(number) }.accessibilityIdentifier("native-pdf-confirm-page-delete")
-        } message: { _ in
-            Text("이 페이지의 필기와 주석도 함께 제거됩니다. 페이지 변경을 되돌리거나 변경 전 복구 사본을 만들 수 있습니다.")
+        .popover(isPresented: Binding(get: { model.pageDeleteConfirmation != nil }, set: { if !$0 { model.pageDeleteConfirmation = nil } }),
+                 attachmentAnchor: .point(.top), arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(model.pageDeleteConfirmation ?? 1)페이지를 삭제할까요?").font(.system(size: BandalMetrics.bodySize, weight: .semibold))
+                Text("필기와 주석도 함께 지워져요. 실행 취소로 되돌릴 수 있어요.").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
+                HStack { Spacer(); Button("삭제", role: .destructive) { if let number = model.pageDeleteConfirmation { model.confirmDeletePage(number) } }
+                    .font(.system(size: BandalMetrics.bodySize, weight: .semibold)).accessibilityIdentifier("native-pdf-confirm-page-delete") }
+            }.padding(BandalMetrics.padding).frame(width: 280).presentationCompactAdaptation(.popover)
         }
         .bandalToast(Binding(get: { model.mediaImportError }, set: { model.mediaImportError = $0 }))
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in model.saveInBackground() }
@@ -1909,6 +1910,12 @@ final class NativePDFWorkspaceModel {
         annotationDraft = nil; showAnnotationEditor = false; performAnnotationEdit("delete", value: value)
     }
     func cancelAnnotation() { annotationDraft = nil; showAnnotationEditor = false; restoreInput() }
+    /// Closing the memo popover keeps an edit; an existing memo left as it was is not rewritten.
+    func closeAnnotationEditor() {
+        guard let draft = annotationDraft else { showAnnotationEditor = false; return }
+        let unchanged = editingAnnotation && annotationColor == (draft["color"] as? String ?? "yellow") && annotationComment == (draft["comment"] as? String ?? "")
+        if unchanged || editorTask != nil { cancelAnnotation() } else { commitAnnotation() }
+    }
     func dismissAnnotation() { annotationDraft = nil; restoreInput() }
     private func performAnnotationEdit(_ action: String, value: [String: Any], expected: [String: Any]? = nil) {
         guard editorTask == nil, let persistence, !retired else { return }

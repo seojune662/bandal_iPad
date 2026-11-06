@@ -67,6 +67,8 @@ struct NativePlannerWorkspace: View {
     private struct TaskEditorIdentity: Identifiable {
         let id = UUID()
         let task: NativePlannerTask?
+        /// Opened from a task card: the popover hangs off that card.
+        var anchoredOnCard = false
         var status = "todo"
         var date: Date? = nil
     }
@@ -104,11 +106,8 @@ struct NativePlannerWorkspace: View {
                 }
             }
         }.background(NativeDesktopTheme.bgApp).foregroundStyle(NativeDesktopTheme.text).font(.system(size: 13))
-        .sheet(item: $editor) { item in
-            NativeTaskEditor(task: item.task, courses: store.courses, defaultCourseID: courseFilter == "*" ? effectiveCourseID : courseFilter.isEmpty ? nil : courseFilter, defaultStatus: item.status, defaultDueDate: item.date) { request in
-                _ = try await store.invoke(item.task == nil ? "board:createTask" : "board:updateTask", request)
-                await load()
-            }
+        .popover(isPresented: Binding(get: { editor != nil && editor?.anchoredOnCard != true }, set: { if !$0 { editor = nil } }), attachmentAnchor: .point(.top), arrowEdge: .top) {
+            if let item = editor { taskEditor(item) }
         }
         .task(id: courseFilter) { await load() }
         .onReceive(store.events) { event in if event.channel == "board:changed" { Task { await load() } } }
@@ -195,9 +194,12 @@ struct NativePlannerWorkspace: View {
                     Image(systemName: task.completed ? "checkmark.circle.fill" : "circle").font(.system(size: 16)).frame(width: 24, height: 24)
                 }.buttonStyle(.plain).foregroundStyle(statusColor(task.status)).disabled(changing.contains(task.id))
                     .accessibilityLabel(task.completed ? "미완료로 표시" : "완료로 표시").accessibilityIdentifier("native-task-toggle-\(task.id)")
-                Button { editor = TaskEditorIdentity(task: task) } label: {
+                Button { editor = TaskEditorIdentity(task: task, anchoredOnCard: true) } label: {
                     Text(task.title).strikethrough(task.completed).font(.system(size: 13, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 3)
                 }.buttonStyle(.plain).accessibilityIdentifier("native-task-edit-\(task.id)")
+                    .popover(isPresented: Binding(get: { editor?.anchoredOnCard == true && editor?.task?.id == task.id }, set: { if !$0 { editor = nil } }), arrowEdge: .leading) {
+                        if let item = editor { taskEditor(item) }
+                    }
             }
             if !task.notes.isEmpty { Text(task.notes).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(3) }
             HStack(spacing: 8) {
@@ -219,6 +221,13 @@ struct NativePlannerWorkspace: View {
                     catch { self.error = error.localizedDescription }
                 }
             }
+    }
+    private func taskEditor(_ item: TaskEditorIdentity) -> some View {
+        NativeTaskEditor(task: item.task, courses: store.courses, defaultCourseID: courseFilter == "*" ? effectiveCourseID : courseFilter.isEmpty ? nil : courseFilter, defaultStatus: item.status, defaultDueDate: item.date) { request in
+            _ = try await store.invoke(item.task == nil ? "board:createTask" : "board:updateTask", request)
+            await load()
+        }
+        .padding(BandalMetrics.padding).frame(width: 320).presentationCompactAdaptation(.popover)
     }
     private func statusTitle(_ status: String) -> String { status == "todo" ? "할 일" : status == "in-progress" ? "진행 중" : "완료" }
     private func statusColor(_ status: String) -> Color { status == "done" ? Color(red: 0.25, green: 0.54, blue: 0.38) : status == "in-progress" ? Color(red: 0.25, green: 0.48, blue: 0.73) : NativeDesktopTheme.muted }
@@ -276,43 +285,42 @@ struct NativeTaskEditor: View {
         _allDay = State(initialValue: task?.allDay ?? true)
         _dueDate = State(initialValue: task?.dueDate ?? defaultDueDate ?? Date())
     }
+    /// A popover: a new task is added with Enter or 추가; an edit saves when the popover closes.
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("제목", text: $title).accessibilityIdentifier("native-task-title")
-                    TextField("메모", text: $notes, axis: .vertical).lineLimit(3...8)
-                    Picker("과목", selection: $courseID) {
-                        Text("공통").tag("")
-                        ForEach(courses) { Text($0.name).tag($0.id) }
-                    }
-                    Picker("종류", selection: $kind) {
-                        Text("할 일").tag("task"); Text("과제").tag("assignment")
-                        Text("시험").tag("exam"); Text("수업").tag("class")
-                    }
-                    Picker("상태", selection: $status) {
-                        Text("할 일").tag("todo"); Text("진행 중").tag("in-progress"); Text("완료").tag("done")
-                    }
-                }
-                Section {
-                    Toggle("마감일", isOn: $hasDueDate)
-                    if hasDueDate {
-                        Toggle("하루 종일", isOn: $allDay)
-                        DatePicker("날짜", selection: $dueDate, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
-                    }
-                }
-                if let error { NativeToolError(message: error) }
-            }.disabled(busy)
-            .navigationTitle(task == nil ? "새 할 일" : "할 일 수정")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() }.disabled(busy) }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("저장") { submit() }
-                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
-                        .accessibilityIdentifier("native-task-save")
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            BandalSectionHeader(task == nil ? "새 할 일" : "할 일")
+            TextField("제목", text: $title).font(.system(size: 14, weight: .medium)).textFieldStyle(.plain)
+                .focused($titleFocused).submitLabel(.done).onSubmit { if task == nil { submit() } }
+                .accessibilityIdentifier("native-task-title")
+            TextField("메모", text: $notes, axis: .vertical).font(.system(size: 12)).lineLimit(2...6).textFieldStyle(.plain)
+                .foregroundStyle(NativeDesktopTheme.secondary)
+            BandalMenuDivider()
+            row("과목") { Picker("과목", selection: $courseID) { Text("공통").tag(""); ForEach(courses) { Text($0.name).tag($0.id) } } }
+            row("종류") { Picker("종류", selection: $kind) { Text("할 일").tag("task"); Text("과제").tag("assignment"); Text("시험").tag("exam"); Text("수업").tag("class") } }
+            row("상태") { Picker("상태", selection: $status) { Text("할 일").tag("todo"); Text("진행 중").tag("in-progress"); Text("완료").tag("done") }.pickerStyle(.segmented).frame(width: 190) }
+            row("마감일") { Toggle("마감일", isOn: $hasDueDate).labelsHidden() }
+            if hasDueDate {
+                row("하루 종일") { Toggle("하루 종일", isOn: $allDay).labelsHidden() }
+                DatePicker("날짜", selection: $dueDate, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute]).font(.system(size: BandalMetrics.bodySize))
             }
-        }.interactiveDismissDisabled(busy)
+            if let error { Text(error).font(.system(size: 11)).foregroundStyle(.red) }
+            if task == nil {
+                HStack { Spacer(); Button("추가") { submit() }.font(.system(size: BandalMetrics.bodySize, weight: .semibold))
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy).accessibilityIdentifier("native-task-save") }
+            }
+        }
+        .disabled(busy)
+        .onAppear { if task == nil { titleFocused = true } }
+        .onDisappear { if task != nil, changed, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { submit() } }
+    }
+    @FocusState private var titleFocused: Bool
+    private var changed: Bool {
+        guard let task else { return false }
+        return title != task.title || notes != task.notes || courseID != (task.courseId ?? "") || kind != task.kind || status != task.status
+            || hasDueDate != (task.dueAt != nil) || allDay != task.allDay || (hasDueDate && dueDate != task.dueDate)
+    }
+    private func row<Control: View>(_ label: String, @ViewBuilder control: () -> Control) -> some View {
+        HStack { Text(label).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary); Spacer(); control() }.frame(minHeight: 32)
     }
     private func submit() {
         guard !busy else { return }; busy = true
@@ -322,7 +330,7 @@ struct NativeTaskEditor: View {
                 "courseId": courseID.isEmpty ? NSNull() : courseID as Any, "kind": kind, "status": status,
                 "allDay": allDay, "dueAt": hasDueDate ? (allDay ? NativePlannerTask.dayFormatter.string(from: dueDate) : ISO8601DateFormatter().string(from: dueDate)) : NSNull()]
             if let task { request["id"] = task.id }
-            do { try await save(request); dismiss() }
+            do { try await save(request); if task == nil { dismiss() } }
             catch { self.error = error.localizedDescription }
         }
     }

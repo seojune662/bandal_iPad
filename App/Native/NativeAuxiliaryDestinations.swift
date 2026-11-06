@@ -24,6 +24,15 @@ struct NativeHelpView: View {
                 NativeSettingsCard(title: "도움말과 지원", description: "공식 문서와 변경 사항을 확인하세요.") {
                     VStack(alignment: .leading, spacing: 16) {
                         Button("키보드 단축키", systemImage: "keyboard") { shortcuts = true }
+                            .bandalPopover(isPresented: $shortcuts, width: 320) {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    BandalSectionHeader("기본 단축키")
+                                    ScrollView { VStack(spacing: 0) { ForEach(NativeBrowserShortcuts.specs) { item in
+                                        HStack { Text(item.label); Spacer(); Text(item.chord.replacingOccurrences(of: "mod+", with: "⌘").replacingOccurrences(of: "alt+", with: "⌥").replacingOccurrences(of: "shift+", with: "⇧").uppercased()).foregroundStyle(NativeDesktopTheme.muted) }
+                                            .font(.system(size: BandalMetrics.bodySize)).frame(minHeight: 30)
+                                    } } }.frame(maxHeight: 420)
+                                }
+                            }
                         Link(destination: URL(string: "https://bandal.io/ko/docs")!) { Label("사용 안내", systemImage: "book") }
                         Link(destination: URL(string: "https://bandal.io/ko/changelog")!) { Label("업데이트 내역", systemImage: "clock.arrow.circlepath") }
                         Link(destination: URL(string: "https://github.com/seojune662/bandal/issues")!) { Label("문제 제보 · 기능 제안", systemImage: "bubble.left") }
@@ -32,13 +41,6 @@ struct NativeHelpView: View {
                 Text("반달 \(version)").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
             }.padding(32).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity, alignment: .topLeading)
         }.background(NativeDesktopTheme.bgApp)
-            .sheet(isPresented: $shortcuts) {
-                NavigationStack {
-                    List(NativeBrowserShortcuts.specs) { item in
-                        HStack { Text(item.label); Spacer(); Text(item.chord.replacingOccurrences(of: "mod+", with: "⌘").replacingOccurrences(of: "alt+", with: "⌥").replacingOccurrences(of: "shift+", with: "⇧").uppercased()).foregroundStyle(.secondary) }
-                    }.navigationTitle("기본 단축키").toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { shortcuts = false } } }
-                }
-            }
     }
 }
 

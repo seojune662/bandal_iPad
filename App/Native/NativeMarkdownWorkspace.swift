@@ -167,36 +167,42 @@ struct NativeMarkdownWorkspace: View {
             if let note = NativePDFPageNoteDocument(text), pageIndex >= note.pages.count || pageIndex < 0 { pageIndex = max(0, min(pageIndex, note.pages.count - 1)) }
         }
         .onChange(of: scenePhase) { _, phase in if phase != .active { save() } }
-        .sheet(isPresented: $wikiPicker) {
-            NavigationStack {
-                List(wikiMaterials.filter { wikiQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(wikiQuery) }) { material in
-                    Button {
-                        session.applyFormat?("insert:[[" + (material.relPath as NSString).deletingPathExtension + "]]")
-                        wikiPicker = false
-                    } label: { Label(material.relPath, systemImage: "doc.text") }
-                }.searchable(text: $wikiQuery, prompt: "노트 이름 검색")
-                    .navigationTitle("노트 연결")
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("취소") { wikiPicker = false } } }
-                    .task {
-                        if let value = try? await store.invoke("materials:tree", ["courseId": document.courseID]), let data = try? JSONSerialization.data(withJSONObject: value), let nodes = try? JSONDecoder().decode([NativeMaterial].self, from: data) {
-                            wikiMaterials = NativeLibraryIndex.flatten(nodes).filter { $0.kind == "note" && $0.relPath != document.relativePath }
-                        }
-                    }
-            }.presentationDetents([.medium, .large])
-        }
         .fileImporter(isPresented: $imagePicker, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { importImages(urls) }
             else if case .failure(let error) = result { copyMessage = error.localizedDescription }
         }
-        .alert("수식 편집", isPresented: $formulaPrompt) {
-            TextField("LaTeX", text: $formula).textInputAutocapitalization(.never).autocorrectionDisabled()
-            Button("적용") { session.applyFormat?("replace-math:" + formula) }
-            Button("취소", role: .cancel) {}
-        }
-        .alert("링크 주소", isPresented: $linkPrompt) {
-            TextField("https://example.com", text: $linkAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
-            Button(editingLink ? "적용" : "삽입") { session.applyFormat?("link:" + linkAddress) }.disabled(linkAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Button("취소", role: .cancel) {}
+        // Formula, link and note link open over the text being edited, not as alerts or sheets.
+        .popover(isPresented: Binding(get: { formulaPrompt || linkPrompt || wikiPicker }, set: { if !$0 { formulaPrompt = false; linkPrompt = false; wikiPicker = false } }),
+                 attachmentAnchor: .point(UnitPoint(x: 0.5, y: 0.25)), arrowEdge: .top) {
+            Group {
+                if formulaPrompt {
+                    BandalTextEntry(title: "수식 (LaTeX)", prompt: "LaTeX", initial: formula, actionTitle: "적용", keyboard: .asciiCapable, identifier: "native-markdown-formula") { value in
+                        formulaPrompt = false; session.applyFormat?("replace-math:" + value)
+                    }
+                } else if linkPrompt {
+                    BandalTextEntry(title: "링크 주소", prompt: "https://example.com", initial: linkAddress, actionTitle: editingLink ? "적용" : "삽입", keyboard: .URL, identifier: "native-markdown-link") { value in
+                        linkPrompt = false; session.applyFormat?("link:" + value)
+                    }
+                } else if wikiPicker {
+                    VStack(alignment: .leading, spacing: 4) {
+                        BandalSectionHeader("노트 연결")
+                        BandalSearchList(prompt: "노트 이름 검색", query: $wikiQuery, identifier: "native-markdown-wiki-search") {
+                            ForEach(wikiMaterials.filter { wikiQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(wikiQuery) }) { material in
+                                BandalMenuRow(material.relPath, symbol: "doc.text") {
+                                    session.applyFormat?("insert:[[" + (material.relPath as NSString).deletingPathExtension + "]]")
+                                    wikiPicker = false
+                                }
+                            }
+                        }
+                    }.task {
+                        if let value = try? await store.invoke("materials:tree", ["courseId": document.courseID]), let data = try? JSONSerialization.data(withJSONObject: value), let nodes = try? JSONDecoder().decode([NativeMaterial].self, from: data) {
+                            wikiMaterials = NativeLibraryIndex.flatten(nodes).filter { $0.kind == "note" && $0.relPath != document.relativePath }
+                        }
+                    }
+                }
+            }
+            .padding(BandalMetrics.padding).frame(width: 320, alignment: .leading)
+            .presentationCompactAdaptation(.popover)
         }
         .bandalToast($copyMessage)
     }

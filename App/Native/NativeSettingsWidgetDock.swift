@@ -48,11 +48,12 @@ private struct NativeWidgetTasks: View {
     @State private var tasks: [NativePlannerTask] = []
     @State private var error: String?
     @State private var changing = Set<String>()
-    @State private var adding = false
-    @State private var editing: NativePlannerTask?
+    /// Captured when the editor opens, so a save that runs on dismissal still knows create vs update.
+    @State private var editor: WidgetTaskEditor?
+    private struct WidgetTaskEditor: Identifiable { let id = UUID(); let task: NativePlannerTask? }
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Text(store.courses.first { $0.id == store.selectedCourseID }?.name ?? "모든 과목").font(NativeDesktopTheme.font(11)).lineLimit(1); Spacer(); Button("할 일 추가", systemImage: "plus") { adding = true }.labelStyle(.iconOnly).accessibilityIdentifier("native-widget-add-task") }.padding(.horizontal, 12).frame(height: 30)
+            HStack { Text(store.courses.first { $0.id == store.selectedCourseID }?.name ?? "모든 과목").font(NativeDesktopTheme.font(11)).lineLimit(1); Spacer(); Button("할 일 추가", systemImage: "plus") { editor = .init(task: nil) }.labelStyle(.iconOnly).accessibilityIdentifier("native-widget-add-task") }.padding(.horizontal, 12).frame(height: 30)
             if let error { NativeToolError(message: error) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
@@ -62,7 +63,7 @@ private struct NativeWidgetTasks: View {
                         ForEach(values) { task in
                             HStack(alignment: .top, spacing: 8) {
                                 Button { update(task, status: task.completed ? "todo" : "done") } label: { Image(systemName: task.completed ? "checkmark.circle.fill" : "circle").frame(width: 26, height: 30) }.buttonStyle(.plain).disabled(changing.contains(task.id)).accessibilityLabel(task.completed ? "미완료로 표시" : "완료로 표시")
-                                Button { editing = task } label: { VStack(alignment: .leading, spacing: 3) { Text(task.title).strikethrough(task.completed).font(NativeDesktopTheme.font(12)).multilineTextAlignment(.leading); if let due = task.dueDate { Text(due.formatted(date: .abbreviated, time: .omitted)).font(NativeDesktopTheme.font(10)).foregroundStyle(NativeDesktopTheme.muted) } }.frame(maxWidth: .infinity, minHeight: 30, alignment: .leading) }.buttonStyle(.plain)
+                                Button { editor = .init(task: task) } label: { VStack(alignment: .leading, spacing: 3) { Text(task.title).strikethrough(task.completed).font(NativeDesktopTheme.font(12)).multilineTextAlignment(.leading); if let due = task.dueDate { Text(due.formatted(date: .abbreviated, time: .omitted)).font(NativeDesktopTheme.font(10)).foregroundStyle(NativeDesktopTheme.muted) } }.frame(maxWidth: .infinity, minHeight: 30, alignment: .leading) }.buttonStyle(.plain)
                                 if board { Menu { ForEach(["todo", "in-progress", "done"], id: \.self) { value in Button(value == "todo" ? "할 일" : value == "in-progress" ? "진행 중" : "완료") { update(task, status: value) } } } label: { Image(systemName: "ellipsis").frame(width: 24, height: 30) } }
                             }
                         }
@@ -72,8 +73,12 @@ private struct NativeWidgetTasks: View {
             }
         }.task(id: store.selectedCourseID) { await load() }
             .onReceive(store.events) { event in if event.channel == "board:changed" { Task { await load() } } }
-            .sheet(isPresented: $adding) { NativeTaskEditor(task: nil, courses: store.courses, defaultCourseID: store.selectedCourseID) { request in _ = try await store.invoke("board:createTask", request); await load() } }
-            .sheet(item: $editing) { item in NativeTaskEditor(task: item, courses: store.courses, defaultCourseID: store.selectedCourseID) { request in _ = try await store.invoke("board:updateTask", request); await load() } }
+            .popover(item: $editor, attachmentAnchor: .point(.top), arrowEdge: .top) { item in
+                NativeTaskEditor(task: item.task, courses: store.courses, defaultCourseID: store.selectedCourseID) { request in
+                    _ = try await store.invoke(item.task == nil ? "board:createTask" : "board:updateTask", request); await load()
+                }
+                .padding(BandalMetrics.padding).frame(width: 320).presentationCompactAdaptation(.popover)
+            }
     }
     private func load() async {
         let course = store.selectedCourseID

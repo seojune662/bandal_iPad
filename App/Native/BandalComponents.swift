@@ -18,9 +18,9 @@ extension View {
     /// A popover anchored to this view: arrow, closes on an outside tap or Esc, stays a popover in compact width.
     func bandalPopover<Content: View>(isPresented: Binding<Bool>, arrowEdge: Edge = .top, width: CGFloat? = 280,
                                       @ViewBuilder content: @escaping () -> Content) -> some View {
-        popover(isPresented: isPresented, arrowEdge: arrowEdge) {
+        modifier(BandalDeferredPopover(isPresented: isPresented, arrowEdge: arrowEdge) {
             BandalPopoverBody(width: width, close: { isPresented.wrappedValue = false }, content: content)
-        }
+        })
     }
 
     /// The anchored one-line confirmation that replaces `confirmationDialog`: title, optional one-line
@@ -47,6 +47,32 @@ extension View {
     /// A transient message at the bottom of this view; the binding clears itself after a few seconds.
     func bandalToast(_ message: Binding<String?>) -> some View {
         overlay(alignment: .bottom) { BandalToast(message: message) }
+    }
+}
+
+/// Presents a turn after the request: a popover asked for from a Menu item while that menu is
+/// still closing is otherwise dropped, and the state stays "presented" with nothing on screen.
+private struct BandalDeferredPopover<Body: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let arrowEdge: Edge
+    @ViewBuilder let body: () -> Body
+    @State private var shown = false
+    @State private var appeared = false
+    func body(content: Content) -> some View {
+        content
+            .popover(isPresented: Binding(get: { shown }, set: { shown = $0; if !$0 { isPresented = false } }), arrowEdge: arrowEdge) {
+                body().onAppear { appeared = true }
+            }
+            .onChange(of: isPresented, initial: true) { _, wanted in
+                guard wanted else { shown = false; appeared = false; return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { if isPresented { shown = true } }
+                // Still not on screen after the menu has surely closed: ask once more.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    guard isPresented, !appeared else { return }
+                    shown = false
+                    DispatchQueue.main.async { if isPresented { shown = true } }
+                }
+            }
     }
 }
 
@@ -222,6 +248,7 @@ struct BandalTextEntry: View {
     var actionTitle = "확인"
     var keyboard: UIKeyboardType = .default
     var identifier = "bandal-text-entry"
+    var submitIdentifier: String?
     let commit: @MainActor (String) async throws -> Void
     @State private var value = ""
     @State private var error: String?
@@ -241,7 +268,7 @@ struct BandalTextEntry: View {
                     .accessibilityIdentifier(identifier)
                 Button(actionTitle, action: submit).font(.system(size: BandalMetrics.bodySize, weight: .semibold))
                     .disabled(busy || value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .frame(minHeight: 32).accessibilityIdentifier(identifier + "-submit")
+                    .frame(minHeight: 32).accessibilityIdentifier(submitIdentifier ?? identifier + "-submit")
             }
             if let error { Text(error).font(.system(size: 11)).foregroundStyle(.red).lineLimit(2) }
         }

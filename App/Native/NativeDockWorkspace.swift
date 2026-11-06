@@ -63,6 +63,11 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
 
     private var headerHeight: CGFloat { chromeMode.showsTabs ? 44 : 0 }
     var body: some View {
+        dockBody.onReceive(store.events) { event in
+            if event.channel == "nativeDock:newTab", let id = (event.payload as? [String: Any])?["groupID"] as? String { newTabGroupID = id }
+        }
+    }
+    private var dockBody: some View {
         GeometryReader { proxy in
             if let layout = navigation.layout {
                 let requiresFocus = layout.root.minimumSize.width > proxy.size.width || layout.root.minimumSize.height > proxy.size.height

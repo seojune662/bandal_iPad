@@ -48,7 +48,6 @@ struct NativeLearningHome: View {
         }.background(NativeDesktopTheme.bgApp).accessibilityElement(children: .contain).accessibilityIdentifier("native-learning-home")
             .task { await model.reload(store, courseID: courseID) }
             .onReceive(store.events) { event in if ["learning:changed", "courses:changed"].contains(event.channel) { Task { await model.reload(store, courseID: courseID) } } }
-            .sheet(item: $creating) { kind in NativeLearningStartSheet(store: store, kind: kind, source: nil, onOpen: onOpen) }
     }
     @ViewBuilder private var startActions: some View {
         ForEach(NativeLearningStartKind.allCases) { kind in
@@ -58,6 +57,9 @@ struct NativeLearningHome: View {
                     VStack(alignment: .leading, spacing: 8) { Text(kind.title).fontWeight(.semibold); Text(kind.detail).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true) }
                     Spacer(minLength: 0); Image(systemName: "chevron.right").font(.system(size: 10))
                 }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .popover(isPresented: Binding(get: { creating == kind }, set: { if !$0 && creating == kind { creating = nil } }), arrowEdge: .top) {
+                        NativeLearningStartSheet(store: store, kind: kind, source: nil, onOpen: onOpen)
+                    }
             }.buttonStyle(.plain).accessibilityIdentifier("native-learning-start-" + kind.id)
         }
     }
@@ -74,13 +76,15 @@ struct NativeLearningSidebar: View {
             HStack { Text("학습 공간").font(NativeDesktopTheme.font(16, weight: .semibold)); Spacer(); NativeChromeButton(title: "학습 공간 새로고침", symbol: "arrow.clockwise") { Task { await model.reload(store) } } }
             HStack { Image(systemName: "magnifyingglass"); TextField("공간 검색", text: $query).textFieldStyle(.plain) }.font(NativeDesktopTheme.font(12)).padding(8).background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 8))
             Menu { ForEach(NativeLearningStartKind.allCases) { kind in Button(kind.title) { creating = kind } } } label: { Label("새 학습", systemImage: "plus").foregroundStyle(NativeDesktopTheme.onAccent).frame(maxWidth: .infinity, minHeight: 36) }.buttonStyle(.borderedProminent).tint(NativeDesktopTheme.accent)
+                .bandalPopover(isPresented: Binding(get: { creating != nil }, set: { if !$0 { creating = nil } }), arrowEdge: .leading, width: nil) {
+                    if let kind = creating { NativeLearningStartSheet(store: store, kind: kind, source: nil, onOpen: onOpen) }
+                }
             if model.loading { ProgressView() }
             if let error = model.error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red) }
             ScrollView { NativeLearningGroups(projects: model.projects.filter { $0.deletedAt == nil && (query.isEmpty || ($0.name + " " + $0.topic).localizedStandardContains(query)) }, store: store, onOpen: onOpen) }
         }.padding(12).background(NativeDesktopTheme.surface).accessibilityIdentifier("native-learning-sidebar")
             .task { await model.reload(store) }
             .onReceive(store.events) { event in if ["learning:changed", "courses:changed"].contains(event.channel) { Task { await model.reload(store) } } }
-            .sheet(item: $creating) { kind in NativeLearningStartSheet(store: store, kind: kind, source: nil, onOpen: onOpen) }
     }
 }
 
