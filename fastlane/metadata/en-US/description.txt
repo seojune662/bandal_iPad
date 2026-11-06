@@ -15,16 +15,19 @@ Workspace
 - A built-in browser for school sites and course materials, to-dos and schedules, and Apple Calendar integration.
 
 AI
-- Enter your own OpenAI, Anthropic or Google API key to ask questions with your materials attached. Keys are stored only in the iPad Keychain.
-- The app asks for consent before the first request to each provider; questions and attachments go from the iPad straight to the provider you chose.
+- Sign in to ask questions with your materials attached and make summaries, quizzes and flashcards. No API key needed.
+- Auto is the default; you can also pick an Anthropic or OpenAI model and how deeply it thinks. Every model draws on the same monthly allowance.
+- The app asks for consent before the first request to each provider. Questions and attachments go through the Bandal server to the provider you chose; the server records only how much AI you used and does not store the content.
 
 Storage
 - Everything is stored on your iPad. No account is needed.
 - You can sync with your other devices through your own iCloud or Google Drive, for free. Your materials are never uploaded to Bandal's servers.
 
-Bandal Plus (auto-renewable subscription)
-- Free: on this iPad, create 1 course and 10 materials, and use AI features with your own API key 20 times a month.
-- Bandal Plus: unlimited courses and materials, and unlimited AI requests.
+Bandal Membership (auto-renewable subscriptions)
+- Free: on this iPad, create 1 course and 10 materials; signed in, a little AI each month (about 30 Auto questions).
+- Bandal Plus: unlimited courses and materials, and about 400 Auto questions' worth of AI a month.
+- Bandal Pro: everything in Plus with 4× the AI (about 1,700 Auto questions' worth).
+- AI Credit (one-time purchase) adds to this month's allowance and never expires.
 - New subscribers get a 1-week free trial before the first charge. Payment is charged to your Apple Account. The subscription renews automatically unless cancelled at least 24 hours before the end of the period. Manage or cancel it in Settings › [your name] › Subscriptions.
 - When a subscription ends, the courses and materials you made stay open and editable.
 - Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/

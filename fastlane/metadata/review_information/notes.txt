@@ -1,42 +1,33 @@
 Hello,
 
-Version 1.3.0 brings back lecture recording and adds handwriting tools and browser improvements. No demo account is needed. Sign-in, sync and Bandal Plus (since 1.2.0) are optional: every feature, including sync, purchase and restore, works without signing in.
+Version 1.4.0 changes how AI works: users no longer enter their own API keys. AI now goes through our server (a relay on Supabase Edge Functions) to Anthropic or OpenAI, metered by a monthly allowance per plan. It also adds Bandal Pro (two auto-renewable subscriptions in the existing "Bandal Membership" group) and AI Credit (a consumable).
 
-Microphone (lecture recording)
-- In a PDF, the microphone button in the palette records while the user writes. "+" in the tab bar > 녹음 (Recording) lists recordings with playback and transcription.
-- Recording works only in the foreground. The app has no background audio mode: when it goes to the background, the recording pauses and is saved, and a notice explains this on return.
-- Audio and transcripts stay on the iPad (on-device speech recognition). They leave it only if the user turns on sync to their own iCloud or Google Drive. We never receive them.
-- The in-app browser can also use the microphone when a website the user opens asks for it (system prompt).
+How to try AI
+- Sign in (Account button in the left rail: Sign in with Apple or Google). AI needs an account because the allowance is per account; everything else works without one.
+- Open a course, then the AI panel (the "AI" handle on the right edge of the workspace), type a question and send. Before the first request to each provider a consent sheet (guideline 5.1.2(i)) names the company, what is sent and links its privacy policy; nothing is sent if the user cancels. Consent can be withdrawn in Settings > AI.
+- The model button under the input ("Auto") lets the user pick Auto, an Anthropic or an OpenAI model, and the thinking depth.
 
-Also new in 1.3.0
-- Browser: links and popups open in new tabs; optional password saving (device Keychain only) and autofill; import of passwords (CSV) and bookmarks (HTML) exported from another browser (Settings > 브라우저).
-- Library: "+" > "GoodNotes·Notability에서 가져오기" copies a PDF backup folder the user picks.
+What our server does with AI requests
+- It checks the account's plan and remaining allowance, forwards the request to the provider with our API key, streams the answer back and records token counts and cost. It does not store questions, materials or answers.
 
-1. Sign-in and account deletion
-- The 계정 (Account) button in the left rail offers Sign in with Apple and Sign in with Google. Signing in only adds a Bandal profile (nickname and avatar).
-- To delete the account, while signed in: Settings > 계정 (Account) > 계정 삭제 (Delete Account). This deletes the account on our server and revokes the Sign in with Apple token. Files on the iPad stay.
+Plans (all optional; nothing already made is ever locked)
+- Free: 1 course and 10 materials on this iPad; signed in, a small AI allowance (about 30 short questions a month).
+- Bandal Plus (monthly / yearly, existing): unlimited courses and materials, AI about 400 short questions a month.
+- Bandal Pro (monthly / yearly, new, higher level in the same group): Plus with 4x the AI allowance. During a free trial the AI allowance is Plus's; the paywall says so.
+- AI Credit (consumable): adds to the current allowance, never expires, not restorable (stated on the purchase sheet).
+- Where to see them: Settings > 구독 (Subscription) > 반달 멤버십 보기 / AI 충전. When the allowance runs out, the app opens the paywall (free: Plus and Pro; Plus: Pro) or the credit sheet (Pro).
+- Restore Purchases is on the paywall and in Settings > 구독. Terms of Use (Apple standard EULA) and Privacy Policy are linked on the paywall.
+- Purchases are verified on our server from the signed transaction (App Store Server Library) only to set the AI allowance; course and material limits are judged on the device.
 
-2. Sync (optional, free, not part of the subscription)
-- Settings > 동기화 (Sync): choose iCloud or Google Drive. Courses and materials are stored only in the user's own storage: the app's iCloud Drive folder, or a "Bandal" folder in their Google Drive (drive.file scope: only files the app creates). We run no server for documents and cannot read them.
-
-3. Bandal Plus (auto-renewable subscription)
-- Free use on this iPad: 1 course, 10 materials (PDFs and notes) and 20 AI requests a month. Bandal Plus (monthly or yearly, 1-week free trial for new subscribers) removes these limits. When it ends, nothing already made is locked.
-- To see the purchase screen: Settings > 구독 (Subscription) > 반달 플러스 보기, or create a second course ("+" next to 과목 > 새 과목 만들기).
-- Restore Purchases is on the purchase screen and at Settings > 구독 > 구매 복원. The purchase screen links to the Terms of Use (Apple standard EULA) and our Privacy Policy.
-
-How to use the main features
-- Create a course: "+" next to 과목 > 새 과목 만들기 (New Course).
-- Import a PDF: the tray icon "파일 가져오기" (Import Files) above 자료 (Materials), then pick any PDF. Tap it to open.
-- Handwriting: choose the pen, highlighter or eraser in the PDF toolbar and write with Apple Pencil. "+" > "새 노트" in 자료 creates a handwriting note.
-- AI assistant (optional): needs the user's own OpenAI, Anthropic or Google API key in Settings > AI 엔진 (AI Engine). We do not provide a key.
+Other features (unchanged)
+- Sync (optional, free): Settings > 동기화, the user's own iCloud or Google Drive. We run no server for documents.
+- Lecture recording stays on the device; in-app browser (age rating 17+).
+- Account deletion: Settings > 계정 > 계정 삭제.
 
 External services
-- Bandal account server (auth.bandal.io), only after sign-in: account ID, email, name from the sign-in provider, and nickname. No documents or handwriting.
-- Apple: Sign in with Apple, In-App Purchase. Transactions are verified on the device and not sent to us.
-- Google: Sign in with Google (through our account server), and the Google Drive API for sync, called from the iPad.
-- AI providers: only with the user's own key, after a consent screen for each provider. Requests go from the iPad straight to the provider.
-- In-app browser: loads the sites the user opens. Because it can open any website, the age rating is 17+.
-- No analytics, advertising or crash-reporting services.
+- Bandal server (auth.bandal.io / Supabase): account (ID, email, name, nickname); AI usage records (token counts, cost, model); App Store transaction status for the AI allowance.
+- Anthropic, OpenAI: AI requests, only after the per-provider consent.
+- Apple: Sign in with Apple, In-App Purchase. Google: Sign in with Google, Google Drive API for sync.
+- No analytics, advertising or crash reporting.
 
-Regional differences: not distributed in the EU or China mainland. The features are the same everywhere else.
-Regulated industry: not applicable.
+Regional differences: not distributed in the EU or China mainland.
