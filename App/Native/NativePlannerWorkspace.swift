@@ -110,16 +110,6 @@ struct NativePlannerWorkspace: View {
                 await load()
             }
         }
-        .confirmationDialog("할 일을 삭제할까요?", isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } })) {
-            Button("삭제", role: .destructive) {
-                guard let task = pendingDeletion else { return }
-                pendingDeletion = nil
-                Task {
-                    do { _ = try await store.invoke("board:deleteTask", ["id": task.id]); await load() }
-                    catch { self.error = error.localizedDescription }
-                }
-            }
-        }
         .task(id: courseFilter) { await load() }
         .onReceive(store.events) { event in if event.channel == "board:changed" { Task { await load() } } }
     }
@@ -221,6 +211,13 @@ struct NativePlannerWorkspace: View {
                 ForEach(["todo", "in-progress", "done"], id: \.self) { status in Button(statusTitle(status)) { setStatus(task, status: status) } }
                 Button("수정") { editor = TaskEditorIdentity(task: task) }
                 Button("삭제", role: .destructive) { pendingDeletion = task }
+            }
+            .bandalConfirm("할 일을 삭제할까요?", isPresented: Binding(get: { pendingDeletion?.id == task.id }, set: { if !$0 { pendingDeletion = nil } }), action: "삭제", destructive: true) {
+                pendingDeletion = nil
+                Task {
+                    do { _ = try await store.invoke("board:deleteTask", ["id": task.id]); await load() }
+                    catch { self.error = error.localizedDescription }
+                }
             }
     }
     private func statusTitle(_ status: String) -> String { status == "todo" ? "할 일" : status == "in-progress" ? "진행 중" : "완료" }

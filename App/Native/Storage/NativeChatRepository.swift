@@ -82,6 +82,13 @@ final class NativeChatRepository {
                 let policy = (try? NativeValue.decode(row["access_policy"])) as? [String: Any] ?? [:]
                 return NativeAssistantPayload.scopeID(policy, course: course) == scope
             }.map { NativeValue.mapped($0,["id":"id","course_id":"courseId","surface":"surface","provider":"provider","title":"title","model":"model","last_used_at":"lastUsedAt","created_at":"createdAt","message_count":"messageCount"]) }]
+        case "chat:rename":
+            let current = try scoped(request), id = current["id"] as! String
+            guard current["status"] as? String != "running" else { throw DesktopRuntimeError("진행 중인 응답을 중지한 뒤 변경해 주세요.",code:"BUSY") }
+            let title = try NativeValue.string(request["title"],"대화 제목").trimmingCharacters(in:.whitespacesAndNewlines)
+            guard !title.isEmpty else { throw DesktopRuntimeError("대화 제목을 입력해 주세요.") }
+            _ = try context.db.run("UPDATE agent_sessions SET title=?,updated_at=? WHERE id=?",params:[String(title.prefix(80)),NativeValue.now(),id])
+            return ["title":String(title.prefix(80))]
         case "chat:setProvider", "chat:setConfiguration", "chat:setModel", "chat:deleteConversation":
             let current = try scoped(request), id = current["id"] as! String
             guard current["status"] as? String != "running" else { throw DesktopRuntimeError("진행 중인 응답을 중지한 뒤 변경해 주세요.",code:"BUSY") }

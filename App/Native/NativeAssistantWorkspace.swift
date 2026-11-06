@@ -285,6 +285,10 @@ private final class NativeAssistantSession: ObservableObject {
         _ = try await store.invoke("chat:setConfiguration",identity.merging(["model":choice == nil ? "default" : model,"effort":choice == nil ? NSNull() : (effort as Any? ?? NSNull())]) { _,new in new })
         try await open(); await checkAvailability()
     }
+    func renameCurrent(_ title: String) async throws {
+        _ = try await store.invoke("chat:rename",identity.merging(["title":title]) { _,new in new })
+        try await reloadConversations()
+    }
     func deleteCurrent() async throws {
         _ = try await store.invoke("chat:deleteConversation",identity)
         conversations.removeAll { $0.id == sessionID }; await select(conversations.first)
@@ -361,6 +365,7 @@ struct NativeAssistantPanel: View {
     @State private var showingConfiguration = false
     @State private var showingOptions = false
     @State private var showingDelete = false
+    @State private var renamingConversation = false
     @State private var model = ""
     @State private var effort = "medium"
     @ObservedObject private var usage = AIUsage.shared
@@ -408,13 +413,13 @@ struct NativeAssistantPanel: View {
                 Button("가져오기") { perform { try await session.importArticle(articleURL); articleURL = "" } }
             } message: { Text("원문을 현재 공간에 보관하고 읽기·표현 수집을 이어갑니다.") }
             .sheet(item:$preview) { attachment in attachmentPreview(attachment) }
-            .confirmationDialog("이 대화를 삭제할까요?",isPresented:$showingDelete) { Button("삭제",role:.destructive) { perform { try await session.deleteCurrent() } } }
     }
     private var header: some View {
         HStack(spacing:4) {
             VStack(alignment:.leading,spacing:3) {
                 Text(context.title).font(.system(size:16,weight:.semibold)).lineLimit(1)
-                Text(session.conversations.first(where:{ $0.id == session.sessionID })?.title ?? "새 대화").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                BandalInlineEditor(text:session.conversations.first(where:{ $0.id == session.sessionID })?.title ?? "새 대화",isEditing:$renamingConversation,font:.caption,identifier:"native-ai-conversation-rename") { title in perform { try await session.renameCurrent(title) } }
+                    .foregroundStyle(.secondary)
             }
             Spacer(minLength:4)
             Menu {
@@ -427,8 +432,10 @@ struct NativeAssistantPanel: View {
                     }
                 }
                 Divider()
+                Button("대화 이름 변경",systemImage:"pencil") { renamingConversation = true }.disabled(session.running || !session.conversations.contains { $0.id == session.sessionID })
                 Button("현재 대화 삭제",role:.destructive) { showingDelete = true }.disabled(session.running)
             } label: { Image(systemName:"clock.arrow.circlepath").frame(width:44,height:44).contentShape(Rectangle()) }.accessibilityLabel("대화 기록")
+                .bandalConfirm("이 대화를 삭제할까요?",isPresented:$showingDelete,action:"삭제",destructive:true) { perform { try await session.deleteCurrent() } }
             Button { Task { await session.select(nil) } } label: { Image(systemName:"square.and.pencil").frame(width:44,height:44).contentShape(Rectangle()) }.accessibilityLabel("새 대화")
         }.buttonStyle(.plain).padding(.horizontal,12).padding(.top,8)
     }

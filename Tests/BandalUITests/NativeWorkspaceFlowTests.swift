@@ -310,9 +310,9 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         XCTAssertEqual(reason.label, "무료로는 이 iPad에서 과목을 1개까지 만들 수 있어요.")
         attachScreenshot(app, name: "Membership after a second course")
         app.buttons["membership-close"].tap()
-        XCTAssertFalse(app.alerts["작업을 완료하지 못했어요"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.staticTexts["bandal-toast"].waitForExistence(timeout: 2))
         app.buttons["취소"].firstMatch.tap()
-        XCTAssertFalse(app.alerts["작업을 완료하지 못했어요"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.staticTexts["bandal-toast"].waitForExistence(timeout: 2))
         app.buttons["native-section-settings"].tap()
         let category = app.buttons["native-settings-category-subscription"]
         XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription); category.tap()

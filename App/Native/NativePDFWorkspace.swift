@@ -141,14 +141,10 @@ struct NativePDFWorkspace: View {
         } message: { _ in
             Text("이 페이지의 필기와 주석도 함께 제거됩니다. 페이지 변경을 되돌리거나 변경 전 복구 사본을 만들 수 있습니다.")
         }
-        .alert("작업을 완료하지 못했습니다", isPresented: Binding(get: { model.mediaImportError != nil }, set: { if !$0 { model.mediaImportError = nil } })) {
-            Button("확인") { model.mediaImportError = nil }
-        } message: { Text(model.mediaImportError ?? "") }
+        .bandalToast(Binding(get: { model.mediaImportError }, set: { model.mediaImportError = $0 }))
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in model.saveInBackground() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in model.recordingPausedForBackground() }
-        .alert("녹음", isPresented: Binding(get: { model.recordingNotice != nil }, set: { if !$0 { model.recordingNotice = nil } })) {
-            Button("확인") { model.recordingNotice = nil }
-        } message: { Text(model.recordingNotice ?? "") }
+        .bandalToast(Binding(get: { model.recordingNotice }, set: { model.recordingNotice = $0 }))
     }
 
 }
