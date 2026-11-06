@@ -68,6 +68,11 @@ struct MembershipPaywall: View {
 private struct PlanButtons: SubscriptionStoreControlStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack(spacing: 16) {
+            if configuration.options.isEmpty {
+                Text("구독 상품을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.")
+                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .accessibilityIdentifier("membership-unavailable")
+            }
             ForEach(configuration.options.sorted { $0.price < $1.price }) { option in
                 let price = "\(option.displayPrice) / \(option.subscriptionPeriod.map { Self.text($0, single: true) } ?? "")"
                 let trial = option.activeOffer.flatMap { $0.paymentMode == .freeTrial ? Self.text($0.period, single: false) : nil }
