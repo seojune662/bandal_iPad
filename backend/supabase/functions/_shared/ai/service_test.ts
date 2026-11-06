@@ -186,18 +186,45 @@ Deno.test('provider-side tools are refused; app tools pass', async () => {
 })
 
 Deno.test('OpenAI incomplete responses are charged with their reported usage', async () => {
-  const { handle, settled } = harness({ upstream: () => sse([{ type: 'response.incomplete', response: { usage: { input_tokens: 500, output_tokens: 8000 } } }]) })
+  const { handle, settled } = harness({ upstream: () => sse([{ type: 'response.output_text.delta', delta: 'long' }, { type: 'response.incomplete', response: { usage: { input_tokens: 500, output_tokens: 8000 } } }]) })
   await (await call(handle, '/v1/openai', { model: 'gpt-6-luna', input: [] })).text()
   assertEquals(settled[0]!.usage.output, 8000)
   assertEquals(settled[0]!.complete, false)
 })
 
-Deno.test('a stream cut off before message_stop is charged with an estimate', async () => {
-  const { handle, settled } = harness({ upstream: () => sse(ANTHROPIC_STREAM.slice(0, 2)) })
+// 5xx before the stream is covered by 'upstream refusals'; these are failures after it opened.
+const MODEL_FAILURES: [string, string, () => Response][] = [
+  ['an Anthropic error event mid-stream', '/v1/anthropic', () => sse([...ANTHROPIC_STREAM.slice(0, 2), { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }])],
+  ['a stream cut off before message_stop', '/v1/anthropic', () => sse(ANTHROPIC_STREAM.slice(0, 2))],
+  ['an upstream read that fails (timeout abort, network)', '/v1/anthropic', () => {
+    let sent = false
+    return new Response(new ReadableStream<Uint8Array>({ pull(c) {
+      if (sent) { c.error(new DOMException('aborted', 'AbortError')); return }
+      sent = true; c.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(ANTHROPIC_STREAM[0])}\n\n`))
+    } }))
+  }],
+  ['an empty Anthropic answer', '/v1/anthropic', () => sse([ANTHROPIC_STREAM[0], { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 2 } }, { type: 'message_stop' }])],
+  ['OpenAI response.failed', '/v1/openai', () => sse([{ type: 'response.output_text.delta', delta: 'Hi' }, { type: 'response.failed', response: { usage: { input_tokens: 900, output_tokens: 3 } } }])],
+  ['an empty OpenAI answer', '/v1/openai', () => sse([{ type: 'response.completed', response: { usage: { input_tokens: 900, output_tokens: 0 } } }])],
+]
+for (const [name, path, upstream] of MODEL_FAILURES) {
+  Deno.test(`${name} is not charged and releases the reservation`, async () => {
+    const { handle, settled, released } = harness({ upstream })
+    const body = path === '/v1/openai' ? { model: 'gpt-6-luna', input: [] } : anthropicBody()
+    const text = await (await call(handle, path, body)).text()
+    assertEquals(settled.length, 0)
+    assertEquals(released.length, 1)
+    assert(!text.includes('bandal_usage'))
+  })
+}
+
+Deno.test('a tool call with empty arguments is a delivered answer', async () => {
+  const { handle, settled } = harness({ upstream: () => sse([ANTHROPIC_STREAM[0],
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 't', name: 'list_materials', input: {} } },
+    { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 12 } }, { type: 'message_stop' }]) })
   await (await call(handle, '/v1/anthropic', anthropicBody())).text()
-  assertEquals(settled[0]!.complete, false)
-  assertEquals(settled[0]!.usage.input, 1200)
-  assertEquals(settled[0]!.usage.output, 5) // 15 UTF-8 bytes / 3
+  assertEquals(settled.length, 1)
+  assertEquals(settled[0]!.usage.output, 12)
 })
 
 Deno.test('a client that leaves mid-stream is still charged once, with the provider\'s usage', async () => {

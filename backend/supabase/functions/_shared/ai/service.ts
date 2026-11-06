@@ -124,8 +124,8 @@ export function createAIProxy(deps: Deps): (request: Request) => Promise<Respons
       // the log line is the only trace. Queue failed settles in a table if this ever shows up.
       return null
     }
-    // Upstream is read to the end even when the app goes away, so the step is always charged
-    // with the provider's own usage; only the timeout or a network failure leaves an estimate.
+    // Upstream is read to the end even when the app goes away, so a delivered step is charged
+    // with the provider's own usage (an estimate only when the usage event never came).
     let output!: ReadableStreamDefaultController<Uint8Array>
     const stream = new ReadableStream<Uint8Array>({
       start(controller) { output = controller },
@@ -144,7 +144,12 @@ export function createAIProxy(deps: Deps): (request: Request) => Promise<Respons
       } finally {
         clearTimeout(timer)
       }
-      const result = await settle()
+      // Model-side failures and empty answers cost the user nothing; the provider may still bill us.
+      const result = meter.billable ? await settle() : null
+      if (!meter.billable) {
+        deps.log?.('ai step not billed', { provider, step, completed: meter.completed, content: meter.content })
+        await deps.store.release(actor, step).catch(() => {})
+      }
       if (!attached) return
       if (result) output.enqueue(encoder.encode(`data: ${JSON.stringify({ bandal_usage: { costUcents: result.costUcents, ...result.status } })}\n\n`))
       output.close()
