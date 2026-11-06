@@ -378,24 +378,6 @@ struct NativeBrowserWorkspace: View {
         }.background(NativeDesktopTheme.bgApp).foregroundStyle(NativeDesktopTheme.text)
         .nativeWorkspacePreviewSurface(id: "browser-private-" + (session.workspaceID ?? "global"), privateContent: { session.active?.isPrivate == true })
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { workspaceHeight = $0 }
-        .sheet(item: $credentialContext) { context in NativeBrowserCredentialsPanel(session: session, context: context) }
-        .sheet(isPresented: $showingHistory) { NativeBrowserHistoryPanel(session: session, navigate: navigate) }
-        .sheet(isPresented: $showingDownloads, onDismiss: finishDownloadPresentation) {
-            NativeBrowserDownloadsPanel(session: session) { item, action in
-                if ["open", "saveAs", "reveal"].contains(action) { pendingDownloadAction = (item, action); showingDownloads = false }
-                else { perform { try await session.downloadAction(item, action: action) } }
-            }
-        }
-        .sheet(isPresented: $showingProfile, onDismiss: finishProfileCreation) {
-            NativeNameSheet(title: "새 브라우저 프로필", prompt: "프로필 이름", initialValue: "", actionTitle: "만들기") { name in
-                guard let source = session.active else { return }
-                let profile = try await session.host.handle(channel: "browser:saveProfile", request: ["name": name, "color": "blue", "icon": "person"]) as? [String: String]
-                if let profile, let id = profile["id"] {
-                    try await session.reloadProfiles()
-                    pendingProfile = (id, source.id, source.isPrivate)
-                }
-            }
-        }
         .task { await session.start(); updateAddress() }
         .task(id: addressHistoryKey) { await loadAddressHistory() }
         .onChange(of: addressFocused) { _, focused in
@@ -686,6 +668,34 @@ struct NativeBrowserWorkspace: View {
             }.disabled(session.active?.url == "about:blank" || session.active == nil)
         } label: { Image(systemName: "ellipsis").rotationEffect(.degrees(90)).frame(width: 44, height: 44) }
             .accessibilityLabel("브라우저 메뉴").accessibilityIdentifier("native-browser-menu")
+            .bandalPopover(isPresented: Binding(get: { browserPanelOpen }, set: { if !$0 { closeBrowserPanels() } }), arrowEdge: .top, width: 360) { browserPanel }
+    }
+    /// History, downloads, saved logins and a new profile open under the ⋮ menu they come from.
+    private var browserPanelOpen: Bool { credentialContext != nil || showingHistory || showingDownloads || showingProfile }
+    private func closeBrowserPanels() {
+        if showingDownloads { showingDownloads = false; finishDownloadPresentation() }
+        if showingProfile { showingProfile = false; finishProfileCreation() }
+        credentialContext = nil; showingHistory = false
+    }
+    @ViewBuilder private var browserPanel: some View {
+        if let context = credentialContext { NativeBrowserCredentialsPanel(session: session, context: context) }
+        else if showingHistory { NativeBrowserHistoryPanel(session: session, navigate: navigate) }
+        else if showingDownloads {
+            NativeBrowserDownloadsPanel(session: session) { item, action in
+                if ["open", "saveAs", "reveal"].contains(action) { pendingDownloadAction = (item, action); closeBrowserPanels() }
+                else { perform { try await session.downloadAction(item, action: action) } }
+            }
+        } else if showingProfile {
+            BandalTextEntry(title: "새 브라우저 프로필", prompt: "프로필 이름", actionTitle: "만들기", identifier: "native-name-input") { name in
+                guard let source = session.active else { return }
+                let profile = try await session.host.handle(channel: "browser:saveProfile", request: ["name": name, "color": "blue", "icon": "person"]) as? [String: String]
+                if let profile, let id = profile["id"] {
+                    try await session.reloadProfiles()
+                    pendingProfile = (id, source.id, source.isPrivate)
+                }
+                closeBrowserPanels()
+            }
+        }
     }
     private var addressHistoryKey: String { "\(addressFocused):\(session.activeID ?? ""):\(session.active?.profileID ?? ""):\(address)" }
     private func loadAddressHistory() async {

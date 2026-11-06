@@ -15,54 +15,52 @@ struct NativeCourseManager: View {
         let missing: Bool
     }
     var body: some View {
-        NavigationStack {
-            List {
-                if let error { NativeToolError(message:error) }
-                ForEach([false,true],id:\.self) { archived in
-                    let values = courses.filter { $0.archived == archived }
-                    if !values.isEmpty {
-                        Section(archived ? "보관한 과목" : "내 과목") {
-                            ForEach(values) { course in
-                                HStack {
-                                    Image(systemName:course.archived ? "archivebox" : "books.vertical").foregroundStyle(.secondary)
-                                    VStack(alignment:.leading) {
-                                        BandalInlineEditor(text:course.name,isEditing:.editing(course.id,in:$renamingID),identifier:"native-manager-rename") { name in
-                                            change { _ = try await store.invoke("courses:rename",["courseId":course.id,"name":name]) }
-                                        }
-                                        if course.missing { Text("폴더 연결이 필요해요").font(.caption).foregroundStyle(.orange) }
-                                    }
-                                    Spacer()
-                                    Menu {
-                                        Button("이름 변경",systemImage:"pencil") { renamingID = course.id }
-                                        if course.missing {
-                                            Button("폴더 다시 연결",systemImage:"folder.badge.questionmark") { relink(course) }
-                                        }
-                                        Button(course.archived ? "자료실에 다시 표시" : "과목 보관",systemImage:course.archived ? "tray.and.arrow.up" : "archivebox") {
-                                            change { _ = try await store.invoke("courses:archive",["courseId":course.id,"archived":!course.archived]) }
-                                        }
-                                    } label: { Image(systemName:"ellipsis.circle").frame(width:44,height:44) }
-                                    .accessibilityLabel(course.name + " 관리")
-                                }
-                            }
+        VStack(alignment:.leading,spacing:4) {
+            if let error { Text(error).font(.system(size:11)).foregroundStyle(.red).fixedSize(horizontal:false,vertical:true) }
+            ScrollView {
+                VStack(alignment:.leading,spacing:0) {
+                    ForEach([false,true],id:\.self) { archived in
+                        let values = courses.filter { $0.archived == archived }
+                        if !values.isEmpty {
+                            BandalSectionHeader(archived ? "보관한 과목" : "내 과목").padding(.horizontal,8).padding(.top,4)
+                            ForEach(values) { course in row(course) }
                         }
                     }
                 }
-                Section {
-                    Button("기존 폴더 연결",systemImage:"folder.badge.plus") {
-                        change {
-                            guard let folder = try await store.invoke("courses:pickFolder") as? [String:Any], let path = folder["path"] as? String else { return }
-                            let result = try await store.invoke("courses:addFromFolder",["folderPath":path,"name":folder["name"] as? String ?? "연결한 과목","color":"blue"]) as? [String:Any]
-                            if result?["status"] as? String == "failed" { throw DesktopRuntimeError(result?["reason"] as? String ?? "폴더를 연결하지 못했습니다.") }
-                        }
-                    }
-                } footer: { Text("보관한 과목은 파일과 필기를 유지하며 자료실 목록에서만 숨깁니다.") }
-            }
-            .disabled(busy)
-            .overlay { if busy { ProgressView().padding().background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)) } }
-            .navigationTitle("과목 관리").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement:.confirmationAction) { Button("완료") { dismiss() } } }
-            .task { await load() }
+            }.frame(maxHeight:360).fixedSize(horizontal:false,vertical:true)
+            BandalMenuDivider()
+            BandalMenuRow("기존 폴더 연결",symbol:"folder.badge.plus",detail:"보관한 과목은 파일과 필기를 그대로 두고 목록에서만 숨겨요") {
+                change {
+                    guard let folder = try await store.invoke("courses:pickFolder") as? [String:Any], let path = folder["path"] as? String else { return }
+                    let result = try await store.invoke("courses:addFromFolder",["folderPath":path,"name":folder["name"] as? String ?? "연결한 과목","color":"blue"]) as? [String:Any]
+                    if result?["status"] as? String == "failed" { throw DesktopRuntimeError(result?["reason"] as? String ?? "폴더를 연결하지 못했습니다.") }
+                }
+            }.accessibilityIdentifier("native-manager-link-folder")
         }
+        .disabled(busy)
+        .overlay { if busy { ProgressView() } }
+        .task { await load() }
+        .accessibilityElement(children:.contain).accessibilityIdentifier("native-course-manager")
+    }
+    private func row(_ course: ManagedCourse) -> some View {
+        HStack(spacing:8) {
+            Image(systemName:course.archived ? "archivebox" : "books.vertical").font(.system(size:12)).foregroundStyle(NativeDesktopTheme.muted).frame(width:18)
+            VStack(alignment:.leading,spacing:1) {
+                BandalInlineEditor(text:course.name,isEditing:.editing(course.id,in:$renamingID),identifier:"native-manager-rename") { name in
+                    change { _ = try await store.invoke("courses:rename",["courseId":course.id,"name":name]) }
+                }
+                if course.missing { Text("폴더 연결이 필요해요").font(.system(size:11)).foregroundStyle(.orange) }
+            }
+            Spacer(minLength:4)
+            Menu {
+                Button("이름 변경",systemImage:"pencil") { renamingID = course.id }
+                if course.missing { Button("폴더 다시 연결",systemImage:"folder.badge.questionmark") { relink(course) } }
+                Button(course.archived ? "자료실에 다시 표시" : "과목 보관",systemImage:course.archived ? "tray.and.arrow.up" : "archivebox") {
+                    change { _ = try await store.invoke("courses:archive",["courseId":course.id,"archived":!course.archived]) }
+                }
+            } label: { Image(systemName:"ellipsis").frame(width:32,height:BandalMetrics.rowHeight).contentShape(Rectangle()) }
+            .accessibilityLabel(course.name + " 관리")
+        }.font(.system(size:BandalMetrics.bodySize)).padding(.horizontal,8).frame(minHeight:BandalMetrics.rowHeight)
     }
     private func load() async {
         do { courses = try NativeToolJSON.decode(await store.invoke("courses:list",["includeArchived":true])); error = nil }
@@ -96,16 +94,16 @@ struct NativeMaterialMovePicker: View {
     private var folders: [NativeMaterial] {
         NativeLibraryIndex.flatten(store.materials).filter { $0.isDirectory && $0.relPath != material.relPath && !$0.relPath.hasPrefix(material.relPath + "/") }
     }
+    @State private var query = ""
     var body: some View {
-        NavigationStack {
-            List {
-                if let error { NativeToolError(message:error) }
-                Button("전체 자료",systemImage:"folder") { move("") }
-                ForEach(folders) { folder in Button(folder.relPath,systemImage:"folder") { move(folder.relPath) } }
-            }.disabled(busy)
-            .navigationTitle("이동할 폴더").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement:.cancellationAction) { Button("취소") { dismiss() }.disabled(busy) } }
-        }
+        VStack(alignment:.leading,spacing:4) {
+            BandalSectionHeader("이동할 폴더").padding(.horizontal,8)
+            if let error { Text(error).font(.system(size:11)).foregroundStyle(.red) }
+            BandalSearchList(prompt:"폴더 찾기",query:$query,identifier:"native-move-search") {
+                BandalMenuRow("전체 자료",symbol:"folder") { move("") }
+                ForEach(folders.filter { query.isEmpty || $0.relPath.localizedStandardContains(query) }) { folder in BandalMenuRow(folder.relPath,symbol:"folder") { move(folder.relPath) } }
+            }
+        }.disabled(busy)
     }
     private func move(_ folder: String) {
         busy = true

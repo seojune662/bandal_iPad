@@ -72,8 +72,12 @@ private struct NativeWidgetTasks: View {
             }
         }.task(id: store.selectedCourseID) { await load() }
             .onReceive(store.events) { event in if event.channel == "board:changed" { Task { await load() } } }
-            .sheet(isPresented: $adding) { NativeTaskEditor(task: nil, courses: store.courses, defaultCourseID: store.selectedCourseID) { request in _ = try await store.invoke("board:createTask", request); await load() } }
-            .sheet(item: $editing) { item in NativeTaskEditor(task: item, courses: store.courses, defaultCourseID: store.selectedCourseID) { request in _ = try await store.invoke("board:updateTask", request); await load() } }
+            .popover(isPresented: Binding(get: { adding || editing != nil }, set: { if !$0 { adding = false; editing = nil } }), attachmentAnchor: .point(.top), arrowEdge: .top) {
+                NativeTaskEditor(task: editing, courses: store.courses, defaultCourseID: store.selectedCourseID) { request in
+                    _ = try await store.invoke(editing == nil ? "board:createTask" : "board:updateTask", request); await load()
+                }
+                .padding(BandalMetrics.padding).frame(width: 320).presentationCompactAdaptation(.popover)
+            }
     }
     private func load() async {
         let course = store.selectedCourseID

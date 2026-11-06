@@ -28,15 +28,16 @@ struct NativeBrowserTabStrip: View {
                     .accessibilityLabel("새 탭").accessibilityIdentifier("native-browser-add-tab")
                 Button { showingList = true } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .accessibilityLabel("브라우저의 열린 탭 \(tabs.count)개").accessibilityIdentifier("native-browser-tabs-list")
+                    .bandalPopover(isPresented: Binding(get: { showingList }, set: { if !$0 { showingList = false; finishClose() } }), width: 340) {
+                        NativeBrowserTabList(tabs: tabs, activeID: activeID,
+                            select: { id in select(id); showingList = false },
+                            close: { id in pendingClose = id; showingList = false; finishClose() })
+                    }
             }.padding(.horizontal, 4).buttonStyle(.plain).font(.system(size: 13))
         }.frame(height: 44).clipped().background(NativeDesktopTheme.surface)
             .foregroundStyle(NativeDesktopTheme.text)
             .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
-            .sheet(isPresented: $showingList, onDismiss: finishClose) {
-                NativeBrowserTabList(tabs: tabs, activeID: activeID,
-                    select: { id in select(id); showingList = false },
-                    close: { id in pendingClose = id; showingList = false })
-            }
+
     }
 
     private func item(_ tab: NativeBrowserTab, sizing: NativeDockTabSizing) -> some View {
@@ -115,8 +116,9 @@ private struct NativeBrowserTabList: View {
         return tabs.filter { value.isEmpty || NativeBrowserTabStrip.title($0).localizedCaseInsensitiveContains(value) || $0.url.localizedCaseInsensitiveContains(value) }
     }
     var body: some View {
-        NavigationStack {
-            List {
+        VStack(alignment: .leading, spacing: 4) {
+            BandalSectionHeader("열린 탭 \(tabs.count)개")
+            BandalSearchList(prompt: "제목 또는 주소로 탭 검색", query: $query, identifier: "native-browser-tab-search") {
                 ForEach(matches) { tab in
                     HStack(spacing: 0) {
                         Button { select(tab.id) } label: {
@@ -127,7 +129,7 @@ private struct NativeBrowserTabList: View {
                                     if tab.url != "about:blank" { Text(NativeBrowserAddress.display(tab.url)).font(.caption).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                                 if tab.id == activeID { Image(systemName: "checkmark") }
-                            }.multilineTextAlignment(.leading).frame(minHeight: 44).contentShape(Rectangle())
+                            }.font(.system(size: BandalMetrics.bodySize)).multilineTextAlignment(.leading).frame(minHeight: BandalMetrics.rowHeight).contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityAddTraits(tab.id == activeID ? .isSelected : [])
                             .accessibilityIdentifier("native-browser-tab-list-select-" + tab.id)
                         Button { close(tab.id) } label: { Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle()) }
@@ -135,10 +137,8 @@ private struct NativeBrowserTabList: View {
                             .accessibilityIdentifier("native-browser-tab-list-close-" + tab.id)
                     }
                 }
-                if matches.isEmpty { ContentUnavailableView("일치하는 탭이 없습니다", systemImage: "magnifyingglass") }
-            }.navigationTitle("열린 탭 \(tabs.count)개").navigationBarTitleDisplayMode(.inline)
-                .searchable(text: $query, prompt: "제목 또는 주소로 탭 검색")
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { dismiss() }.accessibilityIdentifier("native-browser-tabs-done") } }
-        }.presentationDetents([.medium, .large])
+                if matches.isEmpty { Text("일치하는 탭이 없어요").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(8) }
+            }
+        }
     }
 }

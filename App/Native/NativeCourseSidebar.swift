@@ -5,8 +5,8 @@ struct NativeCourseSidebar: View {
     @ObservedObject var navigation: NativeWorkspaceNavigation
     let settings: [String: Any]
     let onSelect: (String) -> Void
-    let onCreate: () -> Void
-    let onManage: () -> Void
+    /// Creates a course with this name and opens it.
+    let onCreate: (String) async throws -> Void
     let onOpenSettings: (String) -> Void
     let onOpenURL: (String) -> Void
     let onOpenAIWeb: (NativeAIWebShortcut) -> Void
@@ -17,7 +17,9 @@ struct NativeCourseSidebar: View {
     @State private var groups: [NativeSidebarCourseGroup] = []
     @State private var query = ""
     @State private var renamingID: String?
-    @State private var creatingGroup = false
+    /// What the + button's popover shows.
+    @State private var adding: Adding?
+    private enum Adding: Identifiable { case course, group, manage; var id: Self { self } }
     @State private var archiveCourse: NativeCourse?
     @State private var deletingGroup: NativeSidebarCourseGroup?
     @State private var busy = false
@@ -29,17 +31,13 @@ struct NativeCourseSidebar: View {
             HStack(spacing: 4) {
                 NativeRailSearchField(prompt: "과목 찾기", text: $query, identifier: "native-course-search")
                 Menu {
-                    Button("새 과목 만들기", systemImage: "plus") { onCreate() }.accessibilityIdentifier("native-new-course")
-                    Button("폴더에서 추가", systemImage: "folder.badge.plus") { onManage() }
-                    Button("과목 그룹 만들기", systemImage: "folder") { creatingGroup = true }
-                    Button("보관된 과목 관리", systemImage: "archivebox") { onManage() }
+                    Button("새 과목 만들기", systemImage: "plus") { adding = .course }.accessibilityIdentifier("native-new-course")
+                    Button("폴더에서 추가", systemImage: "folder.badge.plus") { adding = .manage }
+                    Button("과목 그룹 만들기", systemImage: "folder") { adding = .group }
+                    Button("보관된 과목 관리", systemImage: "archivebox") { adding = .manage }
                 } label: { Image(systemName: "plus").foregroundStyle(NativeDesktopTheme.secondary).frame(width: 40, height: 40).contentShape(Rectangle()) }
                 .accessibilityLabel("과목 추가").accessibilityIdentifier("native-course-add-menu")
-                .bandalPopover(isPresented: $creatingGroup) {
-                    BandalTextEntry(title: "새 그룹", prompt: "그룹 이름", actionTitle: "만들기", identifier: "native-group-name") { name in
-                        creatingGroup = false; mutate("courseGroups:create", ["name": name])
-                    }
-                }
+                .bandalPopover(isPresented: Binding(get: { adding != nil }, set: { if !$0 { adding = nil } }), width: adding == .manage ? 340 : 280) { addingContent }
             }.padding(.leading, 12).padding(.trailing, 6).padding(.bottom, 8)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
@@ -56,8 +54,8 @@ struct NativeCourseSidebar: View {
                         VStack(spacing: 12) {
                             NativeBandalMark(size: 44).foregroundStyle(NativeDesktopTheme.muted.opacity(0.4))
                             Text("첫 과목을 만들어보세요").font(NativeDesktopTheme.font(13))
-                            Button("폴더에서 추가", systemImage: "folder.badge.plus", action: onManage).buttonStyle(.bordered)
-                            Button("새 과목 만들기", action: onCreate).accessibilityIdentifier("native-new-course-empty")
+                            Button("폴더에서 추가", systemImage: "folder.badge.plus") { adding = .manage }.buttonStyle(.bordered)
+                            Button("새 과목 만들기") { adding = .course }.accessibilityIdentifier("native-new-course-empty")
                         }.frame(maxWidth: .infinity).padding(.top, 32)
                     } else if !query.isEmpty && visible.isEmpty { Text("일치하는 과목이 없어요").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted).padding() }
                 }.padding(.horizontal, 8).padding(.bottom, 16)
@@ -114,7 +112,7 @@ struct NativeCourseSidebar: View {
             ForEach(groups) { group in Button(group.name) { mutate("courses:organize", ["courseId": course.id, "groupId": group.id]) } }
         }
         Button("과목 보관", systemImage: "archivebox") { archiveCourse = course }
-        Button("폴더 연결 및 보관 관리", systemImage: "folder.badge.gearshape", action: onManage)
+        Button("폴더 연결 및 보관 관리", systemImage: "folder.badge.gearshape") { adding = .manage }
     }
     private func groupHeading(_ group: NativeSidebarCourseGroup) -> some View {
         HStack {
@@ -135,6 +133,20 @@ struct NativeCourseSidebar: View {
                            message: "그룹 안의 과목은 그대로 남아요.", action: "그룹 삭제", destructive: true) {
                 mutate("courseGroups:delete", ["groupId": group.id])
             }
+    }
+    @ViewBuilder private var addingContent: some View {
+        switch adding {
+        case .course:
+            BandalTextEntry(title: "새 과목", prompt: "과목 이름", actionTitle: "만들기", identifier: "native-course-name", submitIdentifier: "native-create-course") { name in
+                try await onCreate(name); adding = nil
+            }
+        case .group:
+            BandalTextEntry(title: "새 그룹", prompt: "그룹 이름", actionTitle: "만들기", identifier: "native-group-name") { name in
+                adding = nil; mutate("courseGroups:create", ["name": name])
+            }
+        case .manage: NativeCourseManager(store: store)
+        case nil: EmptyView()
+        }
     }
     private func renaming(_ id: String) -> Binding<Bool> {
         .editing(id, in: $renamingID)

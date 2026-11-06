@@ -81,15 +81,16 @@ struct NativeScopedMaterialMovePicker: View {
     private var folders: [NativeMaterial] {
         NativeLibraryIndex.flatten(store.materials).filter { $0.isDirectory && scope.contains(path: $0.relPath) && $0.relPath != scope.rootRelPath && $0.relPath != material.relPath && !$0.relPath.hasPrefix(material.relPath + "/") }
     }
+    @State private var query = ""
     var body: some View {
-        NavigationStack {
-            List {
-                if let error { NativeToolError(message: error) }
-                Button(scope.title, systemImage: "folder") { move(scope.rootRelPath) }
-                ForEach(folders) { folder in Button(folder.name, systemImage: "folder") { move(folder.relPath) } }
-            }.disabled(busy).navigationTitle("이동할 폴더").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() }.disabled(busy) } }
-        }
+        VStack(alignment: .leading, spacing: 4) {
+            BandalSectionHeader("이동할 폴더").padding(.horizontal, 8)
+            if let error { Text(error).font(.system(size: 11)).foregroundStyle(.red) }
+            BandalSearchList(prompt: "폴더 찾기", query: $query, identifier: "native-move-search") {
+                BandalMenuRow(scope.title, symbol: "folder") { move(scope.rootRelPath) }
+                ForEach(folders.filter { query.isEmpty || $0.name.localizedStandardContains(query) }) { folder in BandalMenuRow(folder.name, symbol: "folder") { move(folder.relPath) } }
+            }
+        }.disabled(busy)
     }
     private func move(_ folder: String) {
         guard scope.contains(path: folder), store.selectedCourseID == scope.courseID else { return }

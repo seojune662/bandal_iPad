@@ -25,20 +25,21 @@ struct NativeLearningStartSheet: View {
     private var title: String { packID == "summary" ? "요약 만들기" : kind.title }
     private var courses: [NativeCourse] { store.courses.filter { $0.workspaceKind != "study-space" } }
     private var materialAvailable: Bool { source != nil && ["pdf", "note", "file"].contains(source!.kind) && source!.courseID == courseID }
+    /// Popover content under the button that started it; 만들기 / 생성 starts the run.
     var body: some View {
-        NavigationStack {
-            Form {
-                Section { Text(kind == .english ? kind.detail : "선택한 자료의 원문을 근거로 학습 자료를 만듭니다.").foregroundStyle(.secondary) }
+        VStack(alignment: .leading, spacing: 8) {
+            BandalSectionHeader(title)
+            Text(kind == .english ? kind.detail : "선택한 자료의 원문으로 학습 자료를 만들어요.").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true)
+            Group {
                 if kind == .english && packID == nil {
-                    Section("학습 공간") {
+                    VStack(alignment: .leading, spacing: 6) {
                         TextField("학습 공간 이름", text: $name).accessibilityIdentifier("native-learning-create-name")
                         TextField("관심 주제", text: $topic).accessibilityIdentifier("native-learning-create-topic")
                         Picker("읽기 수준", selection: $level) { Text("입문").tag("beginner"); Text("중급").tag("intermediate"); Text("고급").tag("advanced") }
                         Picker("읽는 시간", selection: $minutes) { ForEach([3, 4, 5, 8], id: \.self) { Text("\($0)분").tag($0) } }
                     }
-                    Section { Text("공간을 만든 뒤 기사 주소를 추가해 읽고, 원문에서 표현을 저장할 수 있어요.").font(.footnote).foregroundStyle(.secondary) }
                 } else {
-                    Section("학습할 자료") {
+                    VStack(alignment: .leading, spacing: 6) {
                         if !articles.isEmpty || !wordIDs.isEmpty {
                             Picker("원문", selection: $sourceMode) {
                                 Text("과목 자료").tag("course")
@@ -58,14 +59,19 @@ struct NativeLearningStartSheet: View {
                             Text(materialAvailable && useMaterial ? "현재 자료에 저장된 본문을 사용합니다." : "선택한 과목의 자료를 사용합니다.").font(.footnote).foregroundStyle(.secondary)
                         }
                     }
-                    Section { Text("AI 연결과 기본 모델은 설정의 AI 항목을 따릅니다. 생성 상태와 결과는 학습 공간에 보관됩니다.").font(.footnote).foregroundStyle(.secondary) }
                 }
-                if let error { Section { NativeToolError(message: error) } }
-            }.navigationTitle(title).navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() }.disabled(busy) }; ToolbarItem(placement: .confirmationAction) { Button { start() } label: { if busy { ProgressView() } else { Text(kind == .english && packID == nil ? "만들기" : "생성") } }.disabled(busy || invalid).accessibilityIdentifier("native-learning-create-confirm") } }
-                .interactiveDismissDisabled(busy)
-                .task { await loadSources() }
+            }
+            .font(.system(size: BandalMetrics.bodySize)).textFieldStyle(.roundedBorder)
+            if let error { Text(error).font(.system(size: 11)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            HStack {
+                Spacer()
+                Button { start() } label: { if busy { ProgressView() } else { Text(kind == .english && packID == nil ? "만들기" : "생성") } }
+                    .font(.system(size: BandalMetrics.bodySize, weight: .semibold)).disabled(busy || invalid).accessibilityIdentifier("native-learning-create-confirm")
+            }
         }
+        .padding(BandalMetrics.padding).frame(width: 340, alignment: .leading)
+        .presentationCompactAdaptation(.popover)
+        .task { await loadSources() }
     }
     private var invalid: Bool { kind == .english && packID == nil ? name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : sourceMode == "article" ? selectedArticles.isEmpty || selectedArticles.count > 20 : sourceMode == "vocabulary" ? wordIDs.isEmpty : courseID.isEmpty }
     private func loadSources() async {

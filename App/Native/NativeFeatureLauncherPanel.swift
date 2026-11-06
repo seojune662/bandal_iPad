@@ -37,10 +37,10 @@ struct NativeFeatureLauncherPanel: View {
                     }
                 }
             }
-            Button("플러그인 관리", systemImage: "slider.horizontal.3") { onOpenSettings("plugins") }.font(NativeDesktopTheme.font(12))
+            Button("플러그인 관리", systemImage: "slider.horizontal.3") { onOpenSettings("packs") }.font(NativeDesktopTheme.font(12))
         }.padding(14).background(NativeDesktopTheme.surface).accessibilityElement(children: .contain).accessibilityIdentifier("native-study-tools")
             .task { await reload() }
-            .sheet(item: $selected) { tool in NativeLearningStartSheet(store: store, kind: tool.start, source: source, packID: tool.packId == "summary" ? "summary" : nil, onOpen: onOpen) }
+            .popover(item: $selected, arrowEdge: .leading) { tool in NativeLearningStartSheet(store: store, kind: tool.start, source: source, packID: tool.packId == "summary" ? "summary" : nil, onOpen: onOpen) }
     }
     private func reload() async {
         do { tools = try NativeToolJSON.decode(try await store.invoke("study:listTools")); error = nil }

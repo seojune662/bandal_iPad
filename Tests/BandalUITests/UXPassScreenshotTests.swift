@@ -52,6 +52,29 @@ final class UXPassScreenshotTests: XCTestCase {
         attach(app, "15 모델 선택 (Sonnet · effort)")
     }
 
+    @MainActor func testSheetsBecomePopovers() throws {
+        let app = launch(courses: true)
+        let create = app.buttons["native-library-create"]
+        if create.waitForExistence(timeout: 15) {
+            create.tap(); app.buttons["새 노트"].firstMatch.tap(); sleep(1); attach(app, "16 새 노트")
+            dismiss(app)
+            create.tap(); app.buttons["새 폴더"].firstMatch.tap(); sleep(1); attach(app, "17 새 폴더")
+            dismiss(app)
+        }
+        app.buttons["native-course-add-menu"].tap(); app.buttons["보관된 과목 관리"].firstMatch.tap(); sleep(1); attach(app, "18 과목 관리")
+        dismiss(app)
+        app.buttons["native-section-planner"].tap()
+        let add = app.buttons["native-task-add"]
+        if add.waitForExistence(timeout: 10) { add.tap(); sleep(1); attach(app, "19 할 일 추가") }
+    }
+
+    @MainActor private func dismiss(_ app: XCUIApplication) {
+        if app.buttons["취소"].exists { app.buttons["취소"].firstMatch.tap() }
+        else if app.buttons["완료"].exists { app.buttons["완료"].firstMatch.tap() }
+        else { app.closeBandalPopover() }
+        sleep(1)
+    }
+
     @MainActor func testProfileAndHelp() throws {
         let app = launch(courses: true)
         let account = app.buttons["native-section-account"]

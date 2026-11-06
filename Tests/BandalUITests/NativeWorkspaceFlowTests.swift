@@ -244,7 +244,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: menu)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription)
         menu.tap(); app.buttons["native-pdf-page-delete"].tap()
-        let confirm = app.alerts.buttons.matching(identifier: "native-pdf-confirm-page-delete").firstMatch
+        let confirm = app.buttons.matching(identifier: "native-pdf-confirm-page-delete").firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription); confirm.tap()
     }
 
@@ -311,7 +311,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         attachScreenshot(app, name: "Membership after a second course")
         app.buttons["membership-close"].tap()
         XCTAssertFalse(app.staticTexts["bandal-toast"].waitForExistence(timeout: 2))
-        app.buttons["취소"].firstMatch.tap()
+        if app.textFields["native-course-name"].exists { app.closeBandalPopover() }
         XCTAssertFalse(app.staticTexts["bandal-toast"].waitForExistence(timeout: 2))
         app.buttons["native-section-settings"].tap()
         let category = app.buttons["native-settings-category-subscription"]

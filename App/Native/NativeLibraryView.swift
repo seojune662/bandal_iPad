@@ -45,8 +45,6 @@ struct NativeLibraryView: View {
         let destination: MaterialDestination
         let markdownTitle: String
         let open: (NativeDocumentReference) -> Void
-        /// Markdown and folders only need a name, asked in a popover; a note picks a template in a sheet.
-        var isNamed: Bool { kind != .ink }
     }
     private var courseID: String? { scope?.courseID ?? store.selectedCourseID }
     private var scopeID: String { scope?.id ?? "course:" + (courseID ?? "") }
@@ -96,7 +94,7 @@ struct NativeLibraryView: View {
                     if let onOpenAI { Divider(); Button("AI로 만들기", systemImage: "sparkles", action: onOpenAI) }
                 } label: { Image(systemName: "plus").font(.system(size: 15)).frame(width: 40, height: 40).contentShape(Rectangle()) }
                     .disabled(courseID == nil || working).accessibilityLabel("추가").accessibilityIdentifier("native-library-create")
-                    .bandalPopover(isPresented: Binding(get: { showingMigrationGuide || creation?.isNamed == true }, set: { if !$0 { showingMigrationGuide = false; if creation?.isNamed == true { creation = nil } } }), width: 300) {
+                    .bandalPopover(isPresented: Binding(get: { showingMigrationGuide || creation != nil }, set: { if !$0 { showingMigrationGuide = false; creation = nil } }), width: creation?.kind == .ink ? 340 : 300) {
                         if showingMigrationGuide { migrationGuide } else if let creation { namedCreation(creation) }
                     }
                 Button { Task { await store.refreshMaterials(); await projectLibrary.reload(store: store, scope: scope) } } label: { Image(systemName: "arrow.clockwise").frame(width: 40, height: 40).contentShape(Rectangle()) }
@@ -157,11 +155,6 @@ Menu {
 
     private var presentedContent: some View {
         configuredContent
-        .sheet(item: Binding(get: { creation?.isNamed == false ? creation : nil }, set: { creation = $0 })) { creationSheet($0) }
-        .sheet(item: $moving) { material in
-            if let scope, scope.kind == .project { NativeScopedMaterialMovePicker(material: material, scope: scope, store: store) }
-            else { NativeMaterialMovePicker(material: material, store: store) }
-        }
         .bandalToast($operationError)
     }
 
@@ -205,14 +198,12 @@ Menu {
         markdownTitlePrefix = (settings["tabs"] as? [String:Any])?["markdownTitlePrefix"] as? String ?? "새 마크다운"
     }
 
-    @ViewBuilder private func creationSheet(_ request: CreationRequest) -> some View {
-        let destination = request.destination
-        NativeNewNoteSheet(store: store, courseID: destination.courseID, parentPath: destination.folder, onCreated: request.open)
-    }
-    /// 새 마크다운 / 새 폴더: one line under the + button; an empty markdown title takes the default.
+    /// 새 노트 / 새 마크다운 / 새 폴더 under the + button.
     @ViewBuilder private func namedCreation(_ request: CreationRequest) -> some View {
         let destination = request.destination
-        if request.kind == .markdown {
+        if request.kind == .ink {
+            NativeNewNoteSheet(store: store, courseID: destination.courseID, parentPath: destination.folder) { document in creation = nil; request.open(document) }
+        } else if request.kind == .markdown {
             BandalTextEntry(title: "새 마크다운", prompt: request.markdownTitle, initial: request.markdownTitle, actionTitle: "만들기", identifier: "native-name-input") { name in
                 let document = try await store.createMarkdown(title: name, courseID: destination.courseID, parentPath: destination.folder)
                 creation = nil; request.open(document)
@@ -301,6 +292,7 @@ Menu {
         .background(selectedDocumentID == material.document(in: courseID ?? "").id || (material.isDirectory && folderPath == material.relPath) ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 6))
         .contextMenu { actions(material) }
         .modifier(deleteConfirm(material))
+        .modifier(movePopover(material))
         .modifier(materialDrag(material))
         .task(id: materialTaskID(material)) { await resolveURL(material) }
         .accessibilityIdentifier("native-material-\(material.relPath)")
@@ -360,6 +352,7 @@ Menu {
         }
         .contextMenu { actions(material) }
         .modifier(deleteConfirm(material))
+        .modifier(movePopover(material))
         .modifier(materialDrag(material))
         .task(id: materialTaskID(material)) { await resolveURL(material) }
         .accessibilityIdentifier("native-material-" + material.relPath)
@@ -385,6 +378,8 @@ Menu {
                 }
                 .contextMenu { actions(material) }
                 .modifier(deleteConfirm(material))
+                .modifier(movePopover(material))
+        .modifier(movePopover(material))
                 .modifier(materialDrag(material))
                 .task(id: materialTaskID(material)) { await resolveURL(material) }
                 .accessibilityIdentifier("native-library-gallery-preview")
@@ -462,6 +457,12 @@ Menu {
             guard !Task.isCancelled, course == courseID, materialURLs[key] != url else { return }
             materialURLs[key] = url
         } catch { /* Missing/unavailable files retain their type icon. Opening reports the precise error. */ }
+    }
+    private func movePopover(_ material: NativeMaterial) -> NativeMovePopover {
+        NativeMovePopover(isPresented: Binding(get: { moving?.id == material.id }, set: { if !$0 && moving?.id == material.id { moving = nil } })) {
+            if let scope, scope.kind == .project { AnyView(NativeScopedMaterialMovePicker(material: material, scope: scope, store: store)) }
+            else { AnyView(NativeMaterialMovePicker(material: material, store: store)) }
+        }
     }
     private func deleteConfirm(_ material: NativeMaterial) -> NativeDeleteConfirm {
         NativeDeleteConfirm(name: material.name, directory: material.isDirectory,
@@ -608,6 +609,15 @@ enum NativeLibraryIndex {
 }
 
 /// The anchored "삭제할까요?" for one library item.
+/// The row's "폴더로 이동" popover.
+struct NativeMovePopover: ViewModifier {
+    @Binding var isPresented: Bool
+    let picker: () -> AnyView
+    func body(content: Content) -> some View {
+        content.bandalPopover(isPresented: $isPresented, width: 300) { picker() }
+    }
+}
+
 struct NativeDeleteConfirm: ViewModifier {
     let name: String
     let directory: Bool
