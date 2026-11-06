@@ -363,7 +363,7 @@ struct NativeSettingsWorkspace: View {
     return HStack {
       Text(granted
         ? (english ? "Consent to send to \(AIConsent.company(target)) given" : "\(AIConsent.company(target)) 전송에 동의함")
-        : (english ? "Consent will be asked before the first send" : "처음 보낼 때 동의를 묻습니다"))
+        : (english ? "\(AIConsent.company(target)): consent will be asked before the first send" : "\(AIConsent.company(target)): 처음 보낼 때 동의를 묻습니다"))
         .font(.caption).foregroundStyle(.secondary)
       Spacer()
       if granted {

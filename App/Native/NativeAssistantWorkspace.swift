@@ -68,13 +68,18 @@ private final class NativeAssistantSession: ObservableObject {
     @Published var messages: [NativeChatMessage] = []
     @Published var stream = ""
     @Published var activity = ""
-    @Published var error: String?
+    @Published var error: String? { didSet { if error == nil { errorCode = nil } } }
+    /// The code behind `error` (e.g. TASK_CAP_REACHED), for the actions offered next to it.
+    @Published var errorCode: String?
     @Published var running = false
     @Published var loading = false
     @Published var sending = false
     @Published var configured = false
     @Published var provider = NativeAIProvider.openAI.rawValue
     @Published var model = ""
+    @Published var effort: String?
+    /// The proxy's models (`native:aiConfig`), for the picker and the composer label.
+    @Published var catalog = NativeAIModelCatalog()
     @Published var sessionID = UUID().uuidString
     @Published var draft = NativeAssistantDraft() { didSet { if restored { scheduleDraftSave() } } }
     @Published var legacyDrafts: [(name: String, text: String)] = []
@@ -133,12 +138,13 @@ private final class NativeAssistantSession: ObservableObject {
         guard let result = try await store.invoke("chat:open",identity) as? [String: Any], current == generation, id == sessionID else { return }
         messages = (result["history"] as? [[String: Any]] ?? []).compactMap(NativeChatMessage.init)
         let info = result["sessionInfo"] as? [String: Any] ?? [:]
-        provider = info["provider"] as? String ?? provider; model = info["model"] as? String ?? ""
+        provider = info["provider"] as? String ?? provider; model = info["model"] as? String ?? ""; effort = info["effort"] as? String
         running = info["status"] as? String == "running"
         sequence = (result["eventSeq"] as? NSNumber)?.intValue ?? sequence
         if running { stream = (result["activeBlock"] as? [String: Any])?["text"] as? String ?? "" }
         else { stream = ""; activity = ""; draft.studyRunID = nil; draft.studyBinding = nil }
         try NativeToolSelection.restoreConversation(id,workspaceID:context.id,root:store.root)
+        if catalog.models.isEmpty { await loadCatalog() }
     }
     func select(_ conversation: NativeChatConversation?) async {
         guard !sending else { return }
@@ -217,7 +223,7 @@ private final class NativeAssistantSession: ObservableObject {
         if let pack = captured.mode.pack {
             let source = try NativeAssistantPayload.generationSource(document:captured.document,selection:captured.selection,attachments:captured.attachments)
             let sourceCourse = captured.document?.courseID ?? destination.courseID
-            var generationRequest: [String: Any] = ["courseId":sourceCourse,"packId":pack,"generationMode":captured.mode.rawValue,"questionCount":captured.count,"difficulty":captured.difficulty,"scope":captured.scope,"source":source,"prompt":text,"attachments":captured.attachments.map(\.request),"chat":requestIdentity,"ai":["provider":provider,"model":model.isEmpty ? "default" : model]]
+            var generationRequest: [String: Any] = ["courseId":sourceCourse,"packId":pack,"generationMode":captured.mode.rawValue,"questionCount":captured.count,"difficulty":captured.difficulty,"scope":captured.scope,"source":source,"prompt":text,"attachments":captured.attachments.map(\.request),"chat":requestIdentity,"ai":["provider":provider,"model":model.isEmpty ? "default" : model,"effort":effort as Any? ?? NSNull()]]
             generationRequest["documentContext"] = request["documentContext"]
             if let binding = destination.binding { generationRequest["binding"] = binding.request }
             let result = try await store.invoke("study:generate",generationRequest) as? [String: Any] ?? [:]
@@ -268,9 +274,15 @@ private final class NativeAssistantSession: ObservableObject {
         try await open(); restoreAttempt()
     }
     func restoreAttempt() { if let lastAttempt, draft.text.isEmpty { draft = lastAttempt; draft.studyRunID = nil; draft.studyBinding = nil } }
-    func configure(provider: String, model: String) async throws {
-        if self.provider != provider { _ = try await store.invoke("chat:setProvider",identity.merging(["provider":provider]) { _,new in new }) }
-        _ = try await store.invoke("chat:setConfiguration",identity.merging(["model":model.isEmpty ? "default" : model,"effort":NSNull()]) { _,new in new })
+    func loadCatalog() async {
+        guard let config = try? await store.invokePrivate("native:aiConfig") as? [String: Any] else { return }
+        catalog = NativeAIModelCatalog(config)
+    }
+    /// Auto is stored as "default"; a model keeps the provider the proxy lists it under.
+    func configure(model: String, effort: String?) async throws {
+        let choice = catalog.models.first { $0.id == model }
+        if let provider = choice?.appProvider, self.provider != provider { _ = try await store.invoke("chat:setProvider",identity.merging(["provider":provider]) { _,new in new }) }
+        _ = try await store.invoke("chat:setConfiguration",identity.merging(["model":choice == nil ? "default" : model,"effort":choice == nil ? NSNull() : (effort as Any? ?? NSNull())]) { _,new in new })
         try await open(); await checkAvailability()
     }
     func deleteCurrent() async throws {
@@ -329,7 +341,7 @@ private final class NativeAssistantSession: ObservableObject {
             case "turn-complete":
                 running = false; activity = ""
                 Task { do { try await open(); if messages.last?.interrupted == true { restoreAttempt() } } catch { self.error = error.localizedDescription } }
-            case "error": error = event["message"] as? String; running = false; restoreAttempt()
+            case "error": error = event["message"] as? String; errorCode = event["code"] as? String; running = false; restoreAttempt()
             default: break
             }
         }
@@ -349,8 +361,9 @@ struct NativeAssistantPanel: View {
     @State private var showingConfiguration = false
     @State private var showingOptions = false
     @State private var showingDelete = false
-    @State private var provider = "codex"
     @State private var model = ""
+    @State private var effort = "medium"
+    @ObservedObject private var usage = AIUsage.shared
     @State private var preview: NativeAssistantAttachment?
     @State private var showingArticleImport = false
     @State private var articleURL = ""
@@ -372,6 +385,10 @@ struct NativeAssistantPanel: View {
                 HStack(alignment:.top,spacing:8) {
                     Image(systemName:"exclamationmark.circle").foregroundStyle(.orange)
                     Text(error).font(.caption).frame(maxWidth:.infinity,alignment:.leading)
+                    if session.errorCode == "TASK_CAP_REACHED" {
+                        Button("AI 충전") { AICreditSheet.present() }.font(.caption).frame(minHeight:44).accessibilityIdentifier("native-ai-task-cap-credit")
+                        Button("Auto로 바꾸기") { perform { try await session.configure(model:"default",effort:nil); session.error = nil } }.font(.caption).frame(minHeight:44)
+                    }
                     Button("초안 복원") { session.restoreAttempt(); session.error = nil }.font(.caption).frame(minHeight:44)
                 }.padding(.horizontal,16).padding(.vertical,4)
             }
@@ -533,8 +550,11 @@ struct NativeAssistantPanel: View {
             HStack {
                 Text("첨부한 자료를 바탕으로 답해요").font(.system(size:10)).foregroundStyle(.tertiary)
                 Spacer(minLength:4)
-                Button { provider = session.provider; model = session.model; showingConfiguration = true } label: {
-                    HStack(spacing:4) { Text(session.model.isEmpty || session.model == "default" ? NativeAIProvider(rawValue:session.provider)?.title ?? "AI" : session.model).lineLimit(1); Image(systemName:"chevron.down").font(.system(size:8)) }.font(.system(size:11)).foregroundStyle(.secondary).frame(minHeight:44)
+                if let percent = usage.percent {
+                    Text("AI \(percent)%").font(.system(size:10)).foregroundStyle(percent >= 90 ? .orange : .secondary).accessibilityIdentifier("native-ai-usage-compact")
+                }
+                Button { model = session.model.isEmpty ? "default" : session.model; effort = session.effort ?? "medium"; showingConfiguration = true } label: {
+                    HStack(spacing:4) { Text(session.catalog.label(session.model)).lineLimit(1); Image(systemName:"chevron.down").font(.system(size:8)) }.font(.system(size:11)).foregroundStyle(.secondary).frame(minHeight:44)
                 }.buttonStyle(.plain).disabled(session.running || session.loading).accessibilityLabel("AI 모델 설정")
             }
         }.padding(.horizontal,12).padding(.top,8).background(Color(uiColor:.systemBackground))
@@ -561,15 +581,53 @@ struct NativeAssistantPanel: View {
     private var configuration: some View {
         NavigationStack {
             Form {
-                Picker("제공자",selection:$provider) { ForEach(NativeAIProvider.allCases) { Text($0.title).tag($0.rawValue) } }
-                TextField("모델 ID (기본 모델)",text:$model).textInputAutocapitalization(.never).autocorrectionDisabled()
+                Section {
+                    modelRow(id:"default",title:"Auto",detail:"빠르고 가장 적게 써요. 반달이 모델을 골라요.",badge:nil)
+                } footer: { Text("어떤 모델이든 같은 월 사용량에서 원가대로 차감돼요. 배지는 Auto보다 최대 몇 배 빨리 닳는지예요.") }
+                ForEach(session.catalog.providers,id:\.self) { provider in
+                    Section(provider == "anthropic" ? "Anthropic" : "OpenAI") {
+                        ForEach(session.catalog.models.filter { $0.provider == provider }) { row in
+                            modelRow(id:row.id,title:row.label,detail:nil,badge:row.badge > 1 ? row.badge : nil)
+                        }
+                    }
+                }
+                if selectedModel != "default" {
+                    Section {
+                        Picker("생각의 깊이",selection:$effort) {
+                            Text("낮음").tag("low"); Text("보통").tag("medium"); Text("높음").tag("high"); Text("최대").tag("max")
+                        }.pickerStyle(.segmented).accessibilityIdentifier("native-ai-effort")
+                    } footer: {
+                        Text("깊게 생각할수록 답이 좋아질 수 있지만 사용량이 몇 배 빨리 닳아요.")
+                    }
+                    if usage.plan == "plus" || usage.trial, (session.catalog.models.first { $0.id == selectedModel }?.badge ?? 1) > 1 {
+                        Text("플러스(와 체험)는 긴 작업이 중간에 멈출 수 있어요. 긴 작업에는 Auto를 권해요.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 Button("AI 설정") { showingConfiguration = false; onOpenSettings() }
                 if let error = session.error { Text(error).foregroundStyle(.red).font(.caption) }
             }.navigationTitle("AI 선택").toolbar {
                 ToolbarItem(placement:.cancellationAction) { Button("취소") { showingConfiguration = false } }
-                ToolbarItem(placement:.confirmationAction) { Button("적용") { perform { try await session.configure(provider:provider,model:model); showingConfiguration = false } } }
+                // A stored model the list has not confirmed yet (offline, still loading) is never replaced by Auto.
+                ToolbarItem(placement:.confirmationAction) { Button("적용") { perform { try await session.configure(model:selectedModel,effort:effort); showingConfiguration = false } }
+                    .disabled(selectedModel != "default" && !session.catalog.contains(selectedModel)).accessibilityIdentifier("native-ai-apply") }
             }
+            .task { await session.loadCatalog() }
         }
+    }
+    /// The sheet's choice; empty until the first presentation has read the state, which means Auto.
+    private var selectedModel: String { model.isEmpty ? "default" : model }
+    private func modelRow(id: String, title: String, detail: String?, badge: Int?) -> some View {
+        Button { model = id } label: {
+            HStack {
+                VStack(alignment:.leading,spacing:2) {
+                    Text(title)
+                    if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                }
+                Spacer()
+                if let badge { Text("최대 \(badge)×").font(.caption.monospacedDigit()).padding(.horizontal,6).padding(.vertical,2).background(Color.primary.opacity(0.06),in:Capsule()) }
+                if selectedModel == id { Image(systemName:"checkmark").foregroundStyle(NativeDesktopTheme.accent) }
+            }.contentShape(Rectangle())
+        }.buttonStyle(.plain).frame(minHeight:44).accessibilityIdentifier("native-ai-model-" + id)
     }
     private var options: some View {
         NavigationStack {
@@ -608,4 +666,25 @@ enum NativeAssistantPreferences {
     static func defaultProvider(_ settings: [String: Any]) -> String {
         NativeAIProvider(rawValue:settings["agentProvider"] as? String ?? "")?.rawValue ?? NativeAIProvider.anthropic.rawValue
     }
+}
+
+/// The models the ai-proxy offers (`native:aiConfig`), as the chat's model picker shows them.
+struct NativeAIModelCatalog {
+    struct Model: Identifiable, Equatable {
+        let id: String, provider: String, label: String, badge: Int
+        /// The chat session's provider id for this model.
+        var appProvider: String { provider == "anthropic" ? NativeAIProvider.anthropic.rawValue : NativeAIProvider.openAI.rawValue }
+    }
+    var models: [Model] = []
+    init() {}
+    init(_ config: [String: Any]) {
+        models = (config["models"] as? [[String: Any]] ?? []).compactMap {
+            guard let id = $0["id"] as? String, let provider = $0["provider"] as? String else { return nil }
+            return Model(id: id, provider: provider, label: $0["label"] as? String ?? id, badge: ($0["badge"] as? NSNumber)?.intValue ?? 1)
+        }
+    }
+    var providers: [String] { models.reduce(into: []) { if !$0.contains($1.provider) { $0.append($1.provider) } } }
+    func contains(_ id: String) -> Bool { models.contains { $0.id == id } }
+    /// What the composer shows: the model's name, or Auto for anything else (old BYOK names included).
+    func label(_ id: String) -> String { models.first { $0.id == id }?.label ?? "Auto" }
 }
