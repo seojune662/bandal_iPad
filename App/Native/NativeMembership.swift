@@ -28,9 +28,9 @@ struct MembershipPaywall: View {
                 Text("반달 플러스").font(.largeTitle.weight(.bold))
                 VStack(alignment: .leading, spacing: 8) {
                     Label("과목과 자료를 개수 제한 없이 만들 수 있어요.", systemImage: "folder.badge.plus")
-                    Label("등록한 API 키로 쓰는 AI 기능을 횟수 제한 없이 쓸 수 있어요.", systemImage: "sparkles")
+                    Label("AI를 매달 더 많이 쓸 수 있어요. API 키는 필요 없어요.", systemImage: "sparkles")
                 }
-                Text("무료로는 이 iPad에서 과목 \(FreeTier.courses)개와 자료 \(FreeTier.documents)개를 만들고 AI 기능을 매달 \(FreeTier.aiPerMonth)회 쓸 수 있어요. 이미 있는 자료는 구독과 관계없이 계속 열고 고칠 수 있어요.")
+                Text("무료로는 이 iPad에서 과목 \(FreeTier.courses)개와 자료 \(FreeTier.documents)개를 만들 수 있고, AI는 로그인하면 매달 조금씩 쓸 수 있어요. 이미 있는 자료는 구독과 관계없이 계속 열고 고칠 수 있어요.")
                     .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true) // the store's header otherwise cuts it to one line
             }.padding()
@@ -115,12 +115,11 @@ struct NativeSettingsSubscriptionPanel: View {
         VStack(alignment: .leading, spacing: 24) {
             if let error { NativeToolError(message: error) }
             if let notice { Label(notice, systemImage: "checkmark.circle").font(NativeDesktopTheme.font(13)).foregroundStyle(.green) }
-            NativeSettingsCard(title: "반달 플러스", description: "과목과 자료를 개수 제한 없이 만들고, 등록한 API 키로 쓰는 AI 기능을 횟수 제한 없이 씁니다. 구독은 이 기기의 Apple ID로 확인합니다.") {
+            NativeSettingsCard(title: "반달 플러스", description: "과목과 자료를 개수 제한 없이 만들고, AI를 매달 더 많이 씁니다. 구독은 이 기기의 Apple ID로 확인합니다.") {
                 LabeledContent("상태", value: membership.tier >= .plus ? "이용 중" : "무료").accessibilityIdentifier("native-membership-state")
                 if membership.tier < .plus {
                     LabeledContent("이 iPad에서 만든 과목", value: "\(usage["courses"] as? Int ?? 0) / \(FreeTier.courses)")
                     LabeledContent("이 iPad에서 만든 자료", value: "\(usage["documents"] as? Int ?? 0) / \(FreeTier.documents)")
-                    LabeledContent("이번 달 AI", value: "\(FreeTier.AIAllowance().used()) / \(FreeTier.aiPerMonth)")
                     Button("반달 플러스 보기") { MembershipPaywall.present(message: nil) }.accessibilityIdentifier("native-membership-open")
                 }
                 HStack {

@@ -2,153 +2,199 @@ import Foundation
 
 @MainActor
 struct DesktopAIEnvironment {
-    var readKey: (AIProvider) -> String? = { KeychainStore.read("ai.\($0.rawValue)") }
-    var writeKey: (AIProvider, String) throws -> Void = { try KeychainStore.write($1, account: "ai.\($0.rawValue)") }
     var session: URLSession = URLSession(configuration: .ephemeral, delegate: DesktopAIRedirectPolicy(), delegateQueue: nil)
-    var hasConsent: (AIProvider) -> Bool = { AIConsent.isGranted($0) }
+    /// The signed-in ai-proxy; throws when nobody is signed in.
+    var endpoint: () async throws -> AIEndpoint = { throw AIError.server(code: "SIGN_IN_REQUIRED", info: [:]) }
+    var hasConsent: (AIProvider, String, Int) -> Bool = { AIConsent.isGranted($0, user: $1, version: $2) }
+    var setConsent: (AIProvider, String, Int) -> Void = { AIConsent.set($0, user: $1, version: $2, granted: true) }
     var askConsent: (AIProvider) async -> Bool = { await AIConsent.ask($0, english: false) }
-    /// The free AI allowance (반달 멤버십): checked before a request, counted once its answer arrives.
-    var checkAllowance: () throws -> Void = {}
-    var countUse: () -> Void = {}
+    /// The server's AI usage after every answer and refusal (usage bar).
+    var onUsage: ([String: Any]) -> Void = { _ in }
+    /// A budget or task-cap refusal (paywall / credit sheet).
+    var onLimit: (String, [String: Any]) -> Void = { _, _ in }
 }
 private final class DesktopAIRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }
 
-/// Native BYOK transport. Original desktop SessionManager owns conversation,
-/// persistence, approvals and tools. Keys never cross into either JS runtime.
+/// Native AI transport through the Bandal ai-proxy (no user keys). Original desktop
+/// SessionManager owns conversation, persistence, approvals and tools.
 @MainActor
 final class DesktopAIService {
+    /// The consent wording this build shows; the proxy's config names the version it requires.
+    static let consentVersion = 1
+    static let kinds: Set<String> = ["question", "summary", "quiz", "translate", "routine", "explain"]
     var onEvent: ((String, [String: Any]) async throws -> Void)?
     var onTool: ((String, [String: Any]) async throws -> String)?
     private let environment: DesktopAIEnvironment
-    private var tasks: [String: (provider: AIProvider, task: Task<AIResult, Error>)] = [:]
-    private var generations: [AIProvider: Int] = [:]
-    private var catalogs: [AIProvider: [String: Any]] = [:]
+    private var tasks: [String: Task<AIResult, Error>] = [:]
+    private var config: [String: Any]?
+    /// The account `config` belongs to: another account's usage and consents never carry over.
+    private var configUser: String?
+    private var loading: Task<[String: Any], Error>?
     private var consentPrompts: [AIProvider: Task<Bool, Never>] = [:]
     init(environment: DesktopAIEnvironment? = nil) { self.environment = environment ?? DesktopAIEnvironment() }
     func canHandle(_ channel: String) -> Bool { channel.hasPrefix("native:ai") }
     func handle(channel: String, request: [String: Any]) async throws -> Any {
-        let provider = try resolve(request["provider"] as? String)
         switch channel {
         case "native:aiAvailability":
-            let configured = !(environment.readKey(provider) ?? "").isEmpty
-            var result: [String: Any] = ["installed": true, "loggedIn": configured, "version": "iPad API", "subscriptionType": "API · BYOK", "transport": "api"]
-            if !configured { result["code"] = "not-logged-in"; result["reason"] = "iPad API 연결에 사용할 \(provider.title) API 키를 등록해 주세요. CLI 실행은 iPad에서 지원하지 않습니다." }
-            return result
-        case "native:aiKeyStatus": return keyStatus(provider)
-        case "native:aiSetKey":
-            let value = (request["key"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard value.utf8.count <= 8192, !value.contains(where: { $0.isNewline || $0 == "\0" }) else { throw DesktopRuntimeError("API 키 형식을 확인해 주세요.") }
-            try environment.writeKey(provider, value)
-            generations[provider, default: 0] += 1; catalogs[provider] = nil
-            for active in tasks.values where active.provider == provider { active.task.cancel() }
-            return keyStatus(provider)
-        case "native:aiModels": return try await models(provider, refresh: request["refresh"] as? Bool == true)
-        case "native:aiRun": return try await run(provider, request: request)
+            do {
+                _ = try await environment.endpoint()
+                return ["installed": true, "loggedIn": true, "version": "Bandal AI", "subscriptionType": "Bandal", "transport": "api"]
+            } catch {
+                return ["installed": true, "loggedIn": false, "version": "Bandal AI", "transport": "api", "code": "not-logged-in", "reason": AIError.describe("SIGN_IN_REQUIRED", [:])]
+            }
+        case "native:aiConfig": return try await configuration(try await environment.endpoint(), refresh: request["refresh"] as? Bool == true)
+        case "native:aiModels":
+            let models = try await configuration(try await environment.endpoint(), refresh: request["refresh"] as? Bool == true)["models"] as? [[String: Any]] ?? []
+            return ["models": models.map { ["id": $0["id"] ?? "", "displayName": $0["label"] ?? "", "provider": $0["provider"] ?? "", "badge": $0["badge"] ?? 1, "isDefault": false, "supportedEfforts": AIClient.efforts] },
+                    "source": "live", "status": "ready"]
+        case "native:aiRun": return try await run(request)
         case "native:aiCancel":
-            if let identifier = request["requestId"] as? String, tasks[identifier]?.provider == provider { tasks[identifier]?.task.cancel() }
+            if let identifier = request["requestId"] as? String { tasks[identifier]?.cancel() }
             return ["ok": true]
         default: throw DesktopRuntimeError("Unknown native AI operation")
         }
     }
-    private func resolve(_ value: String?) throws -> AIProvider {
-        switch value { case "codex": return .openai; case "claude-code": return .claude; case "gemini": return .gemini; default: throw DesktopRuntimeError("AI 제공자를 확인해 주세요.") }
+
+    /// Models, Auto and usage from the proxy; cached until refreshed or an answer changes usage.
+    private func configuration(_ endpoint: AIEndpoint, refresh: Bool = false) async throws -> [String: Any] {
+        if configUser != endpoint.userID { config = nil; loading = nil; configUser = endpoint.userID }
+        if !refresh, let config { return config }
+        // Requests that start together share one load (and then one consent sheet).
+        if let loading { return try await loading.value }
+        let load = Task { try await post("config", [:], endpoint) }
+        loading = load
+        defer { loading = nil }
+        let value = try await load.value
+        guard configUser == endpoint.userID else { throw CancellationError() }
+        config = value
+        if let usage = value["usage"] as? [String: Any] { environment.onUsage(usage) }
+        return value
     }
-    private func keyStatus(_ provider: AIProvider) -> [String: Any] {
-        let key = environment.readKey(provider) ?? ""
-        return ["configured": !key.isEmpty, "hint": key.isEmpty ? NSNull() as Any : String(key.suffix(4)), "storageAvailable": true]
-    }
-    private func models(_ provider: AIProvider, refresh: Bool) async throws -> [String: Any] {
-        if !refresh, let cached = catalogs[provider] { return cached }
-        let fallback: [String: Any] = ["models": [["id": provider.model, "displayName": provider.model, "isDefault": false, "supportedEfforts": []]], "source": "fallback", "status": "unverified"]
-        guard let key = environment.readKey(provider), !key.isEmpty else { return fallback }
-        let generation = generations[provider, default: 0]
-        let url: URL
-        switch provider { case .openai: url = URL(string: "https://api.openai.com/v1/models")!; case .claude: url = URL(string: "https://api.anthropic.com/v1/models")!; case .gemini: url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000")! }
-        var request = URLRequest(url: url); request.timeoutInterval = 20; request.httpShouldHandleCookies = false
-        switch provider {
-        case .openai: request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
-        case .claude: request.setValue(key, forHTTPHeaderField: "x-api-key"); request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        case .gemini: request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+    private func post(_ path: String, _ body: [String: Any], _ endpoint: AIEndpoint) async throws -> [String: Any] {
+        var request = URLRequest(url: endpoint.url(path)); request.httpMethod = "POST"; request.timeoutInterval = 30
+        request.httpShouldHandleCookies = false
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        try await endpoint.authorize(&request)
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await environment.session.data(for: request)
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AIError.server(code: object["code"] as? String ?? "AI_UNAVAILABLE", info: object)
         }
-        do {
-            let (data, response) = try await environment.session.data(for: request)
-            guard generation == generations[provider, default: 0] else { throw CancellationError() }
-            guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode), data.count <= 4 * 1024 * 1024 else { throw DesktopRuntimeError("모델 목록을 가져오지 못했습니다.") }
-            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-            let rows = object[provider == .gemini ? "models" : "data"] as? [[String: Any]] ?? []
-            let models: [[String: Any]] = rows.compactMap { row in
-                let id = (row[provider == .gemini ? "name" : "id"] as? String ?? "").replacingOccurrences(of: "models/", with: "")
-                guard !id.isEmpty else { return nil }
-                if provider == .openai, !["gpt-", "o1", "o3", "o4"].contains(where: { id.hasPrefix($0) }) { return nil }
-                if provider == .gemini, !(row["supportedGenerationMethods"] as? [String] ?? []).contains("generateContent") { return nil }
-                return ["id": id, "displayName": row["display_name"] as? String ?? row["displayName"] as? String ?? id, "isDefault": false, "supportedEfforts": []]
-            }.sorted { ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "") }
-            guard !models.isEmpty else { throw DesktopRuntimeError("사용 가능한 API 모델 목록이 비어 있습니다.") }
-            let result: [String: Any] = ["models": models, "source": "live", "status": "ready", "fetchedAt": ISO8601DateFormatter().string(from: Date())]
-            catalogs[provider] = result; return result
-        } catch is CancellationError { throw CancellationError() }
-        catch { var result = catalogs[provider] ?? fallback; result["status"] = "unverified"; result["error"] = "API 모델 목록 확인에 실패했습니다. 선택한 모델의 실제 접근 권한은 요청 때 확인됩니다."; if catalogs[provider] != nil { result["source"] = "cache" }; return result }
+        return object
     }
-    /// One sheet per provider even when several requests start at once.
-    private func consent(_ provider: AIProvider) async -> Bool {
-        if environment.hasConsent(provider) { return true }
-        if let pending = consentPrompts[provider] { return await pending.value }
-        let ask = environment.askConsent
-        let prompt = Task { await ask(provider) }
-        consentPrompts[provider] = prompt
-        defer { consentPrompts[provider] = nil }
-        return await prompt.value
+
+    /// Picks the model: a model the proxy offers keeps its provider; Auto, empty, "default" or an
+    /// old BYOK model name falls back to the proxy's Auto model.
+    static func resolve(_ requested: String?, config: [String: Any]) -> (model: String, provider: AIProvider)? {
+        let models = config["models"] as? [[String: Any]] ?? []
+        if let requested, let row = models.first(where: { $0["id"] as? String == requested }),
+           let provider = AIProvider(server: row["provider"] as? String ?? "") { return (requested, provider) }
+        guard let auto = config["auto"] as? [String: Any], let id = auto["id"] as? String,
+              let provider = AIProvider(server: auto["provider"] as? String ?? "") else { return nil }
+        return (id, provider)
     }
-    private func run(_ provider: AIProvider, request: [String: Any]) async throws -> [String: Any] {
+
+    /// Asks once per provider (one sheet even when several requests start at once) and records
+    /// the answer on the server, which refuses to relay without it.
+    private func consent(_ provider: AIProvider, config: [String: Any], endpoint: AIEndpoint) async throws {
+        let version = max(config["consentVersion"] as? Int ?? Self.consentVersion, 1)
+        let recorded = ((config["usage"] as? [String: Any])?["consents"] as? [String: Any])?[provider.server] as? Int ?? 0
+        let local = environment.hasConsent(provider, endpoint.userID, version)
+        if recorded >= version, local { return }
+        // This account's own answer on this iPad; a consent given by another account never counts.
+        if !local {
+            let granted: Bool
+            if let pending = consentPrompts[provider] { granted = await pending.value } else {
+                let ask = environment.askConsent
+                let prompt = Task { await ask(provider) }
+                consentPrompts[provider] = prompt
+                granted = await prompt.value
+                consentPrompts[provider] = nil
+            }
+            guard granted else { throw DesktopRuntimeError("AI 전송에 동의하지 않아 요청을 보내지 않았습니다.") }
+            environment.setConsent(provider, endpoint.userID, version)
+        }
+        let status = try await post("consent", ["provider": provider.server, "version": version], endpoint)
+        remember(status); environment.onUsage(status)
+    }
+
+    private func run(_ request: [String: Any]) async throws -> [String: Any] {
         guard let identifier = request["requestId"] as? String, UUID(uuidString: identifier) != nil, tasks[identifier] == nil,
               let raw = request["messages"] as? [[String: Any]], raw.count <= 300,
               let toolInputs = request["tools"] as? [[String: Any]], toolInputs.count <= 160,
               let event = onEvent, let execute = onTool else { throw DesktopRuntimeError("AI 요청 구성을 확인할 수 없습니다.") }
-        try environment.checkAllowance()
-        guard await consent(provider) else { throw DesktopRuntimeError("AI 제공자 전송에 동의하지 않아 요청을 보내지 않았습니다.") }
-        try Task.checkCancellation()
-        let key = environment.readKey(provider) ?? ""
-        guard !key.isEmpty else { throw DesktopRuntimeError("\(provider.title) API 키를 설정 › AI 엔진에서 등록해 주세요.") }
-        let generation = generations[provider, default: 0]
-        let requestedModel = request["model"] as? String ?? ""
-        let model = requestedModel.isEmpty || requestedModel == "default" ? provider.model : requestedModel
-        guard model.utf8.count <= 200, model.range(of: "^[a-zA-Z0-9._:/-]+$", options: .regularExpression) != nil else { throw DesktopRuntimeError("AI 모델 ID 형식을 확인해 주세요.") }
-        var images: [String: [AIInputImage]] = [:]
-        let messages: [ChatMessage] = try raw.map { value in
-            guard let role = value["role"] as? String, ["user", "assistant"].contains(role), let text = value["text"] as? String, text.utf8.count <= 2_000_000 else { throw DesktopRuntimeError("AI 대화 내용이 너무 크거나 올바르지 않습니다.") }
-            let message = ChatMessage(role: role, text: text)
-            images[message.id] = (value["images"] as? [[String: String]] ?? []).map { AIInputImage(mediaType: $0["mediaType"] ?? "", dataBase64: $0["dataBase64"] ?? "") }
-            return message
-        }
-        let tools: [AITool] = try toolInputs.map { value in
-            guard let name = value["name"] as? String, name.range(of: "^[a-zA-Z0-9_-]{1,64}$", options: .regularExpression) != nil,
-                  let schema = value["inputSchema"] as? [String: Any] else { throw DesktopRuntimeError("AI 도구 형식을 확인할 수 없습니다.") }
-            return AITool(name: name, description: value["description"] as? String ?? name, properties: schema["properties"] as? [String: Any] ?? [:], required: schema["required"] as? [String] ?? [])
-        }
-        let task = Task<AIResult, Error> {
-            let client = AIClient(provider: provider, model: model, key: key, session: environment.session)
-            return try await client.run(messages: messages, system: request["system"] as? String ?? "", tools: tools, onDelta: { _ in }, onTool: { _ in }, execute: { call in
-                do {
-                    try Task.checkCancellation()
-                    guard generation == self.generations[provider, default: 0] else { throw CancellationError() }
-                    return try await execute(identifier, ["id": call.id, "name": call.name, "arguments": call.arguments])
-                } catch { return "도구 실행 실패: \(error.localizedDescription)" }
-            }, images: images, effort: request["effort"] as? String, onDeltaAsync: { text in
-                try Task.checkCancellation()
-                guard generation == self.generations[provider, default: 0] else { throw CancellationError() }
-                try await event(identifier, ["type": "text-delta", "text": text])
-            })
-        }
-        tasks[identifier] = (provider, task)
-        defer { tasks[identifier] = nil }
         do {
+            let endpoint = try await environment.endpoint()
+            var config = try await configuration(endpoint)
+            guard let (model, provider) = Self.resolve(request["model"] as? String, config: config) else { throw AIError.server(code: "AI_UNAVAILABLE", info: [:]) }
+            try await consent(provider, config: config, endpoint: endpoint)
+            config = self.config ?? config
+            try Task.checkCancellation()
+            var images: [String: [AIInputImage]] = [:]
+            let messages: [ChatMessage] = try raw.map { value in
+                guard let role = value["role"] as? String, ["user", "assistant"].contains(role), let text = value["text"] as? String, text.utf8.count <= 2_000_000 else { throw DesktopRuntimeError("AI 대화 내용이 너무 크거나 올바르지 않습니다.") }
+                let message = ChatMessage(role: role, text: text)
+                images[message.id] = (value["images"] as? [[String: String]] ?? []).map { AIInputImage(mediaType: $0["mediaType"] ?? "", dataBase64: $0["dataBase64"] ?? "") }
+                return message
+            }
+            let tools: [AITool] = try toolInputs.map { value in
+                guard let name = value["name"] as? String, name.range(of: "^[a-zA-Z0-9_-]{1,64}$", options: .regularExpression) != nil,
+                      let schema = value["inputSchema"] as? [String: Any] else { throw DesktopRuntimeError("AI 도구 형식을 확인할 수 없습니다.") }
+                return AITool(name: name, description: value["description"] as? String ?? name, properties: schema["properties"] as? [String: Any] ?? [:], required: schema["required"] as? [String] ?? [])
+            }
+            let kind = (request["kind"] as? String).flatMap { Self.kinds.contains($0) ? $0 : nil } ?? "question"
+            let limit = Self.toolResultLimit(model: model, config: config)
+            let onUsage = environment.onUsage
+            let task = Task<AIResult, Error> {
+                let client = AIClient(provider: provider, model: model, endpoint: endpoint, task: identifier.lowercased(), kind: kind, session: environment.session)
+                return try await client.run(messages: messages, system: request["system"] as? String ?? "", tools: tools, onDelta: { _ in }, onTool: { _ in }, execute: { call in
+                    do {
+                        try Task.checkCancellation()
+                        let output = try await execute(identifier, ["id": call.id, "name": call.name, "arguments": call.arguments])
+                        return output.count > limit ? String(output.prefix(limit)) + "\n[이후 내용은 길이 제한으로 생략됨]" : output
+                    } catch { return "도구 실행 실패: \(error.localizedDescription)" }
+                }, images: images, effort: request["effort"] as? String, onDeltaAsync: { text in
+                    try Task.checkCancellation()
+                    try await event(identifier, ["type": "text-delta", "text": text])
+                }, onUsage: { [weak self] usage in self?.remember(usage); onUsage(usage) })
+            }
+            tasks[identifier] = task
+            defer { tasks[identifier] = nil }
             let result = try await task.value
-            guard generation == generations[provider, default: 0] else { throw CancellationError() }
-            environment.countUse()
             return ["text": result.text, "model": model, "usage": ["inputTokens": result.inputTokens, "outputTokens": result.outputTokens]]
         } catch is CancellationError { throw CancellationError() }
-        catch { throw DesktopRuntimeError(error.localizedDescription.replacingOccurrences(of: key.isEmpty ? "\0" : key, with: "[redacted]")) }
+        catch AIError.server(let code, let info) {
+            if code == "BUDGET_EXHAUSTED" || code == "TASK_CAP_REACHED" {
+                let usage = info["usage"] as? [String: Any] ?? [:]
+                remember(usage)
+                environment.onUsage(usage); environment.onLimit(code, usage)
+            }
+            // A stale consent or model list is refreshed for the next request.
+            if code == "CONSENT_REQUIRED" || code == "MODEL_UNAVAILABLE" { config = nil }
+            throw DesktopRuntimeError(AIError.describe(code, info), code: code)
+        }
+    }
+
+    /// Merges a newer usage status into the cached config (an event may carry only part of it).
+    private func remember(_ usage: [String: Any]) {
+        guard var current = config else { return }
+        let old = current["usage"] as? [String: Any] ?? [:]
+        var merged = old.merging(usage) { _, new in new }
+        // Consents merge per provider: a reply may name only the one it changed.
+        if let newer = usage["consents"] as? [String: Any] { merged["consents"] = (old["consents"] as? [String: Any] ?? [:]).merging(newer) { _, new in new } }
+        current["usage"] = merged
+        config = current
+    }
+
+    /// Characters one tool result may add: Auto keeps chats inside its smaller context.
+    static func toolResultLimit(model: String, config: [String: Any]) -> Int {
+        let auto = config["auto"] as? [String: Any]
+        let tokens = auto?["id"] as? String == model ? auto?["contextCap"] as? Int ?? 30_000
+            : ((config["models"] as? [[String: Any]])?.first { $0["id"] as? String == model }?["contextCap"] as? Int ?? 100_000)
+        // The proxy estimates about one token per Korean character; leave room for the conversation.
+        return max(8_000, tokens * 2 / 3)
     }
 }

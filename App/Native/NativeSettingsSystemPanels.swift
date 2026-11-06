@@ -133,7 +133,7 @@ struct NativeSettingsSystemPanels: View {
             NativeSettingsCard(title: "데이터 처리") {
                 Text(!NativeReleaseFlags.legacyCloudSync ? (NativeReleaseFlags.showsRecording ? "자료 원본, 필기, 녹음과 대화 기록은 기기에 저장됩니다." : "자료 원본, 필기와 대화 기록은 기기에 저장됩니다.") : "자료 원본, 필기, 녹음과 대화 기록은 기기에 저장됩니다. 계정 동기화를 사용하면 연결한 동기화 서버에도 저장됩니다.")
                 if NativeReleaseFlags.showsAccount { Text("반달 계정 로그인은 선택 사항입니다. 로그인하면 이메일과 닉네임이 반달 계정 서버에 저장됩니다. 자료와 필기는 올라가지 않습니다.") }
-                Text("AI 기능은 선택 사항입니다. 제공자별로 처음 보내기 전에 동의를 받고, 질문과 AI가 읽은 자료를 이 기기에서 선택한 제공자에게 직접 전송합니다. 크런치맬로 서버를 거치지 않습니다. API 키는 이 기기의 Keychain에 저장됩니다.")
+                Text("AI 기능은 선택 사항이며 로그인이 필요합니다. 제공자별로 처음 보내기 전에 동의를 받고, 질문과 AI가 읽은 자료를 반달 서버를 거쳐 선택한 제공자(OpenAI·Anthropic)에 전송합니다. 반달 서버는 AI 사용량만 기록하고 질문·자료·답변은 저장하지 않습니다.")
                 Text(NativeReleaseFlags.showsRecording ? "음성 전사는 다운로드한 모델로 기기에서 처리합니다. 학교 웹사이트와 브라우저는 방문한 서비스의 정책을 따릅니다." : "학교 웹사이트와 브라우저는 방문한 서비스의 정책을 따릅니다.")
             }
             NativeSettingsCard(title: "진단 파일", description: "문제 해결에 필요한 앱 버전과 상태 정보를 파일로 공유합니다. 저장 위치를 직접 선택할 수 있습니다.") {

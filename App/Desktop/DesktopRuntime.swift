@@ -122,8 +122,8 @@ final class DesktopRuntime: @unchecked Sendable {
     private func native(_ channel: String,_ request: [String:Any]) async throws -> Any {
         guard let onNativeCall else { throw DesktopRuntimeError("기기 서비스를 연결하지 못했습니다: \(channel)",code:"ENOSYS") }; return try await onNativeCall(channel,request)
     }
-    private static let aliases = ["agent:availability":"native:aiAvailability","agent:apiKey":"native:aiKeyStatus","agent:setApiKey":"native:aiSetKey","agent:models":"native:aiModels"]
-    private static let nativeChannels: Set<String> = ["chat:send","chat:cancel","chat:close","recordings:create","recordings:control","recordings:append","recordings:models","recordings:downloadModel","recordings:cancelDownload","runtime:recordingStart","runtime:recordingDevices","runtime:recordingAbandon","agent:availability","agent:apiKey","agent:setApiKey","agent:models","native:configureAccount","native:saveFile","native:pickFiles","native:openLogs","materials:preview","materials:reveal","materials:share","materials:export","courses:pickFolder","chat:pickAttachments","chat:openArtifact","print:pdf","print:savePdfAs","clipboard:beginCopy","clipboard:writeImage"]
+    private static let aliases = ["agent:availability":"native:aiAvailability","agent:models":"native:aiModels"]
+    private static let nativeChannels: Set<String> = ["chat:send","chat:cancel","chat:close","recordings:create","recordings:control","recordings:append","recordings:models","recordings:downloadModel","recordings:cancelDownload","runtime:recordingStart","runtime:recordingDevices","runtime:recordingAbandon","agent:availability","agent:models","native:configureAccount","native:saveFile","native:pickFiles","native:openLogs","materials:preview","materials:reveal","materials:share","materials:export","courses:pickFolder","chat:pickAttachments","chat:openArtifact","print:pdf","print:savePdfAs","clipboard:beginCopy","clipboard:writeImage"]
     private func handle(_ channel: String,_ request: [String:Any]) throws -> Any? {
         guard context != nil, let storage = library else { throw DesktopRuntimeError("자료 저장소를 시작하지 못했습니다.") }
         try limits?(channel, request, storage)

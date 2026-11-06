@@ -10,6 +10,14 @@ private final class NativeAssistantProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        // The ai-proxy's config: Auto is an OpenAI model, so the fixtures below stream OpenAI events.
+        if request.url?.path.hasSuffix("/config") == true {
+            let config: [String: Any] = ["models": [["id": "gpt-6-luna", "provider": "openai", "label": "GPT-6 Luna", "contextCap": 100000, "badge": 1]],
+                                         "auto": ["id": "gpt-6-luna", "provider": "openai", "contextCap": 30000], "consentVersion": 1, "usage": ["consents": ["openai": 1, "anthropic": 1]]]
+            client?.urlProtocol(self,didReceive:HTTPURLResponse(url:request.url!,statusCode:200,httpVersion:nil,headerFields:nil)!,cacheStoragePolicy:.notAllowed)
+            client?.urlProtocol(self,didLoad:try! JSONSerialization.data(withJSONObject:config)); client?.urlProtocolDidFinishLoading(self)
+            return
+        }
         var bytes = request.httpBody ?? Data()
         if bytes.isEmpty, let stream = request.httpBodyStream {
             stream.open(); defer { stream.close() }; var buffer = [UInt8](repeating:0,count:4096)
@@ -37,7 +45,7 @@ final class NativeAssistantServiceTests: XCTestCase {
         let course = try await runtime.invoke("courses:create",request:["name":"AI test","color":"blue"]) as! [String:Any]
         identity = ["courseId":course["id"]!,"sessionId":UUID().uuidString,"provider":"codex"]
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [NativeAssistantProtocol.self]
-        var environment = DesktopAIEnvironment(); environment.session = URLSession(configuration:config); environment.readKey = { _ in "fixture-not-a-real-key" }; environment.writeKey = { _,_ in }; environment.hasConsent = { _ in true }
+        var environment = DesktopAIEnvironment(); environment.session = URLSession(configuration:config); environment.endpoint = { AIEndpoint(userID: "user-a", projectURL: URL(string: "https://project.test")!, publishableKey: "pk", token: { "jwt" }) }; environment.hasConsent = { _, _, _ in true }
         NativeAssistantProtocol.hold = false; NativeAssistantProtocol.began = nil; NativeAssistantProtocol.requests = []; NativeAssistantProtocol.replies = []
         service = NativeAssistantService(runtime:runtime,ai:DesktopAIService(environment:environment))
         runtime.onNativeCall = { [weak service] channel,request in guard let service else { throw CancellationError() }; return try await service.handle(channel,request) }

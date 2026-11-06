@@ -115,17 +115,4 @@ final class FreeTierTests: XCTestCase {
         XCTAssertEqual(usage?["courses"] as? Int, 1)
         XCTAssertEqual(usage?["documents"] as? Int, 0)
     }
-
-    func testTwentyAIRequestsAMonthAreFree() throws {
-        var saved: [String: String] = [:], now = Date(timeIntervalSince1970: 1_793_500_000)
-        let allowance = FreeTier.AIAllowance(read: { saved[$0] }, write: { saved[$0] = $1 }, now: { now })
-        for _ in 1...20 { XCTAssertNoThrow(try allowance.check()); allowance.count() }
-        XCTAssertEqual(allowance.used(), 20)
-        XCTAssertThrowsError(try allowance.check()) { XCTAssertEqual(($0 as? DesktopRuntimeError)?.code, FreeTier.code) }
-        now = Calendar.current.date(byAdding: .month, value: 1, to: now)!
-        XCTAssertEqual(allowance.used(), 0)
-        XCTAssertNoThrow(try allowance.check())
-        saved = ["pro.ai-uses": "garbage"]
-        XCTAssertEqual(allowance.used(), 0)
-    }
 }

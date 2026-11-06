@@ -372,6 +372,7 @@
 		B5719B7897BBEE08247968F7 /* NativeSettingsSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9623B76D504848E7D3C8C7AB /* NativeSettingsSections.swift */; };
 		B5EC01C49E935A440C471409 /* NativeDockTabSizingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE85B3B4BF3B07613FD2CAA1 /* NativeDockTabSizingTests.swift */; };
 		B62500B5B9C21E21F05E2D1D /* NativePDFBackdropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FF7E2AAB89E902EEEC5F532 /* NativePDFBackdropTests.swift */; };
+		B67601A7DA39DA03F0429C24 /* AIUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA336CAEB648014853645A40 /* AIUsage.swift */; };
 		B67F5C967856BDCF2A50FD8E /* NativeSyncRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43310B951E80578E34321F2A /* NativeSyncRepositoryTests.swift */; };
 		B6CE7612977C45EC386C774D /* DesktopPresentationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1FBDA57057958AEE840F1B /* DesktopPresentationService.swift */; };
 		B7362CADE850EA9168A0E572 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F9B13CF53CE7557E1635855D /* PrivacyInfo.xcprivacy */; };
@@ -1051,6 +1052,7 @@
 		F9B13CF53CE7557E1635855D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F9B2B9ED2496D48A9652E5E2 /* NativeWorkspaceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceModels.swift; sourceTree = "<group>"; };
 		F9FDD16DF8EAA25D8C563F7B /* DesktopBillingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopBillingService.swift; sourceTree = "<group>"; };
+		FA336CAEB648014853645A40 /* AIUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage.swift; sourceTree = "<group>"; };
 		FA62D8C6D7D4DBA8E65827CE /* NativeMediaDropBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMediaDropBudgetTests.swift; sourceTree = "<group>"; };
 		FAE2776FE9F117D023DF30D5 /* DictionaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictionaryService.swift; sourceTree = "<group>"; };
 		FAE99D413AF3F4173695B940 /* DesktopNotificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNotificationTests.swift; sourceTree = "<group>"; };
@@ -1611,6 +1613,7 @@
 		998441AE76570AF5E431E6CE /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				FA336CAEB648014853645A40 /* AIUsage.swift */,
 				05DE7E7FABFCDBA9BFF48C33 /* CloudSession.swift */,
 				FAE2776FE9F117D023DF30D5 /* DictionaryService.swift */,
 				9A63E7A276B9A38A74FFC18F /* KeychainStore.swift */,
@@ -2136,6 +2139,7 @@
 			files = (
 				AC55F9629DC81A3410F91693 /* AIClient.swift in Sources */,
 				7555E73A28E3ADB02F60D422 /* AIConsent.swift in Sources */,
+				B67601A7DA39DA03F0429C24 /* AIUsage.swift in Sources */,
 				FDC1B1E4AD5F88D8F06E3230 /* BandalApp.swift in Sources */,
 				70046B10DDD58BB8FFF70F46 /* BandalShareInbox.swift in Sources */,
 				52B7821BAA095E22D3435A77 /* BrowserAgent.swift in Sources */,
