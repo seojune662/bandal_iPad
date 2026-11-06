@@ -43,6 +43,17 @@ final class NativeAssistantContextTests: XCTestCase {
         XCTAssertThrowsError(try chat.handle("chat:open",wrong))
         XCTAssertThrowsError(try chat.handle("nativeChat:begin",wrong.merging(["content":"잘못된 공간"]) { _,new in new }))
     }
+    /// 대화 제목 is renamed in place; blank titles are refused and a long one is cut at 80.
+    func testConversationRenameKeepsTitleAndRefusesBlank() throws {
+        let value = identity(nil)
+        _ = try send(value); try finish(value)
+        _ = try chat.handle("chat:rename",value.merging(["title":"  선형대수 복습  "]) { _,new in new })
+        let rows = try XCTUnwrap((chat.handle("chat:conversations",value) as? [String:Any])?["conversations"] as? [[String:Any]])
+        XCTAssertEqual(rows.first?["title"] as? String,"선형대수 복습")
+        XCTAssertThrowsError(try chat.handle("chat:rename",value.merging(["title":"   "]) { _,new in new }))
+        let long = String(repeating:"가",count:120)
+        XCTAssertEqual((try chat.handle("chat:rename",value.merging(["title":long]) { _,new in new }) as? [String:Any])?["title"] as? String,String(long.prefix(80)))
+    }
     func testImmutableCaptureAndModeSurviveSavedHistoryAndSyncEnvelope() throws {
         let scope = try project("캡처"), value = identity(scope)
         let capture = NativeAssistantAttachment(title:"필기",text:"선택한 내용",imageDataURL:"data:image/png;base64,AQID",courseID:course,relativePath:"note.pdf",page:3)

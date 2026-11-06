@@ -16,13 +16,12 @@ struct NativeCourseSidebar: View {
     @AppStorage("native.desktop.collapsedCourseGroups") private var collapsedGroups = "[]"
     @State private var groups: [NativeSidebarCourseGroup] = []
     @State private var query = ""
-    @State private var editing: Edit?
-    @State private var draft = ""
+    @State private var renamingID: String?
+    @State private var creatingGroup = false
     @State private var archiveCourse: NativeCourse?
     @State private var deletingGroup: NativeSidebarCourseGroup?
     @State private var busy = false
     @State private var error: String?
-    private struct Edit: Identifiable { var id: String; var title: String; var channel: String; var key: String? }
     private var courses: [NativeCourse] { store.courses.filter { $0.workspaceKind != "study-space" } }
     private var visible: [NativeCourse] { courses.filter { query.isEmpty || $0.name.localizedStandardContains(query) } }
     var body: some View {
@@ -32,10 +31,15 @@ struct NativeCourseSidebar: View {
                 Menu {
                     Button("새 과목 만들기", systemImage: "plus") { onCreate() }.accessibilityIdentifier("native-new-course")
                     Button("폴더에서 추가", systemImage: "folder.badge.plus") { onManage() }
-                    Button("과목 그룹 만들기", systemImage: "folder") { draft = ""; editing = Edit(id: "new-group", title: "그룹 이름", channel: "courseGroups:create", key: nil) }
+                    Button("과목 그룹 만들기", systemImage: "folder") { creatingGroup = true }
                     Button("보관된 과목 관리", systemImage: "archivebox") { onManage() }
                 } label: { Image(systemName: "plus").foregroundStyle(NativeDesktopTheme.secondary).frame(width: 40, height: 40).contentShape(Rectangle()) }
                 .accessibilityLabel("과목 추가").accessibilityIdentifier("native-course-add-menu")
+                .bandalPopover(isPresented: $creatingGroup) {
+                    BandalTextEntry(title: "새 그룹", prompt: "그룹 이름", actionTitle: "만들기", identifier: "native-group-name") { name in
+                        creatingGroup = false; mutate("courseGroups:create", ["name": name])
+                    }
+                }
             }.padding(.leading, 12).padding(.trailing, 6).padding(.bottom, 8)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
@@ -61,17 +65,6 @@ struct NativeCourseSidebar: View {
         }.background(NativeDesktopTheme.surface).disabled(busy)
             .task { await loadGroups() }
             .onReceive(store.events) { event in if event.channel == "courses:changed" { Task { await loadGroups() } } }
-            .alert(editing?.title ?? "이름 변경", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
-                TextField("이름", text: $draft)
-                Button("취소", role: .cancel) { editing = nil }
-                Button("저장") { saveEdit() }
-            }
-            .confirmationDialog("과목을 보관할까요?", isPresented: Binding(get: { archiveCourse != nil }, set: { if !$0 { archiveCourse = nil } }), titleVisibility: .visible) {
-                Button("보관") { if let course = archiveCourse { mutate("courses:archive", ["courseId": course.id, "archived": true]); archiveCourse = nil } }
-            } message: { Text("파일과 즐겨찾기는 유지되며 과목 관리에서 다시 꺼낼 수 있습니다.") }
-            .confirmationDialog("그룹을 삭제할까요?", isPresented: Binding(get: { deletingGroup != nil }, set: { if !$0 { deletingGroup = nil } }), titleVisibility: .visible) {
-                Button("그룹 삭제", role: .destructive) { if let group = deletingGroup { mutate("courseGroups:delete", ["groupId": group.id]); deletingGroup = nil } }
-            } message: { Text("그룹 안의 과목은 유지됩니다.") }
     }
     private func courseRow(_ course: NativeCourse) -> some View {
         VStack(spacing: 0) {
@@ -79,6 +72,14 @@ struct NativeCourseSidebar: View {
                 Button { toggle(course.id, in: &collapsedCourses) } label: {
                     Image(systemName: contains(course.id, in: collapsedCourses) ? "chevron.right" : "chevron.down").font(.system(size: 10)).frame(width: 44, height: 44)
                 }.accessibilityLabel(course.name + (contains(course.id, in: collapsedCourses) ? " 펼치기" : " 접기")).accessibilityIdentifier("native-course-expand-" + course.id)
+                if renamingID == course.id {
+                    HStack(spacing: 8) {
+                        Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted)
+                        BandalInlineEditor(text: course.name, isEditing: renaming(course.id), font: NativeDesktopTheme.font(13), identifier: "native-course-rename") { name in
+                            mutate("courses:rename", ["courseId": course.id, "name": name])
+                        }
+                    }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                } else {
                 Button {
                     if contains(course.id, in: collapsedCourses) { toggle(course.id, in: &collapsedCourses) }
                     onSelect(course.id)
@@ -91,16 +92,22 @@ struct NativeCourseSidebar: View {
                         if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
                     }.frame(minHeight: 44).contentShape(Rectangle())
                 }.accessibilityIdentifier("native-course-" + course.id)
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { renamingID = course.id })
+                }
                 Menu { courseMenu(course) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel(course.name + " 과목 메뉴")
             }.font(NativeDesktopTheme.font(13)).buttonStyle(.plain)
                 .background(store.selectedCourseID == course.id ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .bandalConfirm("과목을 보관할까요?", isPresented: Binding(get: { archiveCourse?.id == course.id }, set: { if !$0 { archiveCourse = nil } }),
+                               message: "파일과 즐겨찾기는 유지되고 과목 관리에서 다시 꺼낼 수 있어요.", action: "보관") {
+                    mutate("courses:archive", ["courseId": course.id, "archived": true])
+                }
             if !contains(course.id, in: collapsedCourses) {
                 NativeFavoritesSection(store: store, courseID: course.id, currentDocument: navigation.active, descriptor: descriptor, documentByID: navigation.document, onOpen: onOpenFavorite)
             }
         }
     }
     @ViewBuilder private func courseMenu(_ course: NativeCourse) -> some View {
-        Button("이름 변경", systemImage: "pencil") { draft = course.name; editing = Edit(id: course.id, title: "과목 이름", channel: "courses:rename", key: "courseId") }
+        Button("이름 변경", systemImage: "pencil") { renamingID = course.id }
         Menu("색상", systemImage: "circle.fill") { ForEach([("blue", "파랑"), ("green", "초록"), ("purple", "보라"), ("orange", "주황"), ("red", "빨강"), ("pink", "분홍"), ("yellow", "노랑")], id: \.0) { value, name in Button(name) { mutate("courses:setColor", ["courseId": course.id, "color": value]) } } }
         Menu("그룹으로 이동", systemImage: "folder") {
             Button("그룹 없음") { mutate("courses:organize", ["courseId": course.id, "groupId": NSNull()]) }
@@ -111,18 +118,26 @@ struct NativeCourseSidebar: View {
     }
     private func groupHeading(_ group: NativeSidebarCourseGroup) -> some View {
         HStack {
-            Button { toggle(group.id, in: &collapsedGroups) } label: { Label(group.name, systemImage: contains(group.id, in: collapsedGroups) ? "chevron.right" : "chevron.down").frame(maxWidth: .infinity, minHeight: 32, alignment: .leading).contentShape(Rectangle()) }
+            if renamingID == group.id {
+                BandalInlineEditor(text: group.name, isEditing: renaming(group.id), font: NativeDesktopTheme.font(12, weight: .medium), identifier: "native-group-rename") { name in
+                    mutate("courseGroups:rename", ["groupId": group.id, "name": name])
+                }.frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+            } else {
+                Button { toggle(group.id, in: &collapsedGroups) } label: { Label(group.name, systemImage: contains(group.id, in: collapsedGroups) ? "chevron.right" : "chevron.down").frame(maxWidth: .infinity, minHeight: 32, alignment: .leading).contentShape(Rectangle()) }
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { renamingID = group.id })
+            }
             Menu {
-                Button("그룹 이름 변경") { draft = group.name; editing = Edit(id: group.id, title: "그룹 이름", channel: "courseGroups:rename", key: "groupId") }
+                Button("그룹 이름 변경") { renamingID = group.id }
                 Button("그룹 삭제", role: .destructive) { deletingGroup = group }
             } label: { Image(systemName: "ellipsis").frame(width: 28, height: 32) }
         }.buttonStyle(.plain).font(NativeDesktopTheme.font(12, weight: .medium)).foregroundStyle(NativeDesktopTheme.muted).padding(.leading, 8)
+            .bandalConfirm("그룹을 삭제할까요?", isPresented: Binding(get: { deletingGroup?.id == group.id }, set: { if !$0 { deletingGroup = nil } }),
+                           message: "그룹 안의 과목은 그대로 남아요.", action: "그룹 삭제", destructive: true) {
+                mutate("courseGroups:delete", ["groupId": group.id])
+            }
     }
-    private func saveEdit() {
-        guard let editing, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        var request: [String: Any] = ["name": draft]
-        if let key = editing.key { request[key] = editing.id }
-        mutate(editing.channel, request); self.editing = nil
+    private func renaming(_ id: String) -> Binding<Bool> {
+        Binding(get: { renamingID == id }, set: { renamingID = $0 ? id : nil })
     }
     private func mutate(_ channel: String, _ request: [String: Any]) {
         guard !busy else { return }; busy = true; error = nil

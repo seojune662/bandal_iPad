@@ -75,7 +75,6 @@ struct NativeWorkspaceWindowsOverview: View {
     let close: (String) -> Void
     let dismiss: () -> Void
     @State private var renamingID: String?
-    @State private var name = ""
     @State private var draggingID: String?
     @AccessibilityFocusState private var headingFocused: Bool
     @FocusState private var overviewFocused: Bool
@@ -122,14 +121,6 @@ struct NativeWorkspaceWindowsOverview: View {
             .accessibilityAction(.escape) { dismiss() }
             .accessibilityIdentifier("native-windows-overview")
             .onAppear { headingFocused = true; overviewFocused = true }
-            .alert("윈도우 이름", isPresented: Binding(get: { renamingID != nil }, set: { if !$0 { renamingID = nil } })) {
-                TextField("이름", text: $name)
-                Button("취소", role: .cancel) { renamingID = nil }
-                Button("저장") {
-                    if let id = renamingID { rename(id, name.trimmingCharacters(in: .whitespacesAndNewlines)) }
-                    renamingID = nil
-                }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
     }
 
     private func card(_ window: NativeWorkspaceWindow, index: Int) -> some View {
@@ -153,10 +144,16 @@ struct NativeWorkspaceWindowsOverview: View {
             }.buttonStyle(.plain).accessibilityLabel(window.name + " 열기")
                 .accessibilityIdentifier("native-window-open-" + window.id)
             HStack(spacing: 0) {
-                Button { name = window.name; renamingID = window.id } label: {
-                    Text(window.name).font(.callout.weight(.medium)).lineLimit(1)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel(window.name + " 이름 변경")
+                if renamingID == window.id {
+                    BandalInlineEditor(text: window.name, isEditing: Binding(get: { renamingID == window.id }, set: { renamingID = $0 ? window.id : nil }),
+                                       font: .callout.weight(.medium), identifier: "native-window-rename") { rename(window.id, $0) }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                } else {
+                    Button { renamingID = window.id } label: {
+                        Text(window.name).font(.callout.weight(.medium)).lineLimit(1)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityLabel(window.name + " 이름 변경")
+                }
                 Menu {
                     Button("앞으로 이동", systemImage: "arrow.left") { move(window.id, index - 1) }.disabled(index == 0)
                     Button("뒤로 이동", systemImage: "arrow.right") { move(window.id, index + 1) }.disabled(index == windows.count - 1)

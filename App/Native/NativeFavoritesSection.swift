@@ -13,8 +13,7 @@ struct NativeFavoritesSection: View {
     @State private var adding = false
     @State private var linkURL = ""
     @State private var linkLabel = ""
-    @State private var renaming: NativeSidebarFavorite?
-    @State private var renamedLabel = ""
+    @State private var renamingID: String?
     @State private var busy = false
     @State private var error: String?
     @State private var targeted = false
@@ -37,6 +36,12 @@ struct NativeFavoritesSection: View {
             if adding { linkForm }
             if let error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red).textSelection(.enabled) }
             ForEach(Array(favorites.enumerated()), id: \.element.id) { index, favorite in
+                if renamingID == favorite.id {
+                    BandalInlineEditor(text: favorite.label, isEditing: Binding(get: { renamingID == favorite.id }, set: { renamingID = $0 ? favorite.id : nil }),
+                                       font: NativeDesktopTheme.font(12), identifier: "native-favorite-rename") { label in
+                        mutate("favorites:rename", ["id": favorite.id, "label": label])
+                    }.frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+                } else {
                 Button { onOpen(favorite) } label: {
                     Label(favorite.label, systemImage: NativeSidebarDescriptor.symbol(favorite.kind))
                         .font(NativeDesktopTheme.font(12)).lineLimit(1)
@@ -44,11 +49,13 @@ struct NativeFavoritesSection: View {
                 }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary)
                     .accessibilityIdentifier("native-favorite-" + favorite.id)
                     .contextMenu {
-                        Button("이름 변경", systemImage: "pencil") { renamedLabel = favorite.label; renaming = favorite }
+                        Button("이름 변경", systemImage: "pencil") { renamingID = favorite.id }
                         Button("위로 이동", systemImage: "arrow.up") { move(index, by: -1) }.disabled(index == 0)
                         Button("아래로 이동", systemImage: "arrow.down") { move(index, by: 1) }.disabled(index == favorites.count - 1)
                         Button("즐겨찾기 제거", systemImage: "star.slash", role: .destructive) { mutate("favorites:remove", ["id": favorite.id]) }
                     }
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { renamingID = favorite.id })
+                }
             }
         }.padding(.leading, 28).padding(.trailing, 8).padding(.bottom, 6)
             .background(targeted ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 6))
@@ -64,11 +71,6 @@ struct NativeFavoritesSection: View {
             .task(id: courseID) { await reload() }
             .onReceive(store.events) { event in
                 if ["favorites:changed", "nativeWorkspace:favoritesChanged", "nativeWorkspace:materialRenamed", "nativeWorkspace:materialDeleted"].contains(event.channel) { Task { await reload() } }
-            }
-            .alert("즐겨찾기 이름", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-                TextField("이름", text: $renamedLabel)
-                Button("취소", role: .cancel) { renaming = nil }
-                Button("저장") { if let favorite = renaming { mutate("favorites:rename", ["id": favorite.id, "label": renamedLabel]); renaming = nil } }
             }
     }
     private var linkForm: some View {

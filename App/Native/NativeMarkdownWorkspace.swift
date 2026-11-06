@@ -167,12 +167,6 @@ struct NativeMarkdownWorkspace: View {
             if let note = NativePDFPageNoteDocument(text), pageIndex >= note.pages.count || pageIndex < 0 { pageIndex = max(0, min(pageIndex, note.pages.count - 1)) }
         }
         .onChange(of: scenePhase) { _, phase in if phase != .active { save() } }
-        .confirmationDialog("파일을 다시 읽을까요?", isPresented: $confirmReload, titleVisibility: .visible) {
-            Button("파일 내용으로 되돌리기", role: .destructive) {
-                Task { do { try await session.reloadDiscardingDraft() } catch { copyMessage = error.localizedDescription } }
-            }
-            Button("취소", role: .cancel) {}
-        } message: { Text("저장하지 않은 편집 내용과 임시 저장본을 지우고 파일을 다시 읽습니다. 먼저 사본으로 보관할 수 있어요.") }
         .sheet(isPresented: $wikiPicker) {
             NavigationStack {
                 List(wikiMaterials.filter { wikiQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(wikiQuery) }) { material in
@@ -204,9 +198,7 @@ struct NativeMarkdownWorkspace: View {
             Button(editingLink ? "적용" : "삽입") { session.applyFormat?("link:" + linkAddress) }.disabled(linkAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             Button("취소", role: .cancel) {}
         }
-        .alert("텍스트 노트", isPresented: Binding(get: { copyMessage != nil }, set: { if !$0 { copyMessage = nil } })) {
-            Button("확인", role: .cancel) { copyMessage = nil }
-        } message: { Text(copyMessage ?? "") }
+        .bandalToast($copyMessage)
     }
 
     private func attachAnnotatedText() {
@@ -289,6 +281,9 @@ struct NativeMarkdownWorkspace: View {
                     Button("파일 다시 읽기", systemImage: "arrow.clockwise") { confirmReload = true }
                     Button(sourceMode ? "서식 편집" : "Markdown 원문") { session.prepareForFlush?(); sourceMode.toggle() }
                 } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("서식과 노트 작업").accessibilityIdentifier("native-markdown-more")
+                    .bandalConfirm("파일을 다시 읽을까요?", isPresented: $confirmReload, message: "저장하지 않은 편집과 임시 저장본을 지우고 파일을 다시 읽어요.", action: "파일 내용으로 되돌리기", destructive: true) {
+                        Task { do { try await session.reloadDiscardingDraft() } catch { copyMessage = error.localizedDescription } }
+                    }
                     .accessibilityValue(session.saving || session.dirty ? "저장 중" : "저장됨")
                 Button { session.prepareForFlush?(); sourceMode.toggle() } label: { Image(systemName: sourceMode ? "textformat" : "chevron.left.forwardslash.chevron.right").frame(width: 44, height: 44) }
                     .accessibilityLabel(sourceMode ? "서식 편집" : "Markdown 원문").accessibilityIdentifier("native-markdown-source-toggle")

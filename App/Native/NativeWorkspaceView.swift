@@ -335,9 +335,7 @@ struct NativeWorkspaceView: View {
         }
         .sheet(isPresented: $showingCourseSheet) { courseSheet }
         .sheet(isPresented: $showingCourseManager) { NativeCourseManager(store: store) }
-        .alert("작업을 완료하지 못했어요", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
-            Button("확인", role: .cancel) { store.errorMessage = nil }
-        } message: { Text(store.errorMessage ?? "") }
+        .bandalToast(Binding(get: { store.errorMessage }, set: { store.errorMessage = $0 }))
         .task {
             await store.start()
             // Sync, auth and settings can wait for the restored tabs; the first screen cannot.

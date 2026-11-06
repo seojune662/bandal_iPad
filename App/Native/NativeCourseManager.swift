@@ -4,7 +4,7 @@ struct NativeCourseManager: View {
     var store: NativeWorkspaceStore
     @Environment(\.dismiss) private var dismiss
     @State private var courses: [ManagedCourse] = []
-    @State private var renaming: ManagedCourse?
+    @State private var renamingID: String?
     @State private var busy = false
     @State private var error: String?
     private struct ManagedCourse: Decodable, Identifiable {
@@ -26,12 +26,14 @@ struct NativeCourseManager: View {
                                 HStack {
                                     Image(systemName:course.archived ? "archivebox" : "books.vertical").foregroundStyle(.secondary)
                                     VStack(alignment:.leading) {
-                                        Text(course.name)
+                                        BandalInlineEditor(text:course.name,isEditing:Binding(get:{ renamingID == course.id },set:{ renamingID = $0 ? course.id : nil }),identifier:"native-manager-rename") { name in
+                                            change { _ = try await store.invoke("courses:rename",["courseId":course.id,"name":name]) }
+                                        }
                                         if course.missing { Text("폴더 연결이 필요해요").font(.caption).foregroundStyle(.orange) }
                                     }
                                     Spacer()
                                     Menu {
-                                        Button("이름 변경",systemImage:"pencil") { renaming = course }
+                                        Button("이름 변경",systemImage:"pencil") { renamingID = course.id }
                                         if course.missing {
                                             Button("폴더 다시 연결",systemImage:"folder.badge.questionmark") { relink(course) }
                                         }
@@ -60,12 +62,6 @@ struct NativeCourseManager: View {
             .navigationTitle("과목 관리").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement:.confirmationAction) { Button("완료") { dismiss() } } }
             .task { await load() }
-            .sheet(item:$renaming) { course in
-                NativeNameSheet(title:"과목 이름",prompt:"과목 이름",initialValue:course.name,actionTitle:"저장") { name in
-                    try await store.flushDocuments()
-                    _ = try await store.invoke("courses:rename",["courseId":course.id,"name":name]); await load()
-                }
-            }
         }
     }
     private func load() async {

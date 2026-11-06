@@ -195,9 +195,7 @@ struct NativeLibrarySourceTray: View {
             case .failure(let error): model.error = error.localizedDescription
             }
         }
-        .alert("사진·파일을 처리하지 못했어요", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-            Button("확인", role: .cancel) { model.error = nil }
-        } message: { Text(model.error ?? "") }
+        .bandalToast(Binding(get: { model.error }, set: { model.error = $0 }))
     }
     private func sourceButton(_ title: String, symbol: String, identifier: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {

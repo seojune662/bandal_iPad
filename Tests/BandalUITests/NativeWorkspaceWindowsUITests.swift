@@ -318,13 +318,13 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
     }
     @MainActor private func renameWindow(_ old: String, to name: String, app: XCUIApplication) {
         app.buttons[old + " 이름 변경"].tap()
-        let alert = app.alerts["윈도우 이름"], field = alert.textFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap()
+        let field = app.textFields["native-window-rename-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
         let previous = field.value as? String ?? old
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
         field.typeText(name)
         XCTAssertEqual(field.value as? String, name)
-        alert.buttons["저장"].tap()
+        field.typeText("\n")
         XCTAssertTrue(app.buttons[name + " 이름 변경"].waitForExistence(timeout: 5), app.debugDescription)
     }
     @MainActor private func changeMode(_ title: String, app: XCUIApplication) {
