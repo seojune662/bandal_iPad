@@ -673,8 +673,9 @@ struct NativeBrowserWorkspace: View {
     /// History, downloads, saved logins and a new profile open under the ⋮ menu they come from.
     private var browserPanelOpen: Bool { credentialContext != nil || showingHistory || showingDownloads || showingProfile }
     private func closeBrowserPanels() {
-        if showingDownloads { showingDownloads = false; finishDownloadPresentation() }
-        if showingProfile { showingProfile = false; finishProfileCreation() }
+        // A save/share picker or profile switch waits for the popover to finish closing.
+        if showingDownloads { showingDownloads = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { finishDownloadPresentation() } }
+        if showingProfile { showingProfile = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { finishProfileCreation() } }
         credentialContext = nil; showingHistory = false
     }
     @ViewBuilder private var browserPanel: some View {

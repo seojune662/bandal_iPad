@@ -613,16 +613,19 @@ struct NativeAssistantPanel: View {
             if let signInError { Text(signInError).font(.system(size:11)).foregroundStyle(.red) }
         }.accessibilityElement(children:.contain).accessibilityIdentifier("native-ai-sign-in-prompt")
     }
+    private func signedOut() async -> Bool {
+        ((try? await store.invoke("auth:getState")) as? [String: Any])?["phase"] as? String != "signed-in"
+    }
     /// Send, quiz, flashcards, expected exam: signed out opens the sign-in prompt instead of an error.
     private func submit() {
         Task {
             if !session.configured { await session.checkAvailability() }
-            if !session.configured {
-                let state = (try? await store.invoke("auth:getState")) as? [String: Any]
-                if state?["phase"] as? String != "signed-in" { signInError = nil; showingSignIn = true; return }
-            }
+            if !session.configured, await signedOut() { signInError = nil; showingSignIn = true; return }
             do { try await session.send() }
-            catch let error as DesktopRuntimeError where error.code == "SIGN_IN_REQUIRED" { showingSignIn = true }
+            catch let error as DesktopRuntimeError where error.code == "SIGN_IN_REQUIRED" {
+                // Signed in but AI unavailable (offline, proxy down): say so instead of asking to sign in.
+                if await signedOut() { showingSignIn = true } else { session.error = "지금은 AI에 연결할 수 없어요. 잠시 뒤 다시 해 주세요." }
+            }
             catch { session.error = error.localizedDescription }
         }
     }

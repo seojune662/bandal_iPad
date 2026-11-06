@@ -76,7 +76,9 @@ struct NativeLearningSidebar: View {
             HStack { Text("학습 공간").font(NativeDesktopTheme.font(16, weight: .semibold)); Spacer(); NativeChromeButton(title: "학습 공간 새로고침", symbol: "arrow.clockwise") { Task { await model.reload(store) } } }
             HStack { Image(systemName: "magnifyingglass"); TextField("공간 검색", text: $query).textFieldStyle(.plain) }.font(NativeDesktopTheme.font(12)).padding(8).background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 8))
             Menu { ForEach(NativeLearningStartKind.allCases) { kind in Button(kind.title) { creating = kind } } } label: { Label("새 학습", systemImage: "plus").foregroundStyle(NativeDesktopTheme.onAccent).frame(maxWidth: .infinity, minHeight: 36) }.buttonStyle(.borderedProminent).tint(NativeDesktopTheme.accent)
-                .popover(item: $creating, arrowEdge: .leading) { kind in NativeLearningStartSheet(store: store, kind: kind, source: nil, onOpen: onOpen) }
+                .bandalPopover(isPresented: Binding(get: { creating != nil }, set: { if !$0 { creating = nil } }), arrowEdge: .leading, width: nil) {
+                    if let kind = creating { NativeLearningStartSheet(store: store, kind: kind, source: nil, onOpen: onOpen) }
+                }
             if model.loading { ProgressView() }
             if let error = model.error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red) }
             ScrollView { NativeLearningGroups(projects: model.projects.filter { $0.deletedAt == nil && (query.isEmpty || ($0.name + " " + $0.topic).localizedStandardContains(query)) }, store: store, onOpen: onOpen) }

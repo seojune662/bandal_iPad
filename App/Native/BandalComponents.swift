@@ -57,11 +57,21 @@ private struct BandalDeferredPopover<Body: View>: ViewModifier {
     let arrowEdge: Edge
     @ViewBuilder let body: () -> Body
     @State private var shown = false
+    @State private var appeared = false
     func body(content: Content) -> some View {
         content
-            .popover(isPresented: Binding(get: { shown }, set: { shown = $0; if !$0 { isPresented = false } }), arrowEdge: arrowEdge, content: body)
+            .popover(isPresented: Binding(get: { shown }, set: { shown = $0; if !$0 { isPresented = false } }), arrowEdge: arrowEdge) {
+                body().onAppear { appeared = true }
+            }
             .onChange(of: isPresented, initial: true) { _, wanted in
-                if wanted { DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { if isPresented { shown = true } } } else { shown = false }
+                guard wanted else { shown = false; appeared = false; return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { if isPresented { shown = true } }
+                // Still not on screen after the menu has surely closed: ask once more.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    guard isPresented, !appeared else { return }
+                    shown = false
+                    DispatchQueue.main.async { if isPresented { shown = true } }
+                }
             }
     }
 }

@@ -28,10 +28,10 @@ struct NativeBrowserTabStrip: View {
                     .accessibilityLabel("새 탭").accessibilityIdentifier("native-browser-add-tab")
                 Button { showingList = true } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .accessibilityLabel("브라우저의 열린 탭 \(tabs.count)개").accessibilityIdentifier("native-browser-tabs-list")
-                    .bandalPopover(isPresented: Binding(get: { showingList }, set: { if !$0 { showingList = false; finishClose() } }), width: 340) {
+                    .bandalPopover(isPresented: Binding(get: { showingList }, set: { if !$0 { showingList = false; finishCloseAfterDismissal() } }), width: 340) {
                         NativeBrowserTabList(tabs: tabs, activeID: activeID,
                             select: { id in select(id); showingList = false },
-                            close: { id in pendingClose = id; showingList = false; finishClose() })
+                            close: { id in pendingClose = id; showingList = false; finishCloseAfterDismissal() })
                     }
             }.padding(.horizontal, 4).buttonStyle(.plain).font(.system(size: 13))
         }.frame(height: 44).clipped().background(NativeDesktopTheme.surface)
@@ -59,6 +59,7 @@ struct NativeBrowserTabStrip: View {
                     .accessibilityIdentifier("native-browser-context-close-tab")
             }
     }
+    private func finishCloseAfterDismissal() { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { finishClose() } }
     private func finishClose() {
         guard let id = pendingClose else { return }; pendingClose = nil
         // beforeunload may present a confirmation. The list must finish dismissal

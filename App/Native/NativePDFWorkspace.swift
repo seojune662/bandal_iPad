@@ -92,7 +92,7 @@ struct NativePDFWorkspace: View {
         .background(NativeDesktopTheme.bgApp)
         .accessibilityElement(children: .contain).accessibilityIdentifier(visible ? "native-pdf-pane-" + tabID : "")
         // 원문 메모 and 댓글 open over the page; closing keeps the edit (Esc cancels, 실행 취소 undoes).
-        .popover(isPresented: Binding(get: { model.showAnnotationEditor }, set: { if !$0, model.showAnnotationEditor { model.commitAnnotation() } }),
+        .popover(isPresented: Binding(get: { model.showAnnotationEditor }, set: { if !$0, model.showAnnotationEditor { model.closeAnnotationEditor() } }),
                  attachmentAnchor: .point(UnitPoint(x: 0.5, y: 0.3)), arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 8) {
                 BandalSectionHeader("원문 메모")
@@ -1910,6 +1910,12 @@ final class NativePDFWorkspaceModel {
         annotationDraft = nil; showAnnotationEditor = false; performAnnotationEdit("delete", value: value)
     }
     func cancelAnnotation() { annotationDraft = nil; showAnnotationEditor = false; restoreInput() }
+    /// Closing the memo popover keeps an edit; an existing memo left as it was is not rewritten.
+    func closeAnnotationEditor() {
+        guard let draft = annotationDraft else { showAnnotationEditor = false; return }
+        let unchanged = editingAnnotation && annotationColor == (draft["color"] as? String ?? "yellow") && annotationComment == (draft["comment"] as? String ?? "")
+        if unchanged || editorTask != nil { cancelAnnotation() } else { commitAnnotation() }
+    }
     func dismissAnnotation() { annotationDraft = nil; restoreInput() }
     private func performAnnotationEdit(_ action: String, value: [String: Any], expected: [String: Any]? = nil) {
         guard editorTask == nil, let persistence, !retired else { return }

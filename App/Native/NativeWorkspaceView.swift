@@ -904,7 +904,7 @@ struct NativeWorkspaceView: View {
     }
 
     private func createCourse(_ name: String) async throws {
-        guard !busy else { return }
+        guard !busy else { throw DesktopRuntimeError("이전 작업을 마치는 중이에요. 잠시 뒤 다시 해 주세요.") }
         busy = true
         defer { finishWorkspaceTransition() }
         try await store.createCourse(name: name)
@@ -1229,8 +1229,12 @@ struct NativeWorkspaceView: View {
             case "close-tab": if let id = navigation.activeID { closeDocuments([id]) }
             case "new-tab":
                 if store.selectedCourseID == nil { openTool(.browser, new: true) }
-                else if let group = navigation.focusedGroupID, !navigation.documents.isEmpty { store.events.send(.init(channel: "nativeDock:newTab", payload: ["groupID": group])) }
-                else { showingNewTabMenu = true }
+                else if let group = navigation.focusedGroupID, !navigation.documents.isEmpty {
+                    // The dock's + must be on screen to anchor its menu: come back to the workspace first.
+                    if !showsWorkspace { transition { section = .library; auxiliary = nil; learningHome = false } }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + (showsWorkspace ? 0 : 0.4)) { store.events.send(.init(channel: "nativeDock:newTab", payload: ["groupID": group])) }
+                }
+                else { if !showsWorkspace { transition { section = .library; auxiliary = nil; learningHome = false } }; showingNewTabMenu = true }
             case "new-markdown": openNewTab(.markdown(title: nil), navigation.focusedGroupID ?? "")
             case "new-whiteboard": openNewTab(.note, navigation.focusedGroupID ?? "")
             case "next-tab", "previous-tab", "prev-tab":
