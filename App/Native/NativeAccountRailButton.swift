@@ -81,7 +81,7 @@ struct NativeAccountRailButton: View {
                     .accessibilityIdentifier("native-account-usage")
             }
             helpRows
-            BandalMenuRow("플랜 보기", symbol: "sparkles") { close(); MembershipPaywall.present(message: nil, variant: membership.tier == .plus ? .upgrade : .all) }
+            BandalMenuRow("플랜 보기", symbol: "sparkles") { close(); MembershipPaywall.present() }
                 .accessibilityIdentifier("native-account-plans")
             BandalMenuDivider()
             BandalMenuRow(busy ? "로그아웃 중…" : "로그아웃", symbol: "rectangle.portrait.and.arrow.right") { signOut() }

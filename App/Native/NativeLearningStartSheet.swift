@@ -22,6 +22,8 @@ struct NativeLearningStartSheet: View {
     private var selectedText: String { source.flatMap { store.documentSelections[$0.id] } ?? "" }
     @State private var busy = false
     @State private var error: String?
+    /// A Pro member out of AI: 충전 shows here, in this popover, instead of over it.
+    @State private var needsCredit = false
     private var title: String { packID == "summary" ? "요약 만들기" : kind.title }
     private var courses: [NativeCourse] { store.courses.filter { $0.workspaceKind != "study-space" } }
     private var materialAvailable: Bool { source != nil && ["pdf", "note", "file"].contains(source!.kind) && source!.courseID == courseID }
@@ -63,6 +65,7 @@ struct NativeLearningStartSheet: View {
             }
             .font(.system(size: BandalMetrics.bodySize)).textFieldStyle(.roundedBorder)
             if let error { Text(error).font(.system(size: 11)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            if needsCredit { AICreditPopover { needsCredit = false }.background(NativeDesktopTheme.surface, in: .rect(cornerRadius: BandalMetrics.radius)) }
             HStack {
                 Spacer()
                 Button { start() } label: { if busy { ProgressView() } else { Text(kind == .english && packID == nil ? "만들기" : "생성") } }
@@ -87,7 +90,7 @@ struct NativeLearningStartSheet: View {
         } catch { self.error = error.localizedDescription }
     }
     private func start() {
-        guard !busy, !invalid else { return }; busy = true; error = nil
+        guard !busy, !invalid else { return }; busy = true; error = nil; needsCredit = false
         Task { @MainActor in
             defer { busy = false }
             do {
@@ -107,7 +110,10 @@ struct NativeLearningStartSheet: View {
                 guard let row = result as? [String: Any], let rawBinding = row["binding"] else { throw DesktopRuntimeError("학습 공간을 열지 못했습니다.") }
                 let created: NativeLearningBinding = try NativeToolJSON.decode(rawBinding)
                 dismiss(); onOpen(created)
-            } catch { self.error = error.localizedDescription }
+            } catch {
+                self.error = error.localizedDescription
+                if (error as? DesktopRuntimeError)?.code == "BUDGET_EXHAUSTED", AIUsage.shared.creditPrompt != nil { AIUsage.shared.creditPrompt = nil; needsCredit = true }
+            }
         }
     }
 }

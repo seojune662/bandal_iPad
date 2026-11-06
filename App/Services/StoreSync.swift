@@ -7,7 +7,7 @@ import os
 @MainActor
 final class StoreSync {
     static let shared = StoreSync()
-    static let creditPack = "app.bandal.ipad.credit.pack1"
+    nonisolated static let creditPack = "app.bandal.ipad.credit.pack1"
     /// `ipad-store` call for the signed-in account; nil while signed out.
     var post: (([String: Any]) async throws -> [String: Any])?
     /// The AI status the server returned (plan, budget, credit).

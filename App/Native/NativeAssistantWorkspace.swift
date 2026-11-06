@@ -405,8 +405,10 @@ struct NativeAssistantPanel: View {
                 HStack(alignment:.top,spacing:8) {
                     Image(systemName:"exclamationmark.circle").foregroundStyle(.orange)
                     Text(error).font(.caption).frame(maxWidth:.infinity,alignment:.leading)
+                    if session.errorCode == "TASK_CAP_REACHED" || session.errorCode == "BUDGET_EXHAUSTED" && AIUsage.shared.plan == "pro" {
+                        AICreditButton(opensOnLimit:true,identifier:"native-ai-task-cap-credit").font(.caption).frame(minHeight:44)
+                    }
                     if session.errorCode == "TASK_CAP_REACHED" {
-                        Button("AI 충전") { AICreditSheet.present() }.font(.caption).frame(minHeight:44).accessibilityIdentifier("native-ai-task-cap-credit")
                         Button("Auto로 바꾸기") { perform { try await session.configure(model:"default",effort:nil); session.error = nil } }.font(.caption).frame(minHeight:44)
                     }
                     Button("초안 복원") { session.restoreAttempt(); session.error = nil }.font(.caption).frame(minHeight:44)

@@ -23,12 +23,15 @@ final class AIUsage: ObservableObject {
         creditUcents = (usage["creditUcents"] as? NSNumber)?.int64Value ?? creditUcents
     }
 
-    /// Where a refusal sends the user: free → membership (Plus first), Plus → Pro (with a credit link),
-    /// Pro → credit. A task cap only stops that task; the chat says so and nothing opens.
-    enum Destination: Equatable { case none, membership, upgrade, credit }
+    /// A Pro member out of AI: the chat's 충전 button opens its popover with this reason, then clears it.
+    @Published var creditPrompt: String?
+
+    /// Where a refusal sends the user: free or Plus → the plans with Pro picked, Pro → 충전.
+    /// A task cap only stops that task; the chat says so and offers 충전 there.
+    enum Destination: Equatable { case none, plans, credit }
     static func destination(_ code: String, plan: String) -> Destination {
         guard code == "BUDGET_EXHAUSTED" else { return .none }
-        switch plan { case "pro": return .credit; case "plus": return .upgrade; default: return .membership }
+        return plan == "pro" ? .credit : .plans
     }
 
     /// A budget or task-cap refusal from the proxy.
@@ -37,9 +40,8 @@ final class AIUsage: ObservableObject {
         let message = AIError.describe(code, usage)
         switch destination(code, plan: usage["plan"] as? String ?? shared.plan) {
         case .none: break
-        case .membership: MembershipPaywall.present(message: message, variant: .all)
-        case .upgrade: MembershipPaywall.present(message: message, variant: .upgrade)
-        case .credit: AICreditSheet.present(message: message)
+        case .plans: MembershipPaywall.present(message: message, highlight: .pro)
+        case .credit: shared.creditPrompt = message
         }
     }
 }

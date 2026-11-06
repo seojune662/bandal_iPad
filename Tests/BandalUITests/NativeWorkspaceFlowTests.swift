@@ -324,8 +324,8 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         attachScreenshot(app, name: "Settings subscription panel (free)")
         open.tap()
         XCTAssertTrue(app.buttons["membership-close"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["membership-trial-note"].waitForExistence(timeout: 5), app.debugDescription)
-        attachScreenshot(app, name: "Membership paywall (Plus and Pro)")
+        XCTAssertTrue(app.staticTexts["membership-title"].waitForExistence(timeout: 5), app.debugDescription)
+        attachScreenshot(app, name: "Membership paywall (Free, Plus and Pro)")
         XCTAssertFalse(reason.exists)
     }
 
