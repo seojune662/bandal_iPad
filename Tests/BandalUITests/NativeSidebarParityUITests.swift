@@ -43,7 +43,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCTAssertTrue((input.value as? String ?? "").contains("Explain this material"))
         app.buttons["native-ai-mode-expected-exam"].tap()
         XCTAssertTrue((input.value as? String ?? "").contains("Explain this material"))
-        XCTAssertTrue(app.buttons["native-ai-connect"].exists, "No key is required to compose a request")
+        XCTAssertTrue(app.buttons["native-chat-send"].exists && !app.buttons["native-ai-connect"].exists, "No key or connect step to compose a request")
         XCTAssertFalse(app.otherElements["native-document-assistant"].exists)
         capture("Project notes and unified AI with exam mode")
         app.buttons["native-ai-rail-toggle"].tap(); openAI(app)
