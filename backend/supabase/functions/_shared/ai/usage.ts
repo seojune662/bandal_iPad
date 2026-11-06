@@ -10,6 +10,10 @@ export class UsageMeter {
   exact = false
   /** The provider finished the step normally. */
   completed = false
+  /** The provider stopped at the output limit (OpenAI `response.incomplete`); still a delivered answer. */
+  truncated = false
+  /** Something reached the user: text, thinking, or a tool call. */
+  content = false
   usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
   constructor(readonly provider: Provider) {}
 
@@ -23,6 +27,10 @@ export class UsageMeter {
     }
   }
 
+  /** A step the model itself broke (error event, `response.failed`, cut-off stream, timeout) or that
+   *  produced nothing is not the user's to pay for. A client leaving does not count: upstream is read to the end. */
+  get billable(): boolean { return (this.completed || this.truncated) && this.content }
+
   /** Usage to charge: exact when the provider reported it, otherwise estimated from what streamed. */
   charge(estimatedInput: number): Usage {
     if (this.exact) return this.usage
@@ -31,6 +39,11 @@ export class UsageMeter {
       output: Math.max(this.usage.output, Math.ceil(this.generatedBytes / 3)),
       cacheRead: this.usage.cacheRead, cacheWrite: this.usage.cacheWrite,
     }
+  }
+
+  private generated(count: number) {
+    this.generatedBytes += count
+    if (count > 0) this.content = true
   }
 
   private line(data: string) {
@@ -46,9 +59,11 @@ export class UsageMeter {
     if (type === 'message_start') {
       this.inputSeen = true
       this.applyAnthropic(record(record(event.message).usage))
+    } else if (type === 'content_block_start') {
+      if (record(event.content_block).type === 'tool_use') this.content = true
     } else if (type === 'content_block_delta') {
       const delta = record(event.delta)
-      this.generatedBytes += bytes(delta.text) + bytes(delta.partial_json) + bytes(delta.thinking)
+      this.generated(bytes(delta.text) + bytes(delta.partial_json) + bytes(delta.thinking))
     } else if (type === 'message_delta') {
       // Cumulative: carries the final output and, after server-side work, updated input counts.
       this.applyAnthropic(record(event.usage))
@@ -69,7 +84,9 @@ export class UsageMeter {
   private openai(event: Record<string, unknown>) {
     const type = String(event.type ?? '')
     if (type.endsWith('.delta')) {
-      this.generatedBytes += bytes(event.delta)
+      this.generated(bytes(event.delta))
+    } else if (type === 'response.output_item.added') {
+      if (record(event.item).type === 'function_call') this.content = true
     } else if (type === 'response.completed' || type === 'response.incomplete' || type === 'response.failed') {
       const usage = record(record(event.response).usage)
       if (Object.keys(usage).length > 0) {
@@ -79,6 +96,7 @@ export class UsageMeter {
         this.exact = true
       }
       if (type === 'response.completed') this.completed = true
+      if (type === 'response.incomplete') this.truncated = true
     }
   }
 }
