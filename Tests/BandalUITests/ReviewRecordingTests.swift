@@ -116,9 +116,13 @@ final class ReviewRecordingTests: XCTestCase {
         tap(app.buttons["native-section-assistant"]); pause(2)
         type("예제 행렬의 고유값을 단계별로 설명해 줘", into: app.textFields["native-chat-input"])
         tap(app.buttons["native-chat-send"])
-        XCTAssertTrue(app.buttons["native-ai-consent-cancel"].waitForExistence(timeout: 10), app.debugDescription)
+        // Since 1.4.0 AI goes through the Bandal server: signed out, the chat asks to sign in first; signed in,
+        // the per-provider consent sheet follows (record that part on a device with an account).
+        let consent = app.buttons["native-ai-consent-cancel"]
+        let signIn = app.staticTexts.containing(NSPredicate(format: "label CONTAINS '로그인'")).firstMatch
+        XCTAssertTrue(consent.waitForExistence(timeout: 10) || signIn.exists, app.debugDescription)
         pause(6)
-        tap(app.buttons["native-ai-consent-cancel"]); pause(2.5)
+        if consent.exists { tap(consent); pause(2.5) }
     }
 
     @MainActor private func showSettings() {

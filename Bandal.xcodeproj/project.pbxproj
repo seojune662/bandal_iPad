@@ -352,6 +352,7 @@
 		AE1897DAF8AAAFDE7033A563 /* CloudSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A92C59758443179D13CF96 /* CloudSyncEngine.swift */; };
 		AE2CEC52CB2F06DECF961F9A /* NativeWorkspaceWindows.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36D165B0DA778ACFB1689EA /* NativeWorkspaceWindows.swift */; };
 		AE2CFC7EB658BAA5104489FC /* BrowserBookmarkImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BEF0E2C1B0189CF19E95F5 /* BrowserBookmarkImport.swift */; };
+		AE9AAB69F4CC2EC89D6E0B76 /* NativeAIModelPickerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEE90787A9EB52F9E38987C7 /* NativeAIModelPickerUITests.swift */; };
 		AF951D5016217C65848E6B2B /* NativePDFNavigationContinuityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FF817C241EB274EBB09F0D0 /* NativePDFNavigationContinuityTests.swift */; };
 		AFD631051B15F712B62C18CA /* DesktopBrowserHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4287F38BBAFDC95872B41A36 /* DesktopBrowserHost.swift */; };
 		B0328C6FC815C7B806173132 /* NativeLearningHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632B9A61D2B88FB9C97BB2FC /* NativeLearningHome.swift */; };
@@ -993,6 +994,7 @@
 		DD7CCC2116F10114E1E2C0AF /* NativePDFApertureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFApertureView.swift; sourceTree = "<group>"; };
 		DDB2388ACFB138B0D7851F3F /* NativePDFErasureLatencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFErasureLatencyTests.swift; sourceTree = "<group>"; };
 		DEAC1A7BEE87A96F4EED0940 /* NativePDFObjectRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFObjectRenderer.swift; sourceTree = "<group>"; };
+		DEE90787A9EB52F9E38987C7 /* NativeAIModelPickerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAIModelPickerUITests.swift; sourceTree = "<group>"; };
 		DFA44D4C111224DE535BC0AA /* NativeLearningModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLearningModels.swift; sourceTree = "<group>"; };
 		DFAD5A2207AB6EBAEA6DF9CC /* DesktopScribbleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopScribbleTests.swift; sourceTree = "<group>"; };
 		E0A360CBB0ED8301FC334B65 /* NativePDFPageEditingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageEditingTests.swift; sourceTree = "<group>"; };
@@ -1657,6 +1659,7 @@
 			children = (
 				0E44669BA478AFAE36158A0C /* AppStoreScreenshotTests.swift */,
 				97EE3439035BD5A758666224 /* BandalUITests-Bridging-Header.h */,
+				DEE90787A9EB52F9E38987C7 /* NativeAIModelPickerUITests.swift */,
 				033D44E19032ECF43A49CD24 /* NativeAnnotationUITests.swift */,
 				34A3C185731156FEC9A234E7 /* NativeBrowserLoginUITests.swift */,
 				87D55AA6B8BF59A08F3B1961 /* NativeBrowserParityUITests.swift */,
@@ -2110,6 +2113,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				2EEB19162846FDABA7B4DA00 /* AppStoreScreenshotTests.swift in Sources */,
+				AE9AAB69F4CC2EC89D6E0B76 /* NativeAIModelPickerUITests.swift in Sources */,
 				A85DC63DF09E5B2BCA7B9736 /* NativeAnnotationUITests.swift in Sources */,
 				B0F88FDB0D3F45E495E0D0DC /* NativeBrowserLoginUITests.swift in Sources */,
 				A6783D394D34F21F2C262902 /* NativeBrowserParityUITests.swift in Sources */,

@@ -68,20 +68,20 @@ final class NativeAssistantService {
         turns[session] = Turn(course:course,session:session,provider:provider,sequence:sequence,requestID:requestID,blockID:UUID().uuidString,workspace:workspace,document:document)
         let task = Task { [weak self] in
             guard let self else { return }
-            var interrupted = false, failure: String?, usage: [String:Any]?, model: String?
+            var interrupted = false, failure: String?, failureCode: String?, usage: [String:Any]?, model: String?
             let started = Date()
             do {
                 let result = try await self.ai.handle(channel:"native:aiRun",request:input) as? [String:Any]
                 if let text = result?["text"] as? String { self.turns[session]?.text = text }
                 usage = result?["usage"] as? [String:Any]; model = result?["model"] as? String
-            } catch { interrupted = true; if !(error is CancellationError) { failure = error.localizedDescription } }
+            } catch { interrupted = true; if !(error is CancellationError) { failure = error.localizedDescription; failureCode = (error as? DesktopRuntimeError)?.code } }
             guard let turn = self.turns[session] else { return }
             do {
                 var completion: [String:Any] = ["courseId":course,"sessionId":session,"turnSeq":sequence,"text":turn.text,"interrupted":interrupted]
                 if let usage { completion["usage"] = usage; completion["durationMs"] = Int(Date().timeIntervalSince(started)*1000); completion["model"] = model ?? NativeValue.null }
                 _ = try await self.runtime.invokePrivate("nativeChat:finish",request:completion)
             } catch { failure = "응답 저장 실패: \(error.localizedDescription)" }
-            if let failure { self.publish(session,["type":"error","message":failure]) }
+            if let failure { self.publish(session,["type":"error","message":failure,"code":failureCode ?? NativeValue.null]) }
             self.publish(session,["type":"turn-complete","stopReason":interrupted ? "interrupted" : "success"])
             self.turns.removeValue(forKey:session)
         }

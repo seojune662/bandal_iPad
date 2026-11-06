@@ -130,6 +130,8 @@ final class DesktopAIService {
             let endpoint = try await environment.endpoint()
             var config = try await configuration(endpoint)
             guard let (model, provider) = Self.resolve(request["model"] as? String, config: config) else { throw AIError.server(code: "AI_UNAVAILABLE", info: [:]) }
+            // Auto is the cheap default: always the lowest effort, whatever the session stored.
+            let isAuto = (config["auto"] as? [String: Any])?["id"] as? String == model && request["model"] as? String != model
             try await consent(provider, config: config, endpoint: endpoint)
             config = self.config ?? config
             try Task.checkCancellation()
@@ -156,7 +158,7 @@ final class DesktopAIService {
                         let output = try await execute(identifier, ["id": call.id, "name": call.name, "arguments": call.arguments])
                         return output.count > limit ? String(output.prefix(limit)) + "\n[이후 내용은 길이 제한으로 생략됨]" : output
                     } catch { return "도구 실행 실패: \(error.localizedDescription)" }
-                }, images: images, effort: request["effort"] as? String, onDeltaAsync: { text in
+                }, images: images, effort: isAuto ? "low" : request["effort"] as? String, onDeltaAsync: { text in
                     try Task.checkCancellation()
                     try await event(identifier, ["type": "text-delta", "text": text])
                 }, onUsage: { [weak self] usage in self?.remember(usage); onUsage(usage) })
