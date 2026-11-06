@@ -118,8 +118,8 @@ final class NativeWorkspaceStore {
         }
     }
     private struct Selection: Codable { let courseID: String? }
-    /// SwiftUI builds NativeWorkspaceView, and with it a throwaway store, more than once per launch.
-    /// A second reset would delete the folder under the live database ("disk I/O error").
+    /// Reset once per launch: a later store (a profile switch) resetting again would delete the folder
+    /// under a database that is still open ("disk I/O error").
     private static var resetUITesting = false
 
     init(storageRoot: URL? = nil) {
