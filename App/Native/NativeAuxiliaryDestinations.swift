@@ -21,6 +21,15 @@ struct NativeHelpView: View {
                         Label("PDF와 노트에는 Apple Pencil로 필기할 수 있습니다.", systemImage: "pencil.tip")
                     }.font(.system(size: 13))
                 }
+                NativeSettingsCard(title: "반달 둘러보기") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("왼쪽 +로 과목을 만들거나 폴더를 연결하고, 자료 목록에서 PDF·이미지·영상을 가져오세요.", systemImage: "1.circle")
+                        Label("PDF와 노트에는 Apple Pencil로 필기하고, 마크다운으로 정리하세요.", systemImage: "2.circle")
+                        Label("탭을 끌어 영역을 나누고, 경계를 끌어 비율을 바꾸세요.", systemImage: "3.circle")
+                        Label("로그인하면 반달 AI가 과목 자료를 읽고 답해요. 레일의 ✦로 AI 패널을 여세요.", systemImage: "4.circle")
+                        Label("편집은 기기에 자동 저장되고, 동기화를 켜면 다른 기기와 맞춰져요.", systemImage: "5.circle")
+                    }.font(.system(size: 13))
+                }
                 NativeSettingsCard(title: "도움말과 지원", description: "공식 문서와 변경 사항을 확인하세요.") {
                     VStack(alignment: .leading, spacing: 16) {
                         Button("키보드 단축키", systemImage: "keyboard") { shortcuts = true }
@@ -35,7 +44,7 @@ struct NativeHelpView: View {
                             }
                         Link(destination: URL(string: "https://bandal.io/ko/docs")!) { Label("사용 안내", systemImage: "book") }
                         Link(destination: URL(string: "https://bandal.io/ko/changelog")!) { Label("업데이트 내역", systemImage: "clock.arrow.circlepath") }
-                        Link(destination: URL(string: "https://github.com/seojune662/bandal/issues")!) { Label("문제 제보 · 기능 제안", systemImage: "bubble.left") }
+                        Link(destination: NativeAccountRailButton.contactURL) { Label("문의하기", systemImage: "envelope") }
                     }.buttonStyle(.plain)
                 }
                 Text("반달 \(version)").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)

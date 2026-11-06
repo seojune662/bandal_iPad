@@ -18,7 +18,10 @@ struct NativeSettingsBrowserPanel: View {
     @State private var notice: String?
     @State private var deletion: Deletion?
     @State private var importingBookmarks = false
-    private struct Deletion { let title: String; let channel: String; let request: [String: Any] }
+    struct Deletion {
+        let title: String; let channel: String; let request: [String: Any]
+        var key: String { channel + (request["origin"] as? String ?? "") }
+    }
     private var browser: [String: Any] { settings["browser"] as? [String: Any] ?? [:] }
     var body: some View {
         VStack(spacing: 24) {
@@ -33,12 +36,10 @@ struct NativeSettingsBrowserPanel: View {
         }.disabled(busy)
             .task { homePage = browser["homePage"] as? String ?? ""; await loadProfiles(); await loadData() }
             .onChange(of: profile) { _, _ in Task { await loadData() } }
-            .confirmationDialog(deletion?.title ?? "데이터를 삭제할까요?", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } })) {
-                Button("삭제", role: .destructive) {
-                    guard let choice = deletion else { return }; deletion = nil
-                    run { _ = try await store.invoke(choice.channel, choice.request); await loadProfiles(); await loadData(); notice = "선택한 데이터를 삭제했습니다." }
-                }
-            } message: { Text("선택한 프로필에만 적용됩니다. 로그인 정보나 사이트 데이터가 삭제되면 다시 로그인해야 할 수 있습니다.") }
+
+    }
+    private func performDeletion(_ choice: Deletion) {
+        run { _ = try await store.invoke(choice.channel, choice.request); await loadProfiles(); await loadData(); notice = "삭제했어요." }
     }
     private var navigation: some View {
         NativeSettingsCard(title: "홈페이지·검색·확대/축소", description: "새 브라우저 페이지에서 사용할 기본값입니다.") {
@@ -68,7 +69,7 @@ struct NativeSettingsBrowserPanel: View {
             HStack {
                 Button("프로필 추가") { run { _ = try await store.invoke("browser:saveProfile", ["name": profileName, "color": "blue", "icon": "globe"]); profileName = ""; await loadProfiles() } }.disabled(profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Spacer()
-                if profile != "default" { Button("선택한 프로필 삭제", role: .destructive) { deletion = .init(title: "프로필과 저장된 웹 데이터를 삭제할까요?", channel: "browser:deleteProfile", request: ["id": profile]) } }
+                if profile != "default" { Button("선택한 프로필 삭제", role: .destructive) { deletion = .init(title: "프로필과 저장된 웹 데이터를 삭제할까요?", channel: "browser:deleteProfile", request: ["id": profile]) }.modifier(NativeBrowserDeletionConfirm(deletion: $deletion, key: "browser:deleteProfile", perform: performDeletion)) }
             }
         }
     }
@@ -117,7 +118,7 @@ struct NativeSettingsBrowserPanel: View {
                 if sites.isEmpty { Text("저장된 사이트 쿠키가 없습니다.").foregroundStyle(NativeDesktopTheme.muted) }
                 ForEach(Array(sites.enumerated()), id: \.offset) { _, site in
                     if let origin = site["origin"] as? String {
-                        HStack { Text(origin).lineLimit(2); Spacer(); Button("로그아웃") { deletion = .init(title: "\(origin)의 쿠키를 삭제할까요?", channel: "browser:clearSession", request: ["profileId": profile, "origin": origin]) } }
+                        HStack { Text(origin).lineLimit(2); Spacer(); Button("로그아웃") { deletion = .init(title: "\(origin)의 쿠키를 삭제할까요?", channel: "browser:clearSession", request: ["profileId": profile, "origin": origin]) }.modifier(NativeBrowserDeletionConfirm(deletion: $deletion, key: "browser:clearSession" + origin, perform: performDeletion)) }
                     }
                 }
             }
@@ -127,9 +128,9 @@ struct NativeSettingsBrowserPanel: View {
                     VStack(alignment: .leading, spacing: 3) { Text(visit["title"] as? String ?? ""); Text(visit["url"] as? String ?? "").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted).textSelection(.enabled) }
                 }
                 if history.isEmpty { Text("방문 기록이 없습니다.").foregroundStyle(NativeDesktopTheme.muted) }
-                Button("이 프로필의 방문 기록 삭제", role: .destructive) { deletion = .init(title: "방문 기록을 삭제할까요?", channel: "browser:clearHistory", request: ["profileId": profile]) }
+                Button("이 프로필의 방문 기록 삭제", role: .destructive) { deletion = .init(title: "방문 기록을 삭제할까요?", channel: "browser:clearHistory", request: ["profileId": profile]) }.modifier(NativeBrowserDeletionConfirm(deletion: $deletion, key: "browser:clearHistory", perform: performDeletion))
             }
-            Button("쿠키·사이트 저장소·캐시 삭제", role: .destructive) { deletion = .init(title: "이 프로필의 모든 웹 데이터를 삭제할까요?", channel: "browser:clearStorage", request: ["profileId": profile, "cache": true]) }
+            Button("쿠키·사이트 저장소·캐시 삭제", role: .destructive) { deletion = .init(title: "이 프로필의 모든 웹 데이터를 삭제할까요?", channel: "browser:clearStorage", request: ["profileId": profile, "cache": true]) }.modifier(NativeBrowserDeletionConfirm(deletion: $deletion, key: "browser:clearStorage", perform: performDeletion))
         }
     }
     private var permissionPanel: some View {
@@ -164,3 +165,16 @@ struct NativeSettingsBrowserPanel: View {
     }
 }
 private extension Dictionary where Key == String, Value == String { var profileID: String { self["id"] ?? "" } }
+
+/// The browser-data "삭제할까요?" anchored on the button that asked.
+private struct NativeBrowserDeletionConfirm: ViewModifier {
+    @Binding var deletion: NativeSettingsBrowserPanel.Deletion?
+    let key: String
+    let perform: (NativeSettingsBrowserPanel.Deletion) -> Void
+    func body(content: Content) -> some View {
+        content.bandalConfirm(deletion?.title ?? "삭제할까요?", isPresented: Binding(get: { deletion?.key == key }, set: { if !$0 && deletion?.key == key { deletion = nil } }),
+                              message: "선택한 프로필에만 적용돼요.", action: "삭제", destructive: true) {
+            if let choice = deletion { deletion = nil; perform(choice) }
+        }
+    }
+}

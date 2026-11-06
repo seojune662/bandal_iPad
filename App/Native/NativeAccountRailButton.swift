@@ -15,7 +15,7 @@ struct NativeAccountRailButton: View {
     @State private var error: String?
 
     static let docsURL = URL(string: "https://bandal.io/ko/docs")!
-    static let contactURL = URL(string: "https://github.com/seojune662/bandal/issues")!
+    static let contactURL = URL(string: "mailto:hi@bandal.io")!
 
     private var signedIn: Bool { account["phase"] as? String == "signed-in" }
     private var email: String { account["email"] as? String ?? "" }

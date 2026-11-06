@@ -48,15 +48,29 @@ struct NativeSettingsShortcutsPanel: View {
     var body: some View {
         VStack(spacing: 24) {
             if let error { NativeToolError(message: error) }
-            NativeSettingsCard(title: "웹뷰 단축키 우선권", description: "외장 키보드에서 반달과 사이트가 같은 키를 사용할 때의 우선순위입니다. 탭 열기·닫기는 반달에서 처리합니다.") {
+            NativeSettingsCard(title: "단축키 우선권", description: "반달과 사이트가 같은 키를 쓸 때") {
                 Picker("우선권", selection: Binding(get: { settings["shortcutPriority"] as? String ?? "bandal" }, set: { persist(["shortcutPriority": $0]) })) { Text("반달 우선").tag("bandal"); Text("사이트 우선").tag("site") }
             }
-            NativeSettingsCard(title: "키 조합", description: "이 기기에서 동작하는 탭·브라우저 명령입니다. ⌘는 mod, ⌥는 alt, ⇧는 shift로 입력합니다.") {
+            NativeSettingsCard(title: "키 조합", description: "⌘ mod · ⌥ alt · ⇧ shift") {
                 TextField("단축키 검색", text: $query).nativeToolField()
                 ForEach(matching) { spec in
                     HStack {
                         Text(spec.label); Spacer()
                         Button(bindings[spec.id] is NSNull ? "지정 안 함" : NativeShortcutPreference.display(bindings[spec.id] as? String ?? spec.chord)) { chord = bindings[spec.id] as? String ?? spec.chord; editing = spec }
+                            .bandalPopover(isPresented: Binding(get: { editing?.id == spec.id }, set: { if !$0 && editing?.id == spec.id { editing = nil } }), width: 300) {
+                                // One key combination, set on Enter; taking a used one frees it elsewhere.
+                                VStack(alignment: .leading, spacing: 8) {
+                                    BandalSectionHeader(spec.label)
+                                    TextField("mod+shift+b", text: $chord).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                        .font(.system(size: BandalMetrics.bodySize, design: .monospaced)).textFieldStyle(.roundedBorder).onSubmit { update(spec, raw: chord) }
+                                        .accessibilityIdentifier("native-settings-shortcut-field")
+                                    HStack {
+                                        Button("지정 해제") { update(spec, raw: nil) }.foregroundStyle(.red)
+                                        Spacer()
+                                        Button("기본값") { var next = bindings; next.removeValue(forKey: spec.id); editing = nil; persist(["keybindings": next]) }
+                                    }.font(.system(size: 12)).buttonStyle(.plain)
+                                }
+                            }
                             .font(NativeDesktopTheme.font(12, design: .monospaced)).accessibilityIdentifier("native-settings-shortcut-" + spec.id)
                     }
                 }
@@ -64,25 +78,15 @@ struct NativeSettingsShortcutsPanel: View {
                     Button("JSON 가져오기") { importing = true }
                     Button("JSON 내보내기") { do { document = NativeShortcutDocument(data: try JSONSerialization.data(withJSONObject: ["keybindings": bindings], options: [.prettyPrinted, .sortedKeys])); exporting = true } catch { self.error = error.localizedDescription } }
                     Spacer(); Button("기본값 복원", role: .destructive) { resetting = true }
+                        .bandalConfirm("모든 단축키를 기본값으로 되돌릴까요?", isPresented: $resetting, action: "기본값 복원", destructive: true) { persist(["keybindings": [String: Any]()]) }
                 }
             }
         }.disabled(busy)
-            .sheet(item: $editing) { spec in
-                NavigationStack {
-                    Form {
-                        Section(spec.label) { TextField("mod+shift+b", text: $chord).textInputAutocapitalization(.never).autocorrectionDisabled().font(.body.monospaced()); Text("이미 사용 중인 키 조합을 지정하면 기존 동작은 해당 키에서 해제됩니다.").font(.caption) }
-                        Button("저장") { update(spec, raw: chord) }
-                        Button("지정 해제", role: .destructive) { update(spec, raw: nil) }
-                        Button("이 동작의 기본값") { var next = bindings; next.removeValue(forKey: spec.id); editing = nil; persist(["keybindings": next]) }
-                    }.navigationTitle("단축키 변경").toolbar { ToolbarItem(placement: .cancellationAction) { Button("취소") { editing = nil } } }
-                }.presentationDetents([.medium])
-            }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
                 do { let url = try result.get(); let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }; let value = try NativeShortcutPreference.validateImport(Data(contentsOf: url)); persist(["keybindings": value]) }
                 catch { self.error = error.localizedDescription }
             }
             .fileExporter(isPresented: $exporting, document: document, contentType: .json, defaultFilename: "bandal-keybindings") { result in if case .failure(let error) = result { self.error = error.localizedDescription } }
-            .confirmationDialog("모든 단축키를 기본값으로 되돌릴까요?", isPresented: $resetting) { Button("기본값 복원", role: .destructive) { persist(["keybindings": [String: Any]()]) } }
     }
     private func update(_ spec: NativeBrowserShortcuts.Spec, raw: String?) {
         do {
