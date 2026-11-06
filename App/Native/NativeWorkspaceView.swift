@@ -807,7 +807,7 @@ struct NativeWorkspaceView: View {
                 NativeAssistantPanel(store: store, context: context, sourceDocument: navigation.active,
                     attachments: pendingAttachments[context.id] ?? [],
                     onConsumeAttachments: { pendingAttachments[context.id] = nil },
-                    onOpenDocument: openWorkspaceResult, onOpenSettings: { openSettings("ai") }, onAnnotate: beginAnnotation)
+                    onOpenDocument: openWorkspaceResult, onOpenSettings: openSettings, onAnnotate: beginAnnotation)
                     .environment(\.nativeWorkspaceTarget, navigation.captureTarget())
                     .id(context.id)
             } else { noWorkspacePlaceholder }
@@ -1165,6 +1165,7 @@ struct NativeWorkspaceView: View {
            !services.browser.pages.keys.contains(where: { NativeBrowserSession.owns($0, workspaceID: document.relativePath) }) {
             closeDocuments([document.id])
         }
+        if event.channel == "nativeWorkspace:openSettings", let category = (event.payload as? [String: Any])?["category"] as? String { openSettings(category); return }
         if event.channel == "nativeWorkspace:openAssistantResult", let payload = event.payload as? [String: Any],
            let document = payload["document"] as? NativeDocumentReference {
             if let target = payload["nativeWorkspaceTarget"] as? NativeWorkspaceTarget { openCapturedDocument(document, target: target) }
