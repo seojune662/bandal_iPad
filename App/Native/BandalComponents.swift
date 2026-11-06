@@ -66,6 +66,14 @@ private struct BandalPopoverBody<Content: View>: View {
     }
 }
 
+extension Binding where Value == Bool {
+    /// "Row `id` is being renamed" over one shared id: closing a row only clears the id while it is
+    /// still that row's, so a field torn down after another row took over cannot cancel the new one.
+    static func editing(_ id: String, in state: Binding<String?>) -> Binding<Bool> {
+        Binding(get: { state.wrappedValue == id }, set: { if $0 { state.wrappedValue = id } else if state.wrappedValue == id { state.wrappedValue = nil } })
+    }
+}
+
 /// Section header: 11pt, grey, bold capitals.
 struct BandalSectionHeader: View {
     let title: String
@@ -159,6 +167,21 @@ struct BandalEscapableField: UIViewRepresentable {
 
     final class Field: UITextField {
         var onEscape: (() -> Void)?
+        private var outsideTap: UITapGestureRecognizer?
+        /// Focus as soon as the field is in a window (a menu may still be closing when it is made).
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard let window, outsideTap == nil else { return }
+            let tap = UITapGestureRecognizer(target: self, action: #selector(tappedOutside(_:)))
+            tap.cancelsTouchesInView = false
+            window.addGestureRecognizer(tap); outsideTap = tap
+            DispatchQueue.main.async { [weak self] in self?.becomeFirstResponder(); self?.selectAll(nil) }
+        }
+        func detach() { if let outsideTap { outsideTap.view?.removeGestureRecognizer(outsideTap) }; outsideTap = nil }
+        /// UIKit keeps a field focused on a tap elsewhere; here that tap ends editing (and commits).
+        @objc private func tappedOutside(_ tap: UITapGestureRecognizer) {
+            if !bounds.contains(tap.location(in: self)) { resignFirstResponder() }
+        }
         override var keyCommands: [UIKeyCommand]? {
             let escape = UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(escape))
             escape.wantsPriorityOverSystemBehavior = true
@@ -185,10 +208,10 @@ struct BandalEscapableField: UIViewRepresentable {
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         field.onEscape = { [weak field, coordinator = context.coordinator] in coordinator.end(nil); field?.resignFirstResponder() }
-        DispatchQueue.main.async { field.becomeFirstResponder(); field.selectAll(nil) }
         return field
     }
     func updateUIView(_ field: Field, context: Context) { context.coordinator.finish = finish }
+    static func dismantleUIView(_ field: Field, coordinator: Coordinator) { field.detach() }
 }
 
 /// A one-line entry in a popover (new name, URL, formula): Enter commits, Esc or an outside tap cancels.
@@ -231,7 +254,7 @@ struct BandalTextEntry: View {
         busy = true; error = nil
         Task { @MainActor in
             defer { busy = false }
-            do { try await commit(trimmed) } catch { self.error = error.localizedDescription }
+            do { try await commit(trimmed) } catch { self.error = error.localizedDescription; focused = true }
         }
     }
 }

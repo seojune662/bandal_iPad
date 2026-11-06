@@ -37,7 +37,7 @@ struct NativeFavoritesSection: View {
             if let error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red).textSelection(.enabled) }
             ForEach(Array(favorites.enumerated()), id: \.element.id) { index, favorite in
                 if renamingID == favorite.id {
-                    BandalInlineEditor(text: favorite.label, isEditing: Binding(get: { renamingID == favorite.id }, set: { renamingID = $0 ? favorite.id : nil }),
+                    BandalInlineEditor(text: favorite.label, isEditing: .editing(favorite.id, in: $renamingID),
                                        font: NativeDesktopTheme.font(12), identifier: "native-favorite-rename") { label in
                         mutate("favorites:rename", ["id": favorite.id, "label": label])
                     }.frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)

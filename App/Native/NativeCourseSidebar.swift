@@ -137,7 +137,7 @@ struct NativeCourseSidebar: View {
             }
     }
     private func renaming(_ id: String) -> Binding<Bool> {
-        Binding(get: { renamingID == id }, set: { renamingID = $0 ? id : nil })
+        .editing(id, in: $renamingID)
     }
     private func mutate(_ channel: String, _ request: [String: Any]) {
         guard !busy else { return }; busy = true; error = nil

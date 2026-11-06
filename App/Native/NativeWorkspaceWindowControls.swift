@@ -145,7 +145,7 @@ struct NativeWorkspaceWindowsOverview: View {
                 .accessibilityIdentifier("native-window-open-" + window.id)
             HStack(spacing: 0) {
                 if renamingID == window.id {
-                    BandalInlineEditor(text: window.name, isEditing: Binding(get: { renamingID == window.id }, set: { renamingID = $0 ? window.id : nil }),
+                    BandalInlineEditor(text: window.name, isEditing: .editing(window.id, in: $renamingID),
                                        font: .callout.weight(.medium), identifier: "native-window-rename") { rename(window.id, $0) }
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 } else {

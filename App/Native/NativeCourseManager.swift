@@ -26,7 +26,7 @@ struct NativeCourseManager: View {
                                 HStack {
                                     Image(systemName:course.archived ? "archivebox" : "books.vertical").foregroundStyle(.secondary)
                                     VStack(alignment:.leading) {
-                                        BandalInlineEditor(text:course.name,isEditing:Binding(get:{ renamingID == course.id },set:{ renamingID = $0 ? course.id : nil }),identifier:"native-manager-rename") { name in
+                                        BandalInlineEditor(text:course.name,isEditing:.editing(course.id,in:$renamingID),identifier:"native-manager-rename") { name in
                                             change { _ = try await store.invoke("courses:rename",["courseId":course.id,"name":name]) }
                                         }
                                         if course.missing { Text("폴더 연결이 필요해요").font(.caption).foregroundStyle(.orange) }

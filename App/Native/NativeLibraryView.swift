@@ -479,11 +479,11 @@ Menu {
     /// The material's name, or the inline rename field while 이름 변경 is active.
     @ViewBuilder private func name(_ material: NativeMaterial, font: Font, lines: Int) -> some View {
         if renamingID == material.id {
-            BandalInlineEditor(text: material.name, isEditing: Binding(get: { renamingID == material.id }, set: { renamingID = $0 ? material.id : nil }),
+            BandalInlineEditor(text: material.name, isEditing: .editing(material.id, in: $renamingID),
                                font: font, identifier: "native-material-rename") { name in perform { try await store.rename(material, to: name) } }
         } else {
+            // No double-tap here: the first tap already opens the item; 이름 변경 is in its menu.
             Text(material.name).font(font).foregroundStyle(NativeDesktopTheme.text).lineLimit(lines)
-                .simultaneousGesture(TapGesture(count: 2).onEnded { if material.learningTarget == nil { renamingID = material.id } })
         }
     }
 

@@ -195,7 +195,7 @@ struct NativeProjectSidebar: View {
             HStack(spacing: 10) {
                 Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted)
                 if renamingID == project.id {
-                    BandalInlineEditor(text: project.name, isEditing: Binding(get: { renamingID == project.id }, set: { renamingID = $0 ? project.id : nil }),
+                    BandalInlineEditor(text: project.name, isEditing: .editing(project.id, in: $renamingID),
                                        font: NativeDesktopTheme.font(13), identifier: "native-project-rename") { rename(project, to: $0) }
                 } else {
                     Text(context.title).font(NativeDesktopTheme.font(13)).lineLimit(1)
