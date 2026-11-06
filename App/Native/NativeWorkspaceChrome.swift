@@ -59,36 +59,6 @@ struct NativeWorkspaceChromeLayout: Equatable {
     }
 }
 
-/// The tab on the trailing edge of the left columns that shows or hides AI chat.
-struct NativeAIRailHandle: View {
-    static let height: CGFloat = 96
-    let open: Bool
-    let action: () -> Void
-    private var shape: UnevenRoundedRectangle { UnevenRoundedRectangle(bottomTrailingRadius: 12, topTrailingRadius: 12) }
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: open ? "chevron.left" : "sparkles").font(.system(size: 13, weight: .semibold))
-                if !open { Text("AI").font(.system(size: 10, weight: .bold)) }
-            }
-            .foregroundStyle(open ? NativeDesktopTheme.secondary : NativeDesktopTheme.text)
-            .frame(width: 26, height: 72)
-            .background(open ? NativeDesktopTheme.surface : NativeDesktopTheme.bgApp, in: shape)
-            .overlay { shape.stroke(NativeDesktopTheme.border) }
-            .frame(width: 44, height: Self.height, alignment: .leading).contentShape(Rectangle())
-        }.buttonStyle(NativeAIRailHandleStyle())
-            .accessibilityLabel(open ? "AI 닫기" : "AI 열기")
-            .accessibilityIdentifier("native-ai-rail-toggle")
-    }
-}
-
-private struct NativeAIRailHandleStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.94 : 1, anchor: .leading)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
-    }
-}
 
 struct NativeHomeSectionPicker: View {
     @Binding var selection: NativeHomeSection

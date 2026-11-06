@@ -245,14 +245,6 @@ struct NativeWorkspaceView: View {
                         .position(x: 48 + chrome.leftWidth + 0.5, y: geometry.size.height / 2)
                 }
             }
-            .overlay(alignment: .topLeading) {
-                if showsWorkspace && annotation.request == nil {
-                    NativeAIRailHandle(open: aiVisible) { toggleAIRail(width: geometry.size.width) }
-                        .padding(.leading, aiLeading + (aiVisible ? aiHostWidth + 1 : 0))
-                        .padding(.top, geometry.size.height / 2 - NativeAIRailHandle.height / 2)
-                        .nativeWorkspacePreviewExcluded()
-                }
-            }
             .overlay(alignment: .leading) {
                 if compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) && showsWorkspace && annotation.request == nil {
                     HStack(spacing: 0) {
@@ -573,16 +565,17 @@ struct NativeWorkspaceView: View {
                     }
                 }
             }.accessibilityIdentifier("native-section-library")
+            NativeChromeButton(title: railVisible(.ai, width: width) ? "AI 닫기" : "AI 열기", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width)) {
+                if showsWorkspace { toggleAIRail(width: width) } else { transition { openAIRail() } }
+            }.accessibilityIdentifier("native-ai-rail-toggle")
             NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
             if NativeReleaseFlags.showsMarketplace {
                 NativeChromeButton(title: "마켓플레이스", symbol: "storefront", selected: auxiliary == .marketplace) { transition { section = .library; auxiliary = .marketplace; learningHome = false } }.accessibilityIdentifier("native-section-marketplace")
             }
-            NativeChromeButton(title: "도움말", symbol: "questionmark.circle", selected: auxiliary == .help) { transition { section = .library; auxiliary = .help; learningHome = false } }.accessibilityIdentifier("native-section-help")
             Spacer(minLength: 8)
             if NativeReleaseFlags.showsAccount {
-                NativeAccountRailButton(store: store, selected: auxiliary == .account,
-                    openAccount: { transition { section = .library; auxiliary = .account; learningHome = false } },
-                    openSettings: { openSettings("appearance") })
+                NativeAccountRailButton(store: store, openSettings: openSettings,
+                    openHelp: { transition { section = .library; auxiliary = .help; learningHome = false } })
             }
             NativeChromeButton(title: "설정", symbol: "gearshape", selected: section == .settings) { openSettings("appearance") }.accessibilityIdentifier("native-section-settings")
         }.padding(.top, 12).padding(.bottom, 12).frame(width: NativeDesktopTheme.navigationWidth)

@@ -157,24 +157,23 @@ final class NativeSidebarParityUITests: XCTestCase {
             app.terminate()
         }
     }
+    /// 1.4.0: AI is a rail button under 홈; the panel opens beside the course rail and closes again.
     @MainActor func testAIRailHandleOpensChatBesideTheCourseRail() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
         openHome(app)
-        let handle = app.buttons["native-ai-rail-toggle"]
-        XCTAssertTrue(handle.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(handle.label, "AI 열기", "AI chat starts closed")
-        let closedX = handle.frame.minX
-        handle.tap()
-        wait(for: handle) { $0.frame.minX > closedX + 250 }
-        XCTAssertEqual(handle.label, "AI 닫기")
+        let toggle = app.buttons["native-ai-rail-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(toggle.label, "AI 열기", "AI chat starts closed")
+        XCTAssertLessThan(toggle.frame.minX, 60, "On the skinny rail")
+        XCTAssertLessThan(toggle.frame.minY, app.buttons["native-section-planner"].frame.minY, "Right under 홈")
+        XCTAssertFalse(app.buttons["native-section-help"].exists, "Help moved to the profile menu")
+        toggle.tap()
+        wait(for: toggle) { $0.label == "AI 닫기" }
+        XCTAssertLessThan(toggle.frame.minX, 60, "The button stays on the rail while the panel opens")
         capture("AI chat beside the course rail")
-        app.buttons["native-section-library"].tap()
-        wait(for: handle) { $0.frame.minX < closedX + 150 }
-        capture("AI chat beside the navigation rail")
-        handle.tap()
-        wait(for: handle) { $0.frame.minX < 100 }
-        XCTAssertEqual(handle.label, "AI 열기")
+        toggle.tap()
+        wait(for: toggle) { $0.label == "AI 열기" }
     }
     @MainActor private func wait(for element: XCUIElement, until condition: @escaping (XCUIElement) -> Bool) {
         expectation(for: NSPredicate { _, _ in condition(element) }, evaluatedWith: nil); waitForExpectations(timeout: 5)
