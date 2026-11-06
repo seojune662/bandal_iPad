@@ -24,7 +24,13 @@ final class AIUsage: ObservableObject {
     }
 
     /// A Pro member out of AI: the chat's 충전 button opens its popover with this reason, then clears it.
-    @Published var creditPrompt: String?
+    /// Only fresh: a refusal nobody showed (no chat open) must not pop up minutes later.
+    @Published var creditPrompt: CreditPrompt?
+    struct CreditPrompt: Equatable {
+        let message: String
+        let at = Date()
+        var fresh: Bool { Date().timeIntervalSince(at) < 10 }
+    }
 
     /// Where a refusal sends the user: free or Plus → the plans with Pro picked, Pro → 충전.
     /// A task cap only stops that task; the chat says so and offers 충전 there.
@@ -41,7 +47,7 @@ final class AIUsage: ObservableObject {
         switch destination(code, plan: usage["plan"] as? String ?? shared.plan) {
         case .none: break
         case .plans: MembershipPaywall.present(message: message, highlight: .pro)
-        case .credit: shared.creditPrompt = message
+        case .credit: shared.creditPrompt = CreditPrompt(message: message)
         }
     }
 }

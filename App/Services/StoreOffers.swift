@@ -35,7 +35,8 @@ enum StoreOffers {
                                      yearly: product.subscription.map { $0.subscriptionPeriod.unit == .year },
                                      trialDays: await trialDays(product), product: product))
         }
-        guard !offers.isEmpty else { throw LoadError.empty }
+        // A storefront missing any of them is a failure, not a card without a price.
+        guard !offers.isEmpty, Set(offers.map(\.id)) == Set(ids) else { throw LoadError.empty }
         return offers
     }
 

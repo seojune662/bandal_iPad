@@ -18,6 +18,7 @@ struct MembershipPaywall: View {
     @State private var selected: Membership.Tier = .plus
     @State private var buying: String?
     @State private var toast: String?
+    @State private var closed = false
 
     private var loading: Bool { offers.isEmpty && !failed }
 
@@ -37,7 +38,7 @@ struct MembershipPaywall: View {
         }
         .background(NativeDesktopTheme.bgApp.ignoresSafeArea())
         .overlay(alignment: .topLeading) {
-            Button(action: close) {
+            Button(action: finish) {
                 Image(systemName: "xmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary)
                     .frame(width: 44, height: 44).contentShape(Rectangle())
             }
@@ -237,14 +238,14 @@ struct MembershipPaywall: View {
         do {
             switch try await product.purchase(options: await membership.purchaseOptions()) {
             case .success(let verification):
-                await Membership.settle(verification)
+                guard await Membership.settle(verification) else { toast = "구매를 확인하지 못했어요. 잠시 후 구매 복원을 눌러 주세요."; return }
                 await membership.refresh()
                 // Purchases made here do not come through Transaction.updates: tell the server now.
                 await StoreSync.shared.syncSubscriptions()
                 if membership.currentProduct == offer.id {
                     toast = "\(Self.name(tier)) 시작됐어요"
                     try? await Task.sleep(for: .seconds(1.4))
-                    close()
+                    finish()
                 } else {
                     toast = "다음 갱신일부터 \(Self.name(tier)) \(offer.yearly == true ? "연간" : "월간")으로 바뀌어요"
                 }
@@ -253,6 +254,13 @@ struct MembershipPaywall: View {
             @unknown default: break
             }
         } catch { toast = "구매하지 못했어요. \(error.localizedDescription)" }
+    }
+
+    /// X and the close after a purchase both end here; whichever comes second does nothing.
+    private func finish() {
+        guard !closed else { return }
+        closed = true
+        close()
     }
 
     private func restore() async {

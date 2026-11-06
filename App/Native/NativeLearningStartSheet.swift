@@ -112,7 +112,7 @@ struct NativeLearningStartSheet: View {
                 dismiss(); onOpen(created)
             } catch {
                 self.error = error.localizedDescription
-                if (error as? DesktopRuntimeError)?.code == "BUDGET_EXHAUSTED", AIUsage.shared.creditPrompt != nil { AIUsage.shared.creditPrompt = nil; needsCredit = true }
+                if (error as? DesktopRuntimeError)?.code == "BUDGET_EXHAUSTED", AIUsage.shared.creditPrompt?.fresh == true { AIUsage.shared.creditPrompt = nil; needsCredit = true }
             }
         }
     }

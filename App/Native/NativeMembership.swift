@@ -89,7 +89,8 @@ struct AICreditButton: View {
     private func takePrompt() {
         guard opensOnLimit, let prompt = usage.creditPrompt else { return }
         usage.creditPrompt = nil
-        message = prompt; open = true
+        guard prompt.fresh else { return }
+        message = prompt.message; open = true
     }
 }
 
