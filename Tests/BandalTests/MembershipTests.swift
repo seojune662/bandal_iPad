@@ -24,10 +24,10 @@ final class MembershipTests: XCTestCase {
         XCTAssertTrue(Membership.lifts(.pro))
     }
 
-    /// Out of AI: free → membership, Plus → Pro (upgrade), Pro → credit. A task cap opens nothing.
-    func testABudgetRefusalOpensTheSheetForThePlan() {
-        XCTAssertEqual(AIUsage.destination("BUDGET_EXHAUSTED", plan: "none"), .membership)
-        XCTAssertEqual(AIUsage.destination("BUDGET_EXHAUSTED", plan: "plus"), .upgrade)
+    /// Out of AI: free or Plus → the plans (Pro picked), Pro → 충전. A task cap opens nothing.
+    func testAIRefusalDestinations() {
+        XCTAssertEqual(AIUsage.destination("BUDGET_EXHAUSTED", plan: "none"), .plans)
+        XCTAssertEqual(AIUsage.destination("BUDGET_EXHAUSTED", plan: "plus"), .plans)
         XCTAssertEqual(AIUsage.destination("BUDGET_EXHAUSTED", plan: "pro"), .credit)
         XCTAssertEqual(AIUsage.destination("TASK_CAP_REACHED", plan: "plus"), .none)
     }

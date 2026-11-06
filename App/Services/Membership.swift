@@ -16,6 +16,8 @@ final class Membership: ObservableObject {
     ]
     static let shared = Membership()
     @Published private(set) var tier = Tier.free
+    /// The subscription giving `tier` (the one in effect, not a downgrade waiting for renewal).
+    @Published private(set) var currentProduct: String?
     /// The signed-in 반달 user id, sent as `appAccountToken` when there is one. Signed out, purchases go through the same.
     var accountToken: () async -> UUID? = { nil }
     private var updates: Task<Void, Never>?
@@ -55,13 +57,15 @@ final class Membership: ObservableObject {
 
     /// Finishes a transaction once it is accounted for: a credit pack only after the server paid it
     /// (otherwise it stays unfinished and is redeemed at the next launch or sign-in).
-    static func settle(_ result: VerificationResult<Transaction>) async {
-        guard case .verified(let transaction) = result else { return }
+    /// Returns false for a pack the server has not paid yet.
+    @discardableResult
+    static func settle(_ result: VerificationResult<Transaction>) async -> Bool {
+        guard case .verified(let transaction) = result else { return false }
         if transaction.productType == .consumable {
-            if await StoreSync.shared.redeem(result) { await transaction.finish() }
-        } else {
-            await transaction.finish()
+            guard await StoreSync.shared.redeem(result) else { return false }
         }
+        await transaction.finish()
+        return true
     }
 
     func refresh() async {
@@ -71,6 +75,7 @@ final class Membership: ObservableObject {
         }
         let tier = Self.tier(of: entitlements)
         self.tier = tier
+        currentProduct = Self.product(of: entitlements)
         Self.entitled.withLock { $0 = tier }
     }
 
@@ -78,6 +83,10 @@ final class Membership: ObservableObject {
     /// a refund shows as a revocation.
     nonisolated static func tier(of entitlements: [(productID: String, refunded: Bool)]) -> Tier {
         entitlements.filter { !$0.refunded }.compactMap { products[$0.productID] }.max() ?? .free
+    }
+
+    nonisolated static func product(of entitlements: [(productID: String, refunded: Bool)]) -> String? {
+        entitlements.filter { !$0.refunded && products[$0.productID] != nil }.max { products[$0.productID]! < products[$1.productID]! }?.productID
     }
 
     func purchaseOptions() async -> Set<Product.PurchaseOption> {
