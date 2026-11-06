@@ -202,7 +202,7 @@ struct NativeSettingsSubscriptionPanel: View {
         VStack(alignment: .leading, spacing: 24) {
             if let error { NativeToolError(message: error) }
             if let notice { Label(notice, systemImage: "checkmark.circle").font(NativeDesktopTheme.font(13)).foregroundStyle(.green) }
-            NativeSettingsCard(title: "반달 멤버십", description: "플러스는 과목과 자료를 개수 제한 없이 만들고 AI를 더 많이 씁니다. 프로는 AI를 플러스의 4배 씁니다. 구독은 이 기기의 Apple ID로 확인합니다.") {
+            NativeSettingsCard(title: "반달 멤버십", description: "Plus는 과목·자료 무제한, Pro는 AI를 Plus의 4배") {
                 LabeledContent("상태", value: Self.title(membership.tier)).accessibilityIdentifier("native-membership-state")
                 if membership.tier < .plus {
                     LabeledContent("이 iPad에서 만든 과목", value: "\(usage["courses"] as? Int ?? 0) / \(FreeTier.courses)")
@@ -221,7 +221,7 @@ struct NativeSettingsSubscriptionPanel: View {
             }
             // Only with an account (the server's numbers); this panel never asks anyone to sign in.
             if let percent = ai.percent {
-                NativeSettingsCard(title: "AI 사용량", description: "이번 달 AI 사용량이에요. 매달 1일 00시(한국 시간)에 다시 채워져요.") {
+                NativeSettingsCard(title: "AI 사용량", description: "매달 1일 00시(한국 시간)에 다시 채워져요") {
                     ProgressView(value: Double(min(percent, 100)), total: 100) { Text("AI 사용량 \(percent)%") }
                         .accessibilityIdentifier("native-ai-usage")
                     if let left = ai.autoQuestionsLeft { Text("Auto 질문 약 \(left.formatted())회 남음").font(.callout) }

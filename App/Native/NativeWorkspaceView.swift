@@ -566,7 +566,7 @@ struct NativeWorkspaceView: View {
                 NativeAccountRailButton(store: store, openSettings: openSettings,
                     openHelp: { transition { section = .library; auxiliary = .help; learningHome = false } })
             }
-            NativeChromeButton(title: "설정", symbol: "gearshape", selected: section == .settings) { openSettings("appearance") }.accessibilityIdentifier("native-section-settings")
+            NativeChromeButton(title: "설정", symbol: "gearshape", selected: section == .settings) { openSettings("general") }.accessibilityIdentifier("native-section-settings")
         }.padding(.top, 12).padding(.bottom, 12).frame(width: NativeDesktopTheme.navigationWidth)
             .background(NativeDesktopTheme.surface).overlay(alignment: .trailing) { railDivider }
     }

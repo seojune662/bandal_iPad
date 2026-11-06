@@ -46,10 +46,10 @@ final class NativeSettingsParityUITests: XCTestCase {
         app.buttons["native-section-settings"].tap()
         let search = app.textFields["native-settings-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 15), app.debugDescription)
-        search.tap(); search.typeText("시스템 권한")
-        let permissions = app.buttons["native-settings-category-permissions"]
-        XCTAssertTrue(permissions.waitForExistence(timeout: 5)); permissions.tap()
-        XCTAssertTrue(app.buttons["시스템 설정 열기"].waitForExistence(timeout: 10), app.debugDescription)
+        search.tap(); search.typeText("알림")
+        let general = app.buttons["native-settings-category-general"]
+        XCTAssertTrue(general.waitForExistence(timeout: 5)); general.tap()
+        XCTAssertTrue(app.switches["native-settings-notifications-enabled"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(app.webViews.count, 0)
         search.tap()
         let existing = search.value as? String ?? ""
@@ -68,6 +68,8 @@ final class NativeSettingsParityUITests: XCTestCase {
     func testSettingsThemePersistsAndTwentyCategoryNavigationRemainsNative() {
         let app = launch()
         app.buttons["native-section-settings"].tap()
+        let appearance = app.buttons["native-settings-category-appearance"]
+        select(appearance)
         let dark = app.buttons["native-settings-theme-dark"]
         XCTAssertTrue(dark.waitForExistence(timeout: 10)); dark.tap()
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: dark)
@@ -75,6 +77,7 @@ final class NativeSettingsParityUITests: XCTestCase {
         capture("Native twenty category settings")
         app.terminate(); app.launchArguments = ["--native-ui-testing"]; app.launch()
         XCTAssertTrue(app.buttons["native-section-settings"].waitForExistence(timeout: 20)); app.buttons["native-section-settings"].tap()
+        select(appearance)
         XCTAssertTrue(dark.waitForExistence(timeout: 10)); XCTAssertTrue(dark.isSelected)
         XCTAssertEqual(app.webViews.count, 0)
     }
@@ -146,6 +149,36 @@ final class NativeSettingsParityUITests: XCTestCase {
         capture("Sync settings, on: advanced")
     }
 
+    /// 1.4.0: seven sections, Cursor-like; old pages live inside them and AI shows a sign-in banner.
+    @MainActor
+    func testSevenSectionsHoldTheOldPages() {
+        let app = launch()
+        app.buttons["native-section-settings"].tap()
+        let ids = ["general", "appearance", "account", "subscription", "ai", "sync", "integrations"]
+        for id in ids { XCTAssertTrue(app.buttons["native-settings-category-" + id].waitForExistence(timeout: 10), id) }
+        let all = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'native-settings-category-'"))
+        XCTAssertEqual(all.count, ids.count, app.debugDescription)
+        XCTAssertTrue(app.buttons["native-settings-category-general"].isSelected, "Settings opens on 일반")
+        XCTAssertTrue(app.switches["native-settings-notifications-enabled"].exists, "알림 lives in 일반")
+        XCTAssertTrue(app.buttons["native-settings-reset"].exists, "고급 lives in 일반")
+        app.buttons["native-settings-category-account"].tap()
+        XCTAssertTrue(app.textFields["native-settings-university-search"].waitForExistence(timeout: 10), "학교 lives in 계정")
+        app.buttons["native-settings-category-ai"].tap()
+        XCTAssertTrue(app.staticTexts["native-ai-summary"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["native-ai-summary"].label, "로그인하면 바로 쓸 수 있어요")
+        XCTAssertTrue(app.links["native-ai-fair-use"].exists || app.buttons["native-ai-fair-use"].exists, app.debugDescription)
+        capture("Settings › AI signed out")
+        app.buttons["native-settings-category-integrations"].tap()
+        XCTAssertTrue(app.staticTexts["APPLE 캘린더"].waitForExistence(timeout: 10), app.debugDescription)
+        capture("Settings › 통합")
+    }
+
+    /// Settings ignores taps while its first load runs; tap until the section is selected.
+    @MainActor private func select(_ category: XCUIElement) {
+        XCTAssertTrue(category.waitForExistence(timeout: 15))
+        for _ in 0..<5 where !category.isSelected { category.tap(); _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: category)], timeout: 2) }
+        XCTAssertTrue(category.isSelected)
+    }
     @MainActor private func launch(extra: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"] + extra; app.launch()
