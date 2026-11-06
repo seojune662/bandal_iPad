@@ -45,3 +45,39 @@ checks. Record payloads remain capped at 4 MiB after base64 decoding.
 
 **Never run `tests/fixture.sql` against a live project.** It creates mock auth and
 Storage infrastructure for `tests/run-local.sh`'s disposable PostgreSQL cluster.
+
+## AI metering (1.4.0)
+
+`supabase/migrations/202611060001_ai_metering.sql` adds the server side of the AI that
+the iPad app gets from Bandal instead of the user's own keys. Apply it to the live
+project with `supabase db query --linked -f …` (same reason as above: the migration
+history is not reconciled). Everything is `service_role` only; the app reaches it
+through the `ai-proxy` Edge Function, never PostgREST.
+
+- Costs are µ¢ (1 µ¢ = $1e-8), prices are µ¢ per token (= $/MTok × 100) in `ai_models`.
+  Models, budgets, task caps, the credit pack amount and the consent version live in
+  `ai_models` / `ai_settings`, so they change with SQL and no app build.
+- `ai_status(uid)` picks the plan from `ipad_entitlements` (Pro > Plus, unrevoked,
+  unexpired); a trial gets the trial budget whatever its plan.
+- `ai_begin` refuses a step whose input estimate exceeds what is left (month budget +
+  credit) or the task cap; `ai_settle` charges the step at list price, month budget
+  first, credit second, and writes `ai_usage_ledger`.
+- `ai_grant_credit(source, ref)` pays once per `(source, ref)`; `ai_revoke_credit`
+  takes a refunded pack back.
+
+`supabase/functions/ai-proxy` (`verify_jwt = false`, it checks the user JWT itself):
+
+| Route | Purpose |
+| --- | --- |
+| `GET /config` | enabled models (badge = input price ÷ Auto's), Auto model, usage, consent version |
+| `POST /consent` | `{provider, version}` |
+| `POST /v1/anthropic`, `/v1/openai` | provider body; headers `X-Bandal-Task` (UUID), `X-Bandal-Kind` |
+
+The relay keeps only known body fields, forces streaming, caps output, turns on
+Anthropic prompt caching, streams the provider's bytes through unchanged and appends
+`data: {"bandal_usage": {...}}`. Upstream errors are passed on and not charged; a stream
+cut off by the client or the network is charged with an estimate. Secrets:
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (optional `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`
+for a fake upstream in local tests).
+
+Tests: `sh tests/run-local.sh` (SQL) and `cd supabase/functions && deno test`.
