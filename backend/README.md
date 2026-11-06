@@ -81,3 +81,29 @@ cut off by the client or the network is charged with an estimate. Secrets:
 for a fake upstream in local tests).
 
 Tests: `sh tests/run-local.sh` (SQL) and `cd supabase/functions && deno test`.
+
+## App Store verification (1.4.0)
+
+`202611060002_ipad_store.sql` + Edge Functions `ipad-store` and
+`ipad-store-notifications` (both `verify_jwt = false`) keep `ipad_entitlements` current
+for the AI plan. JWS are verified with `@apple/app-store-server-library` against Apple's
+roots (`_shared/store/certificates.ts`), production first and sandbox when Apple says so.
+
+- `ipad-store` (user JWT): `{action:"sync", transactions:[jws…]}` from
+  `Transaction.currentEntitlements`, and `{action:"redeem", transaction: jws}` for the
+  credit pack `app.bandal.ipad.credit.pack1` (pays `ai_settings.pack_ucents` once per
+  transaction; the app finishes the transaction only after this succeeds).
+- Ownership: a purchase made signed in carries the user id as `appAccountToken`; one
+  without a token belongs to the first account that syncs it. Another account gets
+  `purchase_owned_by_another_account`. Older signatures never overwrite newer ones.
+- `ipad-store-notifications` (Apple, `{signedPayload}`): applies every subscription
+  notification; DID_FAIL_TO_RENEW/GRACE_PERIOD extends the plan to the grace end,
+  DID_RENEW/EXPIRED/GRACE_PERIOD_EXPIRED/REFUND/REVOKE clear grace, a refunded pack
+  takes its credit back. Applying is idempotent, so retries are harmless.
+- Sandbox (TestFlight/Xcode) purchases are free, so they count only for accounts listed in
+  `APPLE_SANDBOX_ALLOWED_USER_IDS` (comma-separated user ids); others get
+  `sandbox_tester_required`. Family-shared copies are ignored (Family Sharing is off).
+- A pack refunded before it was redeemed is recorded in `ipad_pack_revocations` and never pays.
+- Secrets: `APPLE_APP_ID` (6824053530), `APPLE_SANDBOX_ALLOWED_USER_IDS`. ASC → App Information → App Store Server
+  Notifications (V2), production and sandbox URL:
+  `https://<project>.supabase.co/functions/v1/ipad-store-notifications`.
