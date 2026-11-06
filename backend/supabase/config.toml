@@ -4,3 +4,9 @@ project_id = "bandal"
 
 [functions.ai-proxy]
 verify_jwt = false
+
+[functions.ipad-store]
+verify_jwt = false
+
+[functions.ipad-store-notifications]
+verify_jwt = false
