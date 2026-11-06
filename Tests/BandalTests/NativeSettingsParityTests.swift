@@ -22,11 +22,18 @@ final class NativeSettingsParityTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "native.appearance"), "dark", "A partial update must not reset the current theme")
     }
     func testDesktopCategoryOrderAndSearchRetainThePortableDestinations() {
-        XCTAssertEqual(NativeSettingsCatalog.categories.map(\.id), ["ai", "assistant"] + (NativeReleaseFlags.showsAccount ? ["account"] : []) + ["sync"] + (NativeReleaseFlags.membership ? ["subscription"] : []) + ["general", "university", "packs", "calendar", "browser", "appearance", "tabs", "widgets", "notifications", "shortcuts", "usage", "permissions", "privacy", "advanced", "experimental", "courses", "about"])
-        XCTAssertEqual(NativeSettingsCatalog.matching("마이크 자막").map(\.id), NativeReleaseFlags.showsRecording ? ["tabs"] : [])
-        XCTAssertEqual(NativeSettingsCatalog.matching("마크다운 단축키").map(\.id), ["tabs"])
-        XCTAssertEqual(NativeSettingsCatalog.matching("iCloud").map(\.id), ["sync", "calendar"])
-        XCTAssertEqual(NativeSettingsCatalog.matching("privacy diagnostics", locale: "en-US").map(\.id), ["privacy"])
+        // 1.4.0: seven sections; old ids still land on the section that holds their rows.
+        XCTAssertEqual(NativeSettingsCatalog.categories.map(\.id), ["general", "appearance"] + (NativeReleaseFlags.showsAccount ? ["account"] : []) + (NativeReleaseFlags.membership ? ["subscription"] : []) + ["ai", "sync", "integrations"])
+        XCTAssertEqual(NativeSettingsCatalog.matching("마이크").map(\.id), [])
+        XCTAssertEqual(NativeSettingsCatalog.matching("녹음").map(\.id), ["appearance"])
+        XCTAssertEqual(NativeSettingsCatalog.matching("단축키").map(\.id), ["general"])
+        XCTAssertEqual(NativeSettingsCatalog.matching("iCloud").map(\.id), ["sync"])
+        XCTAssertEqual(NativeSettingsCatalog.matching("calendar browser", locale: "en-US").map(\.id), ["integrations"])
+        XCTAssertEqual(NativeSettingsCatalog.resolve("plugins"), "integrations")
+        XCTAssertEqual(NativeSettingsCatalog.resolve("university"), NativeReleaseFlags.showsAccount ? "account" : "general")
+        XCTAssertEqual(NativeSettingsCatalog.resolve("notifications"), "general")
+        XCTAssertEqual(NativeSettingsCatalog.resolve("tabs"), "appearance")
+        XCTAssertEqual(NativeSettingsCatalog.resolve("nonsense"), "general")
         XCTAssertEqual(NativeSettingsCatalog.localized("en-US").first { $0.id == "appearance" }?.title, "Appearance")
     }
     func testUniversityOverridesPreserveHiddenSitesAndApplyExplicitOrder() throws {
