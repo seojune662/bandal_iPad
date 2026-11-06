@@ -205,7 +205,7 @@ private final class NativeAssistantSession: ObservableObject {
         sending = true; error = nil; stream = ""; activity = ""
         defer { sending = false }
         await checkAvailability()
-        guard configured else { throw DesktopRuntimeError("설정에서 API 키를 연결해 주세요. 초안은 보관됩니다.") }
+        guard configured else { throw DesktopRuntimeError("AI를 쓰려면 설정 › 반달 계정에서 로그인해 주세요. 초안은 보관됩니다.") }
         _ = try NativeAssistantPayload.validatedAttachments(captured.attachments.map(\.request))
         try await store.flushDocuments()
         var request = requestIdentity
@@ -563,7 +563,7 @@ struct NativeAssistantPanel: View {
             Form {
                 Picker("제공자",selection:$provider) { ForEach(NativeAIProvider.allCases) { Text($0.title).tag($0.rawValue) } }
                 TextField("모델 ID (기본 모델)",text:$model).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button("API 키 연결 설정") { showingConfiguration = false; onOpenSettings() }
+                Button("AI 설정") { showingConfiguration = false; onOpenSettings() }
                 if let error = session.error { Text(error).foregroundStyle(.red).font(.caption) }
             }.navigationTitle("AI 선택").toolbar {
                 ToolbarItem(placement:.cancellationAction) { Button("취소") { showingConfiguration = false } }

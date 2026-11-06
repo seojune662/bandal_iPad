@@ -70,10 +70,10 @@ final class Membership: ObservableObject {
 }
 
 /// The free allowance (design §8.2–8.3, user decisions 2026-10-30 and 11-02): one course and ten documents (PDF or md)
-/// made on this iPad, and 20 AI requests a month. What arrived through sync does not count, and nothing
+/// made on this iPad. AI is metered on the server (ai-proxy). What arrived through sync does not count, and nothing
 /// already here is ever locked; only making more is refused, with `PLUS_REQUIRED`.
 enum FreeTier {
-    static let courses = 1, documents = 10, aiPerMonth = 20
+    static let courses = 1, documents = 10
     static let code = "PLUS_REQUIRED"
 
     /// Runs on the storage queue before a channel, with the runtime's library. Sync applies what it receives
@@ -123,26 +123,5 @@ enum FreeTier {
             return (rows.first?["n"] as? NSNumber)?.intValue ?? 0
         default: return 0
         }
-    }
-
-    /// AI requests this month, kept in the keychain so that reinstalling the app does not reset them.
-    struct AIAllowance {
-        var read: (String) -> String? = KeychainStore.read
-        var write: (String, String) throws -> Void = { try KeychainStore.write($1, account: $0) }
-        var now: () -> Date = Date.init
-        private static let account = "membership.ai-uses"
-
-        private var month: String { let date = Calendar.current.dateComponents([.year, .month], from: now()); return String(format: "%04d-%02d", date.year ?? 0, date.month ?? 0) }
-        func used() -> Int {
-            let saved = read(Self.account)?.split(separator: " ")
-            guard saved?.first.map(String.init) == month, let count = saved?.last.flatMap({ Int($0) }) else { return 0 }
-            return count
-        }
-        func check() throws {
-            guard used() >= aiPerMonth else { return }
-            throw DesktopRuntimeError("이번 달 무료 AI \(aiPerMonth)회를 모두 썼어요. 다음 달 1일에 다시 쓸 수 있어요.", code: code)
-        }
-        /// Counted once the answer came back, so a failed or cancelled request costs nothing.
-        func count() { try? write(Self.account, "\(month) \(used() + 1)") }
     }
 }

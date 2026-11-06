@@ -54,15 +54,11 @@ struct NativeSettingsWorkspace: View {
   @State private var billing: [String: Any] = [:]
   @State private var deleteAccountConfirmation = false
   @State private var newProfileConfirmation = false
-  @State private var keyStatus: [String: [String: Any]] = [:]
-  @State private var keys: [String: String] = [:]
-  @State private var modelCatalog: [String: [String]] = [:]
   @State private var nickname = ""
   @State private var loading = false
   @State private var busy = false
   @State private var error: String?
   @State private var notice: String?
-  @State private var removingKey: NativeAIProvider?
   @State private var consentRevision = 0
   @State private var signOutConfirmation = false
   @State private var pendingRestore: ConflictChoice?
@@ -148,22 +144,6 @@ struct NativeSettingsWorkspace: View {
       if event.channel == "settings:changed", let state = event.payload as? [String: Any] {
         settings = state["settings"] as? [String: Any] ?? state
         NativeAppearancePreference.apply(settings)
-      }
-    }
-    .confirmationDialog(
-      "API 키를 삭제할까요?",
-      isPresented: Binding(get: { removingKey != nil }, set: { if !$0 { removingKey = nil } })
-    ) {
-      Button("API 키 삭제", role: .destructive) {
-        guard let provider = removingKey else { return }
-        removingKey = nil
-        run {
-          keyStatus[provider.rawValue] =
-            try await store.invoke("agent:setApiKey", ["provider": provider.rawValue, "key": ""])
-            as? [String: Any]
-          keys[provider.rawValue] = ""
-          modelCatalog[provider.rawValue] = nil
-        }
       }
     }
     .confirmationDialog(NativeReleaseFlags.legacyCloudSync ? "계정을 삭제할까요? 서버의 동기화 자료와 구독 연결이 삭제됩니다. 이 기기의 파일은 남습니다." : "계정을 삭제할까요? 서버의 계정 정보가 삭제됩니다. 이 기기의 파일은 남습니다.", isPresented: $deleteAccountConfirmation, titleVisibility: .visible) {
@@ -367,49 +347,19 @@ struct NativeSettingsWorkspace: View {
       appearance == value ? .isSelected : []).accessibilityIdentifier("native-settings-theme-" + value)
   }
   private var aiPanel: some View {
-    settingsCard("AI 제공자") {
-      ForEach(NativeAIProvider.allCases) { provider in
-        DisclosureGroup(provider.title) {
-          let status = keyStatus[provider.rawValue]
-          if status?["configured"] as? Bool == true {
-            Label("키가 연결되어 있어요 · …\(status?["hint"] as? String ?? "")", systemImage: "key.fill")
-              .font(.caption)
-          } else {
-            Text("등록된 API 키가 없어요.").font(.caption).foregroundStyle(.secondary)
-          }
-          SecureField(
-            "새 API 키",
-            text: Binding(
-              get: { keys[provider.rawValue] ?? "" }, set: { keys[provider.rawValue] = $0 })
-          )
-          .textInputAutocapitalization(.never).autocorrectionDisabled()
-          .accessibilityIdentifier("native-key-\(provider.rawValue)")
-          HStack {
-            Button("키 저장") { saveKey(provider) }.disabled(
-              (keys[provider.rawValue] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                .isEmpty)
-            Spacer()
-            if status?["configured"] as? Bool == true {
-              Button("키 삭제", role: .destructive) { removingKey = provider }
-            }
-          }
-          Button("사용 가능한 모델 확인") { fetchModels(provider) }.disabled(
-            status?["configured"] as? Bool != true)
-          if let models = modelCatalog[provider.rawValue] {
-            Text(models.joined(separator: "\n")).font(.caption.monospaced()).textSelection(.enabled)
-          }
-          consentRow(provider)
-        }
-      }
-      Text("API 키는 이 기기의 Keychain에 저장됩니다. 질문과 첨부 자료는 선택한 제공자에게 전송되며 해당 API 요금이 적용됩니다.").font(
-        NativeDesktopTheme.font( 12)
-      ).foregroundStyle(NativeDesktopTheme.muted)
+    settingsCard("AI") {
+      Text(signedIn
+        ? "AI는 반달 서버를 거쳐 OpenAI·Anthropic 모델로 답해요. API 키는 필요 없고, 이번 달 사용량은 설정 › 구독에서 볼 수 있어요."
+        : "AI를 쓰려면 설정 › 반달 계정에서 로그인해 주세요. API 키는 필요 없어요.")
+        .font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.muted)
+        .accessibilityIdentifier("native-ai-summary")
+      ForEach(NativeAIProvider.allCases) { provider in consentRow(provider) }
     }
   }
   private func consentRow(_ provider: NativeAIProvider) -> some View {
-    let target: AIProvider = switch provider { case .openAI: .openai; case .anthropic: .claude; case .google: .gemini }
+    let target: AIProvider = switch provider { case .openAI: .openai; case .anthropic: .claude }
     let english = locale == "en-US"
-    let granted = consentRevision >= 0 && AIConsent.isGranted(target)
+    let granted = consentRevision >= 0 && AIConsent.anyGranted(target)
     return HStack {
       Text(granted
         ? (english ? "Consent to send to \(AIConsent.company(target)) given" : "\(AIConsent.company(target)) 전송에 동의함")
@@ -418,7 +368,7 @@ struct NativeSettingsWorkspace: View {
       Spacer()
       if granted {
         Button(english ? "Withdraw consent" : "동의 철회", role: .destructive) {
-          AIConsent.set(target, granted: false); consentRevision += 1
+          AIConsent.revokeAll(target); consentRevision += 1
         }.accessibilityIdentifier("native-ai-consent-revoke-\(provider.rawValue)")
       }
     }
@@ -602,10 +552,6 @@ struct NativeSettingsWorkspace: View {
     do {
       settings = try await store.invoke("settings:get") as? [String: Any] ?? [:]
       NativeAppearancePreference.apply(settings)
-      for provider in NativeAIProvider.allCases {
-        keyStatus[provider.rawValue] =
-          try await store.invoke("agent:apiKey", ["provider": provider.rawValue]) as? [String: Any]
-      }
       try await loadAccount()
       try await loadSync()
     } catch { self.error = error.localizedDescription }
@@ -650,28 +596,6 @@ struct NativeSettingsWorkspace: View {
         throw DesktopRuntimeError("로그인을 시작하지 못했습니다. 서버 설정과 연결을 확인하세요.")
       }
       try await loadAccount()
-    }
-  }
-  private func saveKey(_ provider: NativeAIProvider) {
-    let value = keys[provider.rawValue] ?? ""
-    run {
-      keyStatus[provider.rawValue] =
-        try await store.invoke("agent:setApiKey", ["provider": provider.rawValue, "key": value])
-        as? [String: Any]
-      keys[provider.rawValue] = ""
-      modelCatalog[provider.rawValue] = nil
-      notice = "\(provider.title) API 키를 저장했어요."
-    }
-  }
-  private func fetchModels(_ provider: NativeAIProvider) {
-    run {
-      let result =
-        try await store.invoke("agent:models", ["provider": provider.rawValue, "refresh": true])
-        as? [String: Any]
-      modelCatalog[provider.rawValue] = (result?["models"] as? [[String: Any]] ?? []).compactMap {
-        $0["id"] as? String
-      }
-      if let message = result?["error"] as? String { throw DesktopRuntimeError(message) }
     }
   }
   private func browserBool(_ key: String, fallback: Bool) -> Binding<Bool> {

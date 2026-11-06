@@ -48,7 +48,7 @@ final class NativeAssistantService {
         let currentInfo = opened["sessionInfo"] as? [String: Any] ?? [:]
         let selectedProvider = currentInfo["provider"] as? String ?? "codex"
         let availability = try await ai.handle(channel: "native:aiAvailability", request: ["provider": selectedProvider]) as? [String: Any] ?? [:]
-        guard availability["loggedIn"] as? Bool == true else { throw DesktopRuntimeError(availability["reason"] as? String ?? "설정에서 AI API 키를 연결해 주세요.") }
+        guard availability["loggedIn"] as? Bool == true else { throw DesktopRuntimeError(availability["reason"] as? String ?? "AI를 쓰려면 설정 › 반달 계정에서 로그인해 주세요.") }
         _ = try NativeAssistantPayload.validatedAttachments(request["attachments"])
         guard let prepared = try await runtime.invokePrivate("nativeChat:begin",request:request) as? [String:Any], let info = prepared["sessionInfo"] as? [String:Any], let provider = info["provider"] as? String else { throw DesktopRuntimeError("대화를 시작하지 못했습니다.") }
         let sequence = (prepared["turnSeq"] as? NSNumber)?.intValue ?? 1, requestID = UUID().uuidString

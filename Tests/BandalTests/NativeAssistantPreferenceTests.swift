@@ -5,7 +5,7 @@ final class NativeAssistantPreferenceTests: XCTestCase {
     func testDesktopProviderPreferenceMapsToCloudServiceIDs() {
         XCTAssertEqual(NativeAssistantPreferences.defaultProvider(["agentProvider": "codex"]), NativeAIProvider.openAI.rawValue)
         XCTAssertEqual(NativeAssistantPreferences.defaultProvider(["agentProvider": "claude-code"]), NativeAIProvider.anthropic.rawValue)
-        XCTAssertEqual(NativeAssistantPreferences.defaultProvider(["agentProvider": "gemini"]), NativeAIProvider.google.rawValue)
+        XCTAssertEqual(NativeAssistantPreferences.defaultProvider(["agentProvider": "gemini"]), NativeAIProvider.anthropic.rawValue, "Gemini is not offered by the AI proxy")
     }
     func testMissingOrInvalidPreferenceMatchesSchemaDefault() {
         let defaults = NativeSettingsSchema.defaults(dataRoot: "/unused")

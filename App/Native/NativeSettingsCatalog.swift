@@ -25,7 +25,7 @@ enum NativeSettingsCatalog {
         allCategories.filter { (NativeReleaseFlags.showsAccount || $0.id != "account") && (NativeReleaseFlags.membership || $0.id != "subscription") }
     }
     private static let allCategories: [NativeSettingsCategory] = [
-        .init(id: "ai", title: "AI 엔진", description: "학습을 도와줄 AI 도구의 연결 상태를 확인합니다.", keywords: "에이전트 AI API 키 OpenAI Anthropic Google", icon: "sparkles", group: "ai"),
+        .init(id: "ai", title: "AI", description: "반달 AI의 모델과 전송 동의를 확인합니다.", keywords: "에이전트 AI 모델 OpenAI Anthropic 동의", icon: "sparkles", group: "ai"),
         .init(id: "assistant", title: "화면 도우미", description: "AI의 화면 도우미 동작을 관리합니다.", keywords: "화면 도우미 읽기 클릭 입력 screen assistant", icon: "rectangle.and.hand.point.up.left", group: "ai"),
         .init(id: "account", title: "계정", description: "반달 프로필과 로그인 상태를 관리합니다.", keywords: "계정 프로필 닉네임 로그아웃 로그인 반달", icon: "person.crop.circle", group: "setup"),
         .init(id: "sync", title: "동기화", description: "iCloud나 Google Drive로 이 iPad와 다른 기기의 과목과 자료를 맞춥니다.", keywords: "동기화 iCloud 아이클라우드 Google Drive 구글 드라이브 클라우드 기기 연결 맞추기 sync", icon: "arrow.triangle.2.circlepath.icloud", group: "setup"),

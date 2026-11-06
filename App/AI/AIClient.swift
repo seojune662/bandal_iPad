@@ -1,11 +1,26 @@
 import Foundation
 
 enum AIProvider: String, CaseIterable, Identifiable {
-    case openai, claude, gemini
+    case openai, claude
     var id: String { rawValue }
-    var title: String { switch self { case .openai: "OpenAI"; case .claude: "Claude"; case .gemini: "Gemini" } }
-    var defaultModel: String { switch self { case .openai: "gpt-5-mini"; case .claude: "claude-sonnet-4-5"; case .gemini: "gemini-2.5-flash" } }
-    var model: String { let value = UserDefaults.standard.string(forKey: "ai.model.\(rawValue)") ?? ""; return value.isEmpty ? defaultModel : value }
+    var title: String { switch self { case .openai: "OpenAI"; case .claude: "Claude" } }
+    /// The provider name the ai-proxy uses in routes, config and consent.
+    var server: String { switch self { case .openai: "openai"; case .claude: "anthropic" } }
+    init?(server: String) { switch server { case "openai": self = .openai; case "anthropic": self = .claude; default: return nil } }
+}
+
+/// Where AI requests go: the signed-in user's ai-proxy on the Bandal Supabase project.
+struct AIEndpoint {
+    /// The signed-in account; caches and consent are kept per account.
+    let userID: String
+    let projectURL: URL
+    let publishableKey: String
+    let token: () async throws -> String
+    func url(_ path: String) -> URL { projectURL.appendingPathComponent("functions/v1/ai-proxy").appendingPathComponent(path) }
+    func authorize(_ request: inout URLRequest) async throws {
+        request.setValue("Bearer " + (try await token()), forHTTPHeaderField: "Authorization")
+        request.setValue(publishableKey, forHTTPHeaderField: "apikey")
+    }
 }
 
 struct AITool {
@@ -20,30 +35,56 @@ struct AIResult { var text: String; var inputTokens: Int; var outputTokens: Int 
 struct AIInputImage { var mediaType: String; var dataBase64: String }
 enum AIError: LocalizedError {
     case message(String)
-    var errorDescription: String? { if case .message(let value) = self { value } else { nil } }
+    /// A refusal from the ai-proxy: `code` (BUDGET_EXHAUSTED, TASK_CAP_REACHED, CONSENT_REQUIRED, …) and its body.
+    case server(code: String, info: [String: Any])
+    var errorDescription: String? {
+        switch self {
+        case .message(let value): value
+        case .server(let code, let info): Self.describe(code, info)
+        }
+    }
+    static func describe(_ code: String, _ info: [String: Any]) -> String {
+        switch code {
+        case "BUDGET_EXHAUSTED": "이번 달 AI 사용량을 다 썼어요."
+        case "TASK_CAP_REACHED": "이 작업이 한 번에 쓸 수 있는 AI 사용량에 닿아 멈췄어요."
+        case "CONSENT_REQUIRED": "AI 전송 동의가 필요해요."
+        case "SIGN_IN_REQUIRED": "AI를 쓰려면 설정 › 반달 계정에서 로그인해 주세요."
+        case "CONTEXT_TOO_LARGE": "보낼 내용이 너무 길어요. 페이지 범위를 좁히거나 대화를 새로 시작해 주세요."
+        case "MODEL_UNAVAILABLE": "선택한 AI 모델을 지금 쓸 수 없어요. 다른 모델을 골라 주세요."
+        case "UPSTREAM_REJECTED": "AI가 요청을 처리하지 못했어요." + ((info["message"] as? String).map { " (\($0))" } ?? "")
+        default: "AI 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요."
+        }
+    }
 }
 
-/// Provider transports contain only HTTP/API adaptation. All app actions pass
-/// through the explicitly scoped tool executor on the main actor.
+/// Provider request/stream adaptation over the Bandal ai-proxy, which adds the provider key,
+/// meters the cost and appends a `bandal_usage` event. All app actions pass through the
+/// explicitly scoped tool executor on the main actor.
 @MainActor
 final class AIClient {
+    static let efforts = ["low", "medium", "high", "max"]
     let provider: AIProvider
     let model: String
-    let key: String
+    let endpoint: AIEndpoint
     let session: URLSession
-    init(provider: AIProvider, model: String, key: String, session: URLSession = .shared) { self.provider = provider; self.model = model; self.key = key; self.session = session }
+    /// One user action; every tool step of it shares the id so the proxy can cap the action.
+    let task: String
+    let kind: String
+    init(provider: AIProvider, model: String, endpoint: AIEndpoint, task: String = UUID().uuidString.lowercased(), kind: String = "question", session: URLSession = .shared) {
+        self.provider = provider; self.model = model; self.endpoint = endpoint; self.task = task; self.kind = kind; self.session = session
+    }
 
     func run(messages: [ChatMessage], system: String, tools: [AITool], onDelta: @escaping (String) -> Void,
              onTool: @escaping (String) -> Void, execute: @escaping (AIToolCall) async -> String,
              images: [String: [AIInputImage]] = [:], effort: String? = nil,
-             onDeltaAsync: ((String) async throws -> Void)? = nil) async throws -> AIResult {
-        guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AIError.message("설정에서 \(provider.title) API 키를 등록해 주세요.") }
+             onDeltaAsync: ((String) async throws -> Void)? = nil,
+             onUsage: (([String: Any]) -> Void)? = nil) async throws -> AIResult {
+        let effort = effort.flatMap { Self.efforts.contains($0) ? $0 : nil }
         let imageInputs = images.values.flatMap { $0 }
         guard imageInputs.count <= 6, imageInputs.allSatisfy({ ["image/png", "image/jpeg", "image/webp", "image/gif"].contains($0.mediaType) && Data(base64Encoded: $0.dataBase64) != nil }),
               imageInputs.reduce(0, { $0 + $1.dataBase64.utf8.count }) <= 28_000_000 else { throw AIError.message("첨부 이미지는 PNG·JPEG·WebP·GIF 최대 6장, 합계 20MB까지 사용할 수 있습니다.") }
         var history: [[String: Any]] = messages.filter { ["user", "assistant"].contains($0.role) }.map { message in
             let attached = message.role == "user" ? images[message.id] ?? [] : []
-            if provider == .gemini { return ["role": message.role == "assistant" ? "model" : "user", "parts": [["text": message.text] as [String: Any]] + attached.map { ["inlineData": ["mimeType": $0.mediaType, "data": $0.dataBase64]] }] }
             if !attached.isEmpty {
                 if provider == .openai { return ["role": message.role, "content": [["type": "input_text", "text": message.text]] + attached.map { ["type": "input_image", "image_url": "data:\($0.mediaType);base64,\($0.dataBase64)"] }] }
                 return ["role": message.role, "content": [["type": "text", "text": message.text] as [String: Any]] + attached.map { ["type": "image", "source": ["type": "base64", "media_type": $0.mediaType, "data": $0.dataBase64]] }]
@@ -54,53 +95,46 @@ final class AIClient {
         for _ in 0..<8 {
             try Task.checkCancellation()
             var body: [String: Any]
-            let url: URL
             switch provider {
             case .openai:
-                url = URL(string: "https://api.openai.com/v1/responses")!
                 body = ["model": model, "instructions": system, "input": history, "stream": true, "store": false, "include": ["reasoning.encrypted_content"],
                         "tools": tools.map { ["type": "function", "name": $0.name, "description": $0.description, "parameters": $0.schema, "strict": false] }]
-                if let effort, ["none", "minimal", "low", "medium", "high", "xhigh"].contains(effort) { body["reasoning"] = ["effort": effort] }
+                if let effort { body["reasoning"] = ["effort": effort == "max" ? "xhigh" : effort] }
             case .claude:
-                url = URL(string: "https://api.anthropic.com/v1/messages")!
                 body = ["model": model, "system": system, "messages": history, "max_tokens": 8192, "stream": true,
                         "tools": tools.map { ["name": $0.name, "description": $0.description, "input_schema": $0.schema] }]
-            case .gemini:
-                guard model.range(of: "^[a-zA-Z0-9._-]+$", options: .regularExpression) != nil else { throw AIError.message("Gemini 모델 ID 형식이 올바르지 않습니다.") }
-                url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):streamGenerateContent?alt=sse")!
-                body = ["systemInstruction": ["parts": [["text": system]]], "contents": history,
-                        "tools": [["functionDeclarations": tools.map { ["name": $0.name, "description": $0.description, "parameters": $0.schema] }]]]
+                if let effort { body["output_config"] = ["effort": effort] }
             }
-            var request = URLRequest(url: url); request.httpMethod = "POST"; request.timeoutInterval = 180
+            var request = URLRequest(url: endpoint.url("v1/" + provider.server)); request.httpMethod = "POST"; request.timeoutInterval = 180
+            request.httpShouldHandleCookies = false
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            switch provider {
-            case .openai: request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            case .claude: request.setValue(key, forHTTPHeaderField: "x-api-key"); request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-            case .gemini: request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
-            }
+            request.setValue(task, forHTTPHeaderField: "X-Bandal-Task")
+            request.setValue(kind, forHTTPHeaderField: "X-Bandal-Kind")
+            try await endpoint.authorize(&request)
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
             let (bytes, response) = try await session.bytes(for: request)
             guard let http = response as? HTTPURLResponse else { throw AIError.message("AI 서버 응답을 확인할 수 없습니다.") }
             guard (200..<300).contains(http.statusCode) else {
                 var errorData = Data(); for try await byte in bytes { errorData.append(byte); if errorData.count >= 32_768 { break } }
-                let obj = (try? JSONSerialization.jsonObject(with: errorData)) as? [String: Any]
-                let detail = (obj?["error"] as? [String: Any])?["message"] as? String
-                let fallback = http.statusCode == 401 ? "API 키를 확인해 주세요." : http.statusCode == 429 ? "사용량 한도 또는 요청 제한에 도달했습니다." : "잠시 후 다시 시도해 주세요."
-                throw AIError.message("\(provider.title) (\(http.statusCode)): \(detail ?? fallback)")
+                let info = (try? JSONSerialization.jsonObject(with: errorData)) as? [String: Any] ?? [:]
+                throw AIError.server(code: info["code"] as? String ?? (http.statusCode == 401 ? "SIGN_IN_REQUIRED" : "AI_UNAVAILABLE"), info: info)
             }
             var calls: [AIToolCall] = []
             var output: [[String: Any]] = []
-            var blockCalls: [Int: AIToolCall] = [:]
-            var stepText = ""
+            /// Claude content blocks in order (text, thinking, redacted_thinking, tool_use), returned unchanged on the next step.
+            var blocks: [Int: [String: Any]] = [:], toolJSON: [Int: String] = [:]
             var completed = false
-            var geminiInput = 0, geminiOutput = 0
-            func append(_ text: String) async throws { stepText += text; result.text += text; onDelta(text); try await onDeltaAsync?(text) }
+            func append(_ text: String) async throws { result.text += text; onDelta(text); try await onDeltaAsync?(text) }
             for try await line in bytes.lines {
                 try Task.checkCancellation()
                 guard line.hasPrefix("data:") else { continue }
                 let data = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
                 guard data != "[DONE]", let object = (try? JSONSerialization.jsonObject(with: Data(data.utf8))) as? [String: Any] else { continue }
-                if let error = object["error"] as? [String: Any] { throw AIError.message(error["message"] as? String ?? "AI 응답 중 오류가 발생했습니다.") }
+                if let error = object["error"] as? [String: Any] {
+                    if let code = error["code"] as? String, code == code.uppercased() { throw AIError.server(code: code, info: error) }
+                    throw AIError.message(error["message"] as? String ?? "AI 응답 중 오류가 발생했습니다.")
+                }
+                if let usage = object["bandal_usage"] as? [String: Any] { onUsage?(usage); continue }
                 switch provider {
                 case .openai:
                     let type = object["type"] as? String ?? ""
@@ -115,12 +149,16 @@ final class AIClient {
                 case .claude:
                     let type = object["type"] as? String ?? ""
                     let index = object["index"] as? Int ?? 0
-                    if type == "content_block_start", let block = object["content_block"] as? [String: Any], block["type"] as? String == "tool_use" {
-                        blockCalls[index] = AIToolCall(id: block["id"] as? String ?? "", name: block["name"] as? String ?? "", arguments: "")
-                    }
+                    if type == "content_block_start", let block = object["content_block"] as? [String: Any] { blocks[index] = block }
                     if type == "content_block_delta", let delta = object["delta"] as? [String: Any] {
+                        if let json = delta["partial_json"] as? String { toolJSON[index, default: ""] += json }
+                        if var block = blocks[index] {
+                            for field in ["text", "thinking", "signature"] {
+                                if let piece = delta[field] as? String { block[field] = (block[field] as? String ?? "") + piece }
+                            }
+                            blocks[index] = block
+                        }
                         if let text = delta["text"] as? String { try await append(text) }
-                        if let json = delta["partial_json"] as? String { blockCalls[index]?.arguments += json }
                     }
                     if type == "message_start", let message = object["message"] as? [String: Any], let usage = message["usage"] as? [String: Any] { result.inputTokens += usage["input_tokens"] as? Int ?? 0 }
                     if type == "message_delta" {
@@ -128,24 +166,21 @@ final class AIClient {
                         if let reason = (object["delta"] as? [String: Any])?["stop_reason"] as? String, !["end_turn", "tool_use", "stop_sequence"].contains(reason) { throw AIError.message("Claude 응답이 \(reason) 상태로 종료되었습니다. 부분 응답을 확인해 주세요.") }
                     }
                     if type == "message_stop" { completed = true }
-                case .gemini:
-                    if let usage = object["usageMetadata"] as? [String: Any] { geminiInput = usage["promptTokenCount"] as? Int ?? geminiInput; geminiOutput = usage["candidatesTokenCount"] as? Int ?? geminiOutput }
-                    for candidate in object["candidates"] as? [[String: Any]] ?? [] {
-                        if let reason = candidate["finishReason"] as? String { completed = true; if reason != "STOP" { throw AIError.message("Gemini 응답이 \(reason) 상태로 종료되었습니다.") } }
-                        let parts = (candidate["content"] as? [String: Any])?["parts"] as? [[String: Any]] ?? []
-                        for part in parts {
-                            if let text = part["text"] as? String, part["thought"] as? Bool != true { try await append(text) }
-                            output.append(part)
-                            if let call = part["functionCall"] as? [String: Any] {
-                                let arguments = try JSONSerialization.data(withJSONObject: call["args"] as? [String: Any] ?? [:])
-                                calls.append(AIToolCall(id: call["id"] as? String ?? UUID().uuidString, name: call["name"] as? String ?? "", arguments: String(decoding: arguments, as: UTF8.self)))
-                            }
-                        }
-                    }
                 }
             }
-            if provider == .gemini { result.inputTokens += geminiInput; result.outputTokens += geminiOutput }
-            if provider == .claude { calls = blockCalls.keys.sorted().compactMap { blockCalls[$0] } }
+            var claudeContent: [[String: Any]] = []
+            if provider == .claude {
+                for index in blocks.keys.sorted() {
+                    guard var block = blocks[index] else { continue }
+                    if block["type"] as? String == "tool_use" {
+                        let arguments = toolJSON[index] ?? ""
+                        calls.append(AIToolCall(id: block["id"] as? String ?? "", name: block["name"] as? String ?? "", arguments: arguments))
+                        block["input"] = (try? JSONSerialization.jsonObject(with: Data((arguments.isEmpty ? "{}" : arguments).utf8))) ?? [:]
+                    }
+                    if block["type"] as? String == "text", (block["text"] as? String ?? "").isEmpty { continue }
+                    claudeContent.append(block)
+                }
+            }
             guard completed else { throw AIError.message("AI 연결이 응답 완료 전에 끊겼습니다. 부분 응답은 보존했습니다.") }
             if calls.isEmpty { return result }
             var toolResults: [(AIToolCall, String)] = []
@@ -159,13 +194,8 @@ final class AIClient {
                 history.append(contentsOf: output)
                 history.append(contentsOf: toolResults.map { ["type": "function_call_output", "call_id": $0.0.id, "output": $0.1] })
             case .claude:
-                var content: [[String: Any]] = stepText.isEmpty ? [] : [["type": "text", "text": stepText]]
-                content += calls.map { ["type": "tool_use", "id": $0.id, "name": $0.name, "input": (try? JSONSerialization.jsonObject(with: Data($0.arguments.utf8))) ?? [:]] }
-                history.append(["role": "assistant", "content": content])
+                history.append(["role": "assistant", "content": claudeContent])
                 history.append(["role": "user", "content": toolResults.map { ["type": "tool_result", "tool_use_id": $0.0.id, "content": $0.1] }])
-            case .gemini:
-                history.append(["role": "model", "parts": output])
-                history.append(["role": "user", "parts": toolResults.map { ["functionResponse": ["name": $0.0.name, "response": ["result": $0.1]]] }])
             }
         }
         throw AIError.message("한 번의 요청에서 실행할 수 있는 도구 횟수에 도달했습니다. 완료된 결과는 저장되어 있습니다.")
