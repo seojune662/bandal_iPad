@@ -13,4 +13,6 @@ pg_ctl -D "$runtime/data" -l "$runtime/log" -o "-k $runtime/socket -h '' -p 5458
 psql -X -q -v ON_ERROR_STOP=1 -h "$runtime/socket" -p 54583 -U bandal_test -d postgres \
   -f "$test_root/tests/fixture.sql" \
   -f "$test_root/supabase/migrations/202610130001_personal_sync.sql" \
-  -f "$test_root/tests/sync.sql"
+  -f "$test_root/tests/sync.sql" \
+  -f "$test_root/supabase/migrations/202611060001_ai_metering.sql" \
+  -f "$test_root/tests/ai.sql"
