@@ -63,10 +63,14 @@ struct NativeLibraryView: View {
     private var currentItems: [NativeMaterial] {
         folderPath == rootPath ? scopedMaterials : NativeLibraryIndex.contents(in: folderPath, materials: scopedMaterials)
     }
+    /// The tree shows the whole scope, so it also searches the whole scope;
+    /// only the folder-browsing views narrow search to the open folder.
+    private var searchFolder: String { displayMode == .list ? rootPath : folderPath }
     private var items: [NativeMaterial] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let folder = searchFolder
         let source = search.isEmpty ? currentItems : NativeLibraryIndex.flatten(scopedMaterials).filter {
-            (folderPath.isEmpty || $0.relPath.hasPrefix(folderPath + "/") || folderPath == rootPath && $0.learningTarget != nil) &&
+            (folder.isEmpty || $0.relPath.hasPrefix(folder + "/") || folder == rootPath && $0.learningTarget != nil) &&
                 ($0.name.localizedStandardContains(search) || $0.relPath.localizedStandardContains(search))
         }
         return source.sorted {
@@ -112,7 +116,7 @@ struct NativeLibraryView: View {
                 Spacer(minLength: 0)
                 viewPicker
             }.padding(.horizontal, 12)
-            if displayMode != .list || isSearching { breadcrumbs }
+            if displayMode != .list { breadcrumbs }
             libraryContent.frame(maxHeight: .infinity)
             NativeLibrarySourceTray(store: store, folderPath: folderPath, model: sourceTrayModel)
         }
@@ -163,14 +167,16 @@ Menu {
         .task(id: scopeID + ":" + rootPath) {
             let restored = NativeLibraryBrowsingState.load(scopeID: scopeID, root: rootPath)
             folderPath = restored.folder; query = restored.query; expandedFolders = restored.expanded
+            if displayMode == .list { revealFolderInList() }
             gallerySelection = nil; materialURLs = [:]; loadedScopeID = scopeID
             await projectLibrary.reload(store: store, scope: scope)
         }
         .onChange(of: folderPath) { _, _ in saveBrowsing() }
         .onChange(of: query) { _, _ in saveBrowsing() }
         .onChange(of: expandedFolders) { _, _ in saveBrowsing() }
-        .onChange(of: storedDisplayMode) { _, _ in
+        .onChange(of: storedDisplayMode) { old, _ in
             if displayMode == .list { revealFolderInList() }
+            else if old == NativeLibraryDisplayMode.list.rawValue { enterSelectedDocumentFolder() }
         }
         .task(id:searchTaskID) { await searchContent() }
         .task(id:store.isReady) {
@@ -286,7 +292,7 @@ Menu {
                     if !query.isEmpty { Text(material.relPath).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
                 }
                 Spacer(minLength: 0)
-            }.padding(.leading, CGFloat(depth) * 14 + 8).padding(.trailing, 8).frame(minHeight: 44).padding(.vertical, query.isEmpty ? 0 : 5)
+            }.padding(.horizontal, 8).frame(minHeight: 44).padding(.vertical, query.isEmpty ? 0 : 5)
                 .contentShape(Rectangle())
         }
         .background(selectedDocumentID == material.document(in: courseID ?? "").id || (material.isDirectory && folderPath == material.relPath) ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 6))
@@ -297,6 +303,8 @@ Menu {
         .task(id: materialTaskID(material)) { await resolveURL(material) }
         .accessibilityIdentifier("native-material-\(material.relPath)")
         .accessibilityAddTraits(selectedDocumentID == material.document(in: courseID ?? "").id ? .isSelected : [])
+        // Outside the button so the row, its highlight and its frame start at the indent.
+        .padding(.leading, CGFloat(depth) * 14)
     }
 
     @ViewBuilder private var contentSearchSection: some View {
@@ -304,7 +312,7 @@ Menu {
                         Section("본문 검색") {
                             if searching { ProgressView("본문을 찾는 중…") }
                             if let contentError { Text(contentError).foregroundStyle(.secondary) }
-                            ForEach(contentHits.filter { folderPath.isEmpty || $0.relPath.hasPrefix(folderPath + "/") }) { hit in
+                            ForEach(contentHits.filter { searchFolder.isEmpty || $0.relPath.hasPrefix(searchFolder + "/") }) { hit in
                                 Button { open(hit) } label: {
                                     VStack(alignment:.leading,spacing:5) {
                                         Label((hit.relPath as NSString).lastPathComponent,systemImage:hit.kind == "pdf" ? "doc.richtext" : "doc.text").foregroundStyle(.primary).lineLimit(1)
@@ -522,6 +530,14 @@ Menu {
             query = ""
         }
         else if let courseID { onOpen(material.document(in: courseID)) }
+    }
+    /// Leaving the tree opens the folder that holds the selected document, so
+    /// the folder-browsing view starts where the user was working.
+    private func enterSelectedDocumentFolder() {
+        guard let courseID, let selectedDocumentID,
+              let material = NativeLibraryIndex.flatten(scopedMaterials).first(where: { $0.learningTarget == nil && $0.document(in: courseID).id == selectedDocumentID }) else { return }
+        let parent = (material.relPath as NSString).deletingLastPathComponent
+        folderPath = rootPath.isEmpty || parent.hasPrefix(rootPath + "/") ? parent : rootPath
     }
     private func revealFolderInList() {
         let ancestors = materialColumns.dropFirst().map(\.path)
