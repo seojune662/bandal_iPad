@@ -294,7 +294,7 @@ struct MembershipPaywall: View {
             Plan(id: "plus", tier: .plus, title: "Plus", band: "가장 인기", summary: "과목이 많고 AI를 가끔 쓰는 학생", lead: "무료의 모든 기능과…",
                  features: ["과목·자료 무제한", "AI 사용량 기본 (Auto 약 400회)", "모든 모델 선택 가능"]),
             Plan(id: "pro", tier: .pro, title: "Pro", band: "AI 4배", summary: "AI로 공부하는 학생", lead: "Plus의 모든 기능과…",
-                 features: ["AI 사용량 4배 (Auto 약 1,700회)", "작업 1회 상한 $0.50", "우선 지원"]),
+                 features: ["AI 사용량 4배 (Auto 약 1,700회)", "작업 1회 상한 Plus의 5배", "우선 지원"]),
         ]
     }
 
