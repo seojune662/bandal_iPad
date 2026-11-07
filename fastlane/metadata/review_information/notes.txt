@@ -13,10 +13,10 @@ What our server does with AI requests
 Plans (all optional; nothing already made is ever locked)
 - Free: 1 course and 10 materials on this iPad; signed in, a small AI allowance (about 30 short questions a month).
 - Bandal Plus (monthly / yearly, existing): unlimited courses and materials, AI about 400 short questions a month.
-- Bandal Pro (monthly / yearly, new, higher level in the same group): Plus with 4x the AI allowance. During a free trial the AI allowance is Plus's; the paywall says so.
-- AI Credit (consumable): adds to the current allowance, never expires, not restorable (stated on the purchase sheet).
-- Where to see them: Settings > 구독 (Subscription) > 반달 멤버십 보기 / AI 충전. When the allowance runs out, the app opens the paywall (free: Plus and Pro; Plus: Pro) or the credit sheet (Pro).
-- Restore Purchases is on the paywall and in Settings > 구독. Terms of Use (Apple standard EULA) and Privacy Policy are linked on the paywall.
+- Bandal Pro (monthly / yearly, new, higher level in the same group): Plus with 4x the AI allowance. During a Pro free trial the AI allowance is Plus's; the plan screen says so ("Pro 무료 체험 기간의 AI 사용량은 Plus와 같아요").
+- AI Credit (consumable): adds to the current allowance, never expires (stated in the popover), not restorable (a consumable).
+- Where to see them: Settings > 구독·사용량 (Subscription & usage) > 플랜 변경 (Change plan) opens our plan screen (Free / Plus / Pro, monthly or yearly, prices from StoreKit); the 충전 (Top up) button next to AI usage opens a small popover with the AI Credit price. When the allowance runs out, the app opens the plan screen with Pro selected (Free, Plus) or the 충전 popover (Pro).
+- Restore Purchases (구매 복원) is on the plan screen and in Settings > 구독. Terms of Use (Apple standard EULA) and Privacy Policy are linked at the bottom of the plan screen.
 - Purchases are verified on our server from the signed transaction (App Store Server Library) only to set the AI allowance; course and material limits are judged on the device.
 
 Other features (unchanged)

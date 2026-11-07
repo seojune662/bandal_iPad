@@ -21,7 +21,7 @@ final class StoreScreensUITests: XCTestCase {
         XCTAssertTrue(price(app, "free").contains("₩0"))
         XCTAssertEqual(app.buttons["membership-cta-pro"].label, "7일 무료로 시작")
         XCTAssertFalse(app.buttons["membership-cta-free"].exists, "no button on the free card")
-        for text in ["가장 인기", "AI 4배", "AI로 공부하는 학생", "작업 1회 상한 $0.50", "구매 복원", "이용약관", "개인정보처리방침"] {
+        for text in ["가장 인기", "AI 4배", "AI로 공부하는 학생", "작업 1회 상한 Plus의 5배", "구매 복원", "이용약관", "개인정보처리방침"] {
             XCTAssertTrue(app.descendants(matching: .any)[text].exists || app.staticTexts.containing(NSPredicate(format: "label == %@", text)).firstMatch.exists, text)
         }
         XCTAssertTrue(app.staticTexts["membership-terms"].label.contains("24시간 전"))
