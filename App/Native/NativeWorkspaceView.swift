@@ -60,6 +60,12 @@ struct NativeWorkspaceView: View {
         return navigation.activeWorkspace ?? store.courses.first { $0.id == store.selectedCourseID }.map(NativeWorkspaceContext.course)
     }
     private var courseTitle: String { workspaceContext?.title ?? "자료실" }
+    /// The UI test suite drives the side panels while a markdown note has the keyboard, so it runs with
+    /// folding off unless a test asks for it.
+    private static let keyboardFoldsPanels: Bool = {
+        let arguments = ProcessInfo.processInfo.arguments
+        return !arguments.contains("--native-ui-testing") || arguments.contains("--native-keyboard-folds-panels")
+    }()
     private var showsWorkspace: Bool { section == .library && auxiliary == nil }
     /// Settings is a sheet over the workspace: the panels stay where they were behind it.
     private var settingsOpen: Bool { section == .settings && auxiliary == nil && !windowsOverviewOpen }
@@ -326,7 +332,7 @@ struct NativeWorkspaceView: View {
             // Typing a markdown note on the software keyboard: both side panels fold, and come back with the keyboard gone.
             .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { markdownEditing = $0.object as? Bool ?? false }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-                guard markdownEditing, railsBeforeKeyboard == nil else { return }
+                guard Self.keyboardFoldsPanels, markdownEditing, railsBeforeKeyboard == nil else { return }
                 railsBeforeKeyboard = (courseRailOpen, materialsRailOpen)
                 withAnimation(Self.railAnimation) { courseRailOpen = false; materialsRailOpen = false }
             }
