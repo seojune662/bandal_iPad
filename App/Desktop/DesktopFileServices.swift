@@ -161,7 +161,8 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
             }
             return ["ok": true, "printed": printed]
         case "materials:reveal", "materials:preview", "chat:openArtifact":
-            let source = try await materialSnapshot(request)
+            // `annotated`: the note as written, ink included (the tab strip's 미리보기).
+            let source = try await materialSnapshot(request, includingPDFAnnotations: request["annotated"] as? Bool == true)
             do { try preview(source) } catch { releaseTemporaryFile(source); throw error }
             return ["ok": true]
         case "materials:export":

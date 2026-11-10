@@ -199,7 +199,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     }
     private func tabs(_ group: NativeDockGroup, topPadding: CGFloat, corner: Bool) -> some View {
         GeometryReader { geometry in
-            let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - 140 - (corner ? controlInset : 0)), count: group.tabs.count,
+            let shareable = navigation.document(group.activeID).map(NativeDockShareControls.supports) ?? false
+            let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - 140 - (shareable ? NativeDockShareControls.width : 0) - (corner ? controlInset : 0)), count: group.tabs.count,
                 activeIndex: group.tabs.firstIndex(of: group.activeID ?? "") ?? -1, spacing: density == "compact" ? 0 : 4)
             HStack(alignment: .bottom, spacing: 0) {
                 HStack(spacing: sizing.spacing) {
@@ -232,6 +233,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                             .presentationCompactAdaptation(.popover)
                     }
                 groupMenu(group)
+                if shareable, let document = navigation.document(group.activeID) { NativeDockShareControls(document: document, store: store) }
                 if corner && controlInset > 0 { Color.clear.frame(width: controlInset, height: 44) }
             }.frame(height: headerHeight, alignment: .bottom).padding(.horizontal, 4).padding(.top, topPadding)
         }.frame(height: headerHeight + topPadding).clipped().background(NativeDesktopTheme.surface)
