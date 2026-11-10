@@ -45,7 +45,7 @@
 "링크는 사이드바의 ‘AI로 링크 찾기’나 설정에서 나중에 더할 수 있어요." = "You can add links later with “Find links with AI” in the sidebar, or in Settings.";
 "반달 시작하기" = "Start using Bandal";
 "반달에 오신 걸 환영해요" = "Welcome to Bandal";
-"반달에서 같이 공부하자. 초대 코드 %@ 넣으면 둘 다 AI 100회 받아요. bandal.io/r/%@" = "Let's study together on Bandal. Enter invite code %@ and we both get 100 AI uses. bandal.io/r/%@";
+"반달에서 같이 공부하자. 초대 코드 %@ 넣으면 둘 다 AI 100회 받아요. https://bandal.io/r/%@" = "Let's study together on Bandal. Enter invite code %@ and we both get 100 AI uses. https://bandal.io/r/%@";
 "복사했어요" = "Copied";
 "서버에 연결하지 못해 기기에 있는 목록에서 찾았어요." = "Couldn't reach the server, so these come from the list on this iPad.";
 "시작하기" = "Get started";

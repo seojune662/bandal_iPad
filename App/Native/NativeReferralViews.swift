@@ -201,7 +201,7 @@ struct NativeReferralInvite: View {
             HStack(spacing: 8) {
                 Button { copy(Referral.link(status.code)) } label: { Label("링크 복사", systemImage: "link").frame(maxWidth: .infinity, minHeight: 44) }
                     .accessibilityIdentifier("native-referral-copy-link")
-                ShareLink(item: String(format: NativeAppLocale.string("반달에서 같이 공부하자. 초대 코드 %@ 넣으면 둘 다 AI 100회 받아요. bandal.io/r/%@", locale), status.code, status.code)) {
+                ShareLink(item: String(format: NativeAppLocale.string("반달에서 같이 공부하자. 초대 코드 %@ 넣으면 둘 다 AI 100회 받아요. https://bandal.io/r/%@", locale), status.code, status.code)) {
                     Label("공유", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity, minHeight: 44)
                 }.accessibilityIdentifier("native-referral-share")
             }.buttonStyle(NativeToolButtonStyle())

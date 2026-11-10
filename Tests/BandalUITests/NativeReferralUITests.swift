@@ -98,7 +98,7 @@ final class NativeReferralUITests: XCTestCase {
                 // 공유 hands the invitation, in the app's language, to the system share sheet.
                 share.tap()
                 XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 10), app.debugDescription)
-                let message = "반달에서 같이 공부하자. 초대 코드 BANDA2 넣으면 둘 다 AI 100회 받아요. bandal.io/r/BANDA2"
+                let message = "반달에서 같이 공부하자. 초대 코드 BANDA2 넣으면 둘 다 AI 100회 받아요. https://bandal.io/r/BANDA2"
                 XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", message)).firstMatch.exists, app.debugDescription)
                 capture("친구 초대 공유 시트 (\(name))")
                 app.terminate(); continue

@@ -18,7 +18,7 @@ Version 1.4.1 adds three things. No new in-app purchases; purchases, AI, sync an
 - Profile menu (left rail) > 친구 초대 (Invite a friend), or Settings > 계정 (Account) > 친구 초대: the account's invite code with Copy and Share.
 - When an invited friend signs in and creates their first course, both accounts receive AI credit worth about 100 AI uses. It is the same in-app AI credit as before: used after the monthly allowance, never expires. An account is rewarded for at most 5 friends.
 - The reward is AI usage inside the app only. It has no cash value, cannot be transferred, exchanged or withdrawn, and unlocks no paid plan. No purchase is needed to invite or to be invited.
-- The share text ends with bandal.io/r/CODE, and "링크 복사" (Copy link) copies https://bandal.io/r/CODE. On an iPad with the app installed the link opens the app with the code filled in; the user still taps "이 코드 적용" (Apply this code). The app adds Associated Domains (applinks:bandal.io) for this.
+- The share text and "링크 복사" (Copy link) carry the link https://bandal.io/r/CODE. On an iPad with the app installed the link opens the app with the code filled in; the user still taps "이 코드 적용" (Apply this code). The app adds Associated Domains (applinks:bandal.io) for this.
 
 How to test
 - New install: the setup appears on first launch. In step 2, with the country chip on United States, type "Stanford" and pick Stanford University (AI-found, so its links are shown for review); tap "이 학교로 설정" (Use this school). Or type any name and choose "직접 입력".
