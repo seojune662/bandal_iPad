@@ -90,7 +90,7 @@ final class NativePDFWritingUITests: XCTestCase {
             }
             let tools = pane.scrollViews["native-pdf-tool-scroll"]
             XCTAssertTrue(tools.exists, app.debugDescription)
-            XCTAssertGreaterThan(tools.frame.width, pane.frame.width - 24, "Editing tools use the width previously occupied by numbered presets")
+            XCTAssertGreaterThan(tools.frame.width, pane.frame.width - 48, "The floating palette fills a narrow pane up to its insets")
             tools.swipeLeft()
             XCTAssertTrue(pane.buttons["native-pdf-width-slot-2"].isHittable, app.debugDescription)
         }
