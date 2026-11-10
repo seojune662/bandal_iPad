@@ -58,8 +58,11 @@ final class NativePlatformServices: ObservableObject {
             })
         }
         store.schools = LiveSchoolDirectory(endpoint: aiEnvironment.endpoint, send: { [session = aiEnvironment.session] in try await session.data(for: $0) })
+        store.referral.service = LiveReferralService(endpoint: aiEnvironment.endpoint, send: { [session = aiEnvironment.session] in try await session.data(for: $0) })
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains(SchoolDirectoryFake.argument) { store.schools = SchoolDirectoryFake() }
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains(SchoolDirectoryFake.argument) { store.schools = SchoolDirectoryFake() }
+        if arguments.contains(ReferralServiceFake.argument) { store.referral.service = ReferralServiceFake(signedIn: !arguments.contains(ReferralServiceFake.signedOutArgument)) }
         #endif
         // Keys and the local AI counter from the BYOK versions (≤ 1.3) are no longer used.
         if !UserDefaults.standard.bool(forKey: "ai.byokRetired") {

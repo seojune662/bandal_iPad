@@ -105,6 +105,7 @@ struct NativeSettingsSubscriptionPanel: View {
     @AppStorage(NativeAIPreferences.usageAlertKey) private var usageAlert = true
     @State private var notice: String?
     @State private var error: String?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -145,6 +146,15 @@ struct NativeSettingsSubscriptionPanel: View {
                     AICreditButton()
                 }
             }
+            // What invitations have brought this account so far. The server keeps one pooled balance,
+            // so this is not what is left of it.
+            if let uses = store.referral.status.map({ Referral.uses($0.creditMicrocents) }), uses > 0 {
+                NativeSettingsCard(title: NativeAppLocale.string("친구 초대", locale)) {
+                    BandalSettingRow(title: NativeAppLocale.string("초대 크레딧", locale), note: NativeAppLocale.string("친구 초대로 지금까지 받은 양이에요", locale)) {
+                        Text("AI \(uses)회").accessibilityIdentifier("native-referral-credit")
+                    }
+                }
+            }
             NativeSettingsCard(title: "알림과 결제") {
                 Toggle("사용량 \(AIUsage.alertPercent)%가 되면 알림", isOn: $usageAlert).accessibilityIdentifier("native-settings-usage-alert")
                 Divider()
@@ -161,6 +171,7 @@ struct NativeSettingsSubscriptionPanel: View {
         .task {
             await membership.refresh()
             _ = try? await store.invokePrivate("native:aiConfig", ["refresh": true])
+            _ = try? await store.referral.loadStatus()
             #if DEBUG
             // A Pro account out of AI, for the 충전 popover's UI test and screenshot.
             if ProcessInfo.processInfo.arguments.contains("--native-ai-usage-fixture") { ai.update(["plan": "pro", "percent": 100, "autoQuestionsLeft": 0]) }

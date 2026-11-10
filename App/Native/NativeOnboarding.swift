@@ -51,12 +51,13 @@ struct NativeOnboardingCover: ViewModifier {
     }
 }
 
-/// First-run setup, full screen over the workspace: 언어 → 학교 → 완료. "나중에" leaves at any
-/// step, and both choices stay in Settings (일반 › 언어, 계정 › 학교). No sign-in is asked here.
+/// First-run setup, full screen over the workspace: 언어 → 학교 → 초대 코드 → 완료. "나중에" leaves
+/// at any step, and every choice stays in Settings (일반 › 언어, 계정 › 학교, 계정 › 친구 초대). No
+/// sign-in is asked here.
 struct NativeOnboarding: View {
     var store: NativeWorkspaceStore
     let finish: () -> Void
-    private enum Step: Int, CaseIterable { case language, school, done }
+    private enum Step: Int, CaseIterable { case language, school, invite, done }
     @AppStorage(NativeAppLocale.key) private var language = NativeAppLocale.korean
     @State private var step = Step.language
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -68,6 +69,7 @@ struct NativeOnboarding: View {
                 switch step {
                 case .language: languageStep
                 case .school: schoolStep
+                case .invite: inviteStep
                 case .done: doneStep
                 }
             }
@@ -78,6 +80,8 @@ struct NativeOnboarding: View {
         .background(NativeDesktopTheme.bgApp.ignoresSafeArea())
         .font(NativeDesktopTheme.font(14)).foregroundStyle(NativeDesktopTheme.text).tint(NativeDesktopTheme.accent)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: step)
+        // An invite link opened the app: its code goes into the invite step's field.
+        .onChange(of: store.referral.linkedCode, initial: true) { _, code in if code != nil { step = .invite } }
         .accessibilityElement(children: .contain).accessibilityAddTraits(.isModal).accessibilityIdentifier("native-onboarding")
     }
 
@@ -90,7 +94,7 @@ struct NativeOnboarding: View {
                     Circle().fill(NativeDesktopTheme.text.opacity(item == step ? 1 : 0.18)).frame(width: 8, height: 8)
                 }
             }
-            .accessibilityElement().accessibilityLabel("3단계 중 \(step.rawValue + 1)단계").accessibilityIdentifier("native-onboarding-dots")
+            .accessibilityElement().accessibilityLabel("\(Step.allCases.count)단계 중 \(step.rawValue + 1)단계").accessibilityIdentifier("native-onboarding-dots")
             HStack {
                 if let previous = Step(rawValue: step.rawValue - 1) {
                     Button { step = previous } label: {
@@ -184,12 +188,35 @@ struct NativeOnboarding: View {
             VStack(spacing: tight ? 10 : 16) {
                 heading("다니는 학교를 알려 주세요", tight ? nil : "학교 사이트 바로가기를 사이드바에 모아 드려요.", size: tight ? 20 : 24)
                 // Everything on this step but the list: 190pt when tight, 250pt otherwise.
-                NativeSchoolPicker(store: store, maxListHeight: min(420, max(44, geometry.size.height - (tight ? 190 : 250)))) { _ in step = .done }
+                NativeSchoolPicker(store: store, maxListHeight: min(420, max(44, geometry.size.height - (tight ? 190 : 250)))) { _ in step = .invite }
                     .padding(BandalMetrics.padding)
                     .background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: BandalMetrics.radiusLarge))
                     .overlay(RoundedRectangle(cornerRadius: BandalMetrics.radiusLarge).strokeBorder(NativeDesktopTheme.border))
             }
             .padding(.top, tight ? 4 : 16).frame(maxWidth: .infinity)
+        }
+    }
+
+    /// 초대 코드, for someone a friend invited: a code that exists is kept on this iPad and claimed
+    /// when they sign in. The field has the keyboard from the start; under 320pt (an iPad mini in
+    /// landscape with the keyboard up) the step draws tighter so its button stays on screen.
+    private var inviteStep: some View {
+        GeometryReader { geometry in
+            let tight = geometry.size.height < 320
+            VStack(spacing: tight ? 10 : 20) {
+                heading("초대 코드가 있나요?", nil, size: tight ? 20 : 30)
+                NativeReferralCodeEntry(referral: store.referral, large: true)
+                if store.referral.applied {
+                    primaryButton("다음", label: "다음 단계", identifier: "native-onboarding-next") { step = .done }
+                } else {
+                    Button { store.referral.withdraw(); step = .done } label: {
+                        Text("없어요, 건너뛰기").font(NativeDesktopTheme.font(15, weight: .medium)).foregroundStyle(NativeDesktopTheme.secondary)
+                            .frame(maxWidth: 280, minHeight: 48).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).accessibilityIdentifier("native-referral-skip")
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

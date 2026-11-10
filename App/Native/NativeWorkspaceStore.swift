@@ -43,7 +43,8 @@ final class NativeWorkspaceStore {
     @ObservationIgnored lazy var learningSessions = NativeLearningSessionRegistry(store: self)
     @ObservationIgnored lazy var panelViewStates = NativePanelViewStateStore(root: root)
     var root: URL { runtime.root }
-    var courses: [NativeCourse] = []
+    /// The first course the sidebar lists settles a friend's invitation that waits for it.
+    var courses: [NativeCourse] = [] { didSet { if hasCourse, !oldValue.contains(where: Self.isListed) { referral.advance() } } }
     var selectedCourseID: String?
     /// A newly created docked browser consumes its URL after its page exists.
     var assistantDocumentIDs = Set<String>()
@@ -77,6 +78,12 @@ final class NativeWorkspaceStore {
     var nativeChannelHandler: (@MainActor (String, [String: Any]) async throws -> Any)?
     /// The school directory behind the school picker; the platform services install the signed-in one.
     @ObservationIgnored var schools: any SchoolDirectory = LiveSchoolDirectory()
+    /// A friend's invitation and this account's invite status; the platform services install the signed-in server.
+    @ObservationIgnored lazy var referral = NativeReferral(service: LiveReferralService(), hasCourse: { [weak self] in self?.hasCourse == true },
+        refreshUsage: { [weak self] in _ = try? await self?.invokePrivate("native:aiConfig", ["refresh": true]) })
+    /// A project's hidden study space is not a course.
+    var hasCourse: Bool { courses.contains(where: Self.isListed) }
+    private static func isListed(_ course: NativeCourse) -> Bool { course.workspaceKind != "study-space" }
 
     private let sessionID = UUID().uuidString
     private var startup: Task<Void, Error>?
@@ -153,7 +160,7 @@ final class NativeWorkspaceStore {
                         "native.desktop.courseRailBeforeAI", "native.pdf.paletteCollapsed", NativeLocalPreferences.newDocumentKind, NativeLocalPreferences.homeTogglesSidebar,
                         NativeLocalPreferences.keyboardFoldsPanels, NativeAIPreferences.answerLanguageKey, NativeAIPreferences.usageAlertKey,
                         NativeAIPreferences.referenceScopeKey, NativeAIPreferences.showsSourcesKey, NativeAIPreferences.savesHistoryKey,
-                        NativeOnboardingGate.doneKey, NativeAppLocale.key] { UserDefaults.standard.removeObject(forKey: key) }
+                        NativeOnboardingGate.doneKey, NativeAppLocale.key, NativeReferral.pendingKey, NativeReferral.awaitingKey] { UserDefaults.standard.removeObject(forKey: key) }
             // Browser logins live in the Keychain, outside the reset folder.
             SecItemDelete(DesktopCredentialsService.keychainQuery(folder.lastPathComponent + ":default") as CFDictionary)
             #endif
@@ -701,6 +708,7 @@ final class NativeWorkspaceStore {
 
     private func receive(_ channel: String, payload: Any) {
         events.send(NativeWorkspaceEvent(channel: channel, payload: payload))
+        if channel == "auth:changed" { referral.accountChanged(signedIn: (payload as? [String: Any])?["phase"] as? String == "signed-in") }
         let courseID = (payload as? [String: Any])?["courseId"] as? String
         guard channel == "courses:changed" || channel == "materials:changed" && courseID == selectedCourseID else { return }
         if channel == "courses:changed" { refreshCoursesPending = true }

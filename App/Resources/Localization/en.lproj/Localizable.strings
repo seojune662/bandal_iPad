@@ -1,10 +1,15 @@
 /* ===== BEGIN onboarding + school picker (seojune662/onboarding-school) =====
-   Keys are the Korean literals of NativeOnboarding.swift, NativeSchoolPicker.swift and the school rows in
-   the sidebar and Settings. Sorted by key (code point order). Other screens go BELOW the END marker. */
+   Keys are the Korean literals of NativeOnboarding.swift, NativeSchoolPicker.swift, the school rows in
+   the sidebar and Settings, and the friend invitation (NativeReferral*.swift). Sorted by key (code point
+   order). Other screens go BELOW the END marker. */
 "%@ 링크 삭제" = "Delete %@ link";
 "%@ 링크 편집" = "Edit %@ link";
 "%@ 사이트를 찾는 중…" = "Looking for %@ sites…";
-"3단계 중 %lld단계" = "Step %lld of 3";
+"%lld단계 중 %lld단계" = "Step %2$lld of %1$lld";
+"%lld명까지" = "Up to %lld friends";
+"6자리 코드" = "6-character code";
+"AI %lld회" = "%lld AI uses";
+"AI %lld회가 들어왔어요" = "%lld AI uses added";
 "AI가 찾은 정보 · 검토 전" = "Found by AI · Not reviewed yet";
 "AI로 링크 찾기" = "Find links with AI";
 "AI로 찾기" = "Find with AI";
@@ -12,6 +17,7 @@
 "AI로 찾으려면 로그인이 필요해요" = "Sign in to find it with AI";
 "‘%@’ 사이트를 못 찾았어요" = "Couldn't find sites for “%@”";
 "‘%@’ 학교를 찾지 못했어요" = "No school found for “%@”";
+"공유" = "Share";
 "그만 찾기" = "Stop looking";
 "기타" = "Other";
 "기타 나라" = "Other country";
@@ -19,35 +25,62 @@
 "나라 코드 두 글자" = "Two-letter country code";
 "나라: %@" = "Country: %@";
 "나중에" = "Later";
+"내 초대 코드 %@ 복사" = "Copy my invite code %@";
+"내 초대 코드는 내가 쓸 수 없어요." = "You can't use your own invite code.";
 "내 학교 고르기" = "Choose my school";
 "내 학교 바꾸기" = "Change my school";
 "다니는 학교를 알려 주세요" = "Which school do you go to?";
 "다시 검색" = "Search again";
+"다시 시도" = "Try again";
+"다시 확인" = "Check again";
 "다음" = "Next";
 "다음 단계" = "Next step";
+"로그인하면 AI 100회가 들어와요" = "Sign in to get 100 AI uses";
+"로그인하면 내 초대 코드를 받을 수 있어요" = "Sign in to get your invite code";
+"링크 복사" = "Copy link";
 "링크 이름" = "Link name";
 "링크 추가" = "Add link";
 "링크 편집 마치기" = "Finish editing link";
 "링크는 사이드바의 ‘AI로 링크 찾기’나 설정에서 나중에 더할 수 있어요." = "You can add links later with “Find links with AI” in the sidebar, or in Settings.";
 "반달 시작하기" = "Start using Bandal";
 "반달에 오신 걸 환영해요" = "Welcome to Bandal";
+"반달에서 같이 공부하자. 초대 코드 %@ 넣으면 둘 다 AI 100회 받아요. bandal.io/r/%@" = "Let's study together on Bandal. Enter invite code %@ and we both get 100 AI uses. bandal.io/r/%@";
+"복사했어요" = "Copied";
 "서버에 연결하지 못해 기기에 있는 목록에서 찾았어요." = "Couldn't reach the server, so these come from the list on this iPad.";
 "시작하기" = "Get started";
 "아직 고르지 않았어요" = "Not chosen yet";
 "어떤 언어로 쓸까요? 설정에서 언제든 바꿀 수 있어요." = "Which language would you like? You can change it any time in Settings.";
 "언어와 학교는 설정에서 언제든 바꿀 수 있어요." = "You can change the language and school any time in Settings.";
 "없는 나라 코드예요. 예: DE, FR, CN" = "No such country code. Try DE, FR or CN.";
+"없는 초대 코드예요." = "That invite code doesn't exist.";
+"없어요, 건너뛰기" = "I don't have one, skip";
 "이 이름으로 설정" = "Use this name";
+"이 코드 적용" = "Apply this code";
 "이 학교로 설정" = "Use this school";
 "이 학교의 바로가기 %lld개도 함께 지워져요. 직접 추가한 사이트는 남아요." = "Its %lld shortcuts are removed too. Sites you added yourself stay.";
 "이름과 웹 주소를 확인해 주세요." = "Check the name and the web address.";
+"이미 다른 초대 코드를 썼어요." = "You've already used an invite code.";
 "이전 단계" = "Previous step";
 "조금 더 걸려요" = "This is taking a little longer";
 "준비됐어요" = "You're all set";
 "지금은 AI로 찾을 수 없어요. 잠시 뒤 다시 하거나 직접 입력해 주세요." = "AI search isn't available right now. Try again in a bit, or enter the school yourself.";
 "직접 입력" = "Enter it myself";
 "찾는 학교가 없나요?" = "Don't see your school?";
+"첫 과목을 만들면 AI 100회가 들어와요" = "Create your first course to get 100 AI uses";
 "첫 설정 나중에 하기" = "Set up later";
+"초대 %lld / %lld · 받은 AI %lld회" = "Invited %lld of %lld · %lld AI uses received";
+"초대 정보를 불러오지 못했어요" = "Couldn't load your invite";
+"초대 코드" = "Invite code";
+"초대 코드 입력" = "Enter an invite code";
+"초대 코드가 있나요?" = "Do you have an invite code?";
+"초대 크레딧" = "Invite credit";
+"초대하기" = "Invite";
+"친구 초대" = "Invite a friend";
+"친구 초대로 지금까지 받은 양이에요" = "What you've received from invites so far";
+"친구가 로그인하고 첫 과목을 만들면 둘 다 AI 100회" = "When a friend signs in and creates their first course, you both get 100 AI uses";
+"코드 적용됨 — AI 100회를 받았어요" = "Code applied — you received 100 AI uses";
+"코드 적용됨 — 로그인하고 첫 과목을 만들면 AI 100회가 들어와요" = "Code applied — sign in and create your first course to get 100 AI uses";
+"코드를 확인하지 못했어요. 연결을 확인해 주세요." = "Couldn't check the code. Check your connection.";
 "학교 고르기" = "Choose school";
 "학교 링크 추가" = "Add school link";
 "학교 바꾸기" = "Change school";
@@ -59,4 +92,5 @@
 "학교 이름이나 약칭으로 찾아보세요." = "Search by the school's name or abbreviation.";
 "학교 직접 입력" = "Enter your school";
 "해제" = "Clear";
+"확인하는 중…" = "Checking…";
 /* ===== END onboarding + school picker ===== */
