@@ -118,14 +118,17 @@ struct NativePlannerCalendar<Card: View>: View {
         let outside = !calendar.isDate(day, equalTo: month, toGranularity: .month)
         let entries = tasks.filter { $0.occurs(on: day, calendar: calendar) }
         let external = externalEvents.filter { $0.occurs(on:day,calendar:calendar) }
-        // Under the 26 pt number, chips of 23 pt with 4 pt between; the last line turns into "+n" when they do not all fit.
-        let room = max(1, Int((size.height - 42) / 27)), total = entries.count + external.count
-        let shown = total > room ? room - 1 : total
+        // Under the 26 pt number, as many 23 pt chips (4 pt apart) as the cell holds; the rest are counted beside the number.
+        let total = entries.count + external.count, shown = min(total, max(1, Int((size.height - 42) / 27)))
         return Button { selectedDay = day } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Text(String(calendar.component(.day, from: day))).font(.system(size: 14, weight: today ? .semibold : .regular))
-                    .foregroundStyle(today ? NativeDesktopTheme.onAccent : outside ? NativeDesktopTheme.muted : NativeDesktopTheme.text)
-                    .frame(width: 26, height: 26).background(today ? NativeDesktopTheme.accent : .clear, in: Circle())
+                HStack(spacing: 0) {
+                    Text(String(calendar.component(.day, from: day))).font(.system(size: 14, weight: today ? .semibold : .regular))
+                        .foregroundStyle(today ? NativeDesktopTheme.onAccent : outside ? NativeDesktopTheme.muted : NativeDesktopTheme.text)
+                        .frame(width: 26, height: 26).background(today ? NativeDesktopTheme.accent : .clear, in: Circle())
+                    Spacer(minLength: 0)
+                    if total > shown { Text("+\(total - shown)").font(.system(size: 11, weight: .medium)).foregroundStyle(NativeDesktopTheme.muted) }
+                }
                 ForEach(entries.prefix(shown)) { task in
                     chip(task.title, color: task.completed ? NativeDesktopTheme.muted : task.dueBadge()?.urgent == true ? .red : NativeDesktopTheme.text) {
                         Circle().fill(store.courses.first { $0.id == task.courseId }?.tint ?? NativeDesktopTheme.muted).frame(width: 6, height: 6)
@@ -134,7 +137,6 @@ struct NativePlannerCalendar<Card: View>: View {
                 ForEach(external.prefix(max(0, shown - entries.count))) { event in
                     chip(event.title, color: NativeDesktopTheme.secondary) { Image(systemName: "calendar").font(.system(size: 9)).foregroundStyle(NativeDesktopTheme.muted) }
                 }
-                if total > shown { Text("+\(total - shown)").font(.system(size: 11, weight: .medium)).foregroundStyle(NativeDesktopTheme.muted).padding(.leading, 6) }
             }
             .padding(8).frame(width: size.width, height: size.height, alignment: .topLeading)
             // Today already carries the dark circle; another chosen day is filled lightly.
