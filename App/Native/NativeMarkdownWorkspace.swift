@@ -9,6 +9,7 @@ struct NativeMarkdownWorkspace: View {
     var store: NativeWorkspaceStore
     @StateObject private var session: NativeMarkdownSession
     @State private var registration: UUID?
+    @State private var editing = false
     @State private var confirmReload = false
     @State private var copyMessage: String?
     @State private var copying = false
@@ -234,7 +235,7 @@ struct NativeMarkdownWorkspace: View {
             }
             GeometryReader { geometry in
               HStack(spacing: 2) {
-                ForEach([("본문", "paragraph"), ("제목 1", "h1"), ("제목 2", "h2"), ("제목 3", "h3"), ("굵게", "bold"), ("기울임", "italic"), ("취소선", "strike"), ("글머리 목록", "bullet"), ("번호 목록", "number"), ("할 일 목록", "task"), ("인용", "quote"), ("링크", "link"), ("이미지", "image"), ("인라인 코드", "code"), ("코드 블록", "codeblock")].prefix(max(0, Int((geometry.size.width - 12) / 42))), id: \.1) { item in
+                ForEach([("제목 1", "h1"), ("제목 2", "h2"), ("제목 3", "h3"), ("굵게", "bold"), ("기울임", "italic"), ("글머리 목록", "bullet"), ("할 일 목록", "task"), ("본문", "paragraph"), ("취소선", "strike"), ("번호 목록", "number"), ("인용", "quote"), ("링크", "link"), ("이미지", "image"), ("인라인 코드", "code"), ("코드 블록", "codeblock")].prefix(max(0, Int((geometry.size.width - 12) / 42))), id: \.1) { item in
                     Button { session.applyFormat?(item.1) } label: {
                         Group {
                             if item.1.hasPrefix("h") { Text(item.1.uppercased()).font(.system(size: 13, weight: .medium)) }
@@ -293,9 +294,20 @@ struct NativeMarkdownWorkspace: View {
                     .accessibilityValue(session.saving || session.dirty ? "저장 중" : "저장됨")
                 Button { session.prepareForFlush?(); sourceMode.toggle() } label: { Image(systemName: sourceMode ? "textformat" : "chevron.left.forwardslash.chevron.right").frame(width: 44, height: 44) }
                     .accessibilityLabel(sourceMode ? "서식 편집" : "Markdown 원문").accessibilityIdentifier("native-markdown-source-toggle")
+                if editing && !sourceMode {
+                    Button { session.applyFormat?("undo") } label: { Image(systemName: "arrow.uturn.backward").frame(width: 40, height: 44).contentShape(Rectangle()) }
+                        .buttonStyle(.plain).accessibilityLabel("실행 취소").accessibilityIdentifier("native-markdown-undo")
+                    Button { session.applyFormat?("redo") } label: { Image(systemName: "arrow.uturn.forward").frame(width: 40, height: 44).contentShape(Rectangle()) }
+                        .buttonStyle(.plain).accessibilityLabel("다시 실행").accessibilityIdentifier("native-markdown-redo")
+                    Button { session.applyFormat?("done") } label: {
+                        Text("완료").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.onAccent)
+                            .padding(.horizontal, 14).frame(height: 32).background(NativeDesktopTheme.accent, in: RoundedRectangle(cornerRadius: 8)).contentShape(Rectangle())
+                    }.buttonStyle(.plain).padding(.horizontal, 8).accessibilityIdentifier("native-markdown-done")
+                }
         }.frame(height: 44).accessibilityElement(children: .contain).accessibilityIdentifier("native-markdown-toolbar").foregroundStyle(NativeDesktopTheme.secondary).background(NativeDesktopTheme.surface)
             .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
             .disabled(!session.canEdit || session.frozen)
+            .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { editing = $0.object as? Bool ?? false }
     }
     private func formatSymbol(_ format: String) -> String {
         switch format { case "paragraph": "text.alignleft"; case "bold": "bold"; case "italic": "italic"; case "strike": "strikethrough"; case "bullet": "list.bullet"; case "number": "list.number"; case "task": "checklist"; case "quote": "text.quote"; case "link": "link"; case "image": "photo"; case "codeblock": "curlybraces"; default: "chevron.left.forwardslash.chevron.right" }
