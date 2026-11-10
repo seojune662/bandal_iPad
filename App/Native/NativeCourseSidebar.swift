@@ -86,7 +86,7 @@ struct NativeCourseSidebar: View {
                     HStack(spacing: 8) {
                         Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted)
                         Text(course.name).lineLimit(1)
-                        Circle().fill(color(course.color)).frame(width: 6, height: 6).accessibilityHidden(true)
+                        Circle().fill(course.tint).frame(width: 6, height: 6).accessibilityHidden(true)
                         Spacer(minLength: 0)
                         if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
                     }.frame(minHeight: 44).contentShape(Rectangle())
@@ -171,9 +171,6 @@ struct NativeCourseSidebar: View {
         var values = (try? JSONDecoder().decode(Set<String>.self, from: Data(raw.utf8))) ?? []
         if !values.insert(id).inserted { values.remove(id) }
         if let data = try? JSONEncoder().encode(values), let string = String(data: data, encoding: .utf8) { raw = string }
-    }
-    private func color(_ value: String) -> Color {
-        switch value { case "red": .red; case "orange": .orange; case "yellow", "gold": .yellow; case "green": .green; case "purple": .purple; case "pink": .pink; default: .blue }
     }
 }
 

@@ -186,3 +186,11 @@ struct NativeAnnotatableTextEditor: View {
         }.accessibilityElement(children: .contain)
     }
 }
+
+/// A question handed to the AI panel from outside it (for example 끝내고 요약 on a lecture recording).
+struct NativeAssistantRequest: Equatable {
+    let attachment: NativeAssistantAttachment
+    let prompt: String
+    /// Send at once; false only fills the composer.
+    var sends = true
+}

@@ -68,6 +68,8 @@ struct NativeWorkspaceWindowsOverview: View {
     let windows: [NativeWorkspaceWindow]
     let activeID: String?
     let image: (String) -> UIImage?
+    /// What a window holds, e.g. "디자인 스튜디오 · 3주차 노트" or "eTL 강좌 + 노트"; shown while the window still has its numbered name.
+    var caption: (String) -> String? = { _ in nil }
     let select: (String) -> Void
     let add: () -> Void
     let rename: (String, String) -> Void
@@ -78,6 +80,9 @@ struct NativeWorkspaceWindowsOverview: View {
     @State private var draggingID: String?
     @AccessibilityFocusState private var headingFocused: Bool
     @FocusState private var overviewFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The cards start slightly large and settle, so opening reads as the window zooming out into its card.
+    @State private var settled = false
 
     var body: some View {
         ScrollView {
@@ -113,14 +118,29 @@ struct NativeWorkspaceWindowsOverview: View {
                     }.buttonStyle(.plain).accessibilityIdentifier("native-window-add")
                 }
             }.padding(20).padding(.top, NativeWorkspaceWindowControls.inspectorTop)
-        }.background(NativeDesktopTheme.bgApp)
+        }.scaleEffect(settled || reduceMotion ? 1 : 1.08).opacity(settled ? 1 : 0)
+            .background(NativeDesktopTheme.bgApp)
             .focusable()
             .focusEffectDisabled()
             .focused($overviewFocused)
             .onKeyPress(.escape) { dismiss(); return .handled }
             .accessibilityAction(.escape) { dismiss() }
             .accessibilityIdentifier("native-windows-overview")
-            .onAppear { headingFocused = true; overviewFocused = true }
+            .onAppear { headingFocused = true; overviewFocused = true; withAnimation(.easeOut(duration: 0.22)) { settled = true } }
+    }
+
+    /// "과목 · 문서" for one pane, "문서 + 문서" for a split (the front tab of each pane); nil when nothing is open.
+    static func caption(course: String, titles: [String]) -> String? {
+        let titles = titles.map { ($0 as NSString).deletingPathExtension }.filter { !$0.isEmpty }
+        guard let first = titles.first else { return nil }
+        if titles.count == 1 { return course + " · " + first }
+        return titles.prefix(2).joined(separator: " + ") + (titles.count > 2 ? " 외 \(titles.count - 2)" : "")
+    }
+
+    /// A window the user named keeps that name; "윈도우 N" gives way to what the window holds.
+    static func title(_ name: String, caption: String?) -> String {
+        guard let caption, !caption.isEmpty, name.hasPrefix("윈도우 "), Int(name.dropFirst(4)) != nil else { return name }
+        return caption
     }
 
     private func card(_ window: NativeWorkspaceWindow, index: Int) -> some View {
@@ -150,7 +170,7 @@ struct NativeWorkspaceWindowsOverview: View {
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 } else {
                     Button { renamingID = window.id } label: {
-                        Text(window.name).font(.callout.weight(.medium)).lineLimit(1)
+                        Text(Self.title(window.name, caption: caption(window.id))).font(.callout.weight(.medium)).lineLimit(1)
                             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityLabel(window.name + " 이름 변경")
                 }

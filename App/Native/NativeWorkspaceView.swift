@@ -24,6 +24,8 @@ struct NativeWorkspaceView: View {
     @AppStorage("native.inspector.width") private var materialsRailWidth = 360.0
     @AppStorage("native.home.section") private var leftPanel: NativeHomeSection = .courses
     @AppStorage("native.desktop.aiRail") private var aiRailOpen = false
+    /// The sidebar was open when AI took its slot, and comes back when AI closes.
+    @AppStorage("native.desktop.courseRailBeforeAI") private var courseRailBeforeAI = false
     @State private var windowWidth: CGFloat = 1200
     @State private var markdownEditing = false
     @State private var railsBeforeKeyboard: (Bool, Bool)?
@@ -79,6 +81,7 @@ struct NativeWorkspaceView: View {
         let scope = navigation.currentWindowRef?.workspaceID ?? ""
         return NativeWorkspaceWindowsOverview(windows: navigation.windows, activeID: navigation.currentWindowRef?.windowID,
             image: { previews.image(root: store.root, workspaceID: scope, windowID: $0) },
+            caption: { id in NativeWorkspaceWindowsOverview.caption(course: courseTitle, titles: (navigation.window(.init(workspaceID: scope, windowID: id))?.layout.groups ?? []).compactMap { navigation.document($0.activeID)?.title }) },
             select: { id in changeWindow { _ = navigation.selectWindow(.init(workspaceID: scope, windowID: id)) } },
             add: { changeWindow { _ = navigation.createWindow() } },
             rename: { id, name in persistWindowMetadata { _ = navigation.renameWindow(.init(workspaceID: scope, windowID: id), name: name) } },
@@ -195,7 +198,7 @@ struct NativeWorkspaceView: View {
         GeometryReader { geometry in
             let chrome = chromeLayout(width: geometry.size.width)
             // AI chat stays on screen while annotating so the document does not jump sideways.
-            let aiVisible = showsWorkspaceChrome &&
+            let aiVisible = showsWorkspaceChrome && navigation.active?.kind != "assistant" &&
                 (chrome.aiPinned || !NativeWorkspaceChromeLayout.fitsAI(geometry.size.width) && compactAIRail)
             let aiHostWidth = chrome.aiPinned ? chrome.aiWidth : chrome.compactAIWidth
             let aiLeading = NativeDesktopTheme.navigationWidth + (chrome.leftPinned ? chrome.leftWidth + 1 : 0)
@@ -295,7 +298,6 @@ struct NativeWorkspaceView: View {
                         .position(x: geometry.size.width - chrome.rightWidth - 0.5, y: geometry.size.height / 2)
                 }
             }
-            .overlay { if boardOverlayOpen { academicBoardOverlay(size: geometry.size) } }
             .overlay(alignment: .topTrailing) {
                 NativeWorkspaceWindowControls(mode: navigation.chromeMode, overview: windowsOverviewOpen,
                     rightVisible: rightVisible, enabled: showsWorkspace && !boardOverlayOpen && workspaceContext != nil && !busy && annotation.request == nil,
@@ -313,7 +315,14 @@ struct NativeWorkspaceView: View {
             // so the slide is keyed on what is visible rather than on the toggles.
             .animation(Self.railAnimation, value: [chrome.leftPinned, aiVisible, chrome.aiPinned, rightVisible, chrome.rightPinned,
                                                    compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width)])
-            .blur(radius: settingsOpen ? 6 : 0)
+            .blur(radius: settingsOpen ? 6 : boardOverlayOpen ? 3 : 0)
+            // Its own reader, clear of the keyboard: typing a task must not squeeze the popup.
+            .overlay {
+                if boardOverlayOpen {
+                    GeometryReader { full in academicBoardOverlay(size: full.size, keyboard: max(0, full.size.height - geometry.size.height)) }
+                        .ignoresSafeArea(.keyboard)
+                }
+            }
             .overlay {
                 if settingsOpen {
                     ZStack {
@@ -414,7 +423,6 @@ struct NativeWorkspaceView: View {
                 if let context = workspaceContext, let conversation = NativeToolSelection.conversationID(workspaceID: document.relativePath, root: store.root) {
                     store.pendingAssistantConversationIDs[context.id] = conversation
                 }
-                openAIRail()
             }
             await importSharedMaterials()
         }
@@ -506,11 +514,11 @@ struct NativeWorkspaceView: View {
             if document.learningTarget != nil {
                 NativeLearningDocumentWorkspace(store: store, document: document, onOpenDocument: { openCapturedDocument($0, target: navigation.target(containing: document.id)) }, onOpenBrowser: openBrowserURL)
             } else if document.kind == "assistant" {
-                VStack(spacing: 12) {
-                    Image(systemName: "sparkles").font(.title)
-                    Text("AI가 오른쪽 패널로 이동했어요")
-                    Button("AI 열기", action: openActiveAssistant).buttonStyle(.borderedProminent)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                // AI as a full tab: one centred column, no side panel.
+                NativeAssistantWorkspace(store: store, workspaceID: document.relativePath, courseID: document.courseID, sourceDocument: nil)
+                    .frame(maxWidth: 720).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(uiColor: .systemBackground))
+                    .accessibilityElement(children: .contain).accessibilityIdentifier("native-ai-tab")
             } else if document.kind == "learning-home" {
                 NativeProjectSidebar(store: store, selectedID: workspaceContext?.id, onOpen: changeWorkspace).frame(maxWidth: 420)
             } else if document.kind == "learning" {
@@ -572,6 +580,12 @@ struct NativeWorkspaceView: View {
             }
             compactCourseRail = false; compactAIRail = false; compactMaterialsRail = false
             switch rail { case .course: courseRailOpen = open; case .ai: aiRailOpen = open; case .materials: materialsRailOpen = open }
+            // The home sidebar and AI share the left slot. AI takes it and hands it back when it closes;
+            // opening the sidebar sends AI away.
+            if rail == .ai {
+                if open { if courseRailOpen { courseRailBeforeAI = true; courseRailOpen = false } }
+                else if courseRailBeforeAI { courseRailBeforeAI = false; courseRailOpen = true }
+            } else if rail == .course, open { aiRailOpen = false; courseRailBeforeAI = false }
             guard open else { return }
             let minimum: [Rail: Double] = [.course: NativeWorkspaceChromeLayout.leftMinimum, .ai: NativeWorkspaceChromeLayout.aiMinimum,
                                            .materials: NativeWorkspaceChromeLayout.rightMinimum]
@@ -613,7 +627,8 @@ struct NativeWorkspaceView: View {
     }
     private func globalNavigation(width: CGFloat) -> some View {
         VStack(spacing: 8) {
-            NativeChromeButton(title: "홈", symbol: "house.fill", selected: showsWorkspace && railVisible(.course, width: width)) {
+            NativeChromeButton(title: "홈", symbol: "house.fill", selected: showsWorkspace && railVisible(.course, width: width),
+                               selectedFill: NativeDesktopTheme.surface, joinsPanel: chromeLayout(width: width).leftPinned) {
                 if showsWorkspace { if NativeLocalPreferences.bool(NativeLocalPreferences.homeTogglesSidebar) || !railVisible(.course, width: width) { toggleCourseRail(width: width) } } else {
                     transition {
                         section = .library; auxiliary = nil; learningHome = false
@@ -621,10 +636,11 @@ struct NativeWorkspaceView: View {
                     }
                 }
             }.accessibilityIdentifier("native-section-library")
-            NativeChromeButton(title: railVisible(.ai, width: width) ? "AI 닫기" : "AI 열기", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width)) {
+            NativeChromeButton(title: railVisible(.ai, width: width) ? "AI 닫기" : "AI 열기", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width),
+                               selectedFill: NativeDesktopTheme.aiSurface, joinsPanel: chromeLayout(width: width).aiPinned) {
                 if showsWorkspace { toggleAIRail(width: width) } else { transition { openAIRail() } }
             }.accessibilityIdentifier("native-ai-rail-toggle")
-            NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
+            NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen, selectedFill: NativeDesktopTheme.surface) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
             if NativeReleaseFlags.showsMarketplace {
                 NativeChromeButton(title: "마켓플레이스", symbol: "storefront", selected: auxiliary == .marketplace) { transition { section = .library; auxiliary = .marketplace; learningHome = false } }.accessibilityIdentifier("native-section-marketplace")
             }
@@ -633,9 +649,10 @@ struct NativeWorkspaceView: View {
                 NativeAccountRailButton(store: store, openSettings: openSettings,
                     openHelp: { transition { section = .library; auxiliary = .help; learningHome = false } })
             }
-            NativeChromeButton(title: "설정", symbol: "gearshape", selected: section == .settings) { openSettings("general") }.accessibilityIdentifier("native-section-settings")
+            NativeChromeButton(title: "설정", symbol: "gearshape", selected: section == .settings, selectedFill: NativeDesktopTheme.surface) { openSettings("general") }.accessibilityIdentifier("native-section-settings")
         }.padding(.top, 12).padding(.bottom, 12).frame(width: NativeDesktopTheme.navigationWidth)
-            .background(NativeDesktopTheme.surface).overlay(alignment: .trailing) { railDivider }
+            // The divider is behind the buttons: the open panel's button covers it and joins the panel.
+            .background(alignment: .trailing) { railDivider }.background(NativeDesktopTheme.rail)
     }
     private var courseSidebar: some View {
         VStack(spacing: 0) {
@@ -661,33 +678,22 @@ struct NativeWorkspaceView: View {
             boardOverlayOpen.toggle()
         }
     }
-    private func academicBoardOverlay(size: CGSize) -> some View {
-        ZStack {
-            Color.black.opacity(0.24).ignoresSafeArea().onTapGesture { transition { boardOverlayOpen = false } }
-            VStack(spacing: 0) {
-                HStack {
-                    Text("학업 보드").font(NativeDesktopTheme.font(14, weight: .semibold))
-                    Spacer()
-                    Button { transition { boardOverlayOpen = false } } label: {
-                        Image(systemName: "xmark.circle.fill").font(.system(size: 22)).symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(NativeDesktopTheme.muted).frame(width: 44, height: 44).contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityLabel("학업 보드 닫기")
-                        .keyboardShortcut(.cancelAction).accessibilityIdentifier("native-board-overlay-close")
-                }.padding(.leading, 16).padding(.trailing, 4).frame(height: 44)
-                    .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
-                NativeToolsWorkspace(section: .planner, store: store, services: services)
-            }
-            // Leaves a tappable margin and keeps clear of the top-trailing window controls.
-            .frame(width: min(max(1, size.width - 160), 1040),
-                   height: min(max(1, size.height - 2 * NativeWorkspaceWindowControls.inspectorTop), 680))
-            .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 12))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.2), radius: 24, y: 8)
-            .accessibilityElement(children: .contain).accessibilityAddTraits(.isModal).accessibilityIdentifier("native-board-overlay")
-        }
-    }
-    private func openActiveAssistant() {
-        openAIRail()
+    /// The study board as a popup over the blurred workspace: 1200 × 880 in a 13-inch landscape window, 940 × 1180 in portrait.
+    /// `keyboard` is how far the keyboard reaches up into `size`.
+    private func academicBoardOverlay(size: CGSize, keyboard: CGFloat) -> some View {
+        let height = min(max(1, size.height - 144), 1180), shape = RoundedRectangle(cornerRadius: 28)
+        // A window too short for the full height sits 6 pt low, clear of the top-trailing window controls.
+        let drop: CGFloat = height < 1180 ? 6 : 0
+        return ZStack {
+            Color.black.opacity(0.22).ignoresSafeArea().contentShape(Rectangle())
+                .onTapGesture { transition { boardOverlayOpen = false } }.accessibilityHidden(true)
+            NativePlannerWorkspace(store: store, keyboardInset: max(0, keyboard - (size.height - height) / 2 + drop), onClose: { transition { boardOverlayOpen = false } })
+                .frame(width: min(max(1, size.width - 84), 1200), height: height)
+                // The sheet is drawn 93% opaque: most of that is a fill, and the glass shows through the rest.
+                .background(NativePlannerPalette.sheet.opacity(0.7), in: shape).clipShape(shape).bandalGlass(in: shape)
+                .accessibilityElement(children: .contain).accessibilityAddTraits(.isModal).accessibilityIdentifier("native-board-overlay")
+                .padding(.top, 2 * drop)
+        }.frame(width: size.width, height: size.height)
     }
     private func beginAnnotation() {
         guard let document = navigation.active, let context = workspaceContext,
@@ -783,8 +789,9 @@ struct NativeWorkspaceView: View {
         }
     }
     private func openNewTab(_ action: NativeNewTabAction, _ groupID: String) {
-        if action == .assistant { openAIRail(); return }
         guard !busy else { return }; busy = true
+        // AI as a tab takes the whole pane; the side panel would show the same conversation twice.
+        if action == .assistant { setRail(.ai, open: false, width: windowWidth) }
         let context = workspaceContext
         let target = navigation.captureTarget(groupID: groupID.isEmpty ? nil : groupID)
         let courseID = context?.courseID ?? store.selectedCourseID
@@ -802,7 +809,7 @@ struct NativeWorkspaceView: View {
                 case .browser(let url):
                     document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "브라우저", kind: "browser")
                     if let url { store.pendingBrowserURLs[document.relativePath] = url }
-                case .assistant: document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "AI", kind: "assistant")
+                case .assistant: document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "AI 대화", kind: "assistant")
                 case .recording: document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "녹음", kind: "recordings")
                 }
                 if let target {
@@ -868,11 +875,11 @@ struct NativeWorkspaceView: View {
                     attachments: pendingAttachments[context.id] ?? [],
                     onConsumeAttachments: { pendingAttachments[context.id] = nil },
                     onOpenDocument: openWorkspaceResult, onOpenSettings: openSettings, onAnnotate: beginAnnotation,
-                    onClose: { setRail(.ai, open: false, width: windowWidth) })
+                    onClose: { setRail(.ai, open: false, width: windowWidth) }, surface: NativeDesktopTheme.aiSurface)
                     .environment(\.nativeWorkspaceTarget, navigation.captureTarget())
                     .id(context.id)
             } else { noWorkspacePlaceholder }
-        }.background(NativeDesktopTheme.surface)
+        }.background(NativeDesktopTheme.aiSurface)
     }
     private var noWorkspacePlaceholder: some View {
         VStack(spacing: 12) {
@@ -1189,6 +1196,11 @@ struct NativeWorkspaceView: View {
            let document = navigation.documents.first(where: { $0.kind == "browser" && tabID.hasPrefix(NativeBrowserSession.scopePrefix($0.relativePath)) }),
            !services.browser.pages.keys.contains(where: { NativeBrowserSession.owns($0, workspaceID: document.relativePath) }) {
             closeDocuments([document.id])
+        }
+        if event.channel == "nativeWorkspace:assistantRequest", let request = event.payload as? NativeAssistantRequest, let context = workspaceContext {
+            store.pendingAssistantRequests[context.id] = request
+            transition { openAIRail() }
+            return
         }
         if event.channel == "nativeWorkspace:openSettings", let category = (event.payload as? [String: Any])?["category"] as? String { openSettings(category); return }
         if event.channel == "nativeWorkspace:openAssistantResult", let payload = event.payload as? [String: Any],
