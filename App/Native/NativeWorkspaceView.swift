@@ -463,7 +463,7 @@ struct NativeWorkspaceView: View {
             Task {
                 if store.isReady { _ = try? await store.invokePrivate("nativeRuntime:active", ["active": phase == .active]) }
                 if phase == .background { await flushInBackground() }
-                if phase == .active { await importSharedMaterials() }
+                if phase == .active { await importSharedMaterials(); store.referral.resume() }
             }
         }
         .onOpenURL(perform: receiveURL)

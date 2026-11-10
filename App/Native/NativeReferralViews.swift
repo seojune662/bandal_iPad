@@ -249,7 +249,9 @@ struct NativeReferralBanner: View {
         if store.referral.applied {
             // With a course already made, a code still waiting on this iPad only needs someone to sign in.
             let needsSignIn = store.referral.pending != nil && store.hasCourse && !store.referral.signedIn
-            let line = NativeAppLocale.string(needsSignIn ? "로그인하면 AI 100회가 들어와요" : "첫 과목을 만들면 AI 100회가 들어와요", locale)
+            // Signed in with a course and still waiting: the server could not give the reward yet and is asked again.
+            let onItsWay = store.referral.awaiting && store.hasCourse && store.referral.signedIn
+            let line = NativeAppLocale.string(needsSignIn ? "로그인하면 AI 100회가 들어와요" : onItsWay ? "곧 AI 100회가 들어와요" : "첫 과목을 만들면 AI 100회가 들어와요", locale)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: "gift").accessibilityHidden(true)
                 // One line at the sidebar's usual width. Where it wraps, "AI 100회" stays whole.

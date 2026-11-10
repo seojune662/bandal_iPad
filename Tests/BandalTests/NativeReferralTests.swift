@@ -437,6 +437,44 @@ final class NativeReferralTests: XCTestCase {
         XCTAssertEqual(idle.calls, ["status"])
     }
 
+    func testARewardTheServerCouldNotGiveIsAskedForAgainWhenTheAppReturns() async {
+        // Signed in, code claimed, then the first course is made while the server cannot answer (offline, or the day's ceiling).
+        let server = ReferralServiceFake(signedIn: false), invitee = referral(server)
+        await signIn(server, invitee)
+        _ = await invitee.enter("ABC234")
+        server.failure = .unavailable; hasCourse = true
+        _ = await invitee.advance().value
+        XCTAssertTrue(invitee.awaiting, "Nothing was paid, so it keeps waiting"); XCTAssertNil(invitee.notice)
+        let asked = server.calls.filter { $0 == "complete" }.count
+
+        // Coming back to the app asks once more, and once the server answers the reward arrives.
+        invitee.resume(); await settle(invitee)
+        XCTAssertEqual(server.calls.filter { $0 == "complete" }.count, asked + 1); XCTAssertTrue(invitee.awaiting)
+        server.failure = nil
+        invitee.resume(); await settle(invitee)
+        XCTAssertEqual(invitee.notice, .rewarded(uses: 100)); XCTAssertFalse(invitee.awaiting)
+
+        // Settled, or signed out: returning asks nothing.
+        let calls = server.calls.count
+        invitee.resume(); await settle(invitee)
+        XCTAssertEqual(server.calls.count, calls)
+        defaults.set(true, forKey: NativeReferral.awaitingKey)
+        let signedOut = ReferralServiceFake(signedIn: false), waiting = referral(signedOut)
+        waiting.resume(); await settle(waiting)
+        XCTAssertEqual(signedOut.calls, [])
+
+        // Opening 친구 초대 is another try: an open claim on the server is taken up even when this iPad already knows it.
+        defaults.removePersistentDomain(forName: suite)
+        let again = ReferralServiceFake(signedIn: false), second = referral(again)
+        await signIn(again, second)
+        _ = await second.enter("ABC234")
+        again.failure = .unavailable; hasCourse = true
+        _ = await second.advance().value
+        again.failure = nil
+        _ = try? await second.loadStatus(); await settle(second)
+        XCTAssertEqual(second.notice, .rewarded(uses: 100))
+    }
+
     func testAClaimFollowsItsAccountWhenSomeoneElseUsesThisIPadInBetween() async {
         // A enters a friend's code signed in, before making a course.
         let accountA = ReferralServiceFake(signedIn: false), accountB = ReferralServiceFake(signedIn: false), invitee = referral(accountA)

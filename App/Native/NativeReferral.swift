@@ -94,7 +94,8 @@ final class NativeReferral {
         guard session == self.session else { throw CancellationError() }
         status = loaded
         // Claimed on another iPad or before a reinstall: its reward waits for the first course here too.
-        if loaded.claim?.completed == false, !awaiting { awaiting = true; advance() }
+        // Known here already: this is one more try at a reward the server could not give earlier.
+        if loaded.claim?.completed == false { awaiting = true; advance() }
         return true
     }
 
@@ -115,19 +116,29 @@ final class NativeReferral {
         return task
     }
 
+    /// The app came back to the front: a reward the server could not give earlier (no connection
+    /// when the first course was made, the day's ceiling) is asked for again, once per return.
+    func resume() { if awaiting, signedIn { advance() } }
+
     /// Returns why the waiting code was refused, if it was.
     private func step() async -> ReferralError? {
+        // An answer that arrives after the account changed is someone else's: nothing is written from it.
+        let session = session
         guard applied, await service.isSignedIn() else { return nil }
         if let code = pending {
             // A code typed while the server answers stays for the next step: only this one is settled here.
             do { try await service.claim(code) }
-            catch let error as ReferralError where [.invalidCode, .ownCode, .alreadyClaimed].contains(error) { if pending == code { pending = nil }; return error }
+            catch let error as ReferralError where [.invalidCode, .ownCode, .alreadyClaimed].contains(error) {
+                guard session == self.session else { return nil }
+                if pending == code { pending = nil }; return error
+            }
             catch { return nil } // No connection, or signed out meanwhile: the code waits for the next sign-in.
+            guard session == self.session else { return nil }
             if pending == code { pending = nil }
             awaiting = true
         }
-        // Not before there is a course. When the server cannot answer, the next sign-in, launch or first course asks again.
-        guard awaiting, hasCourse(), let outcome = try? await service.complete() else { return nil }
+        // Not before there is a course. When the server cannot answer, the next sign-in, return to the app or first course asks again.
+        guard awaiting, hasCourse(), let outcome = try? await service.complete(), session == self.session else { return nil }
         awaiting = false
         if case .rewarded(let credit) = outcome {
             notice = .rewarded(uses: Referral.uses(credit))
