@@ -10,3 +10,6 @@ verify_jwt = false
 
 [functions.ipad-store-notifications]
 verify_jwt = false
+
+[functions.schools]
+verify_jwt = false
