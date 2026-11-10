@@ -17,7 +17,7 @@ Version 1.4.1 adds three things. There are no new in-app purchases; purchases, A
 - Profile menu (bottom of the left rail) > 친구 초대, or Settings > 계정 > 친구 초대: the account's invite code with Copy and Share.
 - When an invited friend signs in and creates their first course, both accounts receive AI credit worth about 100 AI questions. It is the same in-app AI credit as before: used after the monthly allowance, never expires. An account is rewarded for at most 5 friends.
 - The reward is AI usage inside the app only. It has no cash value, cannot be transferred, exchanged or withdrawn, and unlocks no paid plan. No purchase is needed to invite or to be invited.
-- The share text contains a link (https://bandal.io/r/CODE) that opens the app with the code filled in.
+- The share text contains a link (https://bandal.io/r/CODE). With the app installed it opens the app with the code filled in; the user still taps "이 코드 적용" to apply it.
 
 How to test
 - New install: the setup appears on first launch. In step 2 type "서울" and pick 서울대학교, or type any name and choose "직접 입력".
