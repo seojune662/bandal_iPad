@@ -391,7 +391,20 @@ struct NativeSettingsWorkspace: View {
         }
         Text("AI는 반달이 제공해요. 키를 따로 넣지 않아도 돼요.").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
       }
+      NativeSettingsCard(title: "자료 참고") {
+        BandalSettingRow(title: "참고 범위", note: referenceScope == "note" ? "지금 열어 둔 문서만 읽어요" : "과목의 자료를 필요할 때 읽어요") {
+          BandalSegmented(options: [("note", "지금 노트"), ("course", "과목 전체")], selection: $referenceScope, identifierPrefix: "native-settings-ai-scope-")
+        }
+        Divider()
+        Toggle(isOn: $showsSources) {
+          VStack(alignment: .leading, spacing: 2) { Text("AI 답변 출처 표시"); Text("답변 아래에 읽은 자료를 보여 줘요").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted) }
+        }.accessibilityIdentifier("native-settings-ai-sources")
+      }
       NativeSettingsCard(title: "대화 기록") {
+        Toggle(isOn: $savesHistory) {
+          VStack(alignment: .leading, spacing: 2) { Text("대화 기록 저장"); Text(savesHistory ? "지난 대화를 목록에서 다시 열 수 있어요" : "지금부터 시작하는 대화는 목록에 남지 않고, 앱을 다시 열면 지워져요").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted) }
+        }.accessibilityIdentifier("native-settings-ai-saves-history")
+        Divider()
         Button("대화 기록 모두 지우기", role: .destructive) { deleteChatsConfirmation = true }.accessibilityIdentifier("native-settings-delete-chats")
           .bandalConfirm("대화 기록을 모두 지울까요?", isPresented: $deleteChatsConfirmation, message: "모든 과목의 AI 대화가 지워져요. 노트와 자료는 그대로예요.", action: "모두 지우기", destructive: true, identifier: "native-settings-delete-chats-confirm") {
             run { _ = try await store.invoke("chat:deleteAll"); notice = "대화 기록을 지웠어요." }
@@ -414,6 +427,9 @@ struct NativeSettingsWorkspace: View {
   @State private var aiEffort = NativeAIPreferences.effort
   @State private var aiSignIn = false
   @AppStorage(NativeAIPreferences.answerLanguageKey) private var answerLanguage = "auto"
+  @AppStorage(NativeAIPreferences.referenceScopeKey) private var referenceScope = "course"
+  @AppStorage(NativeAIPreferences.showsSourcesKey) private var showsSources = true
+  @AppStorage(NativeAIPreferences.savesHistoryKey) private var savesHistory = true
   @State private var deleteChatsConfirmation = false
   @State private var aiSignInError: String?
   private func consentRow(_ provider: NativeAIProvider) -> some View {

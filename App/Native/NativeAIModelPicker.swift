@@ -15,6 +15,14 @@ enum NativeAIPreferences {
     static func languageInstruction(_ value: String? = UserDefaults.standard.string(forKey: answerLanguageKey)) -> String {
         switch value { case "ko": " 항상 한국어로 답하세요."; case "en": " Always answer in English."; default: "" }
     }
+    /// Settings › AI › 참고 범위: "course" lets an answer read any material of the course, "note" only the note the question came from.
+    static let referenceScopeKey = "native.ai.referenceScope"
+    static var referenceScope: String { UserDefaults.standard.string(forKey: referenceScopeKey) == "note" ? "note" : "course" }
+    /// Settings › AI › AI 답변 출처 표시: chips under an answer for the materials it read.
+    static let showsSourcesKey = "native.ai.showsSources"
+    /// Settings › AI › 대화 기록 저장: off, a conversation begun from then on is not listed and is deleted by the next launch.
+    static let savesHistoryKey = "native.ai.savesHistory"
+    static var savesHistory: Bool { NativeLocalPreferences.bool(savesHistoryKey) }
     /// Settings › 구독·사용량 › 사용량 80%가 되면 알림.
     static let usageAlertKey = "native.ai.usageAlert"
 }
