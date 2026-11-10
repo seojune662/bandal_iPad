@@ -4,13 +4,13 @@
 create function public.test_user(n integer) returns uuid language sql immutable as $$
   select ('00000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid
 $$;
-insert into auth.users select public.test_user(n) from generate_series(1, 29) n;
+insert into auth.users select public.test_user(n) from generate_series(1, 31) n;
 \set paid '{"status":"rewarded","creditMicrocents":7000000,"referrerRewarded":true}'
 \set unpaid '{"status":"rewarded","creditMicrocents":7000000,"referrerRewarded":false}'
 
 -- Nothing is reachable with the app's keys.
 select public.assert_true(not exists (select 1 from unnest(array['anon','authenticated']) r,
-  unnest(array['referral_reward()','referral_cap()','referral_new_code()','referral_check(text)',
+  unnest(array['referral_reward()','referral_cap()','referral_daily_grants()','referral_new_code()','referral_check(text)',
     'referral_claim_code(uuid,text)','referral_complete(uuid)','referral_status(uuid)']) f
   where has_function_privilege(r, 'public.' || f, 'execute')), 'no function for anon or authenticated');
 select public.assert_true(not exists (select 1 from unnest(array['anon','authenticated']) r, unnest(array['referral_code','referral_claim']) t
@@ -225,6 +225,28 @@ reset role;
 select public.assert_true(not exists (select 1 from public.referral_claim c where not exists (select 1 from auth.users u where u.id = c.referee_id)
     or (c.referrer_id is not null and not exists (select 1 from auth.users u where u.id = c.referrer_id)))
   and not exists (select 1 from public.referral_code c where not exists (select 1 from auth.users u where u.id = c.owner_id)), 'every row belongs to a live account');
+set role service_role;
+
+-- The day's ceiling: with that many referral grants in the last 24 hours nothing more is paid,
+-- the claim stays open, and it is paid once the older grants have aged out.
+select public.referral_status(public.test_user(30))->>'code' as code30 \gset
+select public.assert_true(public.referral_claim_code(public.test_user(31), :'code30') = '{"status":"claimed"}'::jsonb, 'a claim for the ceiling');
+reset role;
+insert into public.ai_credit_grants(source, ref, user_id, amount_ucents)
+  select 'referral', 'ceiling:' || n, public.test_user(30), 1 from generate_series(1, public.referral_daily_grants()) n;
+set role service_role;
+do $$ begin
+  perform public.referral_complete(public.test_user(31));
+  raise exception 'a completion was paid past the daily ceiling';
+exception when configuration_limit_exceeded then null; end $$;
+select public.assert_true((select completed_at is null and rewarded_at is null from public.referral_claim where referee_id = public.test_user(31))
+  and not exists (select 1 from public.ai_credit_grants where user_id = public.test_user(31)), 'past the ceiling the claim stays open and unpaid');
+reset role;
+update public.ai_credit_grants set granted_at = now() - interval '25 hours' where ref like 'ceiling:%';
+set role service_role;
+select public.assert_true(public.referral_complete(public.test_user(31)) = :'paid'::jsonb, 'and it is paid once the day has rolled over');
+reset role;
+delete from public.ai_credit_grants where ref like 'ceiling:%';
 set role service_role;
 
 -- Left for run-local.sh: inviter 20 is one invitee short of the five and 25 and 26 have entered

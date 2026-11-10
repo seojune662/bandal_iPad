@@ -161,6 +161,12 @@ after the month's budget and never expires. `service_role` only.
 
 - The amounts are two functions at the top of the migration, `referral_reward()` and
   `referral_cap()`, so they change with SQL and no app build. The Edge Function decides nothing.
+- `/complete` is the app's word that a first course exists; the server cannot check it, and
+  accounts are cheap. `referral_daily_grants()` (400, $28) is the most referral grants paid in
+  any 24 hours for everyone together. Past it `referral_complete` raises `referral_paused`, the
+  function answers 503, the claim stays open and the app's next `/complete` is paid once older
+  grants have aged out. Watch `select count(*) from ai_credit_grants where source = 'referral'
+  and granted_at > now() - interval '1 day'`.
 - The rules go by account: one claim per invitee, never one's own code, and an inviter is paid
   for the first five invitees who complete (later invitees are still paid themselves). No device
   is identified; the tables hold user ids, codes and timestamps.

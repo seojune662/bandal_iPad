@@ -14,6 +14,14 @@ create function public.referral_reward() returns bigint
 language sql immutable parallel safe set search_path = '' as $$ select 7000000::bigint $$;
 create function public.referral_cap() returns integer
 language sql immutable parallel safe set search_path = '' as $$ select 5 $$;
+-- The server cannot see a course: /complete is the app's word for it, and accounts are cheap to
+-- make. So what referrals pay out in any 24 hours is bounded for everyone together: 400 grants
+-- ($28). Past that a completion is refused, its claim stays open, and the app's next /complete
+-- is paid once older grants have aged out.
+-- ponytail: one ceiling for all accounts, so a burst of real invites waits with the fake ones;
+-- raise the number, or pay only on a signal the server can see, when real use comes near it.
+create function public.referral_daily_grants() returns integer
+language sql immutable parallel safe set search_path = '' as $$ select 400 $$;
 
 -- `completed` counts the owner's invitees who completed. It is kept here rather than counted
 -- from referral_claim because a claim goes when its invitee's account goes: deleting invitee
@@ -115,6 +123,8 @@ end $$;
 --   {status: rewarded, creditMicrocents, referrerRewarded}
 --                       the invitee is paid; the inviter too while it has had fewer than five
 --                       (referral_cap) and its account still exists
+-- or raises referral_paused (53400) while the day's ceiling (referral_daily_grants) is reached:
+-- nothing is written, and the Edge Function answers 503 so the app tries again later.
 -- All in one transaction. The locks, in the order they are taken:
 --   1. the claim row. A repeat by the same invitee waits here, then finds the claim completed.
 --   2. both accounts' `ai:` advisory locks, the lower user id first. They are the locks
@@ -138,6 +148,10 @@ begin
   select * into c from public.referral_claim x where x.referee_id = actor for update;
   if not found then return jsonb_build_object('status', 'none'); end if;
   if c.completed_at is not null then return jsonb_build_object('status', 'already'); end if;
+  -- Read without a lock: a few completions at the same moment may pass together, which a ceiling can afford.
+  if (select count(*) from public.ai_credit_grants g where g.source = 'referral' and g.granted_at > now() - interval '1 day') >= public.referral_daily_grants() then
+    raise exception 'referral_paused' using errcode = '53400';
+  end if;
   perform pg_advisory_xact_lock(hashtextextended('ai:' || least(actor, c.referrer_id)::text, 0));
   perform pg_advisory_xact_lock(hashtextextended('ai:' || greatest(actor, c.referrer_id)::text, 0));
   -- No row when the inviter's account is gone: pay_referrer stays null.
@@ -152,7 +166,7 @@ begin
 end $$;
 
 do $$ declare f text; begin
-  foreach f in array array['referral_reward()','referral_cap()','referral_new_code()','referral_status(uuid)',
+  foreach f in array array['referral_reward()','referral_cap()','referral_daily_grants()','referral_new_code()','referral_status(uuid)',
     'referral_check(text)','referral_claim_code(uuid,text)','referral_complete(uuid)'] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
     execute format('grant execute on function public.%s to service_role', f);
