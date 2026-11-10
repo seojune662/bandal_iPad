@@ -200,7 +200,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     private func tabs(_ group: NativeDockGroup, topPadding: CGFloat, corner: Bool) -> some View {
         GeometryReader { geometry in
             let shareable = navigation.document(group.activeID).map(NativeDockShareControls.supports) ?? false
-            let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - 140 - (shareable ? NativeDockShareControls.width : 0) - (corner ? controlInset : 0)), count: group.tabs.count,
+            let closable = navigation.groups.count > 1
+            let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - 140 - (closable ? 36 : 0) - (shareable ? NativeDockShareControls.width : 0) - (corner ? controlInset : 0)), count: group.tabs.count,
                 activeIndex: group.tabs.firstIndex(of: group.activeID ?? "") ?? -1, spacing: density == "compact" ? 0 : 4)
             HStack(alignment: .bottom, spacing: 0) {
                 HStack(spacing: sizing.spacing) {
@@ -234,6 +235,12 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     }
                 groupMenu(group)
                 if shareable, let document = navigation.document(group.activeID) { NativeDockShareControls(document: document, store: store) }
+                // Closes this pane only: its tabs move to the neighbouring pane.
+                if closable, let other = navigation.groups.first(where: { $0.id != group.id }) {
+                    Button { perform { if group.tabs.isEmpty { navigation.removeEmptyGroup(group.id) } else { navigation.merge(group.id, into: other.id) }; maximizedGroupID = nil } } label: {
+                        Image(systemName: "xmark").font(.system(size: 12)).frame(width: 36, height: 44).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityLabel("이 칸 닫기").accessibilityIdentifier("native-dock-close-pane-" + group.id)
+                }
                 if corner && controlInset > 0 { Color.clear.frame(width: controlInset, height: 44) }
             }.frame(height: headerHeight, alignment: .bottom).padding(.horizontal, 4).padding(.top, topPadding)
         }.frame(height: headerHeight + topPadding).clipped().background(NativeDesktopTheme.surface)
@@ -260,6 +267,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         .background {
             RoundedRectangle(cornerRadius: 6).fill(group.activeID == document.id ? NativeDesktopTheme.raised : Color.clear).padding(.vertical, 4)
         }
+        // Only the pane being written in keeps its tabs at full strength.
+        .opacity(navigation.groups.count > 1 && group.id != navigation.focusedGroupID ? 0.5 : 1)
         .contextMenu { tabMenu(document, group: group) }
         .overlay(alignment: .leading) {
             if drag.target == .init(groupID: group.id, direction: .within, index: index) { NativeDesktopTheme.accent.frame(width: 3) }

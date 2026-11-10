@@ -91,6 +91,7 @@ struct NativeCourseSidebar: View {
                         if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
                     }.frame(minHeight: 44).contentShape(Rectangle())
                 }.accessibilityIdentifier("native-course-" + course.id)
+                    .contextMenu { courseMenu(course) }
                     .simultaneousGesture(TapGesture(count: 2).onEnded { renamingID = course.id })
                 }
                 Menu { courseMenu(course) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel(course.name + " 과목 메뉴")
@@ -138,8 +139,9 @@ struct NativeCourseSidebar: View {
     @ViewBuilder private var addingContent: some View {
         switch adding {
         case .course:
-            BandalTextEntry(title: "새 과목", prompt: "과목 이름", actionTitle: "만들기", identifier: "native-course-name", submitIdentifier: "native-create-course") { name in
+            NativeNewCourseForm(cancel: { adding = nil }) { name, color in
                 try await onCreate(name); adding = nil
+                if color != "blue", let id = store.selectedCourseID { mutate("courses:setColor", ["courseId": id, "color": color]) }
             }
         case .group:
             BandalTextEntry(title: "새 그룹", prompt: "그룹 이름", actionTitle: "만들기", identifier: "native-group-name") { name in
@@ -172,5 +174,53 @@ struct NativeCourseSidebar: View {
     }
     private func color(_ value: String) -> Color {
         switch value { case "red": .red; case "orange": .orange; case "yellow", "gold": .yellow; case "green": .green; case "purple": .purple; case "pink": .pink; default: .blue }
+    }
+}
+
+/// 새 과목: 취소 · 만들기 on top, the name, a colour, and where linked folders live.
+private struct NativeNewCourseForm: View {
+    let cancel: () -> Void
+    let create: @MainActor (String, String) async throws -> Void
+    @State private var name = ""
+    @State private var color = "blue"
+    @State private var error: String?
+    @State private var busy = false
+    @FocusState private var focused: Bool
+    private static let colors: [(String, Color)] = [("blue", .blue), ("red", .red), ("orange", .orange), ("green", .green), ("yellow", .yellow), ("purple", .purple)]
+    private var ready: Bool { !busy && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button("취소", action: cancel).accessibilityIdentifier("native-course-cancel")
+                Spacer(); Text("새 과목").fontWeight(.semibold); Spacer()
+                Button("만들기", action: submit).fontWeight(.semibold).disabled(!ready).opacity(ready ? 1 : 0.35).accessibilityIdentifier("native-create-course")
+            }.font(.system(size: 15)).buttonStyle(.plain)
+            TextField("과목 이름", text: $name).font(.system(size: 15)).textFieldStyle(.plain).focused($focused).onSubmit(submit).disabled(busy)
+                .padding(.horizontal, 12).frame(minHeight: 40)
+                .background(NativeDesktopTheme.text.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+                .accessibilityIdentifier("native-course-name")
+            Text("색").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
+            HStack(spacing: 14) {
+                ForEach(Self.colors, id: \.0) { value, tint in
+                    Button { color = value } label: {
+                        Circle().fill(tint).frame(width: 20, height: 20)
+                            .overlay(Circle().stroke(NativeDesktopTheme.text, lineWidth: 2).padding(-4).opacity(color == value ? 1 : 0))
+                            .frame(width: 30, height: 36).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityLabel(value).accessibilityAddTraits(color == value ? .isSelected : [])
+                        .accessibilityIdentifier("native-course-color-" + value)
+                }
+            }
+            if let error { Text(error).font(.system(size: 11)).foregroundStyle(.red).lineLimit(2) }
+            Text("나중에 ‘폴더 연결 및 보관 관리’로 파일 앱 폴더를 붙일 수 있어요.").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }.onAppear { focused = true }
+    }
+    private func submit() {
+        guard ready else { return }
+        busy = true; error = nil
+        Task { @MainActor in
+            defer { busy = false }
+            do { try await create(name.trimmingCharacters(in: .whitespacesAndNewlines), color) } catch { self.error = error.localizedDescription }
+        }
     }
 }
