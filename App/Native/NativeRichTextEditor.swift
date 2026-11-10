@@ -20,6 +20,8 @@ struct NativeRichTextEditor: UIViewRepresentable {
     var compactPaperLayout = false
     var contentHeightChanged: ((CGFloat) -> Void)? = nil
     var focusChanged: ((Bool) -> Void)? = nil
+    /// Posted with `true` when a markdown editor starts editing and `false` when it stops.
+    static let editingChanged = Notification.Name("native.markdown.editingChanged")
     var captureViewChanged: ((UIView) -> Void)? = nil
     var selectionOnly = false
     var editorAccessibilityID = "native-markdown-textview"
@@ -44,17 +46,6 @@ struct NativeRichTextEditor: UIViewRepresentable {
         coordinator.installCallbacks(); coordinator.reset()
         coordinator.installMediaDrop(on: view)
         captureViewChanged?(view)
-        let toolbar = UIToolbar()
-        toolbar.items = [
-            UIBarButtonItem(title: "제목", image: UIImage(systemName: "textformat.size"), primaryAction: UIAction { [weak coordinator] _ in coordinator?.format("h2") }),
-            UIBarButtonItem(title: "굵게", image: UIImage(systemName: "bold"), primaryAction: UIAction { [weak coordinator] _ in coordinator?.format("bold") }),
-            UIBarButtonItem(title: "할 일", image: UIImage(systemName: "checklist"), primaryAction: UIAction { [weak coordinator] _ in coordinator?.format("task") }),
-            UIBarButtonItem(title: "삽입", image: UIImage(systemName: "plus"), primaryAction: UIAction { [weak coordinator] _ in coordinator?.showInsertions(query: "", slashRange: nil) }),
-            UIBarButtonItem(systemItem: .flexibleSpace),
-            UIBarButtonItem(title: "실행 취소", image: UIImage(systemName: "arrow.uturn.backward"), primaryAction: UIAction { [weak view] _ in view?.undoManager?.undo() }),
-            UIBarButtonItem(title: "다시 실행", image: UIImage(systemName: "arrow.uturn.forward"), primaryAction: UIAction { [weak view] _ in view?.undoManager?.redo() }),
-            UIBarButtonItem(title: "완료", style: .done, target: coordinator, action: #selector(Coordinator.done))]
-        toolbar.sizeToFit(); view.inputAccessoryView = toolbar
         return view
     }
     func updateUIView(_ uiView: UITextView, context: Context) {
@@ -303,8 +294,8 @@ struct NativeRichTextEditor: UIViewRepresentable {
             }
             return true
         }
-        func textViewDidBeginEditing(_ textView: UITextView) { parent.focusChanged?(true) }
-        func textViewDidEndEditing(_ textView: UITextView) { finishComposition(); endTypingGroup(); parent.focusChanged?(false); Task { try? await parent.session.flush() } }
+        func textViewDidBeginEditing(_ textView: UITextView) { parent.focusChanged?(true); NotificationCenter.default.post(name: NativeRichTextEditor.editingChanged, object: true) }
+        func textViewDidEndEditing(_ textView: UITextView) { finishComposition(); endTypingGroup(); parent.focusChanged?(false); NotificationCenter.default.post(name: NativeRichTextEditor.editingChanged, object: false); Task { try? await parent.session.flush() } }
         func textViewDidChangeSelection(_ textView: UITextView) {
             guard !applying, textView.markedTextRange == nil else { return }
             if typingGroupOpen, !pendingUserEdit, view?.isProcessingTextInput != true, textView.selectedRange != typingSelection { endTypingGroup() }
@@ -388,6 +379,13 @@ struct NativeRichTextEditor: UIViewRepresentable {
         }
         func format(_ command: String) {
             guard let view, view.isEditable else { return }
+            // History and 완료 live in the toolbar under the tabs; nothing sits above the keyboard.
+            switch command {
+            case "undo": view.undoManager?.undo(); return
+            case "redo": view.undoManager?.redo(); return
+            case "done": done(); return
+            default: break
+            }
             commitComposition(); view.becomeFirstResponder()
             if command == "link", NativeRichTextCommands.link(in: projection, selection: view.selectedRange) != nil {
                 apply(NativeRichTextCommands.apply("unlink", to: projection, selection: view.selectedRange)); return

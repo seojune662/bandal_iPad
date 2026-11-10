@@ -25,6 +25,8 @@ struct NativeWorkspaceView: View {
     @AppStorage("native.home.section") private var leftPanel: NativeHomeSection = .courses
     @AppStorage("native.desktop.aiRail") private var aiRailOpen = false
     @State private var windowWidth: CGFloat = 1200
+    @State private var markdownEditing = false
+    @State private var railsBeforeKeyboard: (Bool, Bool)?
     @State private var hasWindowWidth = false
     @State private var restoreInspectorAfterAnnotation = true
     @State private var pendingAttachments: [String: [NativeAssistantAttachment]] = [:]
@@ -299,6 +301,18 @@ struct NativeWorkspaceView: View {
             .animation(Self.railAnimation, value: [chrome.leftPinned, aiVisible, chrome.aiPinned, rightVisible, chrome.rightPinned,
                                                    compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width)])
             .onAppear { updateWindowWidth(geometry.size.width) }
+            // Typing a markdown note on the software keyboard: both side panels fold, and come back with the keyboard gone.
+            .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { markdownEditing = $0.object as? Bool ?? false }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                guard markdownEditing, railsBeforeKeyboard == nil else { return }
+                railsBeforeKeyboard = (courseRailOpen, materialsRailOpen)
+                withAnimation(Self.railAnimation) { courseRailOpen = false; materialsRailOpen = false }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                guard let saved = railsBeforeKeyboard else { return }
+                railsBeforeKeyboard = nil
+                withAnimation(Self.railAnimation) { courseRailOpen = saved.0; materialsRailOpen = saved.1 }
+            }
             .onChange(of: geometry.size.width) { _, width in updateWindowWidth(width) }
             .task(id: busy) {
                 showBusy = false
