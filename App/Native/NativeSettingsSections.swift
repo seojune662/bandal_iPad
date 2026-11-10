@@ -11,7 +11,7 @@ struct NativeSettingsCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             BandalSectionHeader(title).padding(.horizontal, 4)
-            if !description.isEmpty { Text(description).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1).padding(.horizontal, 4) }
+            if !description.isEmpty { BandalText(description).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1).padding(.horizontal, 4) }
             VStack(alignment: .leading, spacing: 8) { content() }
                 .font(.system(size: BandalMetrics.bodySize))
                 .controlSize(.small)

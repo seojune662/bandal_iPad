@@ -274,7 +274,7 @@ final class NativeOnboardingUITests: XCTestCase {
         XCTAssertTrue(school.waitForExistence(timeout: 5), app.debugDescription); school.tap()
         XCTAssertTrue(app.staticTexts["native-settings-school-name"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(pick.label, "Change my school")
-        XCTAssertTrue(app.buttons["선택 해제"].exists, "The sites below are still managed here")
+        XCTAssertTrue(app.buttons["native-settings-school-clear"].exists, "The sites below are still managed here")
         capture("Settings: school chosen (English)")
 
         app.buttons["native-settings-category-general"].tap()
