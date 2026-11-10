@@ -44,8 +44,8 @@ final class NativeReferralTests: XCTestCase {
         XCTAssertEqual(Referral.normalize("https://bandal.io/r/ABC234"), "ABC234")
         XCTAssertEqual(Referral.normalize("https://bandal.io/r/ABC234/"), "ABC234")
         XCTAssertEqual(Referral.normalize("https://bandal.io/r/abc234?utm_source=kakao"), "ABC234")
-        XCTAssertEqual(Referral.normalize("반달에서 같이 공부하자. 초대 코드 ABC234 넣으면 둘 다 AI 100회 받아요. bandal.io/r/ABC234"), "ABC234", "The whole share message")
-        XCTAssertEqual(Referral.normalize("Let's study together on Bandal. Enter invite code ABC234 and we both get 100 AI uses. bandal.io/r/ABC234"), "ABC234")
+        XCTAssertEqual(Referral.normalize("반달에서 같이 공부하자. 초대 코드 ABC234 넣으면 둘 다 AI 100회 받아요. https://bandal.io/r/ABC234"), "ABC234", "The whole share message")
+        XCTAssertEqual(Referral.normalize("Let's study together on Bandal. Enter invite code ABC234 and we both get 100 AI uses. https://bandal.io/r/ABC234"), "ABC234")
         XCTAssertEqual(Referral.normalize("초대 코드 abc234"), "ABC234")
         XCTAssertEqual(Referral.normalize("a0b1cOdIeLf2gh"), "ABCDEF", "0, 1, O, I and L are dropped, not guessed at")
         XCTAssertEqual(Referral.normalize("ABCDEFGH"), "ABCDEF", "Six at most")
@@ -94,10 +94,10 @@ final class NativeReferralTests: XCTestCase {
             (.refused(.alreadyClaimed), "이미 다른 초대 코드를 썼어요.", "You've already used an invite code."),
         ]
         for (notice, ko, en) in lines { XCTAssertEqual(notice.text(korean), ko); XCTAssertEqual(notice.text(english), en) }
-        XCTAssertEqual(String(format: NativeAppLocale.string("반달에서 같이 공부하자. 초대 코드 %@ 넣으면 둘 다 AI 100회 받아요. bandal.io/r/%@", korean), "ABC234", "ABC234"),
-                       "반달에서 같이 공부하자. 초대 코드 ABC234 넣으면 둘 다 AI 100회 받아요. bandal.io/r/ABC234")
-        XCTAssertEqual(String(format: NativeAppLocale.string("반달에서 같이 공부하자. 초대 코드 %@ 넣으면 둘 다 AI 100회 받아요. bandal.io/r/%@", english), "ABC234", "ABC234"),
-                       "Let's study together on Bandal. Enter invite code ABC234 and we both get 100 AI uses. bandal.io/r/ABC234")
+        XCTAssertEqual(String(format: NativeAppLocale.string("반달에서 같이 공부하자. 초대 코드 %@ 넣으면 둘 다 AI 100회 받아요. https://bandal.io/r/%@", korean), "ABC234", "ABC234"),
+                       "반달에서 같이 공부하자. 초대 코드 ABC234 넣으면 둘 다 AI 100회 받아요. https://bandal.io/r/ABC234")
+        XCTAssertEqual(String(format: NativeAppLocale.string("반달에서 같이 공부하자. 초대 코드 %@ 넣으면 둘 다 AI 100회 받아요. https://bandal.io/r/%@", english), "ABC234", "ABC234"),
+                       "Let's study together on Bandal. Enter invite code ABC234 and we both get 100 AI uses. https://bandal.io/r/ABC234")
         XCTAssertEqual(String(format: NativeAppLocale.string("%lld단계 중 %lld단계", english), 4, 3), "Step 3 of 4")
         XCTAssertEqual(String(format: NativeAppLocale.string("초대 %lld / %lld · 받은 AI %lld회", english), 3, 5, 300), "Invited 3 of 5 · 300 AI uses received")
         // Every Korean literal of the invitation's screens has its English.
