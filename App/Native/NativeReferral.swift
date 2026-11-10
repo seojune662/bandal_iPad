@@ -73,11 +73,14 @@ final class NativeReferral {
     func withdraw() { pending = nil }
 
     /// Signing in claims a waiting code, once per sign-in: the account service repeats its state
-    /// (a new nickname, a restored session). Signing out takes the account's numbers off the screen.
+    /// (a new nickname, a restored session). Then, with no invitation under way on this iPad, it
+    /// asks what the account itself still has open: a claim belongs to the account, so one made on
+    /// another iPad, before a reinstall, or before someone else used this iPad is taken up again.
+    /// Signing out takes the account's numbers and its waiting reward off this iPad; the server keeps the claim.
     func accountChanged(signedIn: Bool) {
         guard signedIn != self.signedIn else { return }
         self.signedIn = signedIn; session += 1
-        if signedIn { advance() } else { status = nil }
+        if signedIn { advance(resuming: true) } else { status = nil; awaiting = false }
     }
 
     /// Asks for this account's invite status. False: nobody is signed in, and nothing was asked.
@@ -98,12 +101,14 @@ final class NativeReferral {
     /// Takes the invitation as far as it can go now: called on sign-in, on a new code and when the
     /// first course appears. Steps run one at a time, in the order asked; nothing retries by itself.
     /// A refusal becomes the toast unless the caller shows it (`announcing: false`).
-    @discardableResult func advance(announcing: Bool = true) -> Task<ReferralError?, Never> {
+    @discardableResult func advance(announcing: Bool = true, resuming: Bool = false) -> Task<ReferralError?, Never> {
         let previous = work
         let task = Task { () -> ReferralError? in
             _ = await previous?.value
             let refusal = await self.step()
             if announcing, let refusal { self.notice = .refused(refusal) }
+            // A sign-in that left nothing under way here: does the account have a claim still open?
+            if resuming, !self.applied { _ = try? await self.loadStatus() }
             return refusal
         }
         work = task

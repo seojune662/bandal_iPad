@@ -25,7 +25,12 @@ final class NativeReferralTests: XCTestCase {
     private func signIn(_ service: ReferralServiceFake, _ referral: NativeReferral) async {
         service.signedIn = true
         referral.accountChanged(signedIn: false); referral.accountChanged(signedIn: true)
-        _ = await referral.work?.value
+        await settle(referral)
+    }
+    /// Waits for every step, including one that a step started.
+    private func settle(_ referral: NativeReferral) async {
+        var last: Task<ReferralError?, Never>?
+        while let work = referral.work, work != last { last = work; _ = await work.value }
     }
 
     // MARK: Code, link, credit
@@ -280,18 +285,22 @@ final class NativeReferralTests: XCTestCase {
         XCTAssertEqual(server.calls, ["check ABC234", "claim ABC234"])
         XCTAssertNil(invitee.pending); XCTAssertTrue(invitee.awaiting); XCTAssertTrue(invitee.applied); XCTAssertNil(invitee.notice)
         XCTAssertTrue(referral(server).awaiting, "Claimed, and waiting across a relaunch")
+        // Signed out and in again: the waiting reward left this iPad with the account and comes
+        // back from the server's status. Nothing is claimed twice.
         await signIn(server, invitee)
-        XCTAssertEqual(server.calls.count, 2, "A second sign-in event has nothing to do")
+        XCTAssertEqual(server.calls, ["check ABC234", "claim ABC234", "status"])
+        XCTAssertTrue(invitee.awaiting)
 
-        // The first course asks for the reward, once.
+        // The first course asks for the reward, once; the numbers on screen follow.
         hasCourse = true
         _ = await invitee.advance().value
-        XCTAssertEqual(server.calls, ["check ABC234", "claim ABC234", "complete"])
+        XCTAssertEqual(server.calls, ["check ABC234", "claim ABC234", "status", "complete", "status"])
         XCTAssertEqual(invitee.notice, .rewarded(uses: 100)); XCTAssertEqual(refreshes, 1, "The AI usage on screen follows")
         XCTAssertFalse(invitee.awaiting); XCTAssertFalse(invitee.applied)
         _ = await invitee.advance().value
         await signIn(server, invitee)
-        XCTAssertEqual(server.calls.count, 3, "Settled: nothing is asked again")
+        XCTAssertEqual(server.calls.filter { $0.hasPrefix("claim") }.count, 1); XCTAssertEqual(server.calls.filter { $0 == "complete" }.count, 1, "Settled: a later sign-in only reads the status")
+        XCTAssertEqual(server.calls.last, "status"); XCTAssertFalse(invitee.awaiting)
         let relaunched = referral(server)
         XCTAssertNil(relaunched.pending); XCTAssertFalse(relaunched.awaiting)
     }
@@ -352,10 +361,10 @@ final class NativeReferralTests: XCTestCase {
         XCTAssertEqual(entry, .applied, "Whose code it is shows only at the claim")
         await signIn(later, waiting)
         XCTAssertEqual(waiting.notice, .refused(.ownCode)); XCTAssertNil(waiting.pending); XCTAssertFalse(waiting.applied)
-        XCTAssertEqual(later.calls, ["check " + ReferralServiceFake.ownCode, "claim " + ReferralServiceFake.ownCode])
+        XCTAssertEqual(later.calls, ["check " + ReferralServiceFake.ownCode, "claim " + ReferralServiceFake.ownCode, "status"])
         waiting.notice = nil
         await signIn(later, waiting)
-        XCTAssertNil(waiting.notice); XCTAssertEqual(later.calls.count, 2, "Said once, asked once")
+        XCTAssertNil(waiting.notice); XCTAssertEqual(later.calls.filter { $0.hasPrefix("claim") }.count, 1, "Said once, asked once")
 
         // A code deleted between the check and the sign-in.
         defaults.set("XYZ234", forKey: NativeReferral.pendingKey)
@@ -419,12 +428,38 @@ final class NativeReferralTests: XCTestCase {
         XCTAssertEqual(server.calls, [], "Neither /claim nor /complete without an account")
         XCTAssertEqual(invitee.pending, "ABC234"); XCTAssertTrue(invitee.awaiting)
 
-        // Without an invitation under way, even a signed-in account asks nothing.
+        // Without an invitation under way, a sign-in asks once what the account has open, and
+        // neither claims nor completes.
         defaults.removePersistentDomain(forName: suite)
         let idle = ReferralServiceFake(), nobody = referral(idle)
         await signIn(idle, nobody)
         _ = await nobody.advance().value
-        XCTAssertEqual(idle.calls, [])
+        XCTAssertEqual(idle.calls, ["status"])
+    }
+
+    func testAClaimFollowsItsAccountWhenSomeoneElseUsesThisIPadInBetween() async {
+        // A enters a friend's code signed in, before making a course.
+        let accountA = ReferralServiceFake(signedIn: false), accountB = ReferralServiceFake(signedIn: false), invitee = referral(accountA)
+        await signIn(accountA, invitee)
+        let entry = await invitee.enter("ABC234")
+        XCTAssertEqual(entry, .applied); XCTAssertTrue(invitee.awaiting)
+
+        // A signs out: the waiting reward is A's, so it leaves this iPad.
+        invitee.accountChanged(signedIn: false)
+        XCTAssertFalse(invitee.awaiting); XCTAssertFalse(invitee.applied)
+
+        // B signs in here and makes the first course: B has no claim, so nothing is completed.
+        invitee.service = accountB; hasCourse = true
+        await signIn(accountB, invitee)
+        _ = await invitee.advance().value
+        XCTAssertEqual(accountB.calls, ["status"]); XCTAssertNil(invitee.notice)
+
+        // A comes back: the claim is found on the server and, with a course here, paid.
+        invitee.accountChanged(signedIn: false)
+        invitee.service = accountA
+        await signIn(accountA, invitee)
+        XCTAssertEqual(invitee.notice, .rewarded(uses: 100))
+        XCTAssertEqual(accountA.calls.filter { $0 == "complete" }.count, 1); XCTAssertFalse(invitee.awaiting)
     }
 
     func testAStoredCodeThatIsNotACodeIsIgnoredAndEditingTheFieldWithdrawsOnlyAWaitingCode() async {
@@ -436,7 +471,7 @@ final class NativeReferralTests: XCTestCase {
         invitee.withdraw()
         XCTAssertNil(invitee.pending); XCTAssertFalse(invitee.applied); XCTAssertNil(defaults.string(forKey: NativeReferral.pendingKey))
         await signIn(server, invitee)
-        XCTAssertEqual(server.calls, ["check ABC234"], "A withdrawn code is never claimed")
+        XCTAssertEqual(server.calls, ["check ABC234", "status"], "A withdrawn code is never claimed")
 
         _ = await invitee.enter("ABC234")
         invitee.withdraw()

@@ -238,7 +238,6 @@
 "고정폭" = "Monospaced";
 "공간 검색" = "Search spaces";
 "공식 문서와 변경 사항을 확인하세요." = "Read the official docs and what's new.";
-"공유" = "Share";
 "공정 이용 안내" = "Fair Use Policy";
 "과목" = "Course";
 "과목 그룹 만들기" = "New Course Group";
@@ -342,11 +341,9 @@
 "다시 만들 수 있는 임시 파일만 지워요." = "Only temporary files that can be made again are removed.";
 "다시 만들기" = "Recreate";
 "다시 불러오기" = "Reload";
-"다시 시도" = "Try Again";
 "다시 실행" = "Redo";
 "다시 저장" = "Save Again";
 "다시 풀기" = "Try Again";
-"다시 확인" = "Check Again";
 "다운로드" = "Downloads";
 "다운로드 완료" = "Download Finished";
 "다음 갱신" = "Next Renewal";
