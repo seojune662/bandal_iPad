@@ -70,6 +70,9 @@ struct NativePDFWorkspace: View {
                             }
                         }
                         .overlay { if model.showStyle { NativePDFPaletteOverlay(model: model) } }
+                        .overlay(alignment: .top) {
+                            if visible, model.assistantAnnotation == nil, chromeMode == .toolsHidden || model.toolsExpanded { NativePDFFloatingPalette(model: model) }
+                        }
                         .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame) } }
                     if model.showAnnotations && visible {
                         Divider()

@@ -49,6 +49,12 @@ extension View {
         if #available(iOS 26, *) { self } else { background(NativeDesktopTheme.overlay).presentationBackground(NativeDesktopTheme.overlay) }
     }
 
+    /// Floating chrome (palette, bars): Liquid Glass on iOS 26, material with a hairline and shadow before it.
+    @ViewBuilder func bandalGlass<S: Shape>(in shape: S) -> some View {
+        if #available(iOS 26, *) { glassEffect(.regular, in: shape) }
+        else { background(.regularMaterial, in: shape).overlay(shape.stroke(NativeDesktopTheme.border, lineWidth: 1)).shadow(color: .black.opacity(0.18), radius: 16, y: 6) }
+    }
+
     /// A transient message at the bottom of this view; the binding clears itself after a few seconds.
     func bandalToast(_ message: Binding<String?>) -> some View {
         overlay(alignment: .bottom) { BandalToast(message: message) }
