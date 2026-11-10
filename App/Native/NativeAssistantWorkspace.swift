@@ -1,12 +1,32 @@
 import Combine
 import SwiftUI
 
+/// A material the answer read through `read_material`: the chip under the answer.
+struct NativeChatSource: Identifiable, Equatable {
+    let courseID: String
+    let relPath: String
+    let page: Int?
+    var id: String { courseID + ":" + relPath + "#\(page ?? 0)" }
+    var title: String { ((relPath as NSString).lastPathComponent as NSString).deletingPathExtension + (page.map { " p.\($0)" } ?? "") }
+    /// The `nativeWorkspace:openDocument` payload: the material, at the page when one was read.
+    var request: [String: Any] {
+        var value: [String: Any] = ["courseId": courseID, "relPath": relPath, "kind": NativeSidebarDescriptor.materialKind(relPath)]
+        if let page { value["page"] = page }
+        return value
+    }
+    init?(_ value: [String: Any]) {
+        guard let course = value["courseId"] as? String, let path = value["relPath"] as? String, !path.isEmpty else { return nil }
+        courseID = course; relPath = path; page = (value["page"] as? NSNumber)?.intValue
+    }
+}
+
 struct NativeChatMessage: Identifiable, Equatable {
     let id: String
     let role: String
     let text: String
     let attachments: [NativeAssistantAttachment]
     let artifacts: [NativeAssistantResult]
+    let sources: [NativeChatSource]
     let interrupted: Bool
     init?(_ value: [String: Any]) {
         guard let id = value["id"] as? String, let role = value["role"] as? String else { return nil }
@@ -24,6 +44,7 @@ struct NativeChatMessage: Identifiable, Equatable {
         }.joined(separator: "\n\n")
         attachments = blocks.filter { $0["kind"] as? String == "attachment" }.compactMap { ($0["payload"] as? [String: Any]).flatMap(NativeAssistantAttachment.decode) }
         artifacts = blocks.filter { $0["kind"] as? String == "artifact" }.compactMap { ($0["payload"] as? [String: Any]).flatMap(NativeAssistantResult.init) }
+        sources = blocks.filter { $0["kind"] as? String == "source" }.compactMap { ($0["payload"] as? [String: Any]).flatMap(NativeChatSource.init) }
     }
 }
 
@@ -100,7 +121,8 @@ private final class NativeAssistantSession: ObservableObject {
         }
     }
     private var attemptURL: URL { store.root.appendingPathComponent("NativeAssistantState/attempt-\(sessionID).json") }
-    var identity: [String: Any] { ["courseId":context.courseID,"sessionId":sessionID,"workspace":context.request,"surface":"app","provider":provider] }
+    /// `ephemeral` counts with a conversation's first message: one begun while 대화 기록 저장 is off stays off the list.
+    var identity: [String: Any] { ["courseId":context.courseID,"sessionId":sessionID,"workspace":context.request,"surface":"app","provider":provider,"ephemeral":!NativeAIPreferences.savesHistory] }
     private var draftURL: URL { store.root.appendingPathComponent("NativeAssistantState/\(sessionID).json") }
     init(store: NativeWorkspaceStore, context: NativeWorkspaceContext) {
         self.store = store; self.context = context
@@ -117,6 +139,15 @@ private final class NativeAssistantSession: ObservableObject {
             provider = conversations.first(where: { $0.id == sessionID })?.provider ?? NativeAssistantPreferences.defaultProvider(settings)
             restoreDraft()
             try await open()
+            #if DEBUG
+            // UI tests have no signed-in AI: one stored answer with two sources stands in for a finished turn.
+            if ProcessInfo.processInfo.arguments.contains("--native-ai-answer-fixture"), messages.isEmpty {
+                _ = try await store.invokePrivate("nativeChat:begin",identity.merging(["content":"이 노트 핵심만 요약해 줘"]) { _,new in new })
+                _ = try await store.invokePrivate("nativeChat:finish",["courseId":context.courseID,"sessionId":sessionID,"turnSeq":1,"text":"• 인터뷰 5명 중 4명이 ‘첫 화면이 복잡하다’고 답함\n• 다음 주: 팔레트 시안 2종 비교",
+                    "sources":[["courseId":context.courseID,"relPath":"새 노트.pdf","page":2],["courseId":context.courseID,"relPath":"강의자료.pdf","page":12]]])
+                try await open()
+            }
+            #endif
             try restorePendingCaptures()
             await checkAvailability()
             let directory = store.root.appendingPathComponent("NativeToolState")
@@ -218,6 +249,7 @@ private final class NativeAssistantSession: ObservableObject {
         try await store.flushDocuments()
         var request = requestIdentity
         request["content"] = text; request["mode"] = captured.mode.rawValue; request["attachments"] = captured.attachments.map(\.request)
+        request["referenceScope"] = NativeAIPreferences.referenceScope
         if let document = captured.document {
             request["documentContext"] = ["courseId":document.courseID,"relPath":document.relativePath,"title":document.title,"kind":document.kind,"selection":captured.selection]
         }
@@ -381,6 +413,7 @@ struct NativeAssistantPanel: View {
     /// The panel's own background: the side panel is a tone darker than the home sidebar, the full tab is paper.
     var surface = Color(uiColor: .systemBackground)
     @State private var toast: String?
+    @AppStorage(NativeAIPreferences.showsSourcesKey) private var showsSources = true
     /// The note the user removed from the composer: it is not attached again on its own.
     @State private var detachedDocumentID: String?
     @StateObject private var session: NativeAssistantSession
@@ -521,6 +554,19 @@ struct NativeAssistantPanel: View {
                     .background(message.role == "user" ? NativeDesktopTheme.accent : .clear,in:RoundedRectangle(cornerRadius:17))
                     .frame(maxWidth:.infinity,alignment:message.role == "user" ? .trailing : .leading)
             }
+            if showsSources, !message.sources.isEmpty {
+                ScrollView(.horizontal,showsIndicators:false) {
+                    HStack(spacing:6) {
+                        ForEach(message.sources) { source in
+                            Button { open(source) } label: {
+                                Label(source.title,systemImage:"doc").font(.system(size:12)).lineLimit(1).padding(.horizontal,10).frame(minHeight:28)
+                                    .background(Color(uiColor:.systemBackground),in:Capsule()).overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+                                    .padding(.vertical,4).contentShape(Rectangle())
+                            }.buttonStyle(.plain).accessibilityLabel("출처: " + source.title).accessibilityHint("자료를 엽니다").accessibilityIdentifier("native-ai-source")
+                        }
+                    }
+                }
+            }
             ForEach(message.artifacts) { artifact in
                 Button { onOpenDocument(artifact.document) } label: {
                     HStack(spacing:12) {
@@ -541,6 +587,15 @@ struct NativeAssistantPanel: View {
             }
             if message.interrupted { Button("요청 다시 준비") { session.restoreAttempt() }.font(.caption).frame(minHeight:44) }
         }.frame(maxWidth:.infinity,alignment:.leading)
+    }
+    /// A source that was renamed or deleted since the answer says so instead of opening an empty tab.
+    private func open(_ source: NativeChatSource) {
+        Task {
+            guard (try? await store.invokePrivate("nativeMaterial:path",["courseId":source.courseID,"relPath":source.relPath])) != nil else {
+                toast = "자료를 찾을 수 없어요. 이름을 바꿨거나 지웠을 수 있어요."; return
+            }
+            store.events.send(.init(channel:"nativeWorkspace:openDocument",payload:source.request))
+        }
     }
     private func answerAction(_ title: String, _ symbol: String) -> some View {
         Label(title,systemImage:symbol).font(.system(size:13,weight:.medium)).padding(.horizontal,12).frame(minHeight:36)
