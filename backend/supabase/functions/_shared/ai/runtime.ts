@@ -39,8 +39,11 @@ export function runtime(env: (key: string) => string | undefined): (request: Req
       return !error && typeof claims?.sub === 'string' && claims.role === 'authenticated' && claims.is_anonymous !== true ? claims.sub : null
     },
     fetch: (input, init) => fetch(input, init),
-    keys: { anthropic: env('ANTHROPIC_API_KEY'), openai: env('OPENAI_API_KEY') },
-    baseURL: { anthropic: env('ANTHROPIC_BASE_URL') ?? 'https://api.anthropic.com', openai: env('OPENAI_BASE_URL') ?? 'https://api.openai.com' },
+    keys: { anthropic: env('ANTHROPIC_API_KEY'), openai: env('OPENAI_API_KEY'), google: env('GEMINI_API_KEY') },
+    baseURL: {
+      anthropic: env('ANTHROPIC_BASE_URL') ?? 'https://api.anthropic.com', openai: env('OPENAI_BASE_URL') ?? 'https://api.openai.com',
+      google: env('GEMINI_BASE_URL') ?? 'https://generativelanguage.googleapis.com',
+    },
     waitUntil: edge ? p => edge.waitUntil(p) : undefined,
     log: (message, detail) => console.error(message, JSON.stringify(detail)),
   })
