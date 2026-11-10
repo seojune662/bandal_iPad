@@ -418,6 +418,17 @@ Deno.test('a link is not requested when its host resolves to anything internal, 
   assertEquals(await reachable('https://www.seoultech.ac.kr/', net(['93.184.216.34', '2606:4700::6810:84e5'])), true)
 })
 
+Deno.test('a sign-in or bot wall counts as a page that is there; missing pages and server errors do not', async () => {
+  const net = (head: number, get = head) => ({
+    fetch: (_url: string | URL | Request, init?: RequestInit) => Promise.resolve(new Response(null, { status: init?.method === 'HEAD' ? head : get })),
+    resolve: () => Promise.resolve(['93.184.216.34']),
+  })
+  for (const status of [200, 204, 301, 302, 401, 403, 429]) assertEquals(await reachable('https://www.berkeley.edu/', net(status)), true, String(status))
+  for (const status of [400, 404, 410, 500, 502, 503]) assertEquals(await reachable('https://www.berkeley.edu/', net(status)), false, String(status))
+  // HEAD refused outright, GET challenged by the wall.
+  assertEquals(await reachable('https://www.berkeley.edu/', net(405, 403)), true)
+})
+
 Deno.test('the school domain is the name under an academic suffix, otherwise the host itself without www', () => {
   for (const [host, domain] of [['www.snu.ac.kr', 'snu.ac.kr'], ['snu.ac.kr', 'snu.ac.kr'], ['plus.cnu.ac.kr', 'cnu.ac.kr'], ['a.b.snu.ac.kr', 'snu.ac.kr'],
     ['www.skku.edu', 'skku.edu'], ['skku.edu', 'skku.edu'], ['web.mit.edu', 'mit.edu'], ['www.ox.ac.uk', 'ox.ac.uk'], ['www.unimelb.edu.au', 'unimelb.edu.au'], ['sydney.edu.au', 'sydney.edu.au'],
