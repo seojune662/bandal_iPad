@@ -827,15 +827,12 @@ struct NativeWorkspaceView: View {
     private var emptyWorkspace: some View {
         VStack(spacing: 18) {
             Spacer()
-            NativeBandalMark(size: store.selectedCourseID == nil ? 56 : 48).foregroundStyle(NativeDesktopTheme.muted.opacity(0.4))
+            if store.selectedCourseID == nil { NativeBandalMark(size: 56).foregroundStyle(NativeDesktopTheme.muted.opacity(0.4)) }
             if store.selectedCourseID != nil {
-                Text(courseTitle).font(NativeDesktopTheme.font(24, weight: .semibold))
-                Text("읽고, 기록하고, 연결하는 나만의 학습 공간").font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.muted)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 12) { emptyActions }.frame(minWidth: 530)
-                    VStack(spacing: 8) { emptyActions }.frame(maxWidth: 280)
-                }.padding(.top, 12)
-                Button("새 탭 열기", systemImage: "plus") { showingNewTabMenu = true }.font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).padding(.top, 8)
+                NativeHomeTab(store: store, courseTitle: courseTitle,
+                    onOpen: open, onSelectCourse: changeCourse,
+                    onNewNote: { openNewTab(.note, navigation.focusedGroupID ?? "") },
+                    onNewCourse: { setCourseRail(true, width: windowWidth); NotificationCenter.default.post(name: NativeHomeTab.newCourse, object: nil) })
                     .popover(isPresented: $showingNewTabMenu, arrowEdge: .top) {
                         NativeNewTabMenu(store: store, courseID: store.selectedCourseID ?? "", onAction: { action in
                             showingNewTabMenu = false
@@ -845,17 +842,6 @@ struct NativeWorkspaceView: View {
             }
             Spacer()
         }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-    @ViewBuilder private var emptyActions: some View {
-        emptyAction("새 필기", "생각을 기록하세요", "square.and.pencil", .markdown(title: nil))
-        emptyAction("웹 탐색", "자료를 찾아보세요", "globe", .browser(url: nil))
-        emptyAction("AI와 공부", "질문에서 시작하세요", "sparkle", .assistant)
-    }
-    private func emptyAction(_ title: String, _ subtitle: String, _ icon: String, _ action: NativeNewTabAction) -> some View {
-        Button { openNewTab(action, navigation.focusedGroupID ?? "") } label: {
-            VStack(alignment: .leading, spacing: 10) { Image(systemName: icon).font(.system(size: 20)); Text(title).font(NativeDesktopTheme.font(14, weight: .medium)); Text(subtitle).font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted) }
-                .padding(18).frame(maxWidth: 180, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-        }.buttonStyle(.plain)
     }
     private func documentIcon(_ document: NativeDocumentReference) -> String {
         switch document.kind { case "browser": "globe"; case "assistant": "sparkle"; case "recordings": "waveform"; case "planner": "checklist"; case "pdf": "doc.richtext"; case "whiteboard": "rectangle.and.pencil.and.ellipsis"; case "video": "play.rectangle"; case "audio": "waveform"; default: "doc.text" }

@@ -63,6 +63,7 @@ struct NativeCourseSidebar: View {
         }.background(NativeDesktopTheme.surface).disabled(busy)
             .task { await loadGroups() }
             .onReceive(store.events) { event in if event.channel == "courses:changed" { Task { await loadGroups() } } }
+            .onReceive(NotificationCenter.default.publisher(for: NativeHomeTab.newCourse)) { _ in adding = .course }
     }
     private func courseRow(_ course: NativeCourse) -> some View {
         VStack(spacing: 0) {
