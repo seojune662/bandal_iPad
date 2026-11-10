@@ -62,6 +62,16 @@ extension School {
     }
 }
 
+extension School {
+    /// Found by AI and not reviewed yet: the picker says so wherever it shows the school.
+    var unreviewed: Bool { source == "ai" && !verified }
+    /// The second line of a search result: the English name or the domain, then `mark` for an unreviewed AI school.
+    func detail(mark: String) -> String? {
+        let base = [nameEn, domain].compactMap { $0 }.first { !$0.isEmpty }
+        return unreviewed ? [base, mark].compactMap { $0 }.joined(separator: " · ") : base
+    }
+}
+
 enum SchoolDirectoryError: Error, Equatable {
     /// 401 `SIGN_IN_REQUIRED`, or nobody is signed in.
     case signInRequired

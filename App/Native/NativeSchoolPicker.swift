@@ -70,7 +70,7 @@ struct NativeSchoolPicker: View {
         VStack(alignment: .leading, spacing: 8) {
             BandalSearchList(prompt: text("학교 이름 검색"), query: $model.query, maxHeight: maxListHeight, identifier: "native-school-search", accessory: { countryChip }) {
                 ForEach(model.results) { school in
-                    BandalMenuRow(school.name, symbol: "building.columns", detail: [school.nameEn, school.domain].compactMap { $0 }.first { !$0.isEmpty }) { Task { await model.choose(school) } }
+                    BandalMenuRow(school.name, symbol: "building.columns", detail: school.detail(mark: text("AI가 찾은 정보 · 검토 전"))) { Task { await model.choose(school) } }
                         .accessibilityIdentifier("native-school-result-" + school.id)
                 }
                 if model.results.isEmpty && name.isEmpty {

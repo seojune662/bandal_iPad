@@ -549,4 +549,17 @@ final class NativeSchoolPickerTests: XCTestCase {
         XCTAssertEqual(NativeAppLocale.string("번역이 아직 없는 문장", english), "번역이 아직 없는 문장", "Untranslated text stays Korean")
         XCTAssertEqual(String(format: NativeAppLocale.string("%@ 사이트를 찾는 중…", english), "Bandal"), "Looking for Bandal sites…")
     }
+    func testASearchResultSaysWhenItsSchoolWasFoundByAIAndNotReviewed() {
+        let found = School(id: "a", name: "Stanford University", nameEn: nil, aliases: [], country: "US", domain: "stanford.edu", verified: false, source: "ai", links: [])
+        XCTAssertEqual(found.detail(mark: "검토 전"), "stanford.edu · 검토 전")
+        var reviewed = found; reviewed.verified = true
+        XCTAssertEqual(reviewed.detail(mark: "검토 전"), "stanford.edu")
+        var bare = found; bare.domain = nil
+        XCTAssertEqual(bare.detail(mark: "검토 전"), "검토 전")
+        let bundled = School(id: "snu", name: "서울대학교", nameEn: "Seoul National University", aliases: [], country: "KR", domain: "snu.ac.kr", verified: true, source: "bundled", links: [])
+        XCTAssertEqual(bundled.detail(mark: "검토 전"), "Seoul National University")
+        // A name a user typed in is theirs, not an AI finding.
+        var typed = bare; typed.source = "user"
+        XCTAssertNil(typed.detail(mark: "검토 전"))
+    }
 }
