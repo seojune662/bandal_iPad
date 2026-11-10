@@ -39,7 +39,7 @@ final class NativeSchoolPickerTests: XCTestCase {
     // MARK: Flow
 
     func testEmptyQueryListsTheCountrysBundledSchoolsAndAResultSavesAndEnds() async {
-        let found = school("server-1", name: "서울과학기술대학교")
+        let found = school("server-1", name: "서울과학기술대학교", verified: true)
         let picker = model(directory(search: { _ in [found] }))
         await picker.search()
         XCTAssertEqual(picker.results.count, 18, "Korea starts on the bundled list without asking the server")
@@ -549,6 +549,40 @@ final class NativeSchoolPickerTests: XCTestCase {
         XCTAssertEqual(NativeAppLocale.string("번역이 아직 없는 문장", english), "번역이 아직 없는 문장", "Untranslated text stays Korean")
         XCTAssertEqual(String(format: NativeAppLocale.string("%@ 사이트를 찾는 중…", english), "Bandal"), "Looking for Bandal sites…")
     }
+    func testAnUnreviewedSearchResultIsConfirmedBeforeItIsSaved() async {
+        // Another user's AI search put this school in the directory: its links were never reviewed.
+        let found = school("server-2", name: "스탠퍼드")
+        let picker = model(directory(search: { _ in [found] }))
+        picker.query = "스탠퍼드"
+        await picker.search()
+        await picker.choose(found)
+        XCTAssertEqual(picker.phase, .confirming); XCTAssertEqual(picker.found, found); XCTAssertEqual(picker.links, found.links)
+        XCTAssertTrue(saved.isEmpty, "A tap on an unreviewed school saves nothing")
+        picker.removeLink("lms")
+        await picker.confirm()
+        XCTAssertEqual(saved.first?.links.map(\.id), ["home"]); XCTAssertEqual(finished.count, 1)
+
+        // With no links there is nothing to confirm.
+        let bare = school("server-3", name: "이름만", links: [])
+        let second = model(directory())
+        await second.choose(bare)
+        XCTAssertEqual(saved.last, bare)
+    }
+    func testServerTextLosesControlAndDirectionCharactersAndHasALength() throws {
+        let links = (0..<25).map { #"{"id":"l\#($0)","kind":"other","title":"링크\#($0)","url":"https://l\#($0).bandal.ac.kr","order":\#($0)}"# }.joined(separator: ",")
+        let json = #"{"id":"s1","name":"  반달\u202E대학교\u0007\u200B  ","nameEn":"\#(String(repeating: "A", count: 300))","aliases":["반\u2066달"],"country":"KR","links":[{"id":"t","kind":"home","title":"홈\u202E페이지\n","url":"https://www.bandal.ac.kr","order":-1},{"id":"e","kind":"home","title":"\u200B","url":"https://x.bandal.ac.kr"},\#(links)]}"#
+        let decoded = try JSONDecoder().decode(School.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.name, "반달대학교"); XCTAssertEqual(decoded.nameEn?.count, 120); XCTAssertEqual(decoded.aliases, ["반달"])
+        XCTAssertEqual(decoded.links.first?.title, "홈페이지")
+        XCTAssertEqual(decoded.links.count, School.maxLinks, "An empty title is dropped and the list is bounded")
+        XCTAssertFalse(decoded.links.contains { $0.id == "e" })
+        XCTAssertThrowsError(try JSONDecoder().decode(School.self, from: Data(#"{"id":"s2","name":"\u202E\u200B"}"#.utf8)), "A name of invisible characters is no name")
+    }
+    func testAnOversizedReplyIsRefused() async {
+        let huge = #"{"schools":[],"pad":""# + String(repeating: "x", count: School.maxReplyBytes) + #""}"#
+        do { _ = try await live(huge).search("반달", country: "KR"); XCTFail("An oversized reply was read") }
+        catch { XCTAssertEqual(error as? SchoolDirectoryError, .unavailable) }
+    }
     func testASearchResultSaysWhenItsSchoolWasFoundByAIAndNotReviewed() {
         let found = School(id: "a", name: "Stanford University", nameEn: nil, aliases: [], country: "US", domain: "stanford.edu", verified: false, source: "ai", links: [])
         XCTAssertEqual(found.detail(mark: "검토 전"), "stanford.edu · 검토 전")
@@ -558,8 +592,5 @@ final class NativeSchoolPickerTests: XCTestCase {
         XCTAssertEqual(bare.detail(mark: "검토 전"), "검토 전")
         let bundled = School(id: "snu", name: "서울대학교", nameEn: "Seoul National University", aliases: [], country: "KR", domain: "snu.ac.kr", verified: true, source: "bundled", links: [])
         XCTAssertEqual(bundled.detail(mark: "검토 전"), "Seoul National University")
-        // A name a user typed in is theirs, not an AI finding.
-        var typed = bare; typed.source = "user"
-        XCTAssertNil(typed.detail(mark: "검토 전"))
     }
 }

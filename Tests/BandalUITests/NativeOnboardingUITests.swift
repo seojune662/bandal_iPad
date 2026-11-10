@@ -272,6 +272,35 @@ final class NativeOnboardingUITests: XCTestCase {
         XCTAssertTrue(wait(for: pick) { $0.label == "내 학교 바꾸기" }, pick.label)
     }
 
+    /// 선택 해제 takes the school's own links along, so it asks first when there are any (here the four an AI search found).
+    @MainActor
+    func testClearingASchoolWithItsOwnLinksAsksFirst() {
+        let app = launch(["--native-school-fixture"])
+        XCTAssertTrue(app.buttons["native-university-choose"].waitForExistence(timeout: 25), app.debugDescription)
+        app.buttons["native-section-settings"].tap()
+        let account = app.buttons["native-settings-category-account"]
+        XCTAssertTrue(account.waitForExistence(timeout: 15), app.debugDescription); account.tap()
+        let pick = app.buttons["native-settings-school-choose"]
+        XCTAssertTrue(pick.waitForExistence(timeout: 10), app.debugDescription); pick.tap()
+        let search = app.textFields["native-school-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10), app.debugDescription)
+        search.tap(); search.typeText("반달대")
+        XCTAssertTrue(app.buttons["native-school-ai"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["native-school-ai"].tap()
+        let confirm = app.buttons["native-school-confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 15), app.debugDescription); confirm.tap()
+        let name = app.staticTexts["native-settings-school-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["native-settings-school-clear"].tap()
+        let sure = app.buttons["native-settings-school-clear-confirm"]
+        XCTAssertTrue(sure.waitForExistence(timeout: 5), "Four links would go with the school: " + app.debugDescription)
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "바로가기 4개")).firstMatch.exists, app.debugDescription)
+        XCTAssertTrue(name.exists, "Nothing is cleared before the answer")
+        sure.tap()
+        XCTAssertTrue(waitForAbsence(name), app.debugDescription)
+        XCTAssertEqual(pick.label, "내 학교 고르기")
+    }
+
     private static let korean = ["-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR"]
 
     @MainActor private func launch(_ extra: [String]) -> XCUIApplication {

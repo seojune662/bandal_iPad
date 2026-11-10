@@ -59,6 +59,8 @@ struct NativeSettingsUniversityPanel: View {
     @State private var kind = "other"
     @State private var busy = false
     @State private var error: String?
+    @State private var confirmingClear = false
+    @Environment(\.locale) private var locale
     private var university: [String: Any] { settings["university"] as? [String: Any] ?? [:] }
     private var services: [NativeUniversityService] { NativeUniversityCatalog.resolvedServices(settings: settings, includeHidden: true) }
     var body: some View {
@@ -73,7 +75,14 @@ struct NativeSettingsUniversityPanel: View {
                     else { Text("아직 고르지 않았어요").foregroundStyle(NativeDesktopTheme.secondary) }
                     Spacer(minLength: 8)
                     // Clearing a school takes its links along; sites the user added themselves stay.
-                    if chosen != nil { Button("선택 해제") { persist(["universityId": NSNull(), "customUniversity": NSNull(), "customServices": NativeUniversityCatalog.ownServices(university)]) } }
+                    if chosen != nil {
+                        let own = NativeUniversityCatalog.ownServices(university), going = (university["customServices"] as? [[String: Any]] ?? []).count - own.count
+                        let clear = { persist(["universityId": NSNull(), "customUniversity": NSNull(), "customServices": own]) }
+                        Button("선택 해제") { if going > 0 { confirmingClear = true } else { clear() } }.accessibilityIdentifier("native-settings-school-clear")
+                            .bandalConfirm(NativeAppLocale.string("학교 선택을 해제할까요?", locale), isPresented: $confirmingClear,
+                                           message: String(format: NativeAppLocale.string("이 학교의 바로가기 %lld개도 함께 지워져요. 직접 추가한 사이트는 남아요.", locale), going),
+                                           action: NativeAppLocale.string("해제", locale), destructive: true, identifier: "native-settings-school-clear-confirm", perform: clear)
+                    }
                     // Beside the button: under it the picker would be squeezed against the keyboard.
                     NativeSchoolPickerButton(store: store, arrowEdge: .trailing) { if chosen == nil { Text("학교 고르기") } else { Text("학교 바꾸기") } }
                         .accessibilityLabel(chosen == nil ? Text("내 학교 고르기") : Text("내 학교 바꾸기")).accessibilityIdentifier("native-settings-school-choose")

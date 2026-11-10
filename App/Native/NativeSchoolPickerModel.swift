@@ -82,7 +82,11 @@ final class NativeSchoolPickerModel {
         results = answer; self.offline = offline; searched = true
     }
 
+    /// A reviewed school saves at once. Links nobody reviewed (an AI finding that another search put
+    /// in the directory) go through the same confirmation as a fresh AI result.
     func choose(_ school: School) async {
+        guard phase == .searching, !saving else { return }
+        if school.unreviewed, !school.links.isEmpty { notice = nil; found = school; links = school.links; phase = .confirming; return }
         do { try await finish(school) } catch { notice = .saveFailed(error.localizedDescription) }
     }
 
@@ -172,7 +176,7 @@ final class NativeSchoolPickerModel {
         school.links = kept
         if edited { school.source = "user" }
         do { try await finish(school) } catch { notice = .saveFailed(error.localizedDescription); return }
-        guard edited else { return }
+        guard edited, !kept.isEmpty else { return }
         // Best effort by design: the edit is already saved here, and review can miss one.
         suggestion = Task { [directory] in try? await directory.suggest(schoolID: school.id, links: kept) }
     }

@@ -30,13 +30,23 @@ private struct Lenient<Value: Decodable>: Decodable {
 }
 
 // Server data is not trusted: ids and names must be there and ids are unique, unknown kinds become
-// "other", and only http(s) addresses get in because a link opens in the browser.
+// "other", and only http(s) addresses get in because a link opens in the browser. Text is shown in
+// the UI and saved in settings, so it loses control and direction characters and has a length.
+extension School {
+    static let maxLinks = 20, maxListed = 50, maxReplyBytes = 256 * 1024
+    static func clean(_ text: String, max: Int) -> String {
+        let kept = text.unicodeScalars.filter { ![.control, .format, .lineSeparator, .paragraphSeparator, .surrogate, .privateUse, .unassigned].contains($0.properties.generalCategory) }
+        return String(String(String.UnicodeScalarView(kept)).trimmingCharacters(in: .whitespacesAndNewlines).prefix(max))
+    }
+}
+
 extension School.Link {
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
-        title = try values.decode(String.self, forKey: .title)
+        title = School.clean(try values.decode(String.self, forKey: .title), max: 60)
         url = try values.decode(String.self, forKey: .url)
+        guard !title.isEmpty, id.count <= 128 else { throw DecodingError.dataCorruptedError(forKey: .title, in: values, debugDescription: "A link needs a title and a short id") }
         let kind = try values.decodeIfPresent(String.self, forKey: .kind) ?? "other"
         self.kind = Self.kinds.contains(kind) ? kind : "other"
         verified = try values.decodeIfPresent(Bool.self, forKey: .verified) ?? false
@@ -48,23 +58,24 @@ extension School {
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
-        name = try values.decode(String.self, forKey: .name).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !id.isEmpty, !name.isEmpty else { throw DecodingError.dataCorruptedError(forKey: .name, in: values, debugDescription: "A school needs an id and a name") }
-        nameEn = try values.decodeIfPresent(String.self, forKey: .nameEn)
-        aliases = try values.decodeIfPresent([String].self, forKey: .aliases) ?? []
-        country = try values.decodeIfPresent(String.self, forKey: .country) ?? ""
-        domain = try values.decodeIfPresent(String.self, forKey: .domain)
+        name = Self.clean(try values.decode(String.self, forKey: .name), max: 80)
+        guard !id.isEmpty, id.count <= 128, !name.isEmpty else { throw DecodingError.dataCorruptedError(forKey: .name, in: values, debugDescription: "A school needs a short id and a name") }
+        nameEn = try values.decodeIfPresent(String.self, forKey: .nameEn).map { Self.clean($0, max: 120) }
+        aliases = (try values.decodeIfPresent([String].self, forKey: .aliases) ?? []).prefix(20).map { Self.clean($0, max: 80) }.filter { !$0.isEmpty }
+        country = Self.clean(try values.decodeIfPresent(String.self, forKey: .country) ?? "", max: 2)
+        domain = try values.decodeIfPresent(String.self, forKey: .domain).map { Self.clean($0, max: 253) }
         verified = try values.decodeIfPresent(Bool.self, forKey: .verified) ?? false
         source = try values.decodeIfPresent(String.self, forKey: .source) ?? "ai"
         var seen = Set<String>()
         links = (try values.decodeIfPresent([Lenient<Link>].self, forKey: .links) ?? []).compactMap(\.value)
-            .filter { !$0.id.isEmpty && NativeSettingsSchema.webURL($0.url) && seen.insert($0.id).inserted }.sorted { $0.order < $1.order }
+            .filter { !$0.id.isEmpty && NativeSettingsSchema.webURL($0.url) && seen.insert($0.id).inserted }.sorted { $0.order < $1.order }.prefix(Self.maxLinks).map { $0 }
     }
 }
 
 extension School {
-    /// Found by AI and not reviewed yet: the picker says so wherever it shows the school.
-    var unreviewed: Bool { source == "ai" && !verified }
+    /// Nobody has reviewed it (an AI finding): the picker says so wherever it shows the school,
+    /// and its links are confirmed before they are saved.
+    var unreviewed: Bool { !verified }
     /// The second line of a search result: the English name or the domain, then `mark` for an unreviewed AI school.
     func detail(mark: String) -> String? {
         let base = [nameEn, domain].compactMap { $0 }.first { !$0.isEmpty }
@@ -121,7 +132,7 @@ struct LiveSchoolDirectory: SchoolDirectory {
         request.httpShouldHandleCookies = false
         request.setValue(value.key, forHTTPHeaderField: "apikey")
         var seen = Set<String>()
-        return try Self.decode(Schools.self, try await perform(request)).schools.compactMap(\.value).filter { seen.insert($0.id).inserted }
+        return Array(try Self.decode(Schools.self, try await perform(request)).schools.compactMap(\.value).filter { seen.insert($0.id).inserted }.prefix(School.maxListed))
     }
 
     func setup(query: String, country: String, locale: String) async throws -> School? {
@@ -168,7 +179,7 @@ struct LiveSchoolDirectory: SchoolDirectory {
         catch is CancellationError { throw CancellationError() }
         catch let error as URLError where error.code == .cancelled { throw CancellationError() }
         catch { throw SchoolDirectoryError.unavailable }
-        guard let http = response as? HTTPURLResponse else { throw SchoolDirectoryError.unavailable }
+        guard let http = response as? HTTPURLResponse, data.count <= School.maxReplyBytes else { throw SchoolDirectoryError.unavailable }
         if (200..<300).contains(http.statusCode) { return data }
         let info = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         switch info["code"] as? String ?? (http.statusCode == 401 ? "SIGN_IN_REQUIRED" : http.statusCode == 429 ? "RATE_LIMITED" : "") {

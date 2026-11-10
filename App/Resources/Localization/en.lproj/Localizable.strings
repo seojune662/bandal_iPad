@@ -39,6 +39,7 @@
 "없는 나라 코드예요. 예: DE, FR, CN" = "No such country code. Try DE, FR or CN.";
 "이 이름으로 설정" = "Use this name";
 "이 학교로 설정" = "Use this school";
+"이 학교의 바로가기 %lld개도 함께 지워져요. 직접 추가한 사이트는 남아요." = "Its %lld shortcuts are removed too. Sites you added yourself stay.";
 "이름과 웹 주소를 확인해 주세요." = "Check the name and the web address.";
 "이전 단계" = "Previous step";
 "조금 더 걸려요" = "This is taking a little longer";
@@ -51,9 +52,11 @@
 "학교 링크 추가" = "Add school link";
 "학교 바꾸기" = "Change school";
 "학교 사이트 바로가기를 사이드바에 모아 드려요." = "We'll put your school's sites in the sidebar.";
+"학교 선택을 해제할까요?" = "Clear your school?";
 "학교 이름" = "School name";
 "학교 이름 검색" = "Search by school name";
 "학교 이름만 먼저 넣어 두고, 링크는 나중에 더할 수 있어요." = "Save just the school's name for now and add links later.";
 "학교 이름이나 약칭으로 찾아보세요." = "Search by the school's name or abbreviation.";
 "학교 직접 입력" = "Enter your school";
+"해제" = "Clear";
 /* ===== END onboarding + school picker ===== */
