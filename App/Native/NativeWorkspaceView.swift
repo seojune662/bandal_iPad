@@ -61,6 +61,9 @@ struct NativeWorkspaceView: View {
     }
     private var courseTitle: String { workspaceContext?.title ?? "자료실" }
     private var showsWorkspace: Bool { section == .library && auxiliary == nil }
+    /// Settings is a sheet over the workspace: the panels stay where they were behind it.
+    private var settingsOpen: Bool { section == .settings && auxiliary == nil && !windowsOverviewOpen }
+    private var showsWorkspaceChrome: Bool { showsWorkspace || settingsOpen }
 
     private var windowsOverview: some View {
         let scope = navigation.currentWindowRef?.workspaceID ?? ""
@@ -182,12 +185,12 @@ struct NativeWorkspaceView: View {
         GeometryReader { geometry in
             let chrome = chromeLayout(width: geometry.size.width)
             // AI chat stays on screen while annotating so the document does not jump sideways.
-            let aiVisible = showsWorkspace &&
+            let aiVisible = showsWorkspaceChrome &&
                 (chrome.aiPinned || !NativeWorkspaceChromeLayout.fitsAI(geometry.size.width) && compactAIRail)
             let aiHostWidth = chrome.aiPinned ? chrome.aiWidth : chrome.compactAIWidth
             let aiLeading = NativeDesktopTheme.navigationWidth + (chrome.leftPinned ? chrome.leftWidth + 1 : 0)
             let minimum = NativeWorkspaceChromeLayout.editorMinimum
-            let rightVisible = showsWorkspace && annotation.request == nil &&
+            let rightVisible = showsWorkspaceChrome && annotation.request == nil &&
                 (chrome.rightPinned || !NativeWorkspaceChromeLayout.fitsRight(geometry.size.width) && compactMaterialsRail)
             HStack(spacing: 0) {
                 globalNavigation(width: geometry.size.width).zIndex(2)
@@ -214,11 +217,11 @@ struct NativeWorkspaceView: View {
                         chromeMode: navigation.chromeMode, controlInset: chrome.rightPinned ? 0 : NativeWorkspaceWindowControls.width + NativeWorkspaceWindowControls.trailing)
                         .environment(\.nativeWorkspacePreviewController, previews)
                     }
-                        .opacity(covered ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered)
+                        .opacity(covered && !settingsOpen ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered)
                     if windowsOverviewOpen {
                         windowsOverview
                     } else if section == .settings {
-                        NativeSettingsWorkspace(store: store, initialCategory: settingsCategory)
+                        EmptyView()
                     } else if let auxiliary {
                         switch auxiliary {
                         case .marketplace: NativeMarketplaceView(store: store)
@@ -300,6 +303,25 @@ struct NativeWorkspaceView: View {
             // so the slide is keyed on what is visible rather than on the toggles.
             .animation(Self.railAnimation, value: [chrome.leftPinned, aiVisible, chrome.aiPinned, rightVisible, chrome.rightPinned,
                                                    compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width)])
+            .blur(radius: settingsOpen ? 6 : 0)
+            .overlay {
+                if settingsOpen {
+                    ZStack {
+                        Color.black.opacity(0.28).ignoresSafeArea().contentShape(Rectangle())
+                            .onTapGesture { transition { section = .library } }.accessibilityHidden(true)
+                        NativeSettingsWorkspace(store: store, initialCategory: settingsCategory)
+                            .frame(maxWidth: 920, maxHeight: 745)
+                            .clipShape(RoundedRectangle(cornerRadius: 22))
+                            .overlay(alignment: .topTrailing) {
+                                Button { transition { section = .library } } label: { Image(systemName: "xmark").font(.system(size: 14)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                                    .buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary).padding(8)
+                                    .accessibilityLabel("설정 닫기").accessibilityIdentifier("native-settings-close")
+                            }
+                            .shadow(color: .black.opacity(0.25), radius: 40, y: 12)
+                            .padding(24)
+                    }.transition(.opacity)
+                }
+            }
             .onAppear { updateWindowWidth(geometry.size.width) }
             // Typing a markdown note on the software keyboard: both side panels fold, and come back with the keyboard gone.
             .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { markdownEditing = $0.object as? Bool ?? false }
@@ -495,7 +517,7 @@ struct NativeWorkspaceView: View {
     private func chromeLayout(width: CGFloat) -> NativeWorkspaceChromeLayout {
         NativeWorkspaceChromeLayout(width: width, leftOpen: courseRailOpen, rightOpen: materialsRailOpen && annotation.request == nil,
             aiOpen: aiRailOpen, leftRequested: courseRailWidth, rightRequested: materialsRailWidth,
-            showsWorkspace: showsWorkspace)
+            showsWorkspace: showsWorkspaceChrome)
     }
     private func fitsAlone(_ rail: Rail, width: CGFloat) -> Bool {
         switch rail {
