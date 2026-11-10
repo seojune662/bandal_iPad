@@ -21,12 +21,18 @@ struct NativeSidebarShortcuts: View {
                     .accessibilityIdentifier("native-university-heading")
                     .contextMenu { Button("학교 설정") { onOpenSettings("university") } }
                 if !universityCollapsed {
+                    if NativeUniversityCatalog.needsLinks(settings) {
+                        // A school entered by name only: the picker opens on the AI search for its sites.
+                        NativeSchoolPickerButton(store: store, aiQuery: university["nameKo"] as? String, country: university["country"] as? String, arrowEdge: .leading) {
+                            Label("AI로 링크 찾기", systemImage: "sparkles")
+                        }.font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).frame(minHeight: 36).accessibilityIdentifier("native-university-find-links")
+                    }
                     LazyVGrid(columns: columns, spacing: 4) { ForEach(primary, content: serviceButton) }
                     if showAll { LazyVGrid(columns: columns, spacing: 4) { ForEach(secondary, content: serviceButton) } }
                     if !secondary.isEmpty { Button(showAll ? "접기" : "더보기 \(secondary.count)") { showAll.toggle() }.font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.secondary).frame(minHeight: 28).accessibilityIdentifier("native-university-more") }
                 }
             } else {
-                Button("학교 고르기", systemImage: "building.columns") { onOpenSettings("university") }
+                NativeSchoolPickerButton(store: store, arrowEdge: .leading) { Label("학교 고르기", systemImage: "building.columns") }
                     .font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).frame(minHeight: 36).accessibilityIdentifier("native-university-choose")
             }
             heading("외부 AI 사이트", collapsed: $aiCollapsed).accessibilityIdentifier("native-ai-web-heading")
@@ -56,7 +62,7 @@ struct NativeSidebarShortcuts: View {
             else { onOpenURL(service.url) }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: symbol(service.kind)).font(.system(size: 13)).frame(width: 16)
+                Image(systemName: NativeUniversityService.symbol(service.kind)).font(.system(size: 13)).frame(width: 16)
                 Text(service.label).font(NativeDesktopTheme.font(12)).lineLimit(1)
                 Spacer(minLength: 0)
                 if service.opensExternally { Image(systemName: "arrow.up.right").font(.system(size: 8)) }
@@ -77,9 +83,6 @@ struct NativeSidebarShortcuts: View {
                 Button("배치 초기화", systemImage: "arrow.counterclockwise") { persist(["serviceOrder": [], "secondaryOverrides": [String: Bool](), "hiddenServiceIds": []]) }
                 Button("학교 설정", systemImage: "gearshape") { onOpenSettings("university") }
             }
-    }
-    private func symbol(_ kind: String) -> String {
-        switch kind { case "lms": "graduationcap"; case "portal", "registration": "person.text.rectangle"; case "library": "books.vertical"; case "mail": "envelope"; case "community": "person.2"; default: "globe" }
     }
     private func move(_ service: NativeUniversityService, by offset: Int) {
         var ids = services.map(\.id)

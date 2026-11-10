@@ -57,6 +57,10 @@ final class NativePlatformServices: ObservableObject {
                 catch { throw AIError.server(code: "SIGN_IN_REQUIRED", info: [:]) }
             })
         }
+        store.schools = LiveSchoolDirectory(endpoint: aiEnvironment.endpoint, send: { [session = aiEnvironment.session] in try await session.data(for: $0) })
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(SchoolDirectoryFake.argument) { store.schools = SchoolDirectoryFake() }
+        #endif
         // Keys and the local AI counter from the BYOK versions (≤ 1.3) are no longer used.
         if !UserDefaults.standard.bool(forKey: "ai.byokRetired") {
             for retired in ["ai.openai", "ai.claude", "ai.gemini", "membership.ai-uses"] { try? KeychainStore.write("", account: retired) }

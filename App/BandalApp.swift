@@ -12,6 +12,7 @@ struct BandalApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: DesktopProfileService.didActivate)) { _ in store = NativeWorkspaceStore() }
                 .statusBarHidden(true)
                 .ignoresSafeArea(.container, edges: .top)
+                .bandalLocalized()
         }
     }
 }

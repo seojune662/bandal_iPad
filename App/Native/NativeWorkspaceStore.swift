@@ -75,6 +75,8 @@ final class NativeWorkspaceStore {
     /// Installed by the native scene's presenter for sharing, exporting and
     /// other UIKit presentation services. Repository calls remain independent.
     var nativeChannelHandler: (@MainActor (String, [String: Any]) async throws -> Any)?
+    /// The school directory behind the school picker; the platform services install the signed-in one.
+    @ObservationIgnored var schools: any SchoolDirectory = LiveSchoolDirectory()
 
     private let sessionID = UUID().uuidString
     private var startup: Task<Void, Error>?
@@ -150,7 +152,8 @@ final class NativeWorkspaceStore {
                         // Preferences a test may flip: the next fixture starts from the defaults again.
                         "native.desktop.courseRailBeforeAI", "native.pdf.paletteCollapsed", NativeLocalPreferences.newDocumentKind, NativeLocalPreferences.homeTogglesSidebar,
                         NativeLocalPreferences.keyboardFoldsPanels, NativeAIPreferences.answerLanguageKey, NativeAIPreferences.usageAlertKey,
-                        NativeAIPreferences.referenceScopeKey, NativeAIPreferences.showsSourcesKey, NativeAIPreferences.savesHistoryKey] { UserDefaults.standard.removeObject(forKey: key) }
+                        NativeAIPreferences.referenceScopeKey, NativeAIPreferences.showsSourcesKey, NativeAIPreferences.savesHistoryKey,
+                        NativeOnboardingGate.doneKey, NativeAppLocale.key] { UserDefaults.standard.removeObject(forKey: key) }
             // Browser logins live in the Keychain, outside the reset folder.
             SecItemDelete(DesktopCredentialsService.keychainQuery(folder.lastPathComponent + ":default") as CFDictionary)
             #endif

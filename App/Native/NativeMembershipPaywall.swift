@@ -51,6 +51,7 @@ struct MembershipPaywall: View {
             await load()
         }
         .accessibilityElement(children: .contain).accessibilityIdentifier("membership-paywall")
+        .bandalLocalized()
     }
 
     // MARK: Header and period
