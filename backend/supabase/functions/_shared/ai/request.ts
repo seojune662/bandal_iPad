@@ -17,6 +17,10 @@ const ANTHROPIC_KEYS = new Set(['model', 'system', 'messages', 'max_tokens', 'st
 const OPENAI_KEYS = new Set(['model', 'instructions', 'input', 'stream', 'store', 'include', 'tools', 'reasoning', 'max_output_tokens'])
 // Only tools the app runs itself: provider-side tools (web search, code execution, MCP…)
 // are billed per call outside token usage and would escape metering.
+// Gemini: `model` names the row and goes into the URL, not the body.
+const GOOGLE_KEYS = new Set(['model', 'systemInstruction', 'contents', 'tools', 'generationConfig'])
+const GOOGLE_FUNCTION_KEYS = new Set(['name', 'description', 'parameters', 'parametersJsonSchema'])
+const GOOGLE_CONFIG_KEYS = new Set(['maxOutputTokens'])
 const ANTHROPIC_TOOL_KEYS = new Set(['name', 'description', 'input_schema', 'eager_input_streaming', 'strict'])
 const OPENAI_TOOL_KEYS = new Set(['type', 'name', 'description', 'parameters', 'strict'])
 const ANTHROPIC_EFFORT = new Set(['low', 'medium', 'high', 'max'])
@@ -33,7 +37,7 @@ export interface Prepared {
 export function prepare(provider: Provider, input: unknown, models: ModelRow[], maxOutput: number): Prepared {
   if (!isObject(input)) throw new ProxyError('INVALID_REQUEST', 400)
   const raw = input
-  const allowed = provider === 'anthropic' ? ANTHROPIC_KEYS : OPENAI_KEYS
+  const allowed = provider === 'anthropic' ? ANTHROPIC_KEYS : provider === 'google' ? GOOGLE_KEYS : OPENAI_KEYS
   const unknown = Object.keys(raw).find(key => !allowed.has(key))
   if (unknown) throw new ProxyError('INVALID_REQUEST', 400, { field: unknown })
   const model = models.find(row => row.id === raw.model && row.provider === provider && row.enabled)
@@ -42,12 +46,19 @@ export function prepare(provider: Provider, input: unknown, models: ModelRow[], 
 
   const body: Record<string, unknown> = { ...raw, stream: true }
   let effort: string | null = null
-  const requestedField = provider === 'anthropic' ? raw.max_tokens : raw.max_output_tokens
+  const requestedField = provider === 'anthropic' ? raw.max_tokens : provider === 'google' ? (isObject(raw.generationConfig) ? raw.generationConfig.maxOutputTokens : undefined) : raw.max_output_tokens
   const requestedOutput = Math.min(typeof requestedField === 'number' && requestedField >= 1 ? Math.floor(requestedField) : maxOutput, maxOutput)
   if (provider === 'anthropic') {
     if (!Array.isArray(raw.messages)) throw new ProxyError('INVALID_REQUEST', 400, { field: 'messages' })
     if (raw.output_config !== undefined) effort = onlyEffort(raw.output_config, ANTHROPIC_EFFORT, 'output_config')
     body.cache_control = { type: 'ephemeral' }
+  } else if (provider === 'google') {
+    if (!Array.isArray(raw.contents)) throw new ProxyError('INVALID_REQUEST', 400, { field: 'contents' })
+    if (raw.generationConfig !== undefined && (!isObject(raw.generationConfig) || Object.keys(raw.generationConfig).some(key => !GOOGLE_CONFIG_KEYS.has(key)))) {
+      throw new ProxyError('INVALID_REQUEST', 400, { field: 'generationConfig' })
+    }
+    // Streaming is chosen by the endpoint (`:streamGenerateContent?alt=sse`).
+    delete body.model; delete body.stream
   } else {
     if (!Array.isArray(raw.input)) throw new ProxyError('INVALID_REQUEST', 400, { field: 'input' })
     if (raw.include !== undefined && (!Array.isArray(raw.include) || raw.include.some(item => !OPENAI_INCLUDE.has(String(item))))) {
@@ -62,12 +73,20 @@ export function prepare(provider: Provider, input: unknown, models: ModelRow[], 
 }
 
 export function withOutputLimit(provider: Provider, body: Record<string, unknown>, limit: number): Record<string, unknown> {
+  if (provider === 'google') return { ...body, generationConfig: { maxOutputTokens: limit } }
   return provider === 'anthropic' ? { ...body, max_tokens: limit } : { ...body, max_output_tokens: limit }
 }
 
 function checkTools(provider: Provider, tools: unknown) {
   if (tools === undefined) return
   if (!Array.isArray(tools) || tools.length > 160) throw new ProxyError('INVALID_REQUEST', 400, { field: 'tools' })
+  if (provider === 'google') {
+    // Only function declarations: Google Search, code execution and URL context are billed outside token usage.
+    const ok = tools.every(tool => isObject(tool) && Object.keys(tool).every(key => key === 'functionDeclarations') && Array.isArray(tool.functionDeclarations) &&
+      tool.functionDeclarations.every(fn => isObject(fn) && typeof fn.name === 'string' && Object.keys(fn).every(key => GOOGLE_FUNCTION_KEYS.has(key))))
+    if (!ok) throw new ProxyError('INVALID_REQUEST', 400, { field: 'tools' })
+    return
+  }
   for (const tool of tools) {
     const ok = isObject(tool) && typeof tool.name === 'string' && (provider === 'anthropic'
       ? Object.keys(tool).every(key => ANTHROPIC_TOOL_KEYS.has(key)) && isObject(tool.input_schema)
@@ -94,7 +113,8 @@ export function estimateTokens(value: unknown): number {
     if (typeof node === 'string') {
       const anthropicImage = key === 'data' && parent?.type === 'base64' && String(parent.media_type ?? '').startsWith('image/')
       const openaiImage = key === 'image_url' && node.startsWith('data:image/')
-      if (anthropicImage || openaiImage) { images++; return }
+      const googleImage = key === 'data' && String(parent?.mimeType ?? '').startsWith('image/')
+      if (anthropicImage || openaiImage || googleImage) { images++; return }
       bytes += new TextEncoder().encode(node).length
     } else if (Array.isArray(node)) node.forEach(item => walk(item, parent, key))
     else if (isObject(node)) for (const [k, v] of Object.entries(node)) walk(v, node, k)

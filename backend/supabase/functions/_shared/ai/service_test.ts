@@ -9,6 +9,7 @@ const MODELS: ModelRow[] = [
   { id: 'claude-sonnet-5-5', provider: 'anthropic', label: 'Claude Sonnet 5.5', p_in: 200, p_out: 1000, p_cache_r: 20, p_cache_w: 250, context_cap: 100000, enabled: true, sort: 20 },
   { id: 'claude-opus-5-5', provider: 'anthropic', label: 'Claude Opus 5.5', p_in: 400, p_out: 2000, p_cache_r: 20, p_cache_w: 500, context_cap: 100000, enabled: false, sort: 30 },
   { id: 'gpt-6-luna', provider: 'openai', label: 'GPT-6 Luna', p_in: 10, p_out: 50, p_cache_r: 1, p_cache_w: 0, context_cap: 100000, enabled: true, sort: 40 },
+  { id: 'gemini-test', provider: 'google', label: 'Gemini Test', p_in: 10, p_out: 50, p_cache_r: 1, p_cache_w: 0, context_cap: 100000, enabled: true, sort: 70 },
 ]
 const TASK = '11111111-1111-4111-8111-111111111111'
 
@@ -18,7 +19,7 @@ function harness(options: { consents?: Record<string, number>; begin?: { ok: boo
   const released: string[] = []
   const begun: { inputTokens: number; maxOutput: number }[] = []
   const sent: { url: string; body: Record<string, unknown>; headers: Record<string, string> }[] = []
-  const status: Status = { plan: 'plus', remainingUcents: 1000, consents: options.consents ?? { anthropic: 1, openai: 1 } }
+  const status: Status = { plan: 'plus', remainingUcents: 1000, consents: options.consents ?? { anthropic: 1, openai: 1, google: 1 } }
   const store: Store = {
     models: () => Promise.resolve(MODELS),
     settings: () => Promise.resolve({ auto_model: 'claude-haiku-5-5', auto_context: 30000, max_output_tokens: 8192, consent_version: 1 }),
@@ -36,8 +37,8 @@ function harness(options: { consents?: Record<string, number>; begin?: { ok: boo
       sent.push({ url, body: JSON.parse(String(init?.body)), headers: init?.headers as Record<string, string> })
       return Promise.resolve(options.upstream ? options.upstream(url, init ?? {}) : sse(ANTHROPIC_STREAM))
     },
-    keys: { anthropic: 'sk-ant', openai: 'sk-oai' },
-    baseURL: { anthropic: 'https://anthropic.test', openai: 'https://openai.test' },
+    keys: { anthropic: 'sk-ant', openai: 'sk-oai', google: 'g-key' },
+    baseURL: { anthropic: 'https://anthropic.test', openai: 'https://openai.test', google: 'https://google.test' },
   }
   return { handle: createAIProxy(deps), settled, sent, released, begun, store }
 }
@@ -76,7 +77,7 @@ Deno.test('rejects a missing or invalid token before anything else', async () =>
 Deno.test('config lists enabled models with input-price badges against Auto', async () => {
   const { handle } = harness()
   const config = await (await call(handle, '/config')).json()
-  assertEquals(config.models.map((m: { id: string }) => m.id), ['claude-haiku-5-5', 'claude-sonnet-5-5', 'gpt-6-luna'])
+  assertEquals(config.models.map((m: { id: string }) => m.id), ['claude-haiku-5-5', 'claude-sonnet-5-5', 'gpt-6-luna', 'gemini-test'])
   assertEquals(config.models[1].badge, 20)
   assertEquals(config.auto, { id: 'claude-haiku-5-5', provider: 'anthropic', contextCap: 30000 })
   assertEquals(config.usage.plan, 'plus')
@@ -114,6 +115,40 @@ Deno.test('relays OpenAI and splits cached input out of input tokens', async () 
   assertEquals(sent[0]!.body.max_output_tokens, 4000)
   assertEquals(settled[0]!.usage, { input: 600, output: 60, cacheRead: 400, cacheWrite: 0 })
   assertEquals(settled[0]!.effort, 'high')
+})
+
+const GOOGLE_STREAM = [
+  { candidates: [{ content: { role: 'model', parts: [{ text: '안녕' }] } }], usageMetadata: { promptTokenCount: 900, candidatesTokenCount: 3 } },
+  { candidates: [{ content: { role: 'model', parts: [{ text: '하세요' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 900, cachedContentTokenCount: 200, candidatesTokenCount: 40, thoughtsTokenCount: 10 } },
+]
+const googleBody = (extra: Record<string, unknown> = {}) => ({ model: 'gemini-test', systemInstruction: { parts: [{ text: 's' }] }, contents: [{ role: 'user', parts: [{ text: 'hi' }] }], ...extra })
+
+Deno.test('relays Gemini to streamGenerateContent with the key header, the model in the URL and thinking billed as output', async () => {
+  const { handle, settled, sent } = harness({ upstream: () => sse(GOOGLE_STREAM) })
+  const response = await call(handle, '/v1/google', googleBody({ generationConfig: { maxOutputTokens: 99999 } }))
+  assertEquals(response.status, 200)
+  assert((await response.text()).includes('bandal_usage'))
+  assertEquals(sent[0]!.url, 'https://google.test/v1beta/models/gemini-test:streamGenerateContent?alt=sse')
+  assertEquals(sent[0]!.headers['x-goog-api-key'], 'g-key')
+  assertEquals(sent[0]!.body.model, undefined)
+  assertEquals(sent[0]!.body.stream, undefined)
+  assertEquals(sent[0]!.body.generationConfig, { maxOutputTokens: 4000 })
+  assertEquals(settled, [{ model: 'gemini-test', effort: null, kind: 'question', usage: { input: 700, output: 50, cacheRead: 200, cacheWrite: 0 }, complete: true }])
+})
+
+Deno.test('Gemini: only function declarations as tools, known config keys, and its own consent', async () => {
+  const { handle, sent } = harness()
+  assertEquals((await call(handle, '/v1/google', googleBody({ tools: [{ googleSearch: {} }] }))).status, 400)
+  assertEquals((await call(handle, '/v1/google', googleBody({ tools: [{ codeExecution: {} }] }))).status, 400)
+  assertEquals((await call(handle, '/v1/google', googleBody({ generationConfig: { responseMimeType: 'application/json' } }))).status, 400)
+  assertEquals((await call(handle, '/v1/google', googleBody({ model: 'gpt-6-luna' }))).status, 404)
+  assertEquals(sent.length, 0)
+  const ok = await call(handle, '/v1/google', googleBody({ tools: [{ functionDeclarations: [{ name: 'read_material', description: 'd', parametersJsonSchema: { type: 'object', properties: {} } }] }] }))
+  assertEquals(ok.status, 200)
+  await ok.text()
+  const refused = await call(harness({ consents: { anthropic: 1 } }).handle, '/v1/google', googleBody())
+  assertEquals(refused.status, 409)
+  assertEquals((await refused.json()).provider, 'google')
 })
 
 Deno.test('refuses unknown fields, disabled or cross-provider models, and bad headers without calling upstream', async () => {
@@ -253,7 +288,7 @@ Deno.test('a failed settle is retried', async () => {
     store: { ...h.store, settle: () => failures-- > 0 ? Promise.reject(new Error('db')) : Promise.resolve({ costUcents: 7, status: {} }) },
     authenticate: () => Promise.resolve('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
     fetch: () => Promise.resolve(sse(ANTHROPIC_STREAM)),
-    keys: { anthropic: 'k' }, baseURL: { anthropic: 'https://a.test', openai: 'https://o.test' },
+    keys: { anthropic: 'k' }, baseURL: { anthropic: 'https://a.test', openai: 'https://o.test', google: 'https://g.test' },
   })
   const text = await (await call(handle, '/v1/anthropic', anthropicBody())).text()
   assert(text.includes('"costUcents":7'))

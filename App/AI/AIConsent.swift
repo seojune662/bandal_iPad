@@ -22,12 +22,13 @@ enum AIConsent {
     private static func key(_ provider: AIProvider, _ user: String, _ version: Int) -> String { "ai.consent.\(user.lowercased()).v\(version).\(provider.rawValue)" }
 
     static func company(_ provider: AIProvider) -> String {
-        switch provider { case .openai: "OpenAI"; case .claude: "Anthropic" }
+        switch provider { case .openai: "OpenAI"; case .claude: "Anthropic"; case .gemini: "Google" }
     }
     static func policy(_ provider: AIProvider) -> URL {
         switch provider {
         case .openai: URL(string: "https://openai.com/policies/privacy-policy/")!
         case .claude: URL(string: "https://www.anthropic.com/legal/privacy")!
+        case .gemini: URL(string: "https://policies.google.com/privacy")!
         }
     }
 

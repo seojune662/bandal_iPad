@@ -693,7 +693,9 @@ struct NativeAIModelCatalog {
     struct Model: Identifiable, Equatable {
         let id: String, provider: String, label: String, badge: Int
         /// The chat session's provider id for this model.
-        var appProvider: String { provider == "anthropic" ? NativeAIProvider.anthropic.rawValue : NativeAIProvider.openAI.rawValue }
+        var appProvider: String {
+            switch provider { case "anthropic": NativeAIProvider.anthropic.rawValue; case "google": NativeAIProvider.google.rawValue; default: NativeAIProvider.openAI.rawValue }
+        }
     }
     var models: [Model] = []
     init() {}

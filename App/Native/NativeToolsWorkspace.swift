@@ -72,9 +72,9 @@ enum NativeToolJSON {
 }
 
 enum NativeAIProvider: String, CaseIterable, Identifiable {
-    case openAI = "codex", anthropic = "claude-code"
+    case openAI = "codex", anthropic = "claude-code", google = "gemini"
     var id: String { rawValue }
     var title: String {
-        switch self { case .openAI: "OpenAI"; case .anthropic: "Anthropic" }
+        switch self { case .openAI: "OpenAI"; case .anthropic: "Anthropic"; case .google: "Google" }
     }
 }

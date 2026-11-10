@@ -1,12 +1,12 @@
 import Foundation
 
 enum AIProvider: String, CaseIterable, Identifiable {
-    case openai, claude
+    case openai, claude, gemini
     var id: String { rawValue }
-    var title: String { switch self { case .openai: "OpenAI"; case .claude: "Claude" } }
+    var title: String { switch self { case .openai: "OpenAI"; case .claude: "Claude"; case .gemini: "Gemini" } }
     /// The provider name the ai-proxy uses in routes, config and consent.
-    var server: String { switch self { case .openai: "openai"; case .claude: "anthropic" } }
-    init?(server: String) { switch server { case "openai": self = .openai; case "anthropic": self = .claude; default: return nil } }
+    var server: String { switch self { case .openai: "openai"; case .claude: "anthropic"; case .gemini: "google" } }
+    init?(server: String) { switch server { case "openai": self = .openai; case "anthropic": self = .claude; case "google": self = .gemini; default: return nil } }
 }
 
 /// Where AI requests go: the signed-in user's ai-proxy on the Bandal Supabase project.
@@ -85,6 +85,10 @@ final class AIClient {
               imageInputs.reduce(0, { $0 + $1.dataBase64.utf8.count }) <= 28_000_000 else { throw AIError.message("첨부 이미지는 PNG·JPEG·WebP·GIF 최대 6장, 합계 20MB까지 사용할 수 있습니다.") }
         var history: [[String: Any]] = messages.filter { ["user", "assistant"].contains($0.role) }.map { message in
             let attached = message.role == "user" ? images[message.id] ?? [] : []
+            if provider == .gemini {
+                return ["role": message.role == "assistant" ? "model" : "user",
+                        "parts": [["text": message.text] as [String: Any]] + attached.map { ["inlineData": ["mimeType": $0.mediaType, "data": $0.dataBase64]] }]
+            }
             if !attached.isEmpty {
                 if provider == .openai { return ["role": message.role, "content": [["type": "input_text", "text": message.text]] + attached.map { ["type": "input_image", "image_url": "data:\($0.mediaType);base64,\($0.dataBase64)"] }] }
                 return ["role": message.role, "content": [["type": "text", "text": message.text] as [String: Any]] + attached.map { ["type": "image", "source": ["type": "base64", "media_type": $0.mediaType, "data": $0.dataBase64]] }]
@@ -104,6 +108,10 @@ final class AIClient {
                 body = ["model": model, "system": system, "messages": history, "max_tokens": 8192, "stream": true,
                         "tools": tools.map { ["name": $0.name, "description": $0.description, "input_schema": $0.schema] }]
                 if let effort { body["output_config"] = ["effort": effort] }
+            case .gemini:
+                // The proxy moves `model` into the URL. Effort is not sent: thinking controls differ per Gemini model.
+                body = ["model": model, "systemInstruction": ["parts": [["text": system]]], "contents": history, "generationConfig": ["maxOutputTokens": 8192]]
+                if !tools.isEmpty { body["tools"] = [["functionDeclarations": tools.map { ["name": $0.name, "description": $0.description, "parametersJsonSchema": $0.schema] }]] }
             }
             var request = URLRequest(url: endpoint.url("v1/" + provider.server)); request.httpMethod = "POST"; request.timeoutInterval = 180
             request.httpShouldHandleCookies = false
@@ -123,6 +131,8 @@ final class AIClient {
             var output: [[String: Any]] = []
             /// Claude content blocks in order (text, thinking, redacted_thinking, tool_use), returned unchanged on the next step.
             var blocks: [Int: [String: Any]] = [:], toolJSON: [Int: String] = [:]
+            /// Gemini parts in order, returned unchanged on the next step (they carry thought signatures).
+            var geminiParts: [[String: Any]] = [], geminiUsage: [String: Any] = [:]
             var completed = false
             func append(_ text: String) async throws { result.text += text; onDelta(text); try await onDeltaAsync?(text) }
             for try await line in bytes.lines {
@@ -166,6 +176,20 @@ final class AIClient {
                         if let reason = (object["delta"] as? [String: Any])?["stop_reason"] as? String, !["end_turn", "tool_use", "stop_sequence"].contains(reason) { throw AIError.message("Claude 응답이 \(reason) 상태로 종료되었습니다. 부분 응답을 확인해 주세요.") }
                     }
                     if type == "message_stop" { completed = true }
+                case .gemini:
+                    let candidate = (object["candidates"] as? [[String: Any]])?.first ?? [:]
+                    for part in (candidate["content"] as? [String: Any])?["parts"] as? [[String: Any]] ?? [] {
+                        geminiParts.append(part)
+                        if let call = part["functionCall"] as? [String: Any], let name = call["name"] as? String {
+                            let arguments = (try? JSONSerialization.data(withJSONObject: call["args"] as? [String: Any] ?? [:])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+                            calls.append(AIToolCall(id: call["id"] as? String ?? "\(name)-\(calls.count)", name: name, arguments: arguments))
+                        } else if part["thought"] as? Bool != true, let text = part["text"] as? String { try await append(text) }
+                    }
+                    if let usage = object["usageMetadata"] as? [String: Any] { geminiUsage = usage }
+                    if let reason = candidate["finishReason"] as? String {
+                        guard reason == "STOP" else { throw AIError.message("Gemini 응답이 \(reason) 상태로 종료되었습니다. 부분 응답을 확인해 주세요.") }
+                        completed = true
+                    }
                 }
             }
             var claudeContent: [[String: Any]] = []
@@ -180,6 +204,10 @@ final class AIClient {
                     if block["type"] as? String == "text", (block["text"] as? String ?? "").isEmpty { continue }
                     claudeContent.append(block)
                 }
+            }
+            if provider == .gemini {
+                result.inputTokens += geminiUsage["promptTokenCount"] as? Int ?? 0
+                result.outputTokens += (geminiUsage["candidatesTokenCount"] as? Int ?? 0) + (geminiUsage["thoughtsTokenCount"] as? Int ?? 0)
             }
             guard completed else { throw AIError.message("AI 연결이 응답 완료 전에 끊겼습니다. 부분 응답은 보존했습니다.") }
             if calls.isEmpty { return result }
@@ -196,6 +224,9 @@ final class AIClient {
             case .claude:
                 history.append(["role": "assistant", "content": claudeContent])
                 history.append(["role": "user", "content": toolResults.map { ["type": "tool_result", "tool_use_id": $0.0.id, "content": $0.1] }])
+            case .gemini:
+                history.append(["role": "model", "parts": geminiParts])
+                history.append(["role": "user", "parts": toolResults.map { ["functionResponse": ["name": $0.0.name, "response": ["result": $0.1]]] }])
             }
         }
         throw AIError.message("한 번의 요청에서 실행할 수 있는 도구 횟수에 도달했습니다. 완료된 결과는 저장되어 있습니다.")

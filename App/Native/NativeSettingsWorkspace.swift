@@ -352,7 +352,7 @@ struct NativeSettingsWorkspace: View {
   @State private var aiSignIn = false
   @State private var aiSignInError: String?
   private func consentRow(_ provider: NativeAIProvider) -> some View {
-    let target: AIProvider = switch provider { case .openAI: .openai; case .anthropic: .claude }
+    let target: AIProvider = switch provider { case .openAI: .openai; case .anthropic: .claude; case .google: .gemini }
     let english = locale == "en-US"
     let granted = consentRevision >= 0 && AIConsent.anyGranted(target)
     return HStack {

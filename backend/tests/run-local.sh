@@ -17,4 +17,6 @@ psql -X -q -v ON_ERROR_STOP=1 -h "$runtime/socket" -p 54583 -U bandal_test -d po
   -f "$test_root/supabase/migrations/202611060001_ai_metering.sql" \
   -f "$test_root/tests/ai.sql" \
   -f "$test_root/supabase/migrations/202611060002_ipad_store.sql" \
-  -f "$test_root/tests/store.sql"
+  -f "$test_root/tests/store.sql" \
+  -f "$test_root/supabase/migrations/202611100001_ai_google.sql" \
+  -f "$test_root/tests/ai_google.sql"

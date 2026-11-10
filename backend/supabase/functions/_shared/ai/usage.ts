@@ -1,5 +1,5 @@
 // Reads token usage out of a provider's SSE stream while the bytes pass through untouched.
-export type Provider = 'anthropic' | 'openai'
+export type Provider = 'anthropic' | 'openai' | 'google'
 export interface Usage { input: number; output: number; cacheRead: number; cacheWrite: number }
 
 export class UsageMeter {
@@ -51,7 +51,32 @@ export class UsageMeter {
     let event: Record<string, unknown>
     try { event = JSON.parse(data) } catch { return }
     if (this.provider === 'anthropic') this.anthropic(event)
+    else if (this.provider === 'google') this.google(event)
     else this.openai(event)
+  }
+
+  /** Gemini streamGenerateContent: every chunk may carry cumulative usageMetadata; the last one has finishReason. */
+  private google(event: Record<string, unknown>) {
+    const candidate = record((Array.isArray(event.candidates) ? event.candidates : [])[0])
+    const parts = record(candidate.content).parts
+    for (const part of Array.isArray(parts) ? parts : []) {
+      const item = record(part)
+      if (item.functionCall !== undefined) this.content = true
+      this.generated(bytes(item.text))
+    }
+    const usage = record(event.usageMetadata)
+    if (Object.keys(usage).length > 0) {
+      const cached = int(usage.cachedContentTokenCount)
+      this.inputSeen = true
+      // Thinking tokens are billed as output.
+      this.usage = { input: Math.max(int(usage.promptTokenCount) - cached, 0), output: int(usage.candidatesTokenCount) + int(usage.thoughtsTokenCount), cacheRead: cached, cacheWrite: 0 }
+    }
+    const reason = candidate.finishReason
+    if (typeof reason === 'string') {
+      this.exact = Object.keys(usage).length > 0
+      if (reason === 'STOP') this.completed = true
+      else if (reason === 'MAX_TOKENS') this.truncated = true
+    }
   }
 
   private anthropic(event: Record<string, unknown>) {

@@ -1,8 +1,9 @@
-// ai-proxy: authenticated, metered relay from the iPad app to Anthropic and OpenAI.
+// ai-proxy: authenticated, metered relay from the iPad app to Anthropic, OpenAI and Google (Gemini).
 //   GET|POST /config      models, Auto, usage, consent state
 //   POST /consent         {provider, version}
 //   POST /v1/anthropic    Messages API body (streamed back as-is, plus a final bandal_usage event)
 //   POST /v1/openai       Responses API body (same)
+//   POST /v1/google       Gemini generateContent body plus `model` (same; sent to :streamGenerateContent?alt=sse)
 import { prepare, ProxyError, withOutputLimit, type ModelRow } from './request.ts'
 import { UsageMeter, type Provider, type Usage } from './usage.ts'
 
@@ -85,10 +86,14 @@ export function createAIProxy(deps: Deps): (request: Request) => Promise<Respons
     const timer = setTimeout(() => abort.abort(), STEP_TIMEOUT_MS)
     let upstream: Response
     try {
-      upstream = await deps.fetch(provider === 'anthropic' ? `${deps.baseURL.anthropic}/v1/messages` : `${deps.baseURL.openai}/v1/responses`, {
+      const url = provider === 'anthropic' ? `${deps.baseURL.anthropic}/v1/messages`
+        : provider === 'google' ? `${deps.baseURL.google}/v1beta/models/${encodeURIComponent(prepared.model.id)}:streamGenerateContent?alt=sse`
+        : `${deps.baseURL.openai}/v1/responses`
+      upstream = await deps.fetch(url, {
         method: 'POST', signal: abort.signal, body: JSON.stringify(body),
         headers: provider === 'anthropic'
           ? { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' }
+          : provider === 'google' ? { 'content-type': 'application/json', 'x-goog-api-key': key }
           : { 'content-type': 'application/json', authorization: `Bearer ${key}` },
       })
     } catch (error) {
@@ -166,13 +171,13 @@ export function createAIProxy(deps: Deps): (request: Request) => Promise<Respons
       if (request.method === 'POST' && path === '/consent') {
         const input = await request.json().catch(() => null) as Record<string, unknown> | null
         const provider = input?.provider, version = input?.version
-        if ((provider !== 'anthropic' && provider !== 'openai') || typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
+        if ((provider !== 'anthropic' && provider !== 'openai' && provider !== 'google') || typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
           throw new ProxyError('INVALID_REQUEST', 400)
         }
         return json(await deps.store.consent(actor, provider, version))
       }
-      if (request.method === 'POST' && (path === '/v1/anthropic' || path === '/v1/openai')) {
-        return await relay(request, actor, path === '/v1/anthropic' ? 'anthropic' : 'openai')
+      if (request.method === 'POST' && (path === '/v1/anthropic' || path === '/v1/openai' || path === '/v1/google')) {
+        return await relay(request, actor, path.slice(4) as Provider)
       }
       throw new ProxyError('NOT_FOUND', 404)
     } catch (error) {

@@ -109,6 +109,33 @@ final class AIClientTests: XCTestCase {
         } catch { XCTAssertTrue(error.localizedDescription.contains("허용되지")) }
     }
 
+    func testGeminiGoesThroughTheProxyRunsAToolAndReturnsTheModelPartsUnchanged() async throws {
+        let first = try event(["candidates": [["content": ["role": "model", "parts": [["functionCall": ["name": "read_material", "args": ["materialID": "a"]], "thoughtSignature": "sig-1"]]], "finishReason": "STOP"]],
+                               "usageMetadata": ["promptTokenCount": 20, "candidatesTokenCount": 4]])
+        let second = try event(["candidates": [["content": ["role": "model", "parts": [["text": "생각", "thought": true], ["text": "참고 자료의 답변"]]], "finishReason": "STOP"]],
+                                "usageMetadata": ["promptTokenCount": 30, "candidatesTokenCount": 10, "thoughtsTokenCount": 5]])
+        var calls = 0, deltas = ""
+        let message = ChatMessage(role: "user", text: "요약")
+        let client = AIClient(provider: .gemini, model: "gemini-fixture", endpoint: endpoint, session: session([(200, first), (200, second)]))
+        let result = try await client.run(messages: [message], system: "test", tools: [AITool(name: "read_material", description: "test", properties: [:], required: [])],
+                                          onDelta: { deltas += $0 }, onTool: { _ in }, execute: { call in calls += 1; XCTAssertEqual(call.arguments, "{\"materialID\":\"a\"}"); return "source text" },
+                                          images: [message.id: [AIInputImage(mediaType: "image/png", dataBase64: "AQID")]], effort: "high")
+        XCTAssertEqual(calls, 1); XCTAssertEqual(deltas, "참고 자료의 답변", "Thought parts are not shown")
+        XCTAssertEqual(result.inputTokens, 50); XCTAssertEqual(result.outputTokens, 19)
+        XCTAssertEqual(AIProtocol.requests.map { $0.url?.absoluteString }, Array(repeating: "https://project.test/functions/v1/ai-proxy/v1/google", count: 2))
+        let body = AIProtocol.bodies[0]
+        XCTAssertEqual(body["model"] as? String, "gemini-fixture")
+        XCTAssertNil(body["output_config"]); XCTAssertNil(body["reasoning"])
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
+        XCTAssertTrue(text.contains("inlineData") && text.contains("AQID") && text.contains("parametersJsonSchema"))
+        let contents = AIProtocol.bodies[1]["contents"] as? [[String: Any]] ?? []
+        XCTAssertEqual(contents.map { $0["role"] as? String }, ["user", "model", "user"])
+        XCTAssertEqual(((contents[1]["parts"] as? [[String: Any]])?.first)?["thoughtSignature"] as? String, "sig-1")
+        let reply = ((contents[2]["parts"] as? [[String: Any]])?.first)?["functionResponse"] as? [String: Any]
+        XCTAssertEqual(reply?["name"] as? String, "read_material")
+        XCTAssertEqual((reply?["response"] as? [String: Any])?["result"] as? String, "source text")
+    }
+
     func testBothProvidersReceiveImages() async throws {
         for (provider, body, field) in [(AIProvider.openai, try event(["type": "response.completed", "response": ["output": []]]), "input_image"), (.claude, try event(["type": "message_stop"]), "media_type")] {
             let message = ChatMessage(role: "user", text: "attached fixture")
