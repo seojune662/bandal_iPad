@@ -379,13 +379,8 @@ struct NativeRichTextEditor: UIViewRepresentable {
         }
         func format(_ command: String) {
             guard let view, view.isEditable else { return }
-            // History and 완료 live in the toolbar under the tabs; nothing sits above the keyboard.
-            switch command {
-            case "undo": view.undoManager?.undo(); return
-            case "redo": view.undoManager?.redo(); return
-            case "done": done(); return
-            default: break
-            }
+            // 완료 lives in the toolbar under the tabs; nothing sits above the keyboard.
+            if command == "done" { done(); return }
             commitComposition(); view.becomeFirstResponder()
             if command == "link", NativeRichTextCommands.link(in: projection, selection: view.selectedRange) != nil {
                 apply(NativeRichTextCommands.apply("unlink", to: projection, selection: view.selectedRange)); return
