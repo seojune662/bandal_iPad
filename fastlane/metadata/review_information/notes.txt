@@ -1,33 +1,38 @@
 Hello,
 
-Version 1.4.0 changes how AI works: users no longer enter their own API keys. AI now goes through our server (a relay on Supabase Edge Functions) to Anthropic or OpenAI, metered by a monthly allowance per plan. It also adds Bandal Pro (two auto-renewable subscriptions in the existing "Bandal Membership" group) and AI Credit (a consumable).
+Version 1.4.1 adds three things. No new in-app purchases; purchases, AI, sync and account deletion work as in 1.4.0. The app starts in the device language (Korean or English); labels below are Korean (English).
 
-How to try AI
-- Sign in (Account button in the left rail: Sign in with Apple or Google). AI needs an account because the allowance is per account; everything else works without one.
-- Open a course, then the AI panel (the "AI" handle on the right edge of the workspace), type a question and send. Before the first request to each provider a consent sheet (guideline 5.1.2(i)) names the company, what is sent and links its privacy policy; nothing is sent if the user cancels. Consent can be withdrawn in Settings > AI.
-- The model button under the input ("Auto") lets the user pick Auto, an Anthropic or an OpenAI model, and the thinking depth.
+1. First-run setup (4 steps, once, on a new install)
+- "나중에" (Later) leaves it on steps 1-3; step 4 ends with "시작하기" (Get started).
+- Language: Korean or English, applied at once; later in Settings > 일반 (General) > 언어 (Language).
+- School: search our school directory and pick one; the school's websites (portal, LMS, library...) appear as shortcuts in the sidebar. No sign-in needed.
+- Invite code: an optional 6-character code from a friend; "없어요, 건너뛰기" (I don't have one, skip). The system Paste button reads the clipboard only when tapped.
 
-What our server does with AI requests
-- It checks the account's plan and remaining allowance, forwards the request to the provider with our API key, streams the answer back and records token counts and cost. It does not store questions, materials or answers.
+2. School setup with AI
+- When a school is not in the directory, "AI로 찾기" (Find with AI) asks our server to find its official websites. The server runs a web search through Anthropic's API and returns only links on the school's own domain. The user reviews, edits or removes them before saving; they are labelled "AI가 찾은 정보 · 검토 전" (Found by AI · Not reviewed yet).
+- It needs sign-in (3 searches per account per day) and sends only the school name and country the user typed, plus the app language: no personal data, notes or documents. We pay for it; the user's AI allowance is not used.
+- Links the user edits before saving are also sent to our server (no personal data) as a suggestion for the shared directory.
+- Without sign-in the user can enter the school name alone: "직접 입력" (Enter it myself).
 
-Plans (all optional; nothing already made is ever locked)
-- Free: 1 course and 10 materials on this iPad; signed in, a small AI allowance (about 30 short questions a month).
-- Bandal Plus (monthly / yearly, existing): unlimited courses and materials, AI about 400 short questions a month.
-- Bandal Pro (monthly / yearly, new, higher level in the same group): Plus with 4x the AI allowance. During a Pro free trial the AI allowance is Plus's; the plan screen says so ("Pro 무료 체험 기간의 AI 사용량은 Plus와 같아요").
-- AI Credit (consumable): adds to the current allowance, never expires (stated in the popover), not restorable (a consumable).
-- Where to see them: Settings > 구독·사용량 (Subscription & usage) > 플랜 변경 (Change plan) opens our plan screen (Free / Plus / Pro, monthly or yearly, prices from StoreKit); the 충전 (Top up) button next to AI usage opens a small popover with the AI Credit price. When the allowance runs out, the app opens the plan screen with Pro selected (Free, Plus) or the 충전 popover (Pro).
-- Restore Purchases (구매 복원) is on the plan screen and in Settings > 구독. Terms of Use (Apple standard EULA) and Privacy Policy are linked at the bottom of the plan screen.
-- Purchases are verified on our server from the signed transaction (App Store Server Library) only to set the AI allowance; course and material limits are judged on the device.
+3. Friend invites
+- Profile menu (left rail) > 친구 초대 (Invite a friend), or Settings > 계정 (Account) > 친구 초대: the account's invite code with Copy and Share.
+- When an invited friend signs in and creates their first course, both accounts receive AI credit worth about 100 AI uses. It is the same in-app AI credit as before: used after the monthly allowance, never expires. An account is rewarded for at most 5 friends.
+- The reward is AI usage inside the app only. It has no cash value, cannot be transferred, exchanged or withdrawn, and unlocks no paid plan. No purchase is needed to invite or to be invited.
+- The share text ends with bandal.io/r/CODE, and "링크 복사" (Copy link) copies https://bandal.io/r/CODE. On an iPad with the app installed the link opens the app with the code filled in; the user still taps "이 코드 적용" (Apply this code). The app adds Associated Domains (applinks:bandal.io) for this.
 
-Other features (unchanged)
-- Sync (optional, free): Settings > 동기화, the user's own iCloud or Google Drive. We run no server for documents.
-- Lecture recording stays on the device; in-app browser (age rating 17+).
-- Account deletion: Settings > 계정 > 계정 삭제.
+How to test
+- New install: the setup appears on first launch. In step 2, with the country chip on United States, type "Stanford" and pick Stanford University (AI-found, so its links are shown for review); tap "이 학교로 설정" (Use this school). Or type any name and choose "직접 입력".
+- AI search and invites need an account: Account button in the left rail (Sign in with Apple or Google).
+
+Unchanged from 1.4.0
+- AI goes through our server to Anthropic or OpenAI after a per-provider consent sheet (5.1.2(i)); the server stores no questions, materials or answers.
+- Plans: Free, Bandal Plus, Bandal Pro and AI Credit (consumable) in Settings > 구독·사용량 (Plan & usage). Restore Purchases is on the plan screen.
+- Sync is optional (the user's own iCloud or Google Drive). Recordings stay on the device. In-app browser (17+). Account deletion: Settings > 계정 > 계정 삭제 (Delete Account).
 
 External services
-- Bandal server (auth.bandal.io / Supabase): account (ID, email, name, nickname); AI usage records (token counts, cost, model); App Store transaction status for the AI allowance.
-- Anthropic, OpenAI: AI requests, only after the per-provider consent.
+- Bandal server (auth.bandal.io / Supabase): account (ID, email, name, nickname); AI usage records; App Store transaction status; the invite code and which account invited which (account IDs only); the school directory.
+- Anthropic, OpenAI: AI requests after consent. Anthropic also runs the school website search (school name, country and app language only).
 - Apple: Sign in with Apple, In-App Purchase. Google: Sign in with Google, Google Drive API for sync.
-- No analytics, advertising or crash reporting.
+- No analytics, advertising or crash reporting. No device identifiers are collected.
 
-Regional differences: not distributed in the EU or China mainland.
+Not distributed in the EU or China mainland.
