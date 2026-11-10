@@ -329,4 +329,18 @@ final class NativeWorkspaceWindowTests: XCTestCase {
         XCTAssertThrowsError(try older.save(to: url))
         XCTAssertEqual(try Data(contentsOf: url), future)
     }
+    func testOverviewCardShowsWhatANumberedWindowHoldsAndKeepsAUserName() {
+        XCTAssertEqual(NativeWorkspaceWindowsOverview.title("윈도우 1", caption: "디자인 스튜디오 · 3주차 노트"), "디자인 스튜디오 · 3주차 노트")
+        XCTAssertEqual(NativeWorkspaceWindowsOverview.title("윈도우 12", caption: "eTL 강좌 + 노트"), "eTL 강좌 + 노트")
+        XCTAssertEqual(NativeWorkspaceWindowsOverview.title("강의", caption: "디자인 스튜디오 · 3주차 노트"), "강의")
+        XCTAssertEqual(NativeWorkspaceWindowsOverview.title("윈도우 정리", caption: "디자인 스튜디오 · 3주차 노트"), "윈도우 정리")
+        XCTAssertEqual(NativeWorkspaceWindowsOverview.title("윈도우 2", caption: nil), "윈도우 2")
+        XCTAssertEqual(NativeWorkspaceWindowsOverview.title("윈도우 2", caption: ""), "윈도우 2")
+    }
+    func testOverviewCaptionNamesTheCourseForOnePaneAndTheFrontTabsForASplit() {
+        XCTAssertEqual(NativeWorkspaceWindowsOverview.caption(course: "디자인 스튜디오", titles: ["3주차 노트.pdf"]), "디자인 스튜디오 · 3주차 노트")
+        XCTAssertEqual(NativeWorkspaceWindowsOverview.caption(course: "디자인 스튜디오", titles: ["eTL 강좌", "노트.md"]), "eTL 강좌 + 노트")
+        XCTAssertEqual(NativeWorkspaceWindowsOverview.caption(course: "디자인 스튜디오", titles: ["가", "나", "다", "라"]), "가 + 나 외 2")
+        XCTAssertNil(NativeWorkspaceWindowsOverview.caption(course: "디자인 스튜디오", titles: []))
+    }
 }
