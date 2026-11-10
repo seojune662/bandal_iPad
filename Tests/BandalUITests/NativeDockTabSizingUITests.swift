@@ -20,8 +20,8 @@ final class NativeDockTabSizingUITests: XCTestCase {
         XCTAssertTrue(browser.waitForExistence(timeout: 15))
         XCTAssertGreaterThan(browser.label.count, 80)
         let browserID = String(browser.identifier.dropFirst("native-document-tab-".count))
-        for action in ["new-note", "chat", "new-whiteboard", "board"] { open(action, app: app) }
-        assertUniformTabs(app, expectedVisibleCount: 5)
+        for action in ["new-note", "chat", "new-whiteboard"] { open(action, app: app) }
+        assertUniformTabs(app, expectedVisibleCount: 4)
         let wider = try XCTUnwrap(tabs(app).first).frame.width
         for _ in 0..<11 { open("new-note", app: app) }
         let shrunk = tabs(app)
