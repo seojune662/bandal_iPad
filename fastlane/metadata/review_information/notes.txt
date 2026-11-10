@@ -7,7 +7,6 @@ Version 1.4.1 adds three things. No new in-app purchases; purchases, AI, sync an
 - Language: Korean or English, applied at once; later in Settings > 일반 (General) > 언어 (Language).
 - School: search our school directory and pick one; the school's websites (portal, LMS, library...) appear as shortcuts in the sidebar. No sign-in needed.
 - Invite code: an optional 6-character code from a friend; "없어요, 건너뛰기" (I don't have one, skip). The system Paste button reads the clipboard only when tapped.
-- To see it again, reinstall the app.
 
 2. School setup with AI
 - When a school is not in the directory, "AI로 찾기" (Find with AI) asks our server to find its official websites. The server runs a web search through Anthropic's API and returns only links on the school's own domain. The user reviews, edits or removes them before saving; they are labelled "AI가 찾은 정보 · 검토 전" (Found by AI · Not reviewed yet).
@@ -16,18 +15,18 @@ Version 1.4.1 adds three things. No new in-app purchases; purchases, AI, sync an
 - Without sign-in the user can enter the school name alone: "직접 입력" (Enter it myself).
 
 3. Friend invites
-- Profile menu (bottom of the left rail) > 친구 초대 (Invite a friend), or Settings > 계정 (Account) > 친구 초대: the account's invite code with Copy and Share.
+- Profile menu (left rail) > 친구 초대 (Invite a friend), or Settings > 계정 (Account) > 친구 초대: the account's invite code with Copy and Share.
 - When an invited friend signs in and creates their first course, both accounts receive AI credit worth about 100 AI uses. It is the same in-app AI credit as before: used after the monthly allowance, never expires. An account is rewarded for at most 5 friends.
 - The reward is AI usage inside the app only. It has no cash value, cannot be transferred, exchanged or withdrawn, and unlocks no paid plan. No purchase is needed to invite or to be invited.
 - The share text ends with bandal.io/r/CODE, and "링크 복사" (Copy link) copies https://bandal.io/r/CODE. On an iPad with the app installed the link opens the app with the code filled in; the user still taps "이 코드 적용" (Apply this code). The app adds Associated Domains (applinks:bandal.io) for this.
 
 How to test
-- New install: the setup appears on first launch. In step 2 type "Stanford" and pick Stanford University (found by AI, so its links are shown for review); tap "이 학교로 설정" (Use this school). Or type any name and choose "직접 입력".
+- New install: the setup appears on first launch. In step 2, with the country chip on United States, type "Stanford" and pick Stanford University (AI-found, so its links are shown for review); tap "이 학교로 설정" (Use this school). Or type any name and choose "직접 입력".
 - AI search and invites need an account: Account button in the left rail (Sign in with Apple or Google).
 
 Unchanged from 1.4.0
 - AI goes through our server to Anthropic or OpenAI after a per-provider consent sheet (5.1.2(i)); the server stores no questions, materials or answers.
-- Plans: Free, Bandal Plus, Bandal Pro (auto-renewable, one group) and AI Credit (consumable) in Settings > 구독·사용량 (Plan & usage). Restore Purchases is on the plan screen.
+- Plans: Free, Bandal Plus, Bandal Pro and AI Credit (consumable) in Settings > 구독·사용량 (Plan & usage). Restore Purchases is on the plan screen.
 - Sync is optional (the user's own iCloud or Google Drive). Recordings stay on the device. In-app browser (17+). Account deletion: Settings > 계정 > 계정 삭제 (Delete Account).
 
 External services
