@@ -377,6 +377,10 @@ struct NativeAssistantPanel: View {
     /// Opens Settings at a section ("subscription" for 사용량).
     let onOpenSettings: (String) -> Void
     let onAnnotate: () -> Void
+    var onClose: (() -> Void)? = nil
+    @State private var toast: String?
+    /// The note the user removed from the composer: it is not attached again on its own.
+    @State private var detachedDocumentID: String?
     @StateObject private var session: NativeAssistantSession
     @State private var showingSignIn = false
     @State private var signInError: String?
@@ -388,7 +392,8 @@ struct NativeAssistantPanel: View {
     @State private var previewKey: String?
     @State private var showingArticleImport = false
     @Environment(\.scenePhase) private var scenePhase
-    init(store: NativeWorkspaceStore, context: NativeWorkspaceContext, sourceDocument: NativeDocumentReference?, attachments: [NativeAssistantAttachment] = [], onConsumeAttachments: @escaping () -> Void = {}, onOpenDocument: @escaping (NativeDocumentReference) -> Void, onOpenSettings: @escaping (String) -> Void, onAnnotate: @escaping () -> Void) {
+    init(store: NativeWorkspaceStore, context: NativeWorkspaceContext, sourceDocument: NativeDocumentReference?, attachments: [NativeAssistantAttachment] = [], onConsumeAttachments: @escaping () -> Void = {}, onOpenDocument: @escaping (NativeDocumentReference) -> Void, onOpenSettings: @escaping (String) -> Void, onAnnotate: @escaping () -> Void, onClose: (() -> Void)? = nil) {
+        self.onClose = onClose
         self.store = store; self.context = context; self.sourceDocument = sourceDocument; self.attachments = attachments
         self.onConsumeAttachments = onConsumeAttachments; self.onOpenDocument = onOpenDocument; self.onOpenSettings = onOpenSettings; self.onAnnotate = onAnnotate
         _session = StateObject(wrappedValue:NativeAssistantSession(store:store,context:context))
@@ -418,6 +423,8 @@ struct NativeAssistantPanel: View {
         }.background(Color(uiColor:.systemBackground))
             .task { await session.start(); await consumePendingConversation(); consumeAttachments() }
             .onDisappear { session.flushDraft() }
+            .bandalToast($toast)
+            .task(id:sourceDocument?.id) { attachCurrentNote() }
             .onChange(of:attachments) { _,_ in consumeAttachments() }
             .onChange(of:context) { _,value in session.context = value }
             .onChange(of:store.pendingAssistantConversationIDs[context.id]) { _,_ in Task { await consumePendingConversation() } }
@@ -427,10 +434,22 @@ struct NativeAssistantPanel: View {
                 if event.channel == "auth:changed", showingSignIn { Task { await session.checkAvailability(); if session.configured { showingSignIn = false } } }
             }
     }
+    private var insertableDocument: NativeDocumentReference? { sourceDocument.flatMap { $0.kind == "pdf" && $0.learningTarget == nil ? $0 : nil } }
+    /// The note on screen rides along with the next question until the user removes it.
+    private func attachCurrentNote() {
+        guard let document = sourceDocument, !document.isWorkspaceTool, document.learningTarget == nil, session.draft.document == nil,
+              detachedDocumentID != document.id, canAnnotate else { return }
+        perform { try await session.pin(document) }
+    }
+    private func insertIntoNote(_ text: String) {
+        guard let document = insertableDocument else { return }
+        store.events.send(NativeWorkspaceEvent(channel:"nativeWorkspace:insertAINote",payload:["courseId":document.courseID,"relPath":document.relativePath,"tabID":document.id,"text":text]))
+        toast = "노트에 넣었어요 · 되돌리기로 취소할 수 있어요"
+    }
     private var header: some View {
         HStack(spacing:4) {
             VStack(alignment:.leading,spacing:3) {
-                Text(context.title).font(.system(size:16,weight:.semibold)).lineLimit(1)
+                Label("AI 도우미",systemImage:"sparkle").font(.system(size:16,weight:.semibold)).lineLimit(1)
                 BandalInlineEditor(text:session.conversations.first(where:{ $0.id == session.sessionID })?.title ?? "새 대화",isEditing:$renamingConversation,font:.caption,identifier:"native-ai-conversation-rename") { title in perform { try await session.renameCurrent(title) } }
                     .foregroundStyle(.secondary)
             }
@@ -450,6 +469,7 @@ struct NativeAssistantPanel: View {
             } label: { Image(systemName:"clock.arrow.circlepath").frame(width:44,height:44).contentShape(Rectangle()) }.accessibilityLabel("대화 기록")
                 .bandalConfirm("이 대화를 삭제할까요?",isPresented:$showingDelete,action:"삭제",destructive:true) { perform { try await session.deleteCurrent() } }
             Button { Task { await session.select(nil) } } label: { Image(systemName:"square.and.pencil").frame(width:44,height:44).contentShape(Rectangle()) }.accessibilityLabel("새 대화")
+            if let onClose { Button(action:onClose) { Image(systemName:"xmark").frame(width:44,height:44).contentShape(Rectangle()) }.accessibilityLabel("AI 닫기").accessibilityIdentifier("native-ai-close") }
         }.buttonStyle(.plain).padding(.horizontal,12).padding(.top,8)
     }
     private var modeTabs: some View {
@@ -493,16 +513,18 @@ struct NativeAssistantPanel: View {
         }
     }
     private var welcome: some View {
-        VStack(alignment:.leading,spacing:18) {
-            Image(systemName:"sparkle").font(.system(size:28,weight:.light)).foregroundStyle(.secondary).padding(.top,12)
-            Text("자료에서 시작하는\n나만의 공부").font(.system(size:25,weight:.medium)).tracking(-0.7).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading)
-            Text("문서를 첨부하거나 궁금한 부분을 지목해 보세요. 대화하며 문제와 카드를 만들 수 있어요.").font(.system(size:14)).foregroundStyle(.secondary).lineSpacing(5).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading)
-            ForEach(["이 자료의 핵심 개념을 설명해 줘","내가 놓친 부분을 함께 확인해 줘"],id:\.self) { prompt in
+        VStack(spacing:12) {
+            Image(systemName:"sparkle").font(.system(size:20)).frame(width:44,height:44)
+                .background(Color(uiColor:.systemBackground),in:RoundedRectangle(cornerRadius:12)).shadow(color:.black.opacity(0.08),radius:6,y:2).padding(.top,48)
+            Text("무엇을 도와드릴까요?").font(.system(size:20,weight:.semibold))
+            Text("지금 노트와 과목 자료를 읽고 답해요").font(.system(size:13)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            ForEach(["이 노트 핵심만 요약해 줘","시험에 나올 문제 3개","강의자료에서 찾아 줘"],id:\.self) { prompt in
                 Button { session.draft.text = prompt } label: {
-                    HStack { Text(prompt).font(.system(size:13)).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading); Spacer(minLength:0); Image(systemName:"arrow.up.left").font(.caption) }.padding(14).background(Color.primary.opacity(0.045),in:RoundedRectangle(cornerRadius:14))
+                    Text(prompt).font(.system(size:13)).padding(.horizontal,14).frame(minHeight:36)
+                        .background(Color(uiColor:.systemBackground),in:Capsule()).overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
                 }.buttonStyle(.plain)
             }
-        }.frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,16)
+        }.frame(maxWidth:.infinity).padding(.vertical,16)
     }
     private func messageRow(_ message: NativeChatMessage) -> some View {
         VStack(alignment:.leading,spacing:10) {
@@ -510,8 +532,9 @@ struct NativeAssistantPanel: View {
             ForEach(message.attachments) { attachment in attachmentChip(attachment,removable:false,owner:"message-\(message.id)") }
             if !message.text.isEmpty {
                 Text(.init(message.text)).font(.system(size:15)).lineSpacing(6).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
-                    .padding(message.role == "user" ? 13 : 0)
-                    .background(message.role == "user" ? Color.primary.opacity(0.055) : .clear,in:RoundedRectangle(cornerRadius:17))
+                    .padding(.horizontal,message.role == "user" ? 14 : 0).padding(.vertical,message.role == "user" ? 10 : 0)
+                    .foregroundStyle(message.role == "user" ? NativeDesktopTheme.onAccent : NativeDesktopTheme.text)
+                    .background(message.role == "user" ? NativeDesktopTheme.accent : .clear,in:RoundedRectangle(cornerRadius:17))
                     .frame(maxWidth:.infinity,alignment:message.role == "user" ? .trailing : .leading)
             }
             ForEach(message.artifacts) { artifact in
@@ -523,8 +546,21 @@ struct NativeAssistantPanel: View {
                     }.padding(14).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.045),in:RoundedRectangle(cornerRadius:14))
                 }.buttonStyle(.plain)
             }
+            // Actions sit on the last answer only.
+            if message.role == "assistant", !message.text.isEmpty, message.id == session.messages.last?.id, !session.running {
+                HStack(spacing:8) {
+                    if insertableDocument != nil {
+                        Button { insertIntoNote(message.text) } label: { answerAction("노트에 넣기","plus") }.accessibilityIdentifier("native-ai-insert-note")
+                    }
+                    Button { UIPasteboard.general.string = message.text; toast = "복사했어요" } label: { answerAction("복사","doc.on.doc") }.accessibilityIdentifier("native-ai-copy-answer")
+                }.buttonStyle(.plain)
+            }
             if message.interrupted { Button("요청 다시 준비") { session.restoreAttempt() }.font(.caption).frame(minHeight:44) }
         }.frame(maxWidth:.infinity,alignment:.leading)
+    }
+    private func answerAction(_ title: String, _ symbol: String) -> some View {
+        Label(title,systemImage:symbol).font(.system(size:13,weight:.medium)).padding(.horizontal,12).frame(minHeight:36)
+            .background(Color(uiColor:.systemBackground),in:Capsule()).overlay(Capsule().strokeBorder(Color.primary.opacity(0.08))).contentShape(Rectangle())
     }
     private var composer: some View {
         VStack(alignment:.leading,spacing:8) {
@@ -545,14 +581,14 @@ struct NativeAssistantPanel: View {
             if let document = session.draft.document {
                 HStack(spacing:8) {
                     Image(systemName:"doc.text"); Text(document.title).lineLimit(1); Spacer()
-                    Button { session.draft.document = nil; session.draft.selection = "" } label: { Image(systemName:"xmark").frame(width:44,height:44).contentShape(Rectangle()) }.accessibilityLabel("문서 첨부 제거")
+                    Button { detachedDocumentID = document.id; session.draft.document = nil; session.draft.selection = "" } label: { Image(systemName:"xmark").frame(width:44,height:44).contentShape(Rectangle()) }.accessibilityLabel("문서 첨부 제거")
                 }.font(.caption).padding(.leading,10).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
             }
             if !session.draft.attachments.isEmpty {
                 ScrollView(.horizontal,showsIndicators:false) { HStack { ForEach(session.draft.attachments) { attachmentChip($0,removable:true) } } }
             }
             VStack(spacing:4) {
-                TextField("\(session.draft.mode.title == "대화" ? "무엇이 궁금한가요?" : "원하는 내용을 알려 주세요")",text:$session.draft.text,axis:.vertical)
+                TextField("\(session.draft.mode.title == "대화" ? "무엇이든 물어보세요" : "원하는 내용을 알려 주세요")",text:$session.draft.text,axis:.vertical)
                     .font(.system(size:15)).lineLimit(2...6).textFieldStyle(.plain).padding(.horizontal,14).padding(.top,13).accessibilityIdentifier("native-chat-input")
                 HStack(spacing:2) {
                     Menu {
