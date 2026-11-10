@@ -348,3 +348,48 @@ struct BandalEscapeKey: View {
         Button("", action: action).keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
     }
 }
+
+/// Choices side by side in one track; the chosen one is raised. Used for settings and 생각 깊이.
+struct BandalSegmented: View {
+    let options: [(value: String, title: String)]
+    @Binding var selection: String
+    var identifierPrefix = "bandal-segment-"
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(options, id: \.value) { option in
+                let on = selection == option.value
+                Button { selection = option.value } label: {
+                    Text(option.title).font(.system(size: 12, weight: on ? .semibold : .regular)).padding(.horizontal, 12).frame(height: 28)
+                        .foregroundStyle(NativeDesktopTheme.text)
+                        .background(on ? NativeDesktopTheme.overlay : .clear, in: RoundedRectangle(cornerRadius: 7))
+                        .shadow(color: .black.opacity(on ? 0.08 : 0), radius: 2, y: 1).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityIdentifier(identifierPrefix + option.value).accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }.padding(2).background(NativeDesktopTheme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
+/// One settings line: title (and a note under it) on the left, the control on the right.
+struct BandalSettingRow<Control: View>: View {
+    let title: String
+    var note: String?
+    @ViewBuilder var control: () -> Control
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: BandalMetrics.bodySize))
+                if let note { Text(note).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).fixedSize(horizontal: false, vertical: true) }
+            }
+            Spacer(minLength: 8)
+            control()
+        }.frame(minHeight: 36)
+    }
+}
+
+/// Preferences that live on this iPad only and are read where they apply.
+enum NativeLocalPreferences {
+    static let newDocumentKind = "native.newDocumentKind"
+    static let homeTogglesSidebar = "native.homeTogglesSidebar"
+    static let keyboardFoldsPanels = "native.keyboardFoldsPanels"
+    static func bool(_ key: String, default value: Bool = true) -> Bool { UserDefaults.standard.object(forKey: key) as? Bool ?? value }
+}

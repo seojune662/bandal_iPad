@@ -79,6 +79,8 @@ struct NativeNewTabMenu: View {
             .bandalPopoverSurface()
             .onChange(of: query) { _, _ in highlighted = 0 }
             .task { settings = (try? await store.invoke("settings:get")) as? [String: Any] ?? [:]; searchFocused = true }
+            // The preferred document starts highlighted, so Enter makes it.
+            .onAppear { if UserDefaults.standard.string(forKey: NativeLocalPreferences.newDocumentKind) == "markdown", let index = items.firstIndex(where: { $0.id == "new-note" }) { highlighted = index } }
     }
     private func row(_ item: NativeNewTabCatalog.Item, selected: Bool) -> some View {
         HStack(spacing: 8) {

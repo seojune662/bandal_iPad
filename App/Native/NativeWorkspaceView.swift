@@ -66,6 +66,7 @@ struct NativeWorkspaceView: View {
         let arguments = ProcessInfo.processInfo.arguments
         return !arguments.contains("--native-ui-testing") || arguments.contains("--native-keyboard-folds-panels")
     }()
+    private static var foldsPanelsOnKeyboard: Bool { keyboardFoldsPanels && NativeLocalPreferences.bool(NativeLocalPreferences.keyboardFoldsPanels) }
     private var showsWorkspace: Bool { section == .library && auxiliary == nil }
     /// Settings is a sheet over the workspace: the panels stay where they were behind it.
     private var settingsOpen: Bool { section == .settings && auxiliary == nil && !windowsOverviewOpen }
@@ -332,7 +333,7 @@ struct NativeWorkspaceView: View {
             // Typing a markdown note on the software keyboard: both side panels fold, and come back with the keyboard gone.
             .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { markdownEditing = $0.object as? Bool ?? false }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-                guard Self.keyboardFoldsPanels, markdownEditing, railsBeforeKeyboard == nil else { return }
+                guard Self.foldsPanelsOnKeyboard, markdownEditing, railsBeforeKeyboard == nil else { return }
                 railsBeforeKeyboard = (courseRailOpen, materialsRailOpen)
                 withAnimation(Self.railAnimation) { courseRailOpen = false; materialsRailOpen = false }
             }
@@ -589,7 +590,7 @@ struct NativeWorkspaceView: View {
     private func globalNavigation(width: CGFloat) -> some View {
         VStack(spacing: 8) {
             NativeChromeButton(title: "홈", symbol: "house.fill", selected: showsWorkspace && railVisible(.course, width: width)) {
-                if showsWorkspace { toggleCourseRail(width: width) } else {
+                if showsWorkspace { if NativeLocalPreferences.bool(NativeLocalPreferences.homeTogglesSidebar) || !railVisible(.course, width: width) { toggleCourseRail(width: width) } } else {
                     transition {
                         section = .library; auxiliary = nil; learningHome = false
                         setCourseRail(true, width: width)
@@ -873,7 +874,7 @@ struct NativeWorkspaceView: View {
             if store.selectedCourseID != nil {
                 NativeHomeTab(store: store, courseTitle: courseTitle,
                     onOpen: open, onSelectCourse: changeCourse,
-                    onNewNote: { openNewTab(.note, navigation.focusedGroupID ?? "") },
+                    onNewNote: { openNewTab(UserDefaults.standard.string(forKey: NativeLocalPreferences.newDocumentKind) == "markdown" ? .markdown(title: nil) : .note, navigation.focusedGroupID ?? "") },
                     onNewCourse: { setCourseRail(true, width: windowWidth); NotificationCenter.default.post(name: NativeHomeTab.newCourse, object: nil) })
                     .popover(isPresented: $showingNewTabMenu, arrowEdge: .top) {
                         NativeNewTabMenu(store: store, courseID: store.selectedCourseID ?? "", onAction: { action in
