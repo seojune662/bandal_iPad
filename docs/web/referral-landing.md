@@ -21,7 +21,7 @@ iPad 앱 1.4.1의 친구 초대 링크 `https://bandal.io/r/{코드}`가 도착�
 | 코드 | 6자를 큰 고정폭 글씨로. 누르면 복사 |
 | 복사 버튼 | "복사" → 누르면 "복사했어요"로 잠깐 바뀜 |
 | App Store 버튼 | `https://apps.apple.com/app/id6824053530` (Apple 공식 배지) |
-| 규칙 한 줄 | ko: "친구가 로그인하고 첫 과목을 만들면 둘 다 AI 100회를 받아요." / en: "When your friend signs in and creates their first course, you both get 100 AI questions." |
+| 규칙 한 줄 | ko: "친구가 로그인하고 첫 과목을 만들면 둘 다 AI 100회를 받아요." / en: "When your friend signs in and creates their first course, you both get 100 AI uses." |
 | 안내 한 줄 | ko: "반달을 설치한 뒤 첫 화면에서 이 코드를 넣어 주세요." / en: "Install Bandal, then enter this code on the first screen." |
 
 - 언어: 사이트의 기존 방식(ko 기본, en)을 따릅니다.
@@ -35,7 +35,9 @@ iPad 앱 1.4.1의 친구 초대 링크 `https://bandal.io/r/{코드}`가 도착�
 
 - 앱이 이 주소로 열리면: 첫 실행 안내 중이면 "초대 코드" 단계에 코드가 채워지고, 이미 쓰던 기기면 설정 › 계정 › 친구 초대의 코드 칸에 채워집니다. 링크로 들어온 코드는 자동으로 적용되지 않고 "이 코드 적용"을 한 번 눌러야 합니다(링크를 누른 것만으로 계정의 한 번뿐인 초대가 쓰이지 않게).
 - 앱이 받는 주소는 `https://bandal.io/r/{6자}` 하나입니다. 대소문자, 끝의 `/`, 쿼리 문자열은 허용하고, `http://`와 `www.bandal.io`는 받지 않습니다.
-- 앱 안의 공유 문구: "반달에서 같이 공부하자. 초대 코드 {코드} 넣으면 둘 다 AI 100회 받아요. bandal.io/r/{코드}"
+- 앱 안의 공유 문구(ko): "반달에서 같이 공부하자. 초대 코드 {코드} 넣으면 둘 다 AI 100회 받아요. bandal.io/r/{코드}"
+- 앱 안의 공유 문구(en): "Let's study together on Bandal. Enter invite code {CODE} and we both get 100 AI uses. bandal.io/r/{CODE}"
+- 공유 문구의 주소에는 `https://`가 없습니다. 메신저에 따라 `http://bandal.io/r/…`로 열릴 수 있고, 그 경우 유니버설 링크가 동작하지 않습니다. 그래서 `http://bandal.io/r/*`도 같은 페이지로 가야 하고(https로 리다이렉트해도 됨), 그때 앱으로 넘어가는 길은 Smart App Banner의 "열기"입니다. 앱의 "링크 복사"는 `https://bandal.io/r/{코드}`를 복사합니다.
 
 ## 2. `apple-app-site-association`
 
