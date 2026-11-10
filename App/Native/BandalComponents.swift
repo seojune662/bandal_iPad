@@ -16,7 +16,8 @@ enum BandalMetrics {
 
 extension View {
     /// A popover anchored to this view: arrow, closes on an outside tap or Esc, stays a popover in compact width.
-    func bandalPopover<Content: View>(isPresented: Binding<Bool>, arrowEdge: Edge = .top, width: CGFloat? = 280,
+    /// `arrowEdge: nil` lets the system pick the side with room (a prompt that may open next to the keyboard).
+    func bandalPopover<Content: View>(isPresented: Binding<Bool>, arrowEdge: Edge? = .top, width: CGFloat? = 280,
                                       @ViewBuilder content: @escaping () -> Content) -> some View {
         modifier(BandalDeferredPopover(isPresented: isPresented, arrowEdge: arrowEdge) {
             BandalPopoverBody(width: width, close: { isPresented.wrappedValue = false }, content: content)
@@ -65,15 +66,16 @@ extension View {
 /// still closing is otherwise dropped, and the state stays "presented" with nothing on screen.
 private struct BandalDeferredPopover<Body: View>: ViewModifier {
     @Binding var isPresented: Bool
-    let arrowEdge: Edge
+    let arrowEdge: Edge?
     @ViewBuilder let body: () -> Body
     @State private var shown = false
     @State private var appeared = false
     func body(content: Content) -> some View {
-        content
-            .popover(isPresented: Binding(get: { shown }, set: { shown = $0; if !$0 { isPresented = false } }), arrowEdge: arrowEdge) {
-                body().onAppear { appeared = true }
-            }
+        let presented = Binding(get: { shown }, set: { shown = $0; if !$0 { isPresented = false } })
+        return Group {
+            if let arrowEdge { content.popover(isPresented: presented, arrowEdge: arrowEdge) { body().onAppear { appeared = true } } }
+            else { content.popover(isPresented: presented, attachmentAnchor: .rect(.bounds), arrowEdge: nil) { body().onAppear { appeared = true } } }
+        }
             .onChange(of: isPresented, initial: true) { _, wanted in
                 guard wanted else { shown = false; appeared = false; return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { if isPresented { shown = true } }
@@ -297,11 +299,13 @@ struct BandalTextEntry: View {
 }
 
 /// Search field (focused on appear) over a scrolling list; the caller filters with `query`.
-struct BandalSearchList<Content: View>: View {
+/// `accessory` sits at the field's trailing edge (a filter chip).
+struct BandalSearchList<Accessory: View, Content: View>: View {
     var prompt = "검색"
     @Binding var query: String
     var maxHeight: CGFloat = 360
     var identifier = "bandal-search"
+    @ViewBuilder var accessory: () -> Accessory
     @ViewBuilder let content: () -> Content
     @FocusState private var focused: Bool
     var body: some View {
@@ -310,11 +314,18 @@ struct BandalSearchList<Content: View>: View {
                 Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
                 TextField(prompt, text: $query).font(.system(size: BandalMetrics.bodySize)).textFieldStyle(.plain)
                     .autocorrectionDisabled().textInputAutocapitalization(.never).focused($focused).accessibilityIdentifier(identifier)
+                accessory()
             }.padding(.horizontal, 8).frame(minHeight: 32)
                 .background(NativeDesktopTheme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: BandalMetrics.radiusSmall))
             ScrollView { VStack(alignment: .leading, spacing: 0) { content() } }.frame(maxHeight: maxHeight).fixedSize(horizontal: false, vertical: true)
         }
         .onAppear { focused = true }
+    }
+}
+
+extension BandalSearchList where Accessory == EmptyView {
+    init(prompt: String = "검색", query: Binding<String>, maxHeight: CGFloat = 360, identifier: String = "bandal-search", @ViewBuilder content: @escaping () -> Content) {
+        self.init(prompt: prompt, query: query, maxHeight: maxHeight, identifier: identifier, accessory: { EmptyView() }, content: content)
     }
 }
 

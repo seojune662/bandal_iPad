@@ -669,7 +669,7 @@ private struct NativeMarkdownImageInspector: View {
                 Spacer()
                 Button("삭제", systemImage: "trash", role: .destructive) { action("image-delete") }
             }.font(.subheadline)
-        }.padding(20)
+        }.padding(20).bandalLocalized()
     }
 }
 

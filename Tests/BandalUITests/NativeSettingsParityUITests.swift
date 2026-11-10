@@ -6,20 +6,22 @@ final class NativeSettingsParityUITests: XCTestCase {
     @MainActor
     func testSchoolSelectionAppearsAboveCoursesAndSurvivesRestart() {
         let app = launch()
+        // The sidebar's 학교 고르기 opens the school picker in a popover; choosing a school closes it.
         app.buttons["native-university-choose"].tap()
-        let search = app.textFields["native-settings-university-search"]
+        let search = app.textFields["native-school-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 15), app.debugDescription)
         search.tap(); search.typeText("SNU")
-        let school = app.buttons["native-settings-university-snu"]
+        let school = app.buttons["native-school-result-snu"]
         XCTAssertTrue(school.waitForExistence(timeout: 5)); school.tap()
-        XCTAssertTrue(app.buttons["선택 해제"].waitForExistence(timeout: 10))
-        app.buttons["native-section-library"].tap()
         let heading = app.buttons["native-university-heading"]
         XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(heading.label.contains("서울대학교"))
         let portal = app.buttons["native-university-service-snu.portal"]
         XCTAssertTrue(portal.exists, app.debugDescription)
-        XCTAssertTrue(app.buttons["native-ai-web-chatgpt"].exists)
+        // The AI sites follow the school's in one scroll area; with this many school sites their
+        // lazily built buttons are below its fold, so the section heading stands for them.
+        XCTAssertTrue(app.buttons["native-ai-web-heading"].exists, app.debugDescription)
+        XCTAssertFalse(search.exists, "Choosing a school closes the picker")
         capture("Configured university shortcuts above courses")
         app.terminate(); app.launchArguments = ["--native-ui-testing"]; app.launch()
         XCTAssertTrue(portal.waitForExistence(timeout: 20), app.debugDescription)
@@ -162,7 +164,7 @@ final class NativeSettingsParityUITests: XCTestCase {
         XCTAssertTrue(app.switches["native-settings-notifications-enabled"].exists, "알림 lives in 일반")
         XCTAssertTrue(app.buttons["native-settings-reset"].exists, "고급 lives in 일반")
         app.buttons["native-settings-category-account"].tap()
-        XCTAssertTrue(app.textFields["native-settings-university-search"].waitForExistence(timeout: 10), "학교 lives in 계정")
+        XCTAssertTrue(app.buttons["native-settings-school-choose"].waitForExistence(timeout: 10), "학교 lives in 계정")
         app.buttons["native-settings-category-ai"].tap()
         XCTAssertTrue(app.staticTexts["native-ai-summary"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["native-ai-summary"].label, "로그인하면 바로 쓸 수 있어요")

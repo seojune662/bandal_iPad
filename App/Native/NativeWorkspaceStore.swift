@@ -72,6 +72,8 @@ final class NativeWorkspaceStore {
     /// Installed by the native scene's presenter for sharing, exporting and
     /// other UIKit presentation services. Repository calls remain independent.
     var nativeChannelHandler: (@MainActor (String, [String: Any]) async throws -> Any)?
+    /// The school directory behind the school picker; the platform services install the signed-in one.
+    @ObservationIgnored var schools: any SchoolDirectory = LiveSchoolDirectory()
 
     private let sessionID = UUID().uuidString
     private var startup: Task<Void, Error>?
@@ -143,7 +145,7 @@ final class NativeWorkspaceStore {
             #if DEBUG
             // Each explicitly reset UI fixture starts with visible desktop rails.
             // Normal launches and restart tests preserve the user's preference.
-            for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.home.section", "native.desktop.aiRail", "native.inspector.width"] { UserDefaults.standard.removeObject(forKey: key) }
+            for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.home.section", "native.desktop.aiRail", "native.inspector.width", NativeOnboardingGate.doneKey, NativeAppLocale.key] { UserDefaults.standard.removeObject(forKey: key) }
             // Browser logins live in the Keychain, outside the reset folder.
             SecItemDelete(DesktopCredentialsService.keychainQuery(folder.lastPathComponent + ":default") as CFDictionary)
             #endif

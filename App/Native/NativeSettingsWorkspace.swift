@@ -24,6 +24,7 @@ enum NativeAppearancePreference {
     }
     if let font = settings["editorFont"] as? String { defaults.set(["sans", "serif", "mono"].contains(font) ? font : "sans", forKey: "native.editorFont") }
     if let density = settings["density"] as? String { defaults.set(density == "compact" ? "compact" : "comfortable", forKey: "native.density") }
+    if settings["locale"] != nil { defaults.set(NativeAppLocale.normalize(settings["locale"]), forKey: NativeAppLocale.key) }
     defaults.set(settings["openAdjacentTab"] as? Bool ?? false, forKey: "native.openAdjacentTab")
     defaults.set(settings["restoreLastCourse"] as? Bool ?? true, forKey: "native.restoreLastCourse")
   }

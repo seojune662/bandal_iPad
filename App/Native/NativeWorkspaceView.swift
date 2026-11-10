@@ -47,11 +47,14 @@ struct NativeWorkspaceView: View {
     @State private var showBusy = false
     @State private var restored = false
     @State private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    /// First launch: open until the store says whether this is a new user.
+    @State private var onboarding: NativeOnboardingGate.Stage
 
     init(store: NativeWorkspaceStore) {
         _storeHolder = StateObject(wrappedValue: NativeObservableHolder(store))
         _services = StateObject(wrappedValue: NativePlatformServices(store: store))
         _annotation = ObservedObject(wrappedValue: store.annotation)
+        _onboarding = State(initialValue: NativeOnboardingGate.initialStage(root: store.root))
     }
 
     private var navigationURL: URL { store.root.appendingPathComponent("native-workspace.json") }
@@ -357,11 +360,13 @@ struct NativeWorkspaceView: View {
         .tint(NativeDesktopTheme.accent)
         .environment(\.nativeWorkspacePreviewController, previews)
         .disabled(store.isApplyingExternalChanges)
+        .modifier(NativeOnboardingCover(stage: onboarding, store: store, finish: closeOnboarding))
         .background(NativeWorkspaceKeyboardBridge(store: store))
         .background(NativePresentationAnchor(services: services).allowsHitTesting(false))
         .bandalToast(Binding(get: { store.errorMessage }, set: { store.errorMessage = $0 }))
         .task {
             await store.start()
+            if onboarding == .pending || onboarding == .deciding { await decideOnboarding() }
             // Sync, auth and settings can wait for the restored tabs; the first screen cannot.
             defer { Task { @MainActor in
                 await services.start()
@@ -458,6 +463,25 @@ struct NativeWorkspaceView: View {
                 catch { store.errorMessage = error.localizedDescription }
             }
         }
+    }
+
+    /// Onboarding for a new user; someone who already has a school or a course never sees it.
+    private func decideOnboarding() async {
+        // Storage did not open: nothing is known about this user, so ask again on the next launch.
+        guard store.isReady, let settings = try? await store.invoke("settings:get") as? [String: Any] else { onboarding = .closed; return }
+        guard NativeOnboardingGate.shouldShow(settings: settings, hasCourses: !store.courses.isEmpty) else { closeOnboarding(); return }
+        // The first screen is already in the language it offers.
+        let language = NativeOnboardingGate.language(saved: settings["locale"])
+        UserDefaults.standard.set(language, forKey: NativeAppLocale.key)
+        if settings["locale"] as? String != language {
+            do { _ = try await store.invoke("settings:set", ["locale": language]) }
+            catch { store.errorMessage = error.localizedDescription }
+        }
+        onboarding = .showing
+    }
+    private func closeOnboarding() {
+        UserDefaults.standard.set(true, forKey: NativeOnboardingGate.doneKey)
+        onboarding = .closed
     }
 
     private func importSharedMaterials() async {
