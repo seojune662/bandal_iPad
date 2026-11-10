@@ -266,7 +266,7 @@ final class NativePDFWorkspaceModel {
         let value = favorites[index]
         return "pen \(value.color) \(widthLabel(for: value.width, tool: "pen")) \(Int((value.opacity * 100).rounded()))%"
     }
-    var page = 1
+    var page = 1 { didSet { NativeDockShareControls.visiblePage[document.id] = page } }
     var pageCount = 1
     var isLoading = true
     var isBusy = false
