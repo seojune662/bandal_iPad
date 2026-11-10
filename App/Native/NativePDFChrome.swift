@@ -54,7 +54,7 @@ struct NativePDFToolbar: View {
             icon("필기 포함 PDF 내보내기", "square.and.arrow.up", id: "native-pdf-export") { model.exportPDF() }
         }.fixedSize(horizontal: true, vertical: false)
     }
-    static let tools = [("pen", "펜", "pencil.tip"), ("ballpoint", "볼펜", "pencil.line"), ("highlighter", "형광펜", "highlighter"), ("eraser", "지우개", "eraser"), ("text", "텍스트", "textformat"), ("lasso", "올가미", "lasso"), ("tape", "테이프", "bandage"), ("laser", "레이저 포인터", "wand.and.rays"), ("comment", "댓글", "text.bubble"), ("select", "손", "hand.point.up.left")]
+    static let tools = [("pen", "펜", "pencil.tip"), ("ballpoint", "볼펜", "pencil.line"), ("highlighter", "형광펜", "highlighter"), ("eraser", "지우개", "eraser"), ("line", "직선", "line.diagonal"), ("lasso", "올가미", "lasso"), ("text", "텍스트", "textformat"), ("tape", "테이프", "bandage"), ("laser", "레이저 포인터", "wand.and.rays"), ("comment", "댓글", "text.bubble"), ("select", "손", "hand.point.up.left")]
     static func toolButton(_ model: NativePDFWorkspaceModel, _ value: (String, String, String)) -> some View {
         Button { model.chooseTool(value.0) } label: {
             Image(systemName: value.2).font(.system(size: 17)).frame(width: 40, height: 40)

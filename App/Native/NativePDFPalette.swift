@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor enum NativePDFPaletteLook {
     static let colorNames = ["ink": "먹색", "red": "빨강", "orange": "주황", "yellow": "노랑", "green": "초록", "blue": "파랑", "violet": "보라"]
     static func toolName(_ tool: String) -> String {
-        ["pen": "펜", "ballpoint": "볼펜", "highlighter": "형광펜", "eraser": "지우개", "lasso": "올가미", "select": "손", "text": "텍스트",
+        ["pen": "펜", "ballpoint": "볼펜", "highlighter": "형광펜", "eraser": "지우개", "line": "직선", "lasso": "올가미", "select": "손", "text": "텍스트",
          "tape": "테이프", "laser": "레이저 포인터", "comment": "댓글"][tool] ?? "필기 도구"
     }
     static func colorName(_ color: String) -> String { colorNames[color] ?? color }
@@ -224,7 +224,7 @@ struct NativePDFPaletteQuickControls: View {
                                     Label(model.allTapesRevealed ? "모두 가리기" : "모두 보기", systemImage: model.allTapesRevealed ? "eye.slash" : "eye")
                                         .font(.system(size: 12)).frame(height: 40).padding(.horizontal, 8).contentShape(Rectangle())
                                 }.disabled(!model.hasTapes).opacity(model.hasTapes ? 1 : 0.4).accessibilityIdentifier("native-pdf-tape-all")
-                            } else {
+                            } else if model.isInkTool {
                             Button { model.showStyle.toggle() } label: {
                                 Image(systemName: "slider.horizontal.3").font(.system(size: 17)).frame(width: 40, height: 40)
                                     .foregroundStyle(model.showStyle ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary)

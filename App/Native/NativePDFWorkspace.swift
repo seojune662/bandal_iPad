@@ -244,13 +244,15 @@ final class NativePDFWorkspaceModel {
     /// Ballpoint shares the pen favourites; only its width model differs.
     var isPenLike: Bool { tool == "pen" || tool == "ballpoint" }
     var currentPreset: NativePDFPenPreset { .init(color: color, width: width, opacity: opacity) }
-    var colorSlots: [String] { palette.colors(for: tool) }
-    var widthSlots: [Int] { palette.widths(for: tool) }
+    /// The straight line draws with the pen's colours and widths.
+    private var slotTool: String { tool == "line" ? "pen" : tool }
+    var colorSlots: [String] { palette.colors(for: slotTool) }
+    var widthSlots: [Int] { palette.widths(for: slotTool) }
     /// The width the slots describe: the eraser radius for the eraser.
     var activeWidth: Double { tool == "eraser" ? palette.eraserRadius : tool == "tape" ? palette.tapeWidth : width }
     /// Tools whose second row shows colour slots, and those with thickness slots.
-    var usesColorSlots: Bool { isInkTool || tool == "tape" }
-    var usesWidthSlots: Bool { isInkTool || tool == "eraser" || tool == "tape" }
+    var usesColorSlots: Bool { isInkTool || tool == "tape" || tool == "line" }
+    var usesWidthSlots: Bool { isInkTool || tool == "eraser" || tool == "tape" || tool == "line" }
     /// The colour the slots mark as chosen (the tape keeps its own).
     var activeColor: String { tool == "tape" ? palette.tapeColor : color }
     /// The slot holding the active width; nil for a width between steps (an older slider value).
@@ -791,6 +793,7 @@ final class NativePDFWorkspaceModel {
         if next == "pen" { applyStyle(savedPenStyle) }
         if next == "highlighter" { applyStyle(savedHighlighterStyle) }
         if next == "ballpoint" { applyStyle(savedBallpointStyle) }
+        if next == "line" { applyStyle(savedPenStyle) }
         showStyle = false
         updateStyle()
     }
@@ -813,7 +816,7 @@ final class NativePDFWorkspaceModel {
     func setWidthStep(_ step: Int, slot: Int?) {
         guard NativePDFPaletteStyle.steps(for: tool).indices.contains(step), usesWidthSlots else { return }
         if let slot, widthSlots.indices.contains(slot) {
-            let key = tool
+            let key = slotTool
             palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) {
                 var slots = $0.widths(for: key); slots[slot] = step; $0.widthSlots[key] = slots
             }
@@ -832,7 +835,7 @@ final class NativePDFWorkspaceModel {
     /// `+` adds one of the seven colours to this tool's slots and selects it.
     func addColorSlot(_ next: String) {
         guard usesColorSlots, NativePDFWorkspacePreferences.colors.contains(next) else { return }
-        let key = tool
+        let key = slotTool
         palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) {
             var slots = $0.colors(for: key); if !slots.contains(next) { slots.append(next) }; $0.colorSlots[key] = slots
         }
@@ -840,7 +843,7 @@ final class NativePDFWorkspaceModel {
     }
     func removeColorSlot(_ value: String) {
         guard usesColorSlots, colorSlots.count > 1 else { return }
-        let key = tool
+        let key = slotTool
         palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) {
             $0.colorSlots[key] = $0.colors(for: key).filter { $0 != value }
         }
@@ -851,7 +854,7 @@ final class NativePDFWorkspaceModel {
         updateStyle()
     }
     func setWidth(_ value: Double) {
-        guard value.isFinite, isInkTool else { return }
+        guard value.isFinite, isInkTool || tool == "line" else { return }
         width = min(0.04, max(0.001, value)); rememberActiveStyle(); updateStyle()
     }
     func setOpacity(_ value: Double) {
@@ -1079,6 +1082,18 @@ final class NativePDFWorkspaceModel {
             if phase == "up" { gesture = nil; openComment(at: last, page: number) }
             return
         }
+        if contact.tool == "line" {
+            // A straight line from where the pen went down to where it is: previewed while dragging, one object on lift.
+            let length = hypot(last.x - contact.start.x, (last.y - contact.start.y) * aspect(number))
+            contact.preview = length < 0.004 ? [] : [lineRow(from: contact.start, to: last, page: number, id: contact.id)]
+            gesture = contact
+            if phase == "up" {
+                guard length >= 0.004 else { gesture = nil; requestScene(number); return }
+                var row = lineRow(from: contact.start, to: last, page: number, id: contact.id); row.removeValue(forKey: "id")
+                performObjectEdit("create", values: [row])
+            } else { dirtyScenes.insert(number); publishDirtyScenes() }
+            return
+        }
         if contact.tool == "eraser" {
             // The partial eraser, and the whole-object eraser when the native one is unavailable.
             let path = (contact.lastErasePoint.map { [$0] } ?? []) + raw.compactMap(NativePDFEditingGeometry.point)
@@ -1159,6 +1174,10 @@ final class NativePDFWorkspaceModel {
         }
         let data: [String: Any] = ["points": samples.map { ["x": min(1, max(0, Double($0.x))), "y": min(1, max(0, Double($0.y))), "p": 0.5] }]
         return ["id": id, "page": page, "kind": "tape", "data": data, "style": ["color": palette.tapeColor, "width": width, "opacity": 1.0]]
+    }
+    private func lineRow(from start: CGPoint, to end: CGPoint, page: Int, id: String) -> [String: Any] {
+        let points = [start, end].map { ["x": min(1, max(0, Double($0.x))), "y": min(1, max(0, Double($0.y))), "p": 0.5] }
+        return ["id": id, "page": page, "kind": "line", "data": ["points": points], "style": ["color": color, "width": width, "opacity": opacity]]
     }
     private func tape(at point: CGPoint, page: Int) -> String? {
         rows(on: page).reversed().first { row in
