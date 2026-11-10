@@ -30,11 +30,11 @@ extension View {
                        destructive: Bool = false, identifier: String? = nil, perform: @escaping () -> Void) -> some View {
         bandalPopover(isPresented: isPresented, width: 260) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.system(size: BandalMetrics.bodySize, weight: .semibold))
-                if let message { Text(message).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).fixedSize(horizontal: false, vertical: true) }
+                BandalText(title).font(.system(size: BandalMetrics.bodySize, weight: .semibold))
+                if let message { BandalText(message).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).fixedSize(horizontal: false, vertical: true) }
                 HStack {
                     Spacer()
-                    Button(actionTitle) { isPresented.wrappedValue = false; perform() }
+                    Button { isPresented.wrappedValue = false; perform() } label: { BandalText(actionTitle) }
                         .font(.system(size: BandalMetrics.bodySize, weight: .semibold))
                         .foregroundStyle(destructive ? Color.red : NativeDesktopTheme.onAccent)
                         .padding(.horizontal, 12).frame(minHeight: 32)
@@ -115,9 +115,11 @@ extension Binding where Value == Bool {
 /// Section header: 11pt, grey, bold capitals.
 struct BandalSectionHeader: View {
     let title: String
+    @Environment(\.locale) private var locale
     init(_ title: String) { self.title = title }
     var body: some View {
-        Text(title.uppercased()).font(.system(size: BandalMetrics.headerSize, weight: .bold)).foregroundStyle(NativeDesktopTheme.muted)
+        // Upper-cased after the lookup, as a string: VoiceOver and UI tests read "APPLE 캘린더" as before.
+        Text(verbatim: NativeAppLocale.string(title, locale).uppercased()).font(.system(size: BandalMetrics.headerSize, weight: .bold)).foregroundStyle(NativeDesktopTheme.muted)
             .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading).accessibilityAddTraits(.isHeader)
     }
 }
@@ -136,8 +138,8 @@ struct BandalMenuRow<Trailing: View>: View {
             HStack(spacing: 8) {
                 if let symbol { Image(systemName: symbol).font(.system(size: 13)).frame(width: 18).foregroundStyle(destructive ? Color.red : NativeDesktopTheme.secondary) }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: BandalMetrics.bodySize)).foregroundStyle(destructive ? Color.red : NativeDesktopTheme.text).lineLimit(1)
-                    if let detail { Text(detail).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
+                    BandalText(title).font(.system(size: BandalMetrics.bodySize)).foregroundStyle(destructive ? Color.red : NativeDesktopTheme.text).lineLimit(1)
+                    if let detail { BandalText(detail).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
                 }
                 Spacer(minLength: 8)
                 trailing()
@@ -266,12 +268,13 @@ struct BandalTextEntry: View {
     @State private var error: String?
     @State private var busy = false
     @FocusState private var focused: Bool
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: BandalMetrics.headerSize, weight: .bold)).foregroundStyle(NativeDesktopTheme.muted)
+            BandalText(title).font(.system(size: BandalMetrics.headerSize, weight: .bold)).foregroundStyle(NativeDesktopTheme.muted)
             HStack(spacing: 6) {
-                TextField(prompt, text: $value).font(.system(size: BandalMetrics.bodySize)).textFieldStyle(.plain)
+                TextField(NativeAppLocale.string(prompt, locale), text: $value).font(.system(size: BandalMetrics.bodySize)).textFieldStyle(.plain)
                     .keyboardType(keyboard).textInputAutocapitalization(keyboard == .URL ? .never : .sentences).autocorrectionDisabled(keyboard == .URL)
                     .focused($focused).onSubmit(submit).disabled(busy)
                     .padding(.horizontal, 8).frame(minHeight: 32)
@@ -352,6 +355,16 @@ struct BandalToast: View {
     }
 }
 
+/// App text a component was handed as a `String` (a title, a menu row, a confirmation): shown in the app
+/// language when the table has it. Unlike `Text("…")` it is never read as Markdown or as a format,
+/// so a file or course name with `_`, `*` or `%` in it comes out as it is.
+struct BandalText: View {
+    private let text: String
+    @Environment(\.locale) private var locale
+    init(_ text: String) { self.text = text }
+    var body: some View { Text(verbatim: NativeAppLocale.string(text, locale)) }
+}
+
 /// Esc from a hardware keyboard. A focused text field swallows `onKeyPress`, a cancel shortcut still fires.
 struct BandalEscapeKey: View {
     let action: () -> Void
@@ -380,7 +393,7 @@ struct BandalSegmented: View {
                 Button { selection = option.value } label: {
                     HStack(spacing: 6) {
                         if let symbol = symbols[option.value] { Image(systemName: symbol).font(.system(size: large ? 14 : 12)) }
-                        Text(option.title).lineLimit(1)
+                        BandalText(option.title).lineLimit(1)
                     }
                         .font(.system(size: large ? 14 : 12, weight: on ? .semibold : .regular)).padding(.horizontal, large ? 14 : 12)
                         .frame(maxWidth: fills ? .infinity : nil).frame(height: large ? 34 : 28)
@@ -403,8 +416,8 @@ struct BandalSettingRow<Control: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: size))
-                if let note { Text(note).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).fixedSize(horizontal: false, vertical: true) }
+                BandalText(title).font(.system(size: size))
+                if let note { BandalText(note).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 8)
             control()
