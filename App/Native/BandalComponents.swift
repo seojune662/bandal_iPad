@@ -374,8 +374,7 @@ struct BandalSegmented: View {
                         .font(.system(size: large ? 14 : 12, weight: on ? .semibold : .regular)).padding(.horizontal, large ? 14 : 12)
                         .frame(maxWidth: fills ? .infinity : nil).frame(height: large ? 34 : 28)
                         .foregroundStyle(on || !large ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
-                        // White in light; in dark the page colour, which stands out of the lighter track.
-                        .background(on ? NativeDesktopTheme.bgApp : .clear, in: RoundedRectangle(cornerRadius: large ? 8 : 7))
+                        .background(on ? NativeDesktopTheme.segmentSelected : .clear, in: RoundedRectangle(cornerRadius: large ? 8 : 7))
                         .shadow(color: .black.opacity(on ? 0.08 : 0), radius: 2, y: 1).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(spoken.map { $0 + " " + option.title } ?? option.title)
                     .accessibilityIdentifier(identifierPrefix + option.value).accessibilityAddTraits(on ? .isSelected : [])
