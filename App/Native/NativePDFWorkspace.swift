@@ -289,6 +289,7 @@ final class NativePDFWorkspaceModel {
     private(set) var recordingID: String?
     private(set) var recordingStartedAt: Date?
     var recordingNotice: String?
+    private(set) var summarizingRecording = false
     private(set) var selectionCount = 0
     private(set) var selectedText = false
     /// Selection box in the PDF body's coordinates, for the floating action bar.
@@ -1289,6 +1290,35 @@ final class NativePDFWorkspaceModel {
                 recordingStartedAt = nil; recordingNotice = error.localizedDescription
             }
         }
+    }
+    /// 끝내고 요약: stops the recording, then hands what it heard to the AI panel with a summary request.
+    /// With nothing transcribed (no speech model yet, or silence) there is nothing to summarize: say so.
+    func finishRecordingAndSummarize() {
+        guard let id = recordingID, !summarizingRecording else { return }
+        summarizingRecording = true
+        recordingID = nil; recordingStartedAt = nil
+        let course = document.courseID, title = (document.title as NSString).deletingPathExtension
+        Task { @MainActor in
+            defer { summarizingRecording = false }
+            do {
+                _ = try await store.invoke("recordings:control", ["id": id, "action": "stop"])
+                let detail = try await store.invoke("recordings:read", ["id": id]) as? [String: Any] ?? [:]
+                var text = Self.transcript(detail)
+                #if DEBUG
+                // UI tests have no microphone input: a fixed transcript stands in for what was heard.
+                if ProcessInfo.processInfo.arguments.contains("--native-recording-transcript-fixture") { text = "오늘 강의는 선형대수의 고유값과 고유벡터를 다룹니다." }
+                #endif
+                guard !text.isEmpty else { recordingNotice = "받아쓴 내용이 없어 요약하지 못했어요. 녹음은 녹음 탭에 저장됐어요."; return }
+                store.events.send(NativeWorkspaceEvent(channel: "nativeWorkspace:assistantRequest", payload: NativeAssistantRequest(
+                    attachment: NativeAssistantAttachment(title: title + " 녹음", text: text, courseID: course),
+                    prompt: "이 강의 녹음을 핵심만 요약해 줘.")))
+            } catch { recordingNotice = error.localizedDescription }
+        }
+    }
+    /// The recording's transcript as one text, capped where an attachment is (80,000 characters).
+    static func transcript(_ detail: [String: Any]) -> String {
+        let lines = (detail["segments"] as? [[String: Any]] ?? []).compactMap { ($0["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return String(lines.joined(separator: "\n").prefix(80_000))
     }
     /// Marks the moment a page comes into view, so the recording opens at this page.
     private func anchorRecording(page number: Int) {

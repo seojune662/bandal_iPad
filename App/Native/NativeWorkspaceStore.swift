@@ -48,6 +48,9 @@ final class NativeWorkspaceStore {
     /// A newly created docked browser consumes its URL after its page exists.
     var assistantDocumentIDs = Set<String>()
     var pendingAssistantConversationIDs: [String: String] = [:]
+    /// Something elsewhere in the workspace asked the AI panel of a space (by context id) a question:
+    /// the panel attaches the material, fills in the prompt and, when asked to, sends it.
+    var pendingAssistantRequests: [String: NativeAssistantRequest] = [:]
     var documentSelections: [String: String] = [:]
     var documentDuplicateSourceIDs: [String: String] = [:]
     var pageNoteSourceTabIDs: [String: String] = [:]
@@ -143,7 +146,10 @@ final class NativeWorkspaceStore {
             #if DEBUG
             // Each explicitly reset UI fixture starts with visible desktop rails.
             // Normal launches and restart tests preserve the user's preference.
-            for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.home.section", "native.desktop.aiRail", "native.inspector.width"] { UserDefaults.standard.removeObject(forKey: key) }
+            for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.home.section", "native.desktop.aiRail", "native.inspector.width",
+                        // Preferences a test may flip: the next fixture starts from the defaults again.
+                        "native.desktop.courseRailBeforeAI", "native.pdf.paletteCollapsed", NativeLocalPreferences.newDocumentKind, NativeLocalPreferences.homeTogglesSidebar,
+                        NativeLocalPreferences.keyboardFoldsPanels, NativeAIPreferences.answerLanguageKey, NativeAIPreferences.usageAlertKey] { UserDefaults.standard.removeObject(forKey: key) }
             // Browser logins live in the Keychain, outside the reset folder.
             SecItemDelete(DesktopCredentialsService.keychainQuery(folder.lastPathComponent + ":default") as CFDictionary)
             #endif
