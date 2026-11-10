@@ -35,6 +35,7 @@ struct NativeSettingsSections: View {
     @State private var mailURL = ""
     @State private var tab = "note"
     @State private var devices: [[String: Any]] = []
+    @AppStorage(NativeLocalPreferences.newDocumentKind) private var newDocumentKind = "note"
     private var tabs: [String: Any] { settings["tabs"] as? [String: Any] ?? [:] }
     private var widgets: [String: Any] { settings["widgets"] as? [String: Any] ?? [:] }
     private var enabledWidgets: [String] { widgets["enabled"] as? [String] ?? [] }
@@ -66,9 +67,24 @@ struct NativeSettingsSections: View {
                 Picker("언어", selection: string("locale", fallback: "ko-KR")) { Text("한국어").tag("ko-KR"); Text("English").tag("en-US") }
                     .accessibilityIdentifier("native-settings-locale")
             }
-            NativeSettingsCard(title: "시작과 탭") {
+            NativeSettingsCard(title: "학교") {
+                Button { navigate("university") } label: {
+                    BandalSettingRow(title: "학교") { HStack(spacing: 4) { Text("계정에서 고르기"); Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)) }.foregroundStyle(NativeDesktopTheme.secondary) }
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityIdentifier("native-settings-school")
+            }
+            NativeSettingsCard(title: "새 문서") {
+                BandalSettingRow(title: "새 탭 기본 문서", note: "홈의 새 노트 버튼과 새 탭 메뉴의 첫 선택") {
+                    BandalSegmented(options: [("note", "노트"), ("markdown", "마크다운")], selection: $newDocumentKind, identifierPrefix: "native-settings-new-document-")
+                }
+                Divider()
+                BandalSettingRow(title: "앱을 열면") {
+                    BandalSegmented(options: [("restore", "이어서 쓰기"), ("home", "첫 화면")],
+                        selection: Binding(get: { boolean("restoreLastCourse", fallback: true).wrappedValue ? "restore" : "home" }, set: { boolean("restoreLastCourse", fallback: true).wrappedValue = $0 == "restore" }),
+                        identifierPrefix: "native-settings-launch-")
+                }
+                Divider()
                 Toggle("새 탭을 현재 탭 옆에서 열기", isOn: boolean("openAdjacentTab", fallback: false)).accessibilityIdentifier("native-settings-adjacent-tabs")
-                Toggle("마지막 과목과 탭 복원", isOn: boolean("restoreLastCourse", fallback: true)).accessibilityIdentifier("native-settings-restore-course")
             }
         }
     }

@@ -47,6 +47,17 @@ struct NativeSettingsWorkspace: View {
   @AppStorage("native.appearance") private var appearance = "system"
   @AppStorage("native.fontScale") private var fontScale = 1.0
   @AppStorage("native.density") private var density = "comfortable"
+  @AppStorage(NativeLocalPreferences.homeTogglesSidebar) private var homeTogglesSidebar = true
+  @AppStorage(NativeLocalPreferences.keyboardFoldsPanels) private var keyboardFoldsPanels = true
+  private var pencilTapTitle: String {
+    switch UIPencilInteraction.preferredTapAction {
+    case .switchEraser: "지우개로 바꾸기"
+    case .switchPrevious: "이전 도구로 바꾸기"
+    case .showColorPalette, .showInkAttributes: "색 · 굵기 보기"
+    case .ignore: "끔"
+    default: "시스템 설정 따름"
+    }
+  }
   @State private var settings: [String: Any] = [:]
   @State private var account: [String: Any] = [:]
   @State private var sync: [String: Any] = [:]
@@ -253,17 +264,33 @@ struct NativeSettingsWorkspace: View {
   private var appearancePanel: some View {
     VStack(spacing: 24) {
     settingsCard("테마") {
-      LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
-        appearanceChoice("시스템 설정", value: "system")
-        appearanceChoice("라이트", value: "light")
-        appearanceChoice("다크", value: "dark")
+      BandalSettingRow(title: "모양") {
+        BandalSegmented(options: [("light", "라이트"), ("dark", "다크"), ("system", "시스템")],
+                        selection: Binding(get: { appearance }, set: { saveAppearance($0) }), identifierPrefix: "native-settings-theme-")
+      }
+      Divider()
+      BandalSettingRow(title: "글자 크기") {
+        HStack(spacing: 8) {
+          Text("가").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
+          Slider(value: Binding(get: { fontScale }, set: { value in let snapped = (value * 10).rounded() / 10; if snapped != fontScale { savePreference(["fontScale": snapped]) } }), in: 0.9...1.2, step: 0.1)
+            .frame(width: 160).accessibilityLabel("글자 크기").accessibilityValue("\(Int(fontScale * 100))%").accessibilityIdentifier("native-settings-font-scale")
+          Text("가").font(.system(size: 17)).foregroundStyle(NativeDesktopTheme.muted)
+        }
       }
     }
-    NativeSettingsCard(title: "글자와 밀도") {
-      Picker("글자 크기", selection: Binding(get: { fontScale }, set: { value in savePreference(["fontScale": value]) })) {
-        Text("작게 · 90%").tag(0.9); Text("기본 · 100%").tag(1.0); Text("크게 · 110%").tag(1.1); Text("더 크게 · 120%").tag(1.2)
-      }.accessibilityIdentifier("native-settings-font-scale")
-
+    NativeSettingsCard(title: "사이드바") {
+      Toggle("홈 버튼으로 접고 펼치기", isOn: $homeTogglesSidebar).accessibilityIdentifier("native-settings-home-toggles-sidebar")
+      Divider()
+      Toggle(isOn: $keyboardFoldsPanels) {
+        VStack(alignment: .leading, spacing: 2) { Text("키보드를 쓰면 자동으로 접기"); Text("마크다운에서 키보드가 올라올 때").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted) }
+      }.accessibilityIdentifier("native-settings-keyboard-folds-panels")
+    }
+    NativeSettingsCard(title: "펜슬") {
+      BandalSettingRow(title: "손가락은 스크롤만", note: "필기는 펜슬로만 해요") { Text("항상").foregroundStyle(NativeDesktopTheme.secondary) }
+      Divider()
+      BandalSettingRow(title: "펜슬 두 번 탭", note: "iPad 설정 › Apple Pencil에서 바꿔요") { Text(pencilTapTitle).foregroundStyle(NativeDesktopTheme.secondary) }
+    }
+    NativeSettingsCard(title: "글꼴과 밀도") {
       Picker("필기 글꼴", selection: Binding(get: { settings["editorFont"] as? String ?? "sans" }, set: { savePreference(["editorFont": $0]) })) {
         Text("산세리프").tag("sans"); Text("세리프").tag("serif"); Text("고정폭").tag("mono")
       }.accessibilityIdentifier("native-settings-editor-font")
@@ -371,9 +398,16 @@ struct NativeSettingsWorkspace: View {
   private var accountPanel: some View {
     settingsCard("반달 계정") {
       if signedIn {
-        if let email = account["email"] as? String {
-          Label(email, systemImage: "person.crop.circle")
-        }
+        HStack(spacing: 12) {
+          Text(String((nickname.isEmpty ? (account["email"] as? String ?? "반") : nickname).prefix(1))).font(.system(size: 17, weight: .semibold))
+            .frame(width: 44, height: 44).background(NativeDesktopTheme.text.opacity(0.08), in: Circle())
+          VStack(alignment: .leading, spacing: 2) {
+            Text(nickname.isEmpty ? "이름 없음" : nickname).font(.system(size: 16, weight: .semibold))
+            if let email = account["email"] as? String { Text(email).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary) }
+          }
+        }.padding(.vertical, 4)
+        Divider()
+        if let email = account["email"] as? String { LabeledContent("이메일", value: email) }
         LabeledContent("이름") {
           // Saved on Enter, no save button.
           TextField("닉네임", text: $nickname).multilineTextAlignment(.trailing).frame(maxWidth: 220)
@@ -392,7 +426,12 @@ struct NativeSettingsWorkspace: View {
           .bandalConfirm("로그아웃할까요?", isPresented: $signOutConfirmation, action: "로그아웃") {
             run { _ = try await store.invoke("auth:signOut"); try await loadAccount(); try await loadSync() }
           }
-        Button("계정 삭제", role: .destructive) { deleteAccountConfirmation = true }
+        Button(role: .destructive) { deleteAccountConfirmation = true } label: {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("계정 삭제")
+            Text("서버의 계정 정보가 지워져요. 이 iPad의 자료는 남아요.").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
+          }
+        }.accessibilityIdentifier("native-settings-delete-account")
           .bandalConfirm("계정을 삭제할까요?", isPresented: $deleteAccountConfirmation, message: "서버의 계정 정보가 지워져요. 이 iPad의 자료는 남아요.", action: "계정 삭제", destructive: true, identifier: "native-settings-delete-account-confirm") {
             run { _ = try await store.invoke("auth:deleteAccount"); try await loadAccount(); try await loadSync(); notice = "계정을 삭제했어요." }
           }
