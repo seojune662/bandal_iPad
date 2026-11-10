@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 /// The server's AI usage for the signed-in account (from ai-proxy config and every answer),
 /// shown in Settings › 구독 and the AI panel.
@@ -18,9 +19,24 @@ final class AIUsage: ObservableObject {
         guard !usage.isEmpty else { return }
         plan = usage["plan"] as? String ?? plan
         trial = usage["trial"] as? Bool ?? trial
+        let before = percent
         percent = (usage["percent"] as? NSNumber)?.intValue ?? percent
+        if Self.crossesAlert(from: before, to: percent), UserDefaults.standard.object(forKey: NativeAIPreferences.usageAlertKey) as? Bool ?? true { notifyUsage() }
         autoQuestionsLeft = (usage["autoQuestionsLeft"] as? NSNumber)?.intValue ?? autoQuestionsLeft
         creditUcents = (usage["creditUcents"] as? NSNumber)?.int64Value ?? creditUcents
+    }
+
+    static let alertPercent = 80
+    /// True the one time usage climbs from under 80% to 80% or more (not on first load, not while it stays above).
+    nonisolated static func crossesAlert(from before: Int?, to after: Int?) -> Bool {
+        guard let before, let after else { return false }
+        return before < alertPercent && after >= alertPercent
+    }
+    var postNotification: (UNNotificationRequest) -> Void = { UNUserNotificationCenter.current().add($0) }
+    private func notifyUsage() {
+        let content = UNMutableNotificationContent()
+        content.title = "반달"; content.body = "이번 달 AI 사용량의 \(Self.alertPercent)%를 썼어요."
+        postNotification(UNNotificationRequest(identifier: "ai-usage-\(Self.alertPercent)", content: content, trigger: nil))
     }
 
     /// A Pro member out of AI: the chat's 충전 button opens its popover with this reason, then clears it.

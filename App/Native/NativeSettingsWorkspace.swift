@@ -244,9 +244,33 @@ struct NativeSettingsWorkspace: View {
     case "account": VStack(alignment: .leading, spacing: 20) { accountPanel; expandedPanel("university"); if NativeReleaseFlags.legacyCloudSync { subscriptionPanel; syncPanel; profilePanel } }
     case "sync": NativeSettingsSyncPanel(store: store)
     case "subscription": NativeSettingsSubscriptionPanel(store: store)
-    case "integrations": VStack(alignment: .leading, spacing: 20) { expandedPanel("calendar"); expandedPanel("browser") }
+    case "integrations": VStack(alignment: .leading, spacing: 20) { integrationsOverview; expandedPanel("calendar"); expandedPanel("browser") }
     case "appearance": VStack(alignment: .leading, spacing: 20) { appearancePanel; expandedPanel("tabs"); expandedPanel("widgets") }
     default: VStack(alignment: .leading, spacing: 20) { expandedPanel("general"); expandedPanel("notifications"); expandedPanel("shortcuts"); expandedPanel("advanced") }
+    }
+  }
+  /// 학교 사이트, the sidebar's AI sites and the services this iPad can connect to.
+  private var integrationsOverview: some View {
+    VStack(alignment: .leading, spacing: 20) {
+      NativeSettingsCard(title: "학교 사이트") {
+        Button { category = NativeSettingsCatalog.resolve("university") } label: {
+          BandalSettingRow(title: "학교와 바로가기", note: "사이드바 위쪽에 보이는 학교 사이트") { HStack(spacing: 4) { Text("편집"); Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)) }.foregroundStyle(NativeDesktopTheme.secondary) }
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityIdentifier("native-settings-integrations-school")
+      }
+      NativeSettingsCard(title: "외부 AI 사이트") {
+        BandalSettingRow(title: "사이드바에 보이기", note: NativeAIWebShortcut.all.map(\.title).joined(separator: " · ")) { Text("고정").foregroundStyle(NativeDesktopTheme.secondary) }
+      }
+      NativeSettingsCard(title: "연결된 서비스") {
+        ForEach(Array([("Google 캘린더", "과제 마감 기한을 가져와요"), ("Google Drive", "자료로 가져오기"), ("Notion", "페이지를 자료로 가져오기")].enumerated()), id: \.offset) { index, item in
+          if index > 0 { Divider() }
+          BandalSettingRow(title: item.0, note: item.1) {
+            Text("준비 중").font(.system(size: 12, weight: .medium)).foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 10).frame(height: 26)
+              .background(NativeDesktopTheme.text.opacity(0.05), in: Capsule())
+          }
+        }
+        Text("Apple 캘린더는 아래에서 바로 연결할 수 있어요. Google Drive 동기화는 동기화에서 켜요.").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
+      }
     }
   }
   private func expandedPanel(_ id: String) -> some View {
@@ -361,8 +385,20 @@ struct NativeSettingsWorkspace: View {
           .disabled(!signedIn).opacity(signedIn ? 1 : 0.6)
           .accessibilityIdentifier("native-settings-ai-picker")
       }
+      NativeSettingsCard(title: "답변") {
+        BandalSettingRow(title: "답변 언어") {
+          BandalSegmented(options: [("auto", "질문 따라"), ("ko", "한국어"), ("en", "English")], selection: $answerLanguage, identifierPrefix: "native-settings-ai-language-")
+        }
+        Text("AI는 반달이 제공해요. 키를 따로 넣지 않아도 돼요.").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
+      }
+      NativeSettingsCard(title: "대화 기록") {
+        Button("대화 기록 모두 지우기", role: .destructive) { deleteChatsConfirmation = true }.accessibilityIdentifier("native-settings-delete-chats")
+          .bandalConfirm("대화 기록을 모두 지울까요?", isPresented: $deleteChatsConfirmation, message: "모든 과목의 AI 대화가 지워져요. 노트와 자료는 그대로예요.", action: "모두 지우기", destructive: true, identifier: "native-settings-delete-chats-confirm") {
+            run { _ = try await store.invoke("chat:deleteAll"); notice = "대화 기록을 지웠어요." }
+          }
+      }
       NativeSettingsCard(title: "전송 동의") {
-        ForEach(NativeAIProvider.allCases) { provider in consentRow(provider) }
+        ForEach(NativeAIProvider.allCases.filter { $0 != .google || aiCatalog.providers.contains("google") }) { provider in consentRow(provider) }
         Link(destination: URL(string: "https://bandal.io/ko/docs/ai-fair-use")!) { Label("공정 이용 안내", systemImage: "arrow.up.right.square") }
           .font(.system(size: BandalMetrics.bodySize)).accessibilityIdentifier("native-ai-fair-use")
       }
@@ -377,6 +413,8 @@ struct NativeSettingsWorkspace: View {
   @State private var aiModel = NativeAIPreferences.model
   @State private var aiEffort = NativeAIPreferences.effort
   @State private var aiSignIn = false
+  @AppStorage(NativeAIPreferences.answerLanguageKey) private var answerLanguage = "auto"
+  @State private var deleteChatsConfirmation = false
   @State private var aiSignInError: String?
   private func consentRow(_ provider: NativeAIProvider) -> some View {
     let target: AIProvider = switch provider { case .openAI: .openai; case .anthropic: .claude; case .google: .gemini }
