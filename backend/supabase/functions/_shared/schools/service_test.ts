@@ -235,6 +235,21 @@ Deno.test('the answer becomes checked links: off-domain, non-https, dead, intern
   assert(checked().every(c => c.init.redirect === 'manual' && c.init.signal instanceof AbortSignal))
 })
 
+Deno.test('a title too long for the sidebar becomes the plain kind in the student\'s language', async () => {
+  const links = [
+    { kind: 'home', title: 'Seoultech University homepage', url: HOME.url },
+    { kind: 'portal', title: 'Axess', url: PORTAL.url },
+    { kind: 'library', title: '서울과학기술대학교 중앙도서관 홈페이지', url: 'https://library.seoultech.ac.kr/' },
+  ]
+  const titles = async (locale: string) => {
+    const { handle } = harness({ messages: () => message(answer(links)) })
+    const body = await (await call(handle, '/setup', { ...SETUP, locale })).json()
+    return body.school.links.map((l: { title: string }) => l.title)
+  }
+  assertEquals(await titles('en-US'), ['Homepage', 'Axess', 'Library'])
+  assertEquals(await titles('ko-KR'), ['홈페이지', 'Axess', '도서관'])
+})
+
 Deno.test('a name from the model is kept only when the typed name abbreviates it', async () => {
   const cases: [string, unknown, unknown, { name: string | null; named: boolean; nameEn: string | null }][] = [
     ['서울과기대', NAME, NAME_EN, { name: NAME, named: true, nameEn: null }],
