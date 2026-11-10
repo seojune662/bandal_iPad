@@ -506,7 +506,7 @@ struct NativeAssistantPanel: View {
     }
     private func messageRow(_ message: NativeChatMessage) -> some View {
         VStack(alignment:.leading,spacing:10) {
-            if message.role == "assistant" { Label("반달",systemImage:"sparkle").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
+            if message.role == "assistant" { Label("반달 AI",systemImage:"sparkle").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
             ForEach(message.attachments) { attachment in attachmentChip(attachment,removable:false,owner:"message-\(message.id)") }
             if !message.text.isEmpty {
                 Text(.init(message.text)).font(.system(size:15)).lineSpacing(6).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)

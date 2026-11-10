@@ -21,15 +21,15 @@ enum NativeNewTabCatalog {
         guard let url = URL(string: result), url.host != nil else { return nil }
         return result
     }
-    static func items(query: String, courseName: String) -> [Item] {
+    static func items(query: String) -> [Item] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let url = url(trimmed)
         func matches(_ terms: [String]) -> Bool { trimmed.isEmpty || terms.contains { $0.localizedCaseInsensitiveContains(trimmed) } }
         let all: [(Item, [String])] = [
-            (.init(id: "new-browser", title: "브라우저", hint: url ?? "", symbol: "globe", shortcutID: "new-browser-tab", action: .browser(url: url)), ["브라우저", "웹", "browser"]),
-            (.init(id: "new-whiteboard", title: "노트", hint: "빈 종이 · 줄 · 모눈 · 점", symbol: "rectangle.and.pencil.and.ellipsis", shortcutID: "new-whiteboard", action: .note), ["노트", "필기", "종이", "화이트보드", "note"]),
-            (.init(id: "new-note", title: "마크다운", hint: "", symbol: "doc.text", shortcutID: "new-markdown", action: .markdown(title: nil)), ["마크다운", "문서", "markdown"]),
-            (.init(id: "chat", title: "AI", hint: courseName, symbol: "bubble.left.and.bubble.right", shortcutID: "new-ai-tab", action: .assistant), ["AI", "대화", "튜터"]),
+            (.init(id: "new-browser", title: "브라우저", hint: url ?? "학교 사이트 · 웹 검색", symbol: "globe", shortcutID: "new-browser-tab", action: .browser(url: url)), ["브라우저", "웹", "browser"]),
+            (.init(id: "new-whiteboard", title: "노트", hint: "펜슬로 쓰는 종이", symbol: "rectangle.and.pencil.and.ellipsis", shortcutID: "new-whiteboard", action: .note), ["노트", "필기", "종이", "화이트보드", "note"]),
+            (.init(id: "new-note", title: "마크다운", hint: "키보드로 쓰는 문서", symbol: "doc.text", shortcutID: "new-markdown", action: .markdown(title: nil)), ["마크다운", "문서", "markdown"]),
+            (.init(id: "chat", title: "AI", hint: "자료에 대해 질문", symbol: "bubble.left.and.bubble.right", shortcutID: "new-ai-tab", action: .assistant), ["AI", "대화", "튜터"]),
             (.init(id: "recording", title: "녹음", hint: "강의 · 실시간 자막", symbol: "waveform", shortcutID: "new-recording-tab", action: .recording), ["녹음", "강의", "실시간 자막", "STT", "recording"])
         ]
         if url != nil { return [all[0].0] }
@@ -47,7 +47,7 @@ struct NativeNewTabMenu: View {
     @State private var settings: [String: Any] = [:]
     @FocusState private var searchFocused: Bool
     private var items: [NativeNewTabCatalog.Item] {
-        NativeNewTabCatalog.items(query: query, courseName: store.courses.first(where: { $0.id == courseID })?.name ?? "")
+        NativeNewTabCatalog.items(query: query)
     }
     var body: some View {
         Group {
@@ -76,7 +76,7 @@ struct NativeNewTabMenu: View {
                     }.frame(maxHeight: 340)
                 }
         }.font(.system(size: 13)).padding(8).frame(width: 352)
-            .background(NativeDesktopTheme.surface)
+            .bandalPopoverSurface()
             .onChange(of: query) { _, _ in highlighted = 0 }
             .task { settings = (try? await store.invoke("settings:get")) as? [String: Any] ?? [:]; searchFocused = true }
     }

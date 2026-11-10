@@ -3,17 +3,17 @@ import XCTest
 
 final class NativeNewTabMenuTests: XCTestCase {
     func testMenuOffersTabKindsInOrderAndFiltersBySearch() {
-        let initial = NativeNewTabCatalog.items(query: "", courseName: "Class")
+        let initial = NativeNewTabCatalog.items(query: "")
         let recording = NativeReleaseFlags.showsRecording
         XCTAssertEqual(initial.map(\.id), ["new-browser", "new-whiteboard", "new-note", "chat"] + (recording ? ["recording"] : []))
         XCTAssertEqual(initial.map(\.title), ["브라우저", "노트", "마크다운", "AI"] + (recording ? ["녹음"] : []))
-        XCTAssertEqual(NativeNewTabCatalog.items(query: "녹음", courseName: "Class").isEmpty, !recording)
-        XCTAssertEqual(NativeNewTabCatalog.items(query: "마크", courseName: "Class").map(\.id), ["new-note"])
-        XCTAssertEqual(NativeNewTabCatalog.items(query: "필기", courseName: "Class").first?.action, .note)
+        XCTAssertEqual(NativeNewTabCatalog.items(query: "녹음").isEmpty, !recording)
+        XCTAssertEqual(NativeNewTabCatalog.items(query: "마크").map(\.id), ["new-note"])
+        XCTAssertEqual(NativeNewTabCatalog.items(query: "필기").first?.action, .note)
         XCTAssertFalse(initial.contains { $0.title.contains("화이트보드") })
     }
     func testURLInputOpensExactURLRatherThanBecomingFileSearchOrShellScheme() {
-        let rows = NativeNewTabCatalog.items(query: "example.edu/notes", courseName: "Class")
+        let rows = NativeNewTabCatalog.items(query: "example.edu/notes")
         XCTAssertEqual(rows.map(\.id), ["new-browser"])
         XCTAssertEqual(rows.first?.action, .browser(url: "https://example.edu/notes"))
         XCTAssertEqual(NativeNewTabCatalog.url("https://example.edu?q=one"), "https://example.edu?q=one")
