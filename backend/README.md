@@ -143,3 +143,50 @@ up once by an AI routine and kept, unverified, for everyone after. `service_role
   bounds a single one.
 - Secrets: `ANTHROPIC_API_KEY` (the ai-proxy's). Web search and web fetch must be enabled for
   that organization in the Claude Console.
+
+## Referral ("친구 초대", 1.4.1)
+
+`202611110001_referral.sql` + Edge Function `referral` (`verify_jwt = false`). Every account has
+one six-character code (`ABCDEFGHJKMNPQRSTUVWXYZ23456789`: no 0/O, no 1/I/L). An invitee enters
+a friend's code once; when the app reports the invitee's first course, both sides get
+7,000,000 µ¢ ($0.07) of AI credit through `ai_grant_credit` (source `referral`), which is spent
+after the month's budget and never expires. `service_role` only.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /check?code=` | no sign-in; `{valid}`: whether the code exists, nothing else about it |
+| `POST /claim` `{code}` | signed in; `{status: "claimed"}`, also for the same code again. `404 INVALID_CODE`, `409 OWN_CODE`, `409 ALREADY_CLAIMED` |
+| `POST /complete` | signed in, no body; `{status: "rewarded", creditMicrocents, referrerRewarded}`, `{status: "none"}` (no claim) or `{status: "already"}` |
+| `GET /status` | signed in; `{code, completed, limit, creditMicrocents, claim: {code, completed} or null}`. Makes the account's code the first time |
+
+- The amounts are two functions at the top of the migration, `referral_reward()` and
+  `referral_cap()`, so they change with SQL and no app build. The Edge Function decides nothing.
+- `/complete` is the app's word that a first course exists; the server cannot check it, and
+  accounts are cheap. `referral_daily_grants()` (400, $28) is the most referral grants paid in
+  any 24 hours for everyone together. Past it `referral_complete` raises `referral_paused`, the
+  function answers 503, the claim stays open and the app's next `/complete` is paid once older
+  grants have aged out. Watch `select count(*) from ai_credit_grants where source = 'referral'
+  and granted_at > now() - interval '1 day'`.
+- The rules go by account: one claim per invitee, never one's own code, and an inviter is paid
+  for the first five invitees who complete (later invitees are still paid themselves). No device
+  is identified; the tables hold user ids, codes and timestamps.
+- The server cannot see courses, so `/complete` is the app's word for "signed in and made a
+  first course". A claim can be made before or after that; the app calls `/complete` once both
+  are true and may repeat it (`already`).
+- Codes come from `gen_random_uuid()` (no extension), and a taken code is drawn again. Typed
+  codes are trimmed and upper-cased by the function; anything that is not six characters of the
+  alphabet is answered without a query.
+- `referral_complete` is one transaction: the claim row is locked, then both accounts' `ai:`
+  advisory locks (the ones `ai_grant_credit` takes) with the lower user id first, then the
+  inviter's `referral_code.completed` counter is raised, and the nth completion pays the
+  inviter when n ≤ 5. The grants are `('referral', 'claim:<claim id>:referee')` and
+  `…:referrer` in `ai_credit_grants`, which pays a ref once. Deleting one of the two accounts
+  in the same instant can deadlock with it (the cascades lock the other way round): Postgres
+  aborts one of the two, nothing is half done, and a retry goes through.
+- Account deletion: a code goes with its account; a claim goes with its invitee and outlives
+  its inviter (`referrer_id` → null), so the invitee is still paid and cannot be invited twice.
+  The counter is on the inviter's code row rather than counted from claims, so deleting invitee
+  accounts does not give the five paid places back. Grants belong to their own account.
+- `tests/run-local.sh` also runs several sessions at once (the sixth invitee, the same invitee
+  twice, two accounts that invited each other, one account's first status twice) and checks
+  the outcome with `referral_race.sql`.
