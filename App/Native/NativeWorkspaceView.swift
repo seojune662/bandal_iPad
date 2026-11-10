@@ -292,7 +292,6 @@ struct NativeWorkspaceView: View {
                         .position(x: geometry.size.width - chrome.rightWidth - 0.5, y: geometry.size.height / 2)
                 }
             }
-            .overlay { if boardOverlayOpen { academicBoardOverlay(size: geometry.size) } }
             .overlay(alignment: .topTrailing) {
                 NativeWorkspaceWindowControls(mode: navigation.chromeMode, overview: windowsOverviewOpen,
                     rightVisible: rightVisible, enabled: showsWorkspace && !boardOverlayOpen && workspaceContext != nil && !busy && annotation.request == nil,
@@ -310,7 +309,14 @@ struct NativeWorkspaceView: View {
             // so the slide is keyed on what is visible rather than on the toggles.
             .animation(Self.railAnimation, value: [chrome.leftPinned, aiVisible, chrome.aiPinned, rightVisible, chrome.rightPinned,
                                                    compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width)])
-            .blur(radius: settingsOpen ? 6 : 0)
+            .blur(radius: settingsOpen ? 6 : boardOverlayOpen ? 3 : 0)
+            // Its own reader, clear of the keyboard: typing a task must not squeeze the popup.
+            .overlay {
+                if boardOverlayOpen {
+                    GeometryReader { full in academicBoardOverlay(size: full.size, keyboard: max(0, full.size.height - geometry.size.height)) }
+                        .ignoresSafeArea(.keyboard)
+                }
+            }
             .overlay {
                 if settingsOpen {
                     ZStack {
@@ -637,30 +643,22 @@ struct NativeWorkspaceView: View {
             boardOverlayOpen.toggle()
         }
     }
-    private func academicBoardOverlay(size: CGSize) -> some View {
-        ZStack {
-            Color.black.opacity(0.24).ignoresSafeArea().onTapGesture { transition { boardOverlayOpen = false } }
-            VStack(spacing: 0) {
-                HStack {
-                    Text("학업 보드").font(NativeDesktopTheme.font(14, weight: .semibold))
-                    Spacer()
-                    Button { transition { boardOverlayOpen = false } } label: {
-                        Image(systemName: "xmark.circle.fill").font(.system(size: 22)).symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(NativeDesktopTheme.muted).frame(width: 44, height: 44).contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityLabel("학업 보드 닫기")
-                        .keyboardShortcut(.cancelAction).accessibilityIdentifier("native-board-overlay-close")
-                }.padding(.leading, 16).padding(.trailing, 4).frame(height: 44)
-                    .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
-                NativeToolsWorkspace(section: .planner, store: store, services: services)
-            }
-            // Leaves a tappable margin and keeps clear of the top-trailing window controls.
-            .frame(width: min(max(1, size.width - 160), 1040),
-                   height: min(max(1, size.height - 2 * NativeWorkspaceWindowControls.inspectorTop), 680))
-            .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 12))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.2), radius: 24, y: 8)
-            .accessibilityElement(children: .contain).accessibilityAddTraits(.isModal).accessibilityIdentifier("native-board-overlay")
-        }
+    /// The study board as a popup over the blurred workspace: 1200 × 880 in a 13-inch landscape window, 940 × 1180 in portrait.
+    /// `keyboard` is how far the keyboard reaches up into `size`.
+    private func academicBoardOverlay(size: CGSize, keyboard: CGFloat) -> some View {
+        let height = min(max(1, size.height - 144), 1180), shape = RoundedRectangle(cornerRadius: 28)
+        // A window too short for the full height sits 6 pt low, clear of the top-trailing window controls.
+        let drop: CGFloat = height < 1180 ? 6 : 0
+        return ZStack {
+            Color.black.opacity(0.22).ignoresSafeArea().contentShape(Rectangle())
+                .onTapGesture { transition { boardOverlayOpen = false } }.accessibilityHidden(true)
+            NativePlannerWorkspace(store: store, keyboardInset: max(0, keyboard - (size.height - height) / 2 + drop), onClose: { transition { boardOverlayOpen = false } })
+                .frame(width: min(max(1, size.width - 84), 1200), height: height)
+                // The sheet is drawn 93% opaque: most of that is a fill, and the glass shows through the rest.
+                .background(NativePlannerPalette.sheet.opacity(0.7), in: shape).clipShape(shape).bandalGlass(in: shape)
+                .accessibilityElement(children: .contain).accessibilityAddTraits(.isModal).accessibilityIdentifier("native-board-overlay")
+                .padding(.top, 2 * drop)
+        }.frame(width: size.width, height: size.height)
     }
     private func openActiveAssistant() {
         openAIRail()

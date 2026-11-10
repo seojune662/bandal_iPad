@@ -145,7 +145,8 @@ final class NativeSidebarParityUITests: XCTestCase {
             let board = app.descendants(matching: .any)["native-board-overlay"]
             XCTAssertTrue(board.waitForExistence(timeout: 10), app.debugDescription)
             let window = app.windows.firstMatch.frame
-            XCTAssertLessThan(board.frame.width, window.width - 100, "A tappable margin stays around the board")
+            // The redesigned popup grows to 42 pt from each edge in portrait (940 of 1024); before iOS 26 its hairline adds a point.
+            XCTAssertLessThan(board.frame.width, window.width - 80, "A tappable margin stays around the board")
             XCTAssertGreaterThanOrEqual(board.frame.minY, 64, "The board stays below the window controls")
             capture("Study board (\(orientation == .portrait ? "portrait" : "landscape"))")
             let close = app.buttons["native-board-overlay-close"]

@@ -48,7 +48,6 @@ private struct NativeWidgetTasks: View {
     @State private var tasks: [NativePlannerTask] = []
     @State private var error: String?
     @State private var changing = Set<String>()
-    /// Captured when the editor opens, so a save that runs on dismissal still knows create vs update.
     @State private var editor: WidgetTaskEditor?
     private struct WidgetTaskEditor: Identifiable { let id = UUID(); let task: NativePlannerTask? }
     var body: some View {
@@ -73,11 +72,11 @@ private struct NativeWidgetTasks: View {
             }
         }.task(id: store.selectedCourseID) { await load() }
             .onReceive(store.events) { event in if event.channel == "board:changed" { Task { await load() } } }
-            .popover(item: $editor, attachmentAnchor: .point(.top), arrowEdge: .top) { item in
-                NativeTaskEditor(task: item.task, courses: store.courses, defaultCourseID: store.selectedCourseID) { request in
+            .popover(item: $editor, attachmentAnchor: .point(.top), arrowEdge: .bottom) { item in
+                NativeTaskEditor(task: item.task, courses: store.courses, defaultCourseID: store.selectedCourseID, close: { editor = nil }) { request in
                     _ = try await store.invoke(item.task == nil ? "board:createTask" : "board:updateTask", request); await load()
                 }
-                .padding(BandalMetrics.padding).frame(width: 320).presentationCompactAdaptation(.popover)
+                .frame(width: 420).presentationCompactAdaptation(.popover)
             }
     }
     private func load() async {
