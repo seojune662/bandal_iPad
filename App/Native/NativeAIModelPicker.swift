@@ -10,6 +10,13 @@ enum NativeAIPreferences {
         if let effort { UserDefaults.standard.set(effort, forKey: effortKey) }
     }
     static let efforts = ["low", "medium", "high", "max"]
+    /// Settings › AI › 답변 언어: "auto" follows the question.
+    static let answerLanguageKey = "native.ai.answerLanguage"
+    static func languageInstruction(_ value: String? = UserDefaults.standard.string(forKey: answerLanguageKey)) -> String {
+        switch value { case "ko": " 항상 한국어로 답하세요."; case "en": " Always answer in English."; default: "" }
+    }
+    /// Settings › 구독·사용량 › 사용량 80%가 되면 알림.
+    static let usageAlertKey = "native.ai.usageAlert"
 }
 
 /// Colour and one-line use per model family, shared by the pill and the picker.

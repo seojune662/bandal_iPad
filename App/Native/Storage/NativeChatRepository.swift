@@ -89,6 +89,11 @@ final class NativeChatRepository {
             guard !title.isEmpty else { throw DesktopRuntimeError("대화 제목을 입력해 주세요.") }
             _ = try context.db.run("UPDATE agent_sessions SET title=?,updated_at=? WHERE id=?",params:[String(title.prefix(80)),NativeValue.now(),id])
             return ["title":String(title.prefix(80))]
+        case "chat:deleteAll":
+            // Settings › AI › 대화 기록 모두 지우기. A running answer keeps its conversation.
+            let now = NativeValue.now()
+            _ = try context.db.run("UPDATE agent_sessions SET deleted_at=?,updated_at=? WHERE deleted_at IS NULL AND status!='running'",params:[now,now])
+            return NativeValue.ok
         case "chat:setProvider", "chat:setConfiguration", "chat:setModel", "chat:deleteConversation":
             let current = try scoped(request), id = current["id"] as! String
             guard current["status"] as? String != "running" else { throw DesktopRuntimeError("진행 중인 응답을 중지한 뒤 변경해 주세요.",code:"BUSY") }

@@ -102,6 +102,7 @@ struct NativeSettingsSubscriptionPanel: View {
     @ObservedObject private var ai = AIUsage.shared
     @State private var usage: [String: Any] = [:]
     @State private var managing = false
+    @AppStorage(NativeAIPreferences.usageAlertKey) private var usageAlert = true
     @State private var notice: String?
     @State private var error: String?
 
@@ -109,7 +110,19 @@ struct NativeSettingsSubscriptionPanel: View {
         VStack(alignment: .leading, spacing: 24) {
             if let error { NativeToolError(message: error) }
             if let notice { Label(notice, systemImage: "checkmark.circle").font(NativeDesktopTheme.font(13)).foregroundStyle(.green) }
-            NativeSettingsCard(title: "반달 멤버십", description: "Plus는 과목·자료 무제한, Pro는 AI를 Plus의 4배") {
+            HStack(spacing: 12) {
+                Image(systemName: "moon.fill").font(.system(size: 18)).foregroundStyle(.white).frame(width: 40, height: 40)
+                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(membership.tier == .pro ? "반달 프로" : membership.tier == .plus ? "반달 플러스" : "반달 무료").font(.system(size: 16, weight: .semibold))
+                    Text(membership.tier == .free ? "플러스는 과목·자료 무제한, 프로는 AI를 플러스의 4배" : "결제일과 해지는 구독 관리에서 볼 수 있어요").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary)
+                }
+                Spacer(minLength: 8)
+                Button(membership.tier == .free ? "플랜 보기" : "구독 관리") { if membership.tier == .free { MembershipPaywall.present() } else { managing = true } }
+                    .buttonStyle(.plain).font(.system(size: 13, weight: .medium)).padding(.horizontal, 12).frame(height: 32)
+                    .background(NativeDesktopTheme.overlay, in: RoundedRectangle(cornerRadius: 8)).accessibilityIdentifier("native-membership-manage")
+            }.padding(14).background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+            NativeSettingsCard(title: "반달 멤버십") {
                 LabeledContent("상태", value: Self.title(membership.tier)).accessibilityIdentifier("native-membership-state")
                 if membership.tier < .plus {
                     LabeledContent("이 iPad에서 만든 과목", value: "\(usage["courses"] as? Int ?? 0) / \(FreeTier.courses)")
@@ -131,6 +144,13 @@ struct NativeSettingsSubscriptionPanel: View {
                     if ai.creditUcents > 0 { Text("충전한 사용량이 남아 있어요 (위 회수에 포함).").font(.caption).foregroundStyle(NativeDesktopTheme.secondary) }
                     AICreditButton()
                 }
+            }
+            NativeSettingsCard(title: "알림과 결제") {
+                Toggle("사용량 \(AIUsage.alertPercent)%가 되면 알림", isOn: $usageAlert).accessibilityIdentifier("native-settings-usage-alert")
+                Divider()
+                Link(destination: URL(string: "https://reportaproblem.apple.com")!) {
+                    BandalSettingRow(title: "결제 내역", note: "Apple의 구입 내역에서 열려요") { Image(systemName: "arrow.up.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary) }
+                }.buttonStyle(.plain).accessibilityIdentifier("native-settings-purchase-history")
             }
         }
         .manageSubscriptionsSheet(isPresented: $managing)
