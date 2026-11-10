@@ -161,4 +161,87 @@ final class NativeAssistantServiceTests: XCTestCase {
         XCTAssertEqual(input.first { $0["type"] as? String == "function_call_output" }?["output"] as? String,"ALLOWED_PROJECT_SOURCE")
     }
 
+    private func readCall(_ id: String, _ arguments: [String:Any]) throws -> (Int,String) {
+        let call: [String:Any] = ["type":"function_call","call_id":id,"name":"read_material","arguments":String(decoding:try JSONSerialization.data(withJSONObject:arguments),as:UTF8.self)]
+        return (200,"data: " + String(decoding:try JSONSerialization.data(withJSONObject:["type":"response.completed","response":["output":[call]]]),as:UTF8.self) + "\n\n")
+    }
+    private func write(_ name: String, _ text: String) async throws {
+        _ = try await runtime.invoke("materials:writeFile",request:["courseId":identity["courseId"]!,"dirRelPath":"","fileName":name,"data":text,"encoding":"utf8"])
+    }
+    private func lastAnswer() async throws -> NativeChatMessage {
+        let opened = try await runtime.invoke("chat:open",request:identity) as! [String:Any]
+        return try XCTUnwrap((opened["history"] as? [[String:Any]])?.last.flatMap(NativeChatMessage.init))
+    }
+    private func outputs() throws -> [String] {
+        try XCTUnwrap(NativeAssistantProtocol.requests.last?["input"] as? [[String:Any]]).filter { $0["type"] as? String == "function_call_output" }.compactMap { $0["output"] as? String }
+    }
+    func testMaterialsTheAnswerReadBecomeItsSourcesOnceEach() async throws {
+        try await write("3주차 노트.md","NOTE_TEXT"); try await write("강의자료.txt","SLIDE_TEXT")
+        NativeAssistantProtocol.replies = [try readCall("r1",["relPath":"3주차 노트.md"]),try readCall("r2",["relPath":"강의자료.txt"]),try readCall("r3",["relPath":"3주차 노트.md"]),
+                                           try readCall("r4",["relPath":"없는 자료.md"]),(200,try streamed("정리했어요"))]
+        try await complete(identity.merging(["content":"요약해 줘"]) { _,new in new })
+        let answer = try await lastAnswer()
+        XCTAssertEqual(answer.text,"정리했어요")
+        // A failed read is no source; the same material is one chip.
+        XCTAssertEqual(answer.sources.map(\.title),["3주차 노트","강의자료"])
+        XCTAssertEqual(answer.sources.first?.request as? [String:String],["courseId":identity["courseId"] as! String,"relPath":"3주차 노트.md","kind":"note"])
+        // The next turn sends the answer back to the model as text only.
+        NativeAssistantProtocol.replies = [(200,try streamed("네"))]
+        try await complete(identity.merging(["content":"고마워"]) { _,new in new })
+        let replayed = String(decoding:try JSONSerialization.data(withJSONObject:try XCTUnwrap(NativeAssistantProtocol.requests.last?["input"])),as:UTF8.self)
+        XCTAssertTrue(replayed.contains("정리했어요")); XCTAssertFalse(replayed.contains("relPath"))
+        let untouched = try await lastAnswer()
+        XCTAssertTrue(untouched.sources.isEmpty)
+    }
+    func testSourceNamesThePageOnlyWhenTheModelAskedForOne() {
+        let paged = NativeChatSource(["courseId":"c","relPath":"자료/강의자료.pdf","page":12]), whole = NativeChatSource(["courseId":"c","relPath":"자료/강의자료.pdf"])
+        XCTAssertEqual(paged?.title,"강의자료 p.12"); XCTAssertEqual(whole?.title,"강의자료")
+        XCTAssertEqual(paged?.request["kind"] as? String,"pdf"); XCTAssertEqual(paged?.request["page"] as? Int,12); XCTAssertNil(whole?.request["page"])
+        XCTAssertNotEqual(paged?.id,whole?.id)
+        XCTAssertNil(NativeChatSource(["courseId":"c","relPath":""])); XCTAssertNil(NativeChatSource(["relPath":"a.md"]))
+    }
+    func testNoteScopeLeavesOnlyTheOpenNoteToRead() async throws {
+        try await write("지금 노트.md","NOTE_TEXT"); try await write("다른 자료.md","OTHER_TEXT")
+        let course = identity["courseId"] as! String
+        NativeAssistantProtocol.replies = [try readCall("r1",["relPath":"다른 자료.md"]),try readCall("r2",["relPath":"지금 노트.md"]),(200,try streamed("끝"))]
+        try await complete(identity.merging(["content":"정리","referenceScope":"note","documentContext":["courseId":course,"relPath":"지금 노트.md","title":"지금 노트.md","kind":"note","selection":""]]) { _,new in new })
+        XCTAssertEqual((NativeAssistantProtocol.requests.first?["tools"] as? [[String:Any]])?.compactMap { $0["name"] as? String },["read_material"])
+        let results = try outputs()
+        XCTAssertEqual(results.count,2)
+        XCTAssertTrue(results[0].contains("지금 노트"),results[0]); XCTAssertFalse(results[0].contains("OTHER_TEXT"))
+        XCTAssertEqual(results[1],"NOTE_TEXT")
+        let sources = try await lastAnswer().sources
+        XCTAssertEqual(sources.map(\.title),["지금 노트"])
+    }
+    func testConversationBegunWithHistoryOffIsUnlistedAndGoneAfterRestart() async throws {
+        NativeAssistantProtocol.body = try streamed("답")
+        try await complete(identity.merging(["content":"남는 대화"]) { _,new in new })
+        // The panel opens the row first; the setting is read with the first message.
+        var quiet = identity; quiet["sessionId"] = UUID().uuidString
+        _ = try await runtime.invoke("chat:open",request:quiet)
+        quiet["ephemeral"] = true
+        let capture = NativeAssistantAttachment(title:"손글씨",text:"영역",imageDataURL:"data:image/png;base64,AQID",page:1)
+        try await complete(quiet.merging(["content":"남지 않는 대화","attachments":[capture.request]]) { _,new in new })
+        let cached = try XCTUnwrap(try FileManager.default.contentsOfDirectory(at:root.appendingPathComponent("NativeChatAttachments"),includingPropertiesForKeys:nil).first)
+        let listed = try await runtime.invoke("chat:conversations",request:identity) as! [String:Any]
+        XCTAssertEqual((listed["conversations"] as? [[String:Any]])?.compactMap { $0["id"] as? String },[identity["sessionId"] as! String])
+        // It stays usable until the app closes.
+        let open = try await runtime.invoke("chat:open",request:quiet) as! [String:Any]
+        XCTAssertEqual((open["history"] as? [Any])?.count,2)
+        let restarted = DesktopRuntime(root:root,legacyRoot:root.appendingPathComponent("Legacy")); try await restarted.start()
+        let gone = try await restarted.invokePrivate("nativeChat:open",request:quiet) as! [String:Any]
+        XCTAssertEqual((gone["history"] as? [Any])?.count,0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath:cached.path),"its captured image leaves the cache too")
+        let kept = try await restarted.invokePrivate("nativeChat:open",request:identity) as! [String:Any]
+        XCTAssertEqual((kept["history"] as? [Any])?.count,2)
+    }
+    func testNoteScopeWithoutAnOpenNoteOffersNothingToRead() async throws {
+        NativeAssistantProtocol.replies = [(200,try streamed("첨부만 봤어요"))]
+        try await complete(identity.merging(["content":"설명","referenceScope":"note"]) { _,new in new })
+        XCTAssertEqual((NativeAssistantProtocol.requests.first?["tools"] as? [[String:Any]])?.count,0)
+        // The default scope keeps both course tools.
+        NativeAssistantProtocol.requests = []; NativeAssistantProtocol.replies = [(200,try streamed("과목 전체"))]
+        try await complete(identity.merging(["content":"설명"]) { _,new in new })
+        XCTAssertEqual((NativeAssistantProtocol.requests.first?["tools"] as? [[String:Any]])?.compactMap { $0["name"] as? String },["list_materials","read_material"])
+    }
 }

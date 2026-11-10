@@ -149,7 +149,8 @@ final class NativeWorkspaceStore {
             for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.home.section", "native.desktop.aiRail", "native.inspector.width",
                         // Preferences a test may flip: the next fixture starts from the defaults again.
                         "native.desktop.courseRailBeforeAI", "native.pdf.paletteCollapsed", NativeLocalPreferences.newDocumentKind, NativeLocalPreferences.homeTogglesSidebar,
-                        NativeLocalPreferences.keyboardFoldsPanels, NativeAIPreferences.answerLanguageKey, NativeAIPreferences.usageAlertKey] { UserDefaults.standard.removeObject(forKey: key) }
+                        NativeLocalPreferences.keyboardFoldsPanels, NativeAIPreferences.answerLanguageKey, NativeAIPreferences.usageAlertKey,
+                        NativeAIPreferences.referenceScopeKey, NativeAIPreferences.showsSourcesKey, NativeAIPreferences.savesHistoryKey] { UserDefaults.standard.removeObject(forKey: key) }
             // Browser logins live in the Keychain, outside the reset folder.
             SecItemDelete(DesktopCredentialsService.keychainQuery(folder.lastPathComponent + ":default") as CFDictionary)
             #endif
