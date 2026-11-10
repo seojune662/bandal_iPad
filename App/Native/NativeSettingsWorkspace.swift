@@ -330,7 +330,7 @@ struct NativeSettingsWorkspace: View {
       NativeSettingsCard(title: "기본 모델") {
         NativeAIModelPicker(catalog: aiCatalog, model: aiModel, effort: aiModel == "default" ? nil : aiEffort,
                             onSelect: { model, effort, _ in NativeAIPreferences.remember(model: model, effort: effort); aiModel = model; aiEffort = effort ?? aiEffort },
-                            searchable: false)
+                            titled: false)
           .disabled(!signedIn).opacity(signedIn ? 1 : 0.6)
           .accessibilityIdentifier("native-settings-ai-picker")
       }

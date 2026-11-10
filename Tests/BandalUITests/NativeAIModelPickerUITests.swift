@@ -26,7 +26,7 @@ final class NativeAIModelPickerUITests: XCTestCase {
         pill.tap()
         let auto = app.buttons["native-ai-model-default"]
         XCTAssertTrue(auto.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.textFields["native-ai-model-search"].exists, "Search field on top")
+        XCTAssertTrue(app.staticTexts["반달이 제공 · 키 입력 필요 없음"].exists, "No key entry")
         XCTAssertTrue(app.staticTexts["native-ai-effort-fixed"].exists, "Auto: effort is low, fixed")
         XCTAssertFalse(app.navigationBars.firstMatch.exists, "A popover, not a titled sheet")
         XCTAssertFalse(app.buttons["취소"].exists || app.buttons["적용"].exists, "Applies at once")

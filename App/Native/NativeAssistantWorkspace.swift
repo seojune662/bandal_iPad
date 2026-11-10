@@ -405,7 +405,6 @@ struct NativeAssistantPanel: View {
     var body: some View {
         VStack(spacing:0) {
             header
-            modeTabs
             if let error = session.error {
                 HStack(alignment:.top,spacing:8) {
                     Image(systemName:"exclamationmark.circle").foregroundStyle(.orange)
@@ -471,25 +470,6 @@ struct NativeAssistantPanel: View {
             Button { Task { await session.select(nil) } } label: { Image(systemName:"square.and.pencil").frame(width:44,height:44).contentShape(Rectangle()) }.accessibilityLabel("새 대화")
             if let onClose { Button(action:onClose) { Image(systemName:"xmark").frame(width:44,height:44).contentShape(Rectangle()) }.accessibilityLabel("AI 닫기").accessibilityIdentifier("native-ai-close") }
         }.buttonStyle(.plain).padding(.horizontal,12).padding(.top,8)
-    }
-    private var modeTabs: some View {
-        ScrollView(.horizontal,showsIndicators:false) {
-            HStack(spacing:3) {
-                ForEach(NativeAssistantMode.primary) { mode in
-                    Button { session.draft.mode = mode } label: {
-                        Text(mode.title).font(.system(size:13,weight:session.draft.mode == mode ? .semibold : .regular))
-                            .padding(.horizontal,11).frame(height:44).contentShape(Rectangle())
-                            .background(session.draft.mode == mode ? Color.primary.opacity(0.075) : .clear,in:RoundedRectangle(cornerRadius:12))
-                    }.buttonStyle(.plain).accessibilityIdentifier("native-ai-mode-" + mode.rawValue)
-                }
-                Menu {
-                    Button("요약") { session.draft.mode = .summary }
-                    Button("영어 읽기") { session.draft.mode = .english }
-                } label: {
-                    HStack(spacing:4) { if [.summary,.english].contains(session.draft.mode) { Text(session.draft.mode.title) }; Image(systemName:"ellipsis") }.frame(minWidth:44,minHeight:44).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel("다른 AI 모드")
-            }.padding(.horizontal,12)
-        }.padding(.vertical,6).overlay(alignment:.bottom) { Divider() }
     }
     private var messages: some View {
         VStack(spacing:0) {
