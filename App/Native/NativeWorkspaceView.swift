@@ -78,6 +78,7 @@ struct NativeWorkspaceView: View {
         let scope = navigation.currentWindowRef?.workspaceID ?? ""
         return NativeWorkspaceWindowsOverview(windows: navigation.windows, activeID: navigation.currentWindowRef?.windowID,
             image: { previews.image(root: store.root, workspaceID: scope, windowID: $0) },
+            caption: { id in NativeWorkspaceWindowsOverview.caption(course: courseTitle, titles: (navigation.window(.init(workspaceID: scope, windowID: id))?.layout.groups ?? []).compactMap { navigation.document($0.activeID)?.title }) },
             select: { id in changeWindow { _ = navigation.selectWindow(.init(workspaceID: scope, windowID: id)) } },
             add: { changeWindow { _ = navigation.createWindow() } },
             rename: { id, name in persistWindowMetadata { _ = navigation.renameWindow(.init(workspaceID: scope, windowID: id), name: name) } },
