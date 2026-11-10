@@ -1,4 +1,1 @@
-- AI without an API key: sign in and Bandal AI answers.
-- Choose the model (Auto, Anthropic, OpenAI) and how deeply it thinks.
-- New: Bandal Pro (4× AI) and AI Credit.
-- See this month's AI usage in Settings › Subscription.
+Added a first-run guide, AI school setup and friend invites.
