@@ -45,6 +45,15 @@ const LOOKUP_TIMEOUT_MS = 10_000
 const MAX_NAME = 80
 const MAX_NAME_EN = 120
 const WANTED: LinkKind[] = ['home', 'portal', 'lms', 'library', 'calendar', 'mail', 'registration']
+/** The app shows a title in a narrow sidebar cell. The prompt asks for one this short; a longer answer
+ *  ("Stanford University homepage") gives way to the plain kind in the student's language. */
+const MAX_LABEL = 16
+const KIND_LABELS: Record<'ko' | 'en', Record<LinkKind, string>> = {
+  ko: { home: '홈페이지', portal: '포털', lms: '강의실', library: '도서관', calendar: '학사일정', mail: '메일', registration: '수강신청', other: '기타' },
+  en: { home: 'Homepage', portal: 'Portal', lms: 'Courses', library: 'Library', calendar: 'Calendar', mail: 'Mail', registration: 'Registration', other: 'Other' },
+}
+const labelled = (link: LinkInput, locale: string): LinkInput =>
+  [...link.title].length <= MAX_LABEL ? link : { ...link, title: KIND_LABELS[locale.toLowerCase().startsWith('ko') ? 'ko' : 'en'][link.kind] }
 
 const SYSTEM = `You find a school's official web addresses for a study app, using web search and web fetch.
 
@@ -65,7 +74,7 @@ How to work:
 - Give only addresses you saw in a search result or on a page. A kind you could not confirm is simply left out.
 
 Answer with a single JSON object and nothing else (no code fence, no commentary):
-{"name": "<the name the school goes by on its own homepage, in its own language; not a legal or founding name>", "nameEn": "<the English name it goes by, or null>", "links": [{"kind": "home", "title": "<short label in the student's language>", "url": "https://…"}]}
+{"name": "<the name the school goes by on its own homepage, in its own language; not a legal or founding name>", "nameEn": "<the English name it goes by, or null>", "links": [{"kind": "home", "title": "<at most ${MAX_LABEL} characters in the student's language: the service's own name where it has one (Axess, Canvas, eTL), otherwise the plain kind (Homepage, Library, 도서관); never the school's name>", "url": "https://…"}]}
 If the school does not exist or you cannot find its official homepage, answer {"name": null, "nameEn": null, "links": []}.`
 
 export async function setupSchool(deps: RoutineDeps, model: ModelRow | null, input: { query: string; country: string; locale: string }): Promise<Outcome> {
@@ -125,7 +134,7 @@ export async function setupSchool(deps: RoutineDeps, model: ModelRow | null, inp
     break
   }
 
-  const school = await confirmed(answer(content), input.query, deps)
+  const school = await confirmed(answer(content), input.query, input.locale, deps)
   return school ? { outcome: 'found', costUcents, school } : { outcome: 'not_found', costUcents }
 }
 
@@ -162,7 +171,7 @@ function answer(content: unknown): Record<string, unknown> {
 }
 
 /** The model's answer is untrusted: only well-formed https links on the homepage's own domain, one per kind, that answer our check. */
-async function confirmed(answer: Record<string, unknown>, typed: string, net: Net): Promise<Found | null> {
+async function confirmed(answer: Record<string, unknown>, typed: string, locale: string, net: Net): Promise<Found | null> {
   const links = (Array.isArray(answer.links) ? answer.links.slice(0, 30) : []).flatMap(link => parseLink(link) ?? [])
   const home = links.find(link => link.kind === 'home')
   if (!home) return null
@@ -172,7 +181,7 @@ async function confirmed(answer: Record<string, unknown>, typed: string, net: Ne
   const alive = candidates.filter((_, index) => checks[index])
   if (alive[0]?.kind !== 'home') return null
   const name = cleanText(answer.name, MAX_NAME), nameEn = cleanText(answer.nameEn, MAX_NAME_EN)
-  return { name, named: abbreviates(typed, name), nameEn: abbreviates(typed, nameEn) ? nameEn : null, domain, links: alive }
+  return { name, named: abbreviates(typed, name), nameEn: abbreviates(typed, nameEn) ? nameEn : null, domain, links: alive.map(link => labelled(link, locale)) }
 }
 
 /** Whether the typed name reads as an abbreviation of the official one: its characters occur there
