@@ -378,6 +378,8 @@ struct NativeAssistantPanel: View {
     let onOpenSettings: (String) -> Void
     let onAnnotate: () -> Void
     var onClose: (() -> Void)? = nil
+    /// The panel's own background: the side panel is a tone darker than the home sidebar, the full tab is paper.
+    var surface = Color(uiColor: .systemBackground)
     @State private var toast: String?
     /// The note the user removed from the composer: it is not attached again on its own.
     @State private var detachedDocumentID: String?
@@ -392,8 +394,8 @@ struct NativeAssistantPanel: View {
     @State private var previewKey: String?
     @State private var showingArticleImport = false
     @Environment(\.scenePhase) private var scenePhase
-    init(store: NativeWorkspaceStore, context: NativeWorkspaceContext, sourceDocument: NativeDocumentReference?, attachments: [NativeAssistantAttachment] = [], onConsumeAttachments: @escaping () -> Void = {}, onOpenDocument: @escaping (NativeDocumentReference) -> Void, onOpenSettings: @escaping (String) -> Void, onAnnotate: @escaping () -> Void, onClose: (() -> Void)? = nil) {
-        self.onClose = onClose
+    init(store: NativeWorkspaceStore, context: NativeWorkspaceContext, sourceDocument: NativeDocumentReference?, attachments: [NativeAssistantAttachment] = [], onConsumeAttachments: @escaping () -> Void = {}, onOpenDocument: @escaping (NativeDocumentReference) -> Void, onOpenSettings: @escaping (String) -> Void, onAnnotate: @escaping () -> Void, onClose: (() -> Void)? = nil, surface: Color = Color(uiColor: .systemBackground)) {
+        self.onClose = onClose; self.surface = surface
         self.store = store; self.context = context; self.sourceDocument = sourceDocument; self.attachments = attachments
         self.onConsumeAttachments = onConsumeAttachments; self.onOpenDocument = onOpenDocument; self.onOpenSettings = onOpenSettings; self.onAnnotate = onAnnotate
         _session = StateObject(wrappedValue:NativeAssistantSession(store:store,context:context))
@@ -419,7 +421,7 @@ struct NativeAssistantPanel: View {
                 }.padding(.horizontal,16).padding(.vertical,4)
             }
             messages
-        }.background(Color(uiColor:.systemBackground))
+        }.background(surface)
             .task { await session.start(); await consumePendingConversation(); consumeAttachments() }
             .onDisappear { session.flushDraft() }
             .bandalToast($toast)
@@ -427,6 +429,8 @@ struct NativeAssistantPanel: View {
             .onChange(of:attachments) { _,_ in consumeAttachments() }
             .onChange(of:context) { _,value in session.context = value }
             .onChange(of:store.pendingAssistantConversationIDs[context.id]) { _,_ in Task { await consumePendingConversation() } }
+            .onChange(of:store.pendingAssistantRequests[context.id]) { _,_ in consumePendingRequest() }
+            .onChange(of:session.ready) { _,ready in if ready { consumePendingRequest() } }
             .onChange(of:scenePhase) { _,phase in if phase == .active { Task { await session.checkAvailability() } } else { session.flushDraft() } }
             .onReceive(store.events) { event in
                 // Signed in from the prompt: back to the same panel with the draft untouched.
@@ -601,7 +605,7 @@ struct NativeAssistantPanel: View {
                     Text("AI \(percent)%").font(.system(size:10)).foregroundStyle(percent >= 90 ? .orange : .secondary).accessibilityIdentifier("native-ai-usage-compact")
                 }
             }
-        }.padding(.horizontal,12).padding(.top,8).background(Color(uiColor:.systemBackground))
+        }.padding(.horizontal,12).padding(.top,8).background(surface)
     }
     private func attachmentChip(_ attachment: NativeAssistantAttachment, removable: Bool, owner: String = "draft") -> some View {
         let key = owner + ":" + attachment.id
@@ -663,6 +667,15 @@ struct NativeAssistantPanel: View {
         guard session.ready, let id = store.pendingAssistantConversationIDs[context.id] else { return }
         await session.selectID(id)
         if store.pendingAssistantConversationIDs[context.id] == id { store.pendingAssistantConversationIDs.removeValue(forKey:context.id) }
+    }
+    /// A request from outside the panel: attach, fill the composer, send. Text the user was typing is kept (the prompt goes after it).
+    private func consumePendingRequest() {
+        guard session.ready, !session.running, !session.sending, let request = store.pendingAssistantRequests[context.id] else { return }
+        store.pendingAssistantRequests.removeValue(forKey:context.id)
+        session.attach([request.attachment])
+        let typed = session.draft.text.trimmingCharacters(in:.whitespacesAndNewlines)
+        session.draft.text = typed.isEmpty ? request.prompt : typed + "\n" + request.prompt
+        if request.sends { submit() }
     }
     private func consumeAttachments() { guard !attachments.isEmpty, session.ready else { return }; session.attach(attachments); onConsumeAttachments() }
     private func perform(_ action: @escaping @MainActor () async throws -> Void) { Task { do { try await action() } catch { session.error = error.localizedDescription } } }

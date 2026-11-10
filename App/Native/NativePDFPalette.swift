@@ -438,9 +438,12 @@ struct NativePDFRecordingBar: View {
             Image(systemName: "waveform").font(.system(size: 14))
             Text("강의 녹음 중").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
             Button { model.toggleRecording() } label: {
-                Text("끝내기").font(.system(size: 13, weight: .semibold)).padding(.horizontal, 12).frame(height: 32)
-                    .background(NativeDesktopTheme.text.opacity(0.07), in: Capsule()).contentShape(Rectangle())
+                Text("끝내기").font(.system(size: 13, weight: .medium)).padding(.horizontal, 10).frame(height: 32).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityIdentifier("native-pdf-record-stop")
+            Button { model.finishRecordingAndSummarize() } label: {
+                Text("끝내고 요약").font(.system(size: 13, weight: .semibold)).padding(.horizontal, 12).frame(height: 32)
+                    .background(NativeDesktopTheme.text.opacity(0.07), in: Capsule()).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("native-pdf-record-summarize")
         }
         .padding(.leading, 16).padding(.trailing, 8).frame(height: 48)
         .foregroundStyle(NativeDesktopTheme.text).bandalGlass(in: Capsule()).padding(.bottom, 16)

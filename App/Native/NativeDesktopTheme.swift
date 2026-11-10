@@ -15,6 +15,10 @@ enum NativeDesktopTheme {
     static let onAccent = adaptive(0xffffff, 0x171717)
     static let border = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.09) : UIColor.black.withAlphaComponent(0.075) })
     static let accentMuted = adaptive(0xe9e9e9, 0x333333)
+    /// The skinny rail sits one tone behind the panels, so the open panel's button reads as its tab.
+    static let rail = adaptive(0xe8e8ea, 0x101010)
+    /// The AI panel: one tone darker than the home sidebar, so the two never look like the same place.
+    static let aiSurface = adaptive(0xf0f0f2, 0x141414)
     static let navigationWidth: CGFloat = 48
     static let courseWidth: CGFloat = 240
     static let materialsWidth: CGFloat = 288
@@ -46,13 +50,22 @@ struct NativeChromeButton: View {
     let title: String
     let symbol: String
     var selected = false
+    /// The highlight behind a selected button.
+    var selectedFill = NativeDesktopTheme.raised
+    /// A rail button whose panel is open beside it: the highlight runs to the rail's edge in the
+    /// panel's colour, so button and panel are one surface.
+    var joinsPanel = false
     var action: () -> Void
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 16, weight: .regular))
                 .foregroundStyle(selected ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
                 .frame(width: 44, height: 44)
-                .background(selected ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .background(alignment: .leading) {
+                    if selected, joinsPanel {
+                        UnevenRoundedRectangle(topLeadingRadius: 10, bottomLeadingRadius: 10).fill(selectedFill).frame(width: 46)
+                    } else if selected { RoundedRectangle(cornerRadius: 6).fill(selectedFill) }
+                }
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel(title).help(title)
     }

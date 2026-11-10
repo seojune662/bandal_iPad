@@ -47,7 +47,7 @@ final class NativeAnnotationUITests: XCTestCase {
         XCTAssertTrue(app.images["native-ai-attachment-preview-image"].waitForExistence(timeout: 10),
                       "Handwritten regions must attach as a composited image without requiring PDF text")
         capture("AI PDF attachment includes pen and highlighter on the original page")
-        app.buttons["닫기"].tap()
+        closeAttachment(app)
         closeInspector(app)
         expectInk(3, in: app)
         XCTAssertTrue(highlighter.isSelected, "Successful capture must restore the Pencil tool too")
@@ -85,7 +85,7 @@ final class NativeAnnotationUITests: XCTestCase {
         XCTAssertEqual(previewText.label, "Native browser fixture")
         XCTAssertTrue(app.images["native-ai-attachment-preview-image"].exists)
         capture("AI web element attachment keeps its text and cropped appearance")
-        app.buttons["닫기"].tap()
+        closeAttachment(app)
         app.buttons["첨부 제거"].tap()
 
         beginAnnotation(app)
@@ -148,7 +148,9 @@ final class NativeAnnotationUITests: XCTestCase {
         expectation(for: NSPredicate(format: "label == %@", "AI 닫기"), evaluatedWith: toggle); waitForExpectations(timeout: 5)
     }
     @MainActor private func openInspector(_ app: XCUIApplication) {
-        if !app.buttons["native-inspector-materials"].isHittable {
+        // Right after a popover closes the panel is briefly not hittable; only a panel that stays that way is closed.
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: app.buttons["native-inspector-materials"])
+        if XCTWaiter.wait(for: [ready], timeout: 3) != .completed {
             let toggle = app.buttons["native-toggle-materials-rail"]
             waitUntilReady(toggle, in: app); toggle.tap()
         }
@@ -183,7 +185,15 @@ final class NativeAnnotationUITests: XCTestCase {
     @MainActor private func openAttachment(_ app: XCUIApplication) {
         let chip = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-ai-attachment-")).firstMatch
         waitUntilReady(chip, in: app); chip.tap()
-        XCTAssertTrue(app.buttons["닫기"].waitForExistence(timeout: 10), app.debugDescription)
+        let preview = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-ai-attachment-preview-")).firstMatch
+        XCTAssertTrue(preview.waitForExistence(timeout: 10), app.debugDescription)
+    }
+    /// The preview popover closes on a tap outside it.
+    @MainActor private func closeAttachment(_ app: XCUIApplication) {
+        let preview = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-ai-attachment-preview-")).firstMatch
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.04)).tap()
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: preview)
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed, app.debugDescription)
     }
     @MainActor private func draw(in element: XCUIElement, from start: CGVector, to end: CGVector) {
         element.coordinate(withNormalizedOffset: start).press(forDuration: 0.05,
