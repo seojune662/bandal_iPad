@@ -349,23 +349,37 @@ struct BandalEscapeKey: View {
     }
 }
 
-/// Choices side by side in one track; the chosen one is raised. Used for settings and 생각 깊이.
+/// Choices side by side in one track; the chosen one is raised. Used for settings, 생각 깊이 and the study board.
 struct BandalSegmented: View {
     let options: [(value: String, title: String)]
     @Binding var selection: String
     var identifierPrefix = "bandal-segment-"
+    /// An SF Symbol per option value, drawn before the title.
+    var symbols: [String: String] = [:]
+    /// The 34 pt size at the top of a sheet or popover; rows use the 28 pt default.
+    var large = false
+    /// The segments share the width they are given.
+    var fills = false
+    /// Read before each title ("상태 완료") where the bare word is another button's label.
+    var spoken: String?
     var body: some View {
         HStack(spacing: 2) {
             ForEach(options, id: \.value) { option in
                 let on = selection == option.value
                 Button { selection = option.value } label: {
-                    Text(option.title).font(.system(size: 12, weight: on ? .semibold : .regular)).padding(.horizontal, 12).frame(height: 28)
-                        .foregroundStyle(NativeDesktopTheme.text)
-                        .background(on ? NativeDesktopTheme.overlay : .clear, in: RoundedRectangle(cornerRadius: 7))
+                    HStack(spacing: 6) {
+                        if let symbol = symbols[option.value] { Image(systemName: symbol).font(.system(size: large ? 14 : 12)) }
+                        Text(option.title).lineLimit(1)
+                    }
+                        .font(.system(size: large ? 14 : 12, weight: on ? .semibold : .regular)).padding(.horizontal, large ? 14 : 12)
+                        .frame(maxWidth: fills ? .infinity : nil).frame(height: large ? 34 : 28)
+                        .foregroundStyle(on || !large ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
+                        .background(on ? NativeDesktopTheme.segmentSelected : .clear, in: RoundedRectangle(cornerRadius: large ? 8 : 7))
                         .shadow(color: .black.opacity(on ? 0.08 : 0), radius: 2, y: 1).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityIdentifier(identifierPrefix + option.value).accessibilityAddTraits(on ? .isSelected : [])
+                }.buttonStyle(.plain).accessibilityLabel(spoken.map { $0 + " " + option.title } ?? option.title)
+                    .accessibilityIdentifier(identifierPrefix + option.value).accessibilityAddTraits(on ? .isSelected : [])
             }
-        }.padding(2).background(NativeDesktopTheme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+        }.padding(large ? 3 : 2).background(NativeDesktopTheme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: large ? 11 : 9))
     }
 }
 
@@ -373,11 +387,12 @@ struct BandalSegmented: View {
 struct BandalSettingRow<Control: View>: View {
     let title: String
     var note: String?
+    var size = BandalMetrics.bodySize
     @ViewBuilder var control: () -> Control
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: BandalMetrics.bodySize))
+                Text(title).font(.system(size: size))
                 if let note { Text(note).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 8)

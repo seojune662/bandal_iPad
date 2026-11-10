@@ -8,6 +8,8 @@ enum NativeDesktopTheme {
     static let surface = adaptive(0xf9f9f9, 0x181818)
     static let raised = adaptive(0xeeeeee, 0x303030)
     static let overlay = adaptive(0xffffff, 0x292929)
+    /// The chosen segment of `BandalSegmented`: white in light, a lighter pill on the track in dark (whatever the track sits on).
+    static let segmentSelected = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.16) : .white })
     static let text = adaptive(0x0d0d0d, 0xececec)
     static let secondary = adaptive(0x565656, 0xb4b4b4)
     static let muted = adaptive(0x686868, 0x9b9b9b)
