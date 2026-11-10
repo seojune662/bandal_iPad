@@ -101,7 +101,7 @@ struct NativeAccountRailButton: View {
             Group {
                 BandalMenuRow("화면 도우미", symbol: "rectangle.and.hand.point.up.left") { close(); openHelp() }.accessibilityIdentifier("native-help-guide")
                 BandalMenuRow("문서", symbol: "book") { close(); UIApplication.shared.open(Self.docsURL) }.accessibilityIdentifier("native-help-docs")
-                BandalMenuRow("문의하기", symbol: "bubble.left") { close(); UIApplication.shared.open(Self.contactURL) }.accessibilityIdentifier("native-help-contact")
+                BandalMenuRow("문의하기 · 버그 신고", symbol: "bubble.left") { close(); UIApplication.shared.open(Self.contactURL) }.accessibilityIdentifier("native-help-contact")
             }.padding(.leading, 16)
         }
     }

@@ -29,7 +29,7 @@ struct NativeSidebarShortcuts: View {
                 Button("학교 고르기", systemImage: "building.columns") { onOpenSettings("university") }
                     .font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).frame(minHeight: 36).accessibilityIdentifier("native-university-choose")
             }
-            heading("AI", collapsed: $aiCollapsed).accessibilityIdentifier("native-ai-web-heading")
+            heading("외부 AI 사이트", collapsed: $aiCollapsed).accessibilityIdentifier("native-ai-web-heading")
             if !aiCollapsed {
                 LazyVGrid(columns: columns, spacing: 4) {
                     ForEach(NativeAIWebShortcut.all) { shortcut in

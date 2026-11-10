@@ -44,6 +44,11 @@ extension View {
         }
     }
 
+    /// Popover background: the system's Liquid Glass on iOS 26, the solid overlay colour before it.
+    @ViewBuilder func bandalPopoverSurface() -> some View {
+        if #available(iOS 26, *) { self } else { background(NativeDesktopTheme.overlay).presentationBackground(NativeDesktopTheme.overlay) }
+    }
+
     /// A transient message at the bottom of this view; the binding clears itself after a few seconds.
     func bandalToast(_ message: Binding<String?>) -> some View {
         overlay(alignment: .bottom) { BandalToast(message: message) }
@@ -85,9 +90,8 @@ private struct BandalPopoverBody<Content: View>: View {
             .padding(BandalMetrics.padding)
             .frame(width: width, alignment: .leading)
             .foregroundStyle(NativeDesktopTheme.text)
-            .background(NativeDesktopTheme.overlay)
+            .bandalPopoverSurface()
             .presentationCompactAdaptation(.popover)
-            .presentationBackground(NativeDesktopTheme.overlay)
             .background { BandalEscapeKey(action: close) }
     }
 }

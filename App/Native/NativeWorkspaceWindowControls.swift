@@ -86,7 +86,7 @@ struct NativeWorkspaceWindowsOverview: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("윈도우").font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
                             .accessibilityFocused($headingFocused)
-                        Text("작업 화면을 나누고, 하던 곳에서 이어가세요.")
+                        Text("작업 화면을 나누고, 다른 곳에서 이어서 쓰세요")
                             .font(.callout).foregroundStyle(NativeDesktopTheme.secondary)
                     }
                     Spacer(minLength: 0)
@@ -105,8 +105,8 @@ struct NativeWorkspaceWindowsOverview: View {
                     }
                     Button(action: add) {
                         VStack(spacing: 12) {
-                            Image(systemName: "plus.circle").font(.system(size: 34, weight: .light))
-                            Text("윈도우 추가").font(.body.weight(.medium))
+                            Image(systemName: "plus").font(.system(size: 30, weight: .light))
+                            Text("새 창").font(.body.weight(.medium))
                         }.frame(maxWidth: .infinity).frame(height: 190)
                             .background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 14))
                             .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(NativeDesktopTheme.border, style: StrokeStyle(lineWidth: 1, dash: [5])) }
