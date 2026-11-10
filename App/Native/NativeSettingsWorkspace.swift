@@ -242,7 +242,7 @@ struct NativeSettingsWorkspace: View {
     // Seven sections; each stacks the panels that used to be separate pages.
     switch category {
     case "ai": aiPanel
-    case "account": VStack(alignment: .leading, spacing: 20) { accountPanel; expandedPanel("university"); if NativeReleaseFlags.legacyCloudSync { subscriptionPanel; syncPanel; profilePanel } }
+    case "account": VStack(alignment: .leading, spacing: 20) { accountPanel; NativeReferralSettingsCard(store: store); expandedPanel("university"); if NativeReleaseFlags.legacyCloudSync { subscriptionPanel; syncPanel; profilePanel } }
     case "sync": NativeSettingsSyncPanel(store: store)
     case "subscription": NativeSettingsSubscriptionPanel(store: store)
     case "integrations": VStack(alignment: .leading, spacing: 20) { integrationsOverview; expandedPanel("calendar"); expandedPanel("browser") }

@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The profile button at the bottom of the rail. Signed out it offers sign-in in place; signed in
-/// it opens the account menu: email, name · plan, then 설정 / 사용량 / 도움말 / 플랜 보기 / 로그아웃.
+/// it opens the account menu: email, name · plan, then 설정 / 사용량 / 친구 초대 / 도움말 / 플랜 보기 /
+/// 로그아웃. 친구 초대 takes the menu's place in the same popover.
 struct NativeAccountRailButton: View {
     var store: NativeWorkspaceStore
     let openSettings: (String) -> Void
@@ -11,6 +12,8 @@ struct NativeAccountRailButton: View {
     @State private var account: [String: Any] = [:]
     @State private var showingMenu = false
     @State private var showingHelp = false
+    @State private var inviting = false
+    @Environment(\.locale) private var locale
     @State private var busy = false
     @State private var error: String?
 
@@ -37,7 +40,7 @@ struct NativeAccountRailButton: View {
     private var avatarURL: URL? { (account["avatarUrl"] as? String).flatMap(URL.init) }
 
     var body: some View {
-        Button { error = nil; showingHelp = false; showingMenu.toggle() } label: {
+        Button { error = nil; showingHelp = false; inviting = false; showingMenu.toggle() } label: {
             avatar(size: 26)
                 .frame(width: 36, height: 36)
                 .background(showingMenu ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: BandalMetrics.radiusSmall))
@@ -45,13 +48,16 @@ struct NativeAccountRailButton: View {
         }.buttonStyle(.plain)
             .accessibilityLabel(signedIn ? "계정: " + displayName : "로그인").accessibilityIdentifier("native-section-account")
             .help(signedIn ? displayName : "로그인")
-            .bandalPopover(isPresented: $showingMenu, arrowEdge: .leading, width: 264) { signedIn ? AnyView(menu) : AnyView(signInMenu) }
+            .bandalPopover(isPresented: $showingMenu, arrowEdge: .leading, width: 264) {
+                inviting ? AnyView(NativeReferralInvite(store: store)) : signedIn ? AnyView(menu) : AnyView(signInMenu)
+            }
             .task(id: store.isReady) { await loadAccount() }
             .onReceive(store.events) { event in
                 if event.channel == "auth:changed", let state = event.payload as? [String: Any] {
                     let wasSigningIn = !signedIn
                     account = state
-                    if wasSigningIn && signedIn { showingMenu = false }
+                    // Signed in from 친구 초대: it stays open and shows the code.
+                    if wasSigningIn && signedIn && !inviting { showingMenu = false }
                 }
             }
     }
@@ -63,7 +69,7 @@ struct NativeAccountRailButton: View {
             NativeSignInButtons(store: store, error: $error, identifierPrefix: "native-account")
             errorLine
             BandalMenuDivider()
-            BandalMenu { helpRows }
+            BandalMenu { inviteRow; helpRows }
         }.accessibilityElement(children: .contain).accessibilityIdentifier("native-account-menu")
     }
 
@@ -80,6 +86,7 @@ struct NativeAccountRailButton: View {
                 BandalMenuRow("사용량", symbol: "chart.bar", detail: usage.percent.map { "이번 달 AI \($0)%" }) { close(); openSettings("subscription") }
                     .accessibilityIdentifier("native-account-usage")
             }
+            inviteRow
             helpRows
             BandalMenuRow("플랜 보기", symbol: "sparkles") { close(); MembershipPaywall.present() }
                 .accessibilityIdentifier("native-account-plans")
@@ -90,6 +97,10 @@ struct NativeAccountRailButton: View {
         }
         .task { _ = try? await store.invokePrivate("native:aiConfig") }
         .accessibilityElement(children: .contain).accessibilityIdentifier("native-account-menu")
+    }
+
+    private var inviteRow: some View {
+        BandalMenuRow(NativeAppLocale.string("친구 초대", locale), symbol: "gift") { inviting = true }.accessibilityIdentifier("native-referral-menu")
     }
 
     /// 도움말 opens in place: 화면 도우미 / 문서 / 문의하기.

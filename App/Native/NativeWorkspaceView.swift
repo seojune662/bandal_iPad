@@ -373,6 +373,7 @@ struct NativeWorkspaceView: View {
         .background(NativeWorkspaceKeyboardBridge(store: store))
         .background(NativePresentationAnchor(services: services).allowsHitTesting(false))
         .bandalToast(Binding(get: { store.errorMessage }, set: { store.errorMessage = $0 }))
+        .modifier(NativeReferralHost(referral: store.referral, ready: restored && onboarding == .closed, openSettings: openSettings))
         .task {
             await store.start()
             if onboarding == .pending || onboarding == .deciding { await decideOnboarding() }
@@ -462,14 +463,19 @@ struct NativeWorkspaceView: View {
             Task {
                 if store.isReady { _ = try? await store.invokePrivate("nativeRuntime:active", ["active": phase == .active]) }
                 if phase == .background { await flushInBackground() }
-                if phase == .active { await importSharedMaterials() }
+                if phase == .active { await importSharedMaterials(); store.referral.resume() }
             }
         }
-        .onOpenURL { url in
-            Task {
-                do { try await store.importFiles([url], parentPath: workspaceContext?.rootRelPath ?? "") }
-                catch { store.errorMessage = error.localizedDescription }
-            }
+        .onOpenURL(perform: receiveURL)
+    }
+
+    /// A file handed to the app is imported. A web address is a universal link, never a file, and
+    /// only an invite link does anything.
+    private func receiveURL(_ url: URL) {
+        if url.scheme?.lowercased() == "https" { store.referral.open(url); return }
+        Task {
+            do { try await store.importFiles([url], parentPath: workspaceContext?.rootRelPath ?? "") }
+            catch { store.errorMessage = error.localizedDescription }
         }
     }
 
@@ -657,8 +663,11 @@ struct NativeWorkspaceView: View {
     private var courseSidebar: some View {
         VStack(spacing: 0) {
             ScrollView {
-                NativeSidebarShortcuts(store: store, settings: workspaceSettings, onOpenSettings: openSettings, onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shortcutContentHeight = $0 }
+                // The invite reminder shares this area's height limit, so the course list keeps its room on a small iPad.
+                VStack(spacing: 0) {
+                    NativeReferralBanner(store: store)
+                    NativeSidebarShortcuts(store: store, settings: workspaceSettings, onOpenSettings: openSettings, onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb)
+                }.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shortcutContentHeight = $0 }
             }.frame(height: min(shortcutContentHeight, windowWidth < 900 ? 200 : 260))
             NativeDesktopTheme.border.frame(height: 1)
             NativeHomeSectionPicker(selection: $leftPanel)

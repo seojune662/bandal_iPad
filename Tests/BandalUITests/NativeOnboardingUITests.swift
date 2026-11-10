@@ -5,9 +5,10 @@ import XCTest
 final class NativeOnboardingUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    /// 언어 → 학교 (search, AI result, edited links) → 완료 → home, in light and in dark.
+    /// 언어 → 학교 (search, AI result, edited links) → 초대 코드 (skipped; NativeReferralUITests has its
+    /// own) → 완료 → home, in light and in dark.
     @MainActor
-    func testOnboardingWalksLanguageSchoolAndDoneInLightAndDark() {
+    func testOnboardingWalksLanguageSchoolInviteAndDoneInLightAndDark() {
         for name in ["light", "dark"] {
             // The app's own theme setting, as a launch default.
             let theme = ["-native.appearance", name]
@@ -117,12 +118,23 @@ final class NativeOnboardingUITests: XCTestCase {
             capture("AI 결과 편집 (\(name))")
             confirm.tap()
 
-            // 3. 완료, then home with the school in the sidebar.
+            // 3. 초대 코드: optional, the third of four steps, and nothing on it asks to sign in.
+            let skip = app.buttons["native-referral-skip"]
+            XCTAssertTrue(skip.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.staticTexts["초대 코드가 있나요?"].exists)
+            XCTAssertEqual(skip.label, "없어요, 건너뛰기")
+            XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "4단계 중 3단계")
+            XCTAssertTrue(app.buttons["native-onboarding-later"].exists && app.buttons["native-onboarding-back"].exists)
+            XCTAssertFalse(app.buttons["Apple로 로그인"].exists)
+            capture("3 초대 코드 (\(name))")
+            skip.tap()
+
+            // 4. 완료, then home with the school in the sidebar.
             let finish = app.buttons["native-onboarding-finish"]
             XCTAssertTrue(finish.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertTrue(app.staticTexts["준비됐어요"].exists)
             XCTAssertFalse(app.buttons["native-onboarding-later"].exists, "Nothing left to put off")
-            capture("3 완료 (\(name))")
+            capture("4 완료 (\(name))")
             finish.tap()
             let heading = app.buttons["native-university-heading"]
             XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
@@ -132,6 +144,7 @@ final class NativeOnboardingUITests: XCTestCase {
             XCTAssertTrue(app.buttons["native-university-service-custom:fixture-school:lms"].label.contains("강의실 LMS"), "The edit is in this user's settings")
             XCTAssertFalse(app.buttons["native-university-service-custom:fixture-school:library"].exists)
             XCTAssertFalse(app.buttons["native-university-find-links"].exists)
+            XCTAssertFalse(app.staticTexts["native-referral-banner"].exists, "No code, no reminder")
             capture("홈 (\(name))")
 
             // Shown once.
