@@ -423,3 +423,27 @@ private struct NativePDFRecordButton: View {
         .accessibilityIdentifier("native-pdf-record")
     }
 }
+
+/// While the palette microphone records: a glass bar at the bottom of the page with the elapsed time and a stop button.
+struct NativePDFRecordingBar: View {
+    var model: NativePDFWorkspaceModel
+    let started: Date
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle().fill(Color.red).frame(width: 8, height: 8)
+            TimelineView(.periodic(from: started, by: 1)) { context in
+                Text(Duration.seconds(max(0, context.date.timeIntervalSince(started))).formatted(.time(pattern: .minuteSecond)))
+                    .font(.system(size: 14, weight: .semibold)).monospacedDigit()
+            }
+            Image(systemName: "waveform").font(.system(size: 14))
+            Text("강의 녹음 중").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
+            Button { model.toggleRecording() } label: {
+                Text("끝내기").font(.system(size: 13, weight: .semibold)).padding(.horizontal, 12).frame(height: 32)
+                    .background(NativeDesktopTheme.text.opacity(0.07), in: Capsule()).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("native-pdf-record-stop")
+        }
+        .padding(.leading, 16).padding(.trailing, 8).frame(height: 48)
+        .foregroundStyle(NativeDesktopTheme.text).bandalGlass(in: Capsule()).padding(.bottom, 16)
+        .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-recording-bar")
+    }
+}

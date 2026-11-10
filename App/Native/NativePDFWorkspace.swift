@@ -73,6 +73,7 @@ struct NativePDFWorkspace: View {
                         .overlay(alignment: .top) {
                             if visible, model.assistantAnnotation == nil, chromeMode == .toolsHidden || model.toolsExpanded { NativePDFFloatingPalette(model: model) }
                         }
+                        .overlay(alignment: .bottom) { if visible, let started = model.recordingStartedAt { NativePDFRecordingBar(model: model, started: started) } }
                         .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame) } }
                     if model.showAnnotations && visible {
                         Divider()
@@ -1172,8 +1173,17 @@ final class NativePDFWorkspaceModel {
         if let last = lastTapeToggle, last.id == id, now - last.at < 0.5 { return }
         lastTapeToggle = (id, now)
         guard let row = persistence?.rows.first(where: { $0["id"] as? String == id }) else { return }
-        setTapes([row], revealed: (row["style"] as? [String: Any])?["revealed"] as? Bool != true)
+        let reveal = (row["style"] as? [String: Any])?["revealed"] as? Bool != true
+        setTapes([row], revealed: reveal)
+        guard reveal else { return }
+        // A tap shows what is underneath for a moment, then the tape covers it again.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.tapePeekSeconds))
+            guard let self, !self.retired, let current = self.persistence?.rows.first(where: { $0["id"] as? String == id }) else { return }
+            self.setTapes([current], revealed: false)
+        }
     }
+    static let tapePeekSeconds: Double = 3
     func setAllTapes(revealed: Bool) {
         setTapes((persistence?.rows ?? []).filter { $0["kind"] as? String == "tape" }, revealed: revealed)
     }

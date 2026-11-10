@@ -312,7 +312,7 @@ final class NativePDFWritingUITests: XCTestCase {
         let peeled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "모두 가리기"), object: all)
         XCTAssertEqual(XCTWaiter.wait(for: [peeled], timeout: 10), .completed, "A tap peels the tape back" + app.debugDescription)
         capture("Peeled-back tape")
-        all.tap()
+        // The tape covers the line again on its own after a moment.
         let covered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "모두 보기"), object: all)
         XCTAssertEqual(XCTWaiter.wait(for: [covered], timeout: 10), .completed)
 

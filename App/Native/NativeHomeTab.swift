@@ -53,7 +53,7 @@ struct NativeHomeTab: View {
                     Label("새 노트", systemImage: "square.and.pencil").font(NativeDesktopTheme.font(15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.onAccent)
                         .padding(.horizontal, 22).frame(height: 48).background(NativeDesktopTheme.accent, in: Capsule())
                         .shadow(color: .black.opacity(0.18), radius: 10, y: 4).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityIdentifier("native-home-new-note")
+                }.buttonStyle(.plain).accessibilityLabel("새 노트 쓰기").accessibilityIdentifier("native-home-new-note")
                 Button("PDF · 폴더에서 추가") { importing = true }.buttonStyle(.plain).font(NativeDesktopTheme.font(14)).frame(minHeight: 44)
                     .accessibilityIdentifier("native-home-import")
             }.frame(maxWidth: .infinity)
