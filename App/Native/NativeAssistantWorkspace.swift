@@ -429,6 +429,8 @@ struct NativeAssistantPanel: View {
             .onChange(of:attachments) { _,_ in consumeAttachments() }
             .onChange(of:context) { _,value in session.context = value }
             .onChange(of:store.pendingAssistantConversationIDs[context.id]) { _,_ in Task { await consumePendingConversation() } }
+            .onChange(of:store.pendingAssistantRequests[context.id]) { _,_ in consumePendingRequest() }
+            .onChange(of:session.ready) { _,ready in if ready { consumePendingRequest() } }
             .onChange(of:scenePhase) { _,phase in if phase == .active { Task { await session.checkAvailability() } } else { session.flushDraft() } }
             .onReceive(store.events) { event in
                 // Signed in from the prompt: back to the same panel with the draft untouched.
@@ -665,6 +667,15 @@ struct NativeAssistantPanel: View {
         guard session.ready, let id = store.pendingAssistantConversationIDs[context.id] else { return }
         await session.selectID(id)
         if store.pendingAssistantConversationIDs[context.id] == id { store.pendingAssistantConversationIDs.removeValue(forKey:context.id) }
+    }
+    /// A request from outside the panel: attach, fill the composer, send. Text the user was typing is kept (the prompt goes after it).
+    private func consumePendingRequest() {
+        guard session.ready, !session.running, !session.sending, let request = store.pendingAssistantRequests[context.id] else { return }
+        store.pendingAssistantRequests.removeValue(forKey:context.id)
+        session.attach([request.attachment])
+        let typed = session.draft.text.trimmingCharacters(in:.whitespacesAndNewlines)
+        session.draft.text = typed.isEmpty ? request.prompt : typed + "\n" + request.prompt
+        if request.sends { submit() }
     }
     private func consumeAttachments() { guard !attachments.isEmpty, session.ready else { return }; session.attach(attachments); onConsumeAttachments() }
     private func perform(_ action: @escaping @MainActor () async throws -> Void) { Task { do { try await action() } catch { session.error = error.localizedDescription } } }

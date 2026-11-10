@@ -1174,6 +1174,11 @@ struct NativeWorkspaceView: View {
            !services.browser.pages.keys.contains(where: { NativeBrowserSession.owns($0, workspaceID: document.relativePath) }) {
             closeDocuments([document.id])
         }
+        if event.channel == "nativeWorkspace:assistantRequest", let request = event.payload as? NativeAssistantRequest, let context = workspaceContext {
+            store.pendingAssistantRequests[context.id] = request
+            transition { openAIRail() }
+            return
+        }
         if event.channel == "nativeWorkspace:openSettings", let category = (event.payload as? [String: Any])?["category"] as? String { openSettings(category); return }
         if event.channel == "nativeWorkspace:openAssistantResult", let payload = event.payload as? [String: Any],
            let document = payload["document"] as? NativeDocumentReference {
