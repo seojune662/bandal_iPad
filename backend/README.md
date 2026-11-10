@@ -108,3 +108,38 @@ roots (`_shared/store/certificates.ts`), production first and sandbox when Apple
 - Secrets: `APPLE_APP_ID` (6824053530), `APPLE_SANDBOX_ALLOWED_USER_IDS`. ASC → App Information → App Store Server
   Notifications (V2), production and sandbox URL:
   `https://<project>.supabase.co/functions/v1/ipad-store-notifications`.
+
+## Schools ("set up my school")
+
+`202611100002_schools.sql` + Edge Function `schools` (`verify_jwt = false`). One catalogue for
+every account: the 18 schools bundled with the app are seeded as verified (the seed block comes
+from `deno run --allow-read scripts/seed-schools.ts`); a school nobody has set up yet is looked
+up once by an AI routine and kept, unverified, for everyone after. `service_role` only.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /search?q=&country=` | no sign-in (onboarding); `{schools: [School]}`, verified first, at most 20 |
+| `POST /setup` `{query, country, locale}` | signed in; `{status: "cached" or "found", school}`, or `{status: "not_found"}` |
+| `POST /suggest` `{schoolId, links}` | signed in; a student's edits, kept in `school_link_suggestions` for review, never applied |
+
+- Matching: `school_key` is the name in lower case without whitespace or a trailing
+  대학교/대학/university/univ; one school per key and country. Aliases are compared without the
+  suffix rule, so the bundled alias "대구" (경북대학교) does not answer for "대구대학교".
+- `/setup` returns a known school as `cached`, also when an earlier run for the same normalized
+  query produced it. Otherwise one AI run: 3 per account per UTC day (`429 RATE_LIMITED`) and 500
+  a day for all accounts together (`503`), both constants in `school_setup_begin`.
+- The routine (`_shared/schools/routine.ts`) is one Messages API turn on `ai_settings.auto_model`
+  with the server tools web search (3 uses) and web fetch (12), at low effort when the Models API
+  says the model takes it. Its answer is untrusted: only https links on the homepage's own domain
+  survive, each checked with HEAD then GET (public addresses only, redirects not followed). No
+  homepage that answers means `not_found`.
+- What a run finds is shared, so it is stored unverified (school and links), and under the
+  model's name only when the typed name abbreviates it ("서울과기대" → 서울과학기술대학교). Otherwise
+  it keeps the typed name: a query written to steer the model cannot end up as another school's
+  entry. If a school of the model's name already exists, that one is returned untouched.
+- Bandal pays: `ai_begin`/`ai_settle` are not involved. The cost (tokens at `ai_models` prices
+  plus $0.01 per search) goes to `school_setup_runs.cost_ucents`. No further request is made once
+  a run has cost $0.05; the cost is only known between requests, so the tool limits are what
+  bounds a single one.
+- Secrets: `ANTHROPIC_API_KEY` (the ai-proxy's). Web search and web fetch must be enabled for
+  that organization in the Claude Console.
