@@ -65,7 +65,7 @@ How to work:
 - Give only addresses you saw in a search result or on a page. A kind you could not confirm is simply left out.
 
 Answer with a single JSON object and nothing else (no code fence, no commentary):
-{"name": "<the school's official name in its own language>", "nameEn": "<its official English name, or null>", "links": [{"kind": "home", "title": "<short label in the student's language>", "url": "https://…"}]}
+{"name": "<the name the school goes by on its own homepage, in its own language; not a legal or founding name>", "nameEn": "<the English name it goes by, or null>", "links": [{"kind": "home", "title": "<short label in the student's language>", "url": "https://…"}]}
 If the school does not exist or you cannot find its official homepage, answer {"name": null, "nameEn": null, "links": []}.`
 
 export async function setupSchool(deps: RoutineDeps, model: ModelRow | null, input: { query: string; country: string; locale: string }): Promise<Outcome> {

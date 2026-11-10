@@ -73,7 +73,13 @@ export function isPublicAddress(ip: string): boolean {
   return /^[23][0-9a-f]{3}:/i.test(ip) && !/^(2002:|2001:(0{1,4})?:|2001:0?db8:)/i.test(ip)
 }
 
-/** Whether the URL answers 2xx/3xx: HEAD, then GET for servers that refuse HEAD. The model chose
+/** A page that is there: 2xx/3xx, or a refusal only a real site gives a script — 401/403 (a sign-in
+ *  page or a bot wall: www.berkeley.edu answers every non-browser with Cloudflare's 403 challenge)
+ *  and 429. 404, 410 and 5xx are dead links. Behind such a wall a wrong path looks the same as a
+ *  right one, which is why AI links stay unverified and the student confirms them. */
+const answers = (status: number) => (status >= 200 && status < 400) || status === 401 || status === 403 || status === 429
+
+/** Whether the URL answers: HEAD, then GET for servers that refuse HEAD. The model chose
  *  this URL, so it must not become a way to reach something internal: the host has to resolve to
  *  public addresses only, redirects are not followed and the body is never read.
  *  (A name that re-resolves differently for the request itself would still need a certificate
@@ -87,7 +93,7 @@ export async function reachable(url: string, net: Net): Promise<boolean> {
         method, redirect: 'manual', signal: AbortSignal.timeout(CHECK_TIMEOUT_MS), headers: { 'user-agent': USER_AGENT, accept: 'text/html,*/*' },
       })
       await response.body?.cancel().catch(() => {})
-      if (response.status >= 200 && response.status < 400) return true
+      if (answers(response.status)) return true
     } catch { /* refused, reset or timed out: the other method may still answer */ }
   }
   return false
