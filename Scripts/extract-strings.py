@@ -31,7 +31,7 @@ the table lacks shows up as MISSED, an app function of the same name as EXTRA.
 
 Glossary (the product's own English wins: App Store text, DesktopNative/settings-en.json):
   반달 Bandal · 플러스 Plus · 프로 Pro · 과목 course · 자료 material · 자료실 Library
-  노트 note · 학교 university · 학업 보드 Study Board · 암기테이프 memorization tape
+  노트 note · 학교 school · 학업 보드 Study Board · 암기테이프 memorization tape
   필기 handwriting (strokes: ink; text for a page: notes) · 주석 annotation · 메모 note
   학습 study · 학습 공간 study space · 글 article · 표현 phrase · 복습 review · 원문 source text
   녹음 recording · 자막 captions · 전사 transcript · 영역 pane or (AI selection) area
@@ -71,6 +71,14 @@ LSK_POSITIONS = {
     "alert": {0}, "confirmationDialog": {0},
     "accessibilityLabel": {0}, "accessibilityValue": {0}, "accessibilityHint": {0},
     "accessibilityAction": {"named"},
+}
+
+# The app's own components take a String and look it up themselves (BandalText and NativeAppLocale.string
+# in BandalComponents.swift). Only a literal without interpolation can match the table there.
+STRING_POSITIONS = {
+    "NativeSettingsCard": {"title", "description"}, "BandalSettingRow": {"title", "note"}, "BandalSectionHeader": {0},
+    "bandalConfirm": {0, "message", "action"}, "BandalMenuRow": {0, "detail"}, "BandalTextEntry": {"title", "prompt", "actionTitle"},
+    "string": {0},  # NativeAppLocale.string("…", locale); the validators named string(_:_:) take their text second
 }
 
 NUMERIC = {
@@ -363,6 +371,9 @@ def visit(group, out, keys, nested=False):
             values = results(expr)
             if all(len(v) == 1 and is_tok(v[0], "str") for v in values):
                 keys.update(id(v[0]) for v in values)
+        if group.open == "(" and slot in STRING_POSITIONS.get(group.callee, ()):
+            keys.update(id(v[0]) for v in results(expr)
+                        if len(v) == 1 and is_tok(v[0], "str") and not any(isinstance(p, Interp) for p in v[0][1].parts))
         for at, item in enumerate(arg):
             if isinstance(item, Group):
                 visit(item, out, keys, nested)
