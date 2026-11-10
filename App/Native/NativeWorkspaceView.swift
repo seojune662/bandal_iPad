@@ -800,7 +800,8 @@ struct NativeWorkspaceView: View {
                 NativeAssistantPanel(store: store, context: context, sourceDocument: navigation.active,
                     attachments: pendingAttachments[context.id] ?? [],
                     onConsumeAttachments: { pendingAttachments[context.id] = nil },
-                    onOpenDocument: openWorkspaceResult, onOpenSettings: openSettings, onAnnotate: beginAnnotation)
+                    onOpenDocument: openWorkspaceResult, onOpenSettings: openSettings, onAnnotate: beginAnnotation,
+                    onClose: { setRail(.ai, open: false, width: windowWidth) })
                     .environment(\.nativeWorkspaceTarget, navigation.captureTarget())
                     .id(context.id)
             } else { noWorkspacePlaceholder }

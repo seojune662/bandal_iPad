@@ -2290,11 +2290,23 @@ final class NativePDFWorkspaceModel {
         host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
         host?.emit = { _, _ in }; host = nil
     }
+    /// An AI answer lands on the page in view as a text box: movable, editable, one undo step.
+    func insertAINote(_ text: String) {
+        guard !isLoading, !isBusy, errorMessage == nil, assistantAnnotation == nil else { return }
+        if textEditorDraft != nil { finishText() }
+        let plain = text.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "(?m)^#+\\s*", with: "", options: .regularExpression)
+        let row: [String: Any] = ["page": page, "kind": "textbox", "style": NativePDFTextStyle.load(defaults: defaults).dictionary,
+            "data": ["text": "✦ AI 메모\n" + plain, "box": ["x": 0.1, "y": 0.12, "width": 0.8, "height": 0.1]]]
+        performObjectEdit("create", values: [NativePDFTextDraft.fittedObject(row, pageSize: pageSize(page))], selectCreated: true)
+    }
     private func receiveStoreEvent(_ event: NativeWorkspaceEvent) {
         guard let payload = event.payload as? [String: Any], payload["courseId"] as? String == document.courseID,
               let path = (payload["fromRelPath"] ?? payload["relPath"]) as? String,
               path == document.relativePath || payload["isDirectory"] as? Bool == true && document.relativePath.hasPrefix(path + "/") else { return }
         switch event.channel {
+        case "nativeWorkspace:insertAINote":
+            if let tabID = payload["tabID"] as? String, tabID != document.id { return }
+            if let text = payload["text"] as? String { insertAINote(text) }
         case "nativeWorkspace:goToPage":
             if let tabID = payload["tabID"] as? String, tabID != document.id { return }
             guard let requested = payload["page"] as? Int, requested > 0 else { return }
