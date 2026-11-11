@@ -68,12 +68,22 @@ final class NativePlannerBoardTests: XCTestCase {
         XCTAssertEqual(NativePlannerSectionStack.heights(ideal: [900, 700, 100], available: 900), [400, 400, 100])
     }
 
-    func testDueStripStartsTodayOrAtAnEarlierDueDay() throws {
-        let today = try day("2026-11-10")
-        XCTAssertEqual(NativeTaskEditor.stripDays(today: today, due: nil).first, today)
-        XCTAssertEqual(NativeTaskEditor.stripDays(today: today, due: try day("2026-11-14")).first, today)
-        XCTAssertEqual(NativeTaskEditor.stripDays(today: today, due: try day("2026-11-03").addingTimeInterval(3600)).first, try day("2026-11-03"))
-        XCTAssertTrue(NativeTaskEditor.stripDays(today: today, due: try day("2027-03-01")).contains(try day("2027-03-01")), "A far due day is still on the strip")
+    func testDueStripIsWeeksFromMondayStartingThisWeekOrAtAnEarlierDueDay() throws {
+        let today = try day("2026-11-10") // a Tuesday
+        let weeks = NativeTaskEditor.stripWeeks(today: today, due: nil)
+        XCTAssertEqual(weeks.first, try ["09", "10", "11", "12", "13", "14", "15"].map { try day("2026-11-" + $0) }, "월–일")
+        XCTAssertEqual(weeks.count, 8)
+        XCTAssertEqual(NativeTaskEditor.stripWeeks(today: today, due: try day("2026-11-15")).first?.first, try day("2026-11-09"), "A Sunday belongs to the week before it")
+        XCTAssertEqual(NativeTaskEditor.stripWeeks(today: today, due: try day("2026-11-03").addingTimeInterval(3600)).first?.first, try day("2026-11-02"))
+        XCTAssertTrue(NativeTaskEditor.stripWeeks(today: today, due: try day("2027-03-01")).joined().contains(try day("2027-03-01")), "A far due day is still on the strip")
+    }
+
+    func testReminderGoesOffBeforeTheDueDay() throws {
+        let due = try day("2026-11-14").addingTimeInterval(23 * 3600 + 59 * 60)
+        XCTAssertNil(NativePlannerReminder.off.fireDate(due: due))
+        XCTAssertEqual(NativePlannerReminder.morning.fireDate(due: due), try day("2026-11-14").addingTimeInterval(9 * 3600))
+        XCTAssertEqual(NativePlannerReminder.dayBefore.fireDate(due: due), try day("2026-11-13").addingTimeInterval(18 * 3600))
+        XCTAssertEqual(NativePlannerReminder.threeDaysBefore.fireDate(due: try day("2026-11-14")), try day("2026-11-11").addingTimeInterval(18 * 3600), "An all-day task counts from its day")
     }
 
     func testEditorLeavesAnUntouchedDueDateOutOfTheRequest() throws {

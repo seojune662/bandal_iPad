@@ -716,7 +716,7 @@ struct NativeWorkspaceView: View {
         // A window too short for the full height sits 6 pt low, clear of the top-trailing window controls.
         let drop: CGFloat = height < 1180 ? 6 : 0
         return ZStack {
-            Color.black.opacity(0.22).ignoresSafeArea().contentShape(Rectangle())
+            Color(uiColor: UIColor { UIColor.black.withAlphaComponent($0.userInterfaceStyle == .dark ? 0.45 : 0.22) }).ignoresSafeArea().contentShape(Rectangle())
                 .onTapGesture { transition { boardOverlayOpen = false } }.accessibilityHidden(true)
             NativePlannerWorkspace(store: store, keyboardInset: max(0, keyboard - (size.height - height) / 2 + drop), onClose: { transition { boardOverlayOpen = false } })
                 .frame(width: min(max(1, size.width - 84), 1200), height: height)
