@@ -30,7 +30,7 @@ final class NativeAnnotationUITests: XCTestCase {
 
         beginAnnotation(app)
         app.buttons["native-ai-annotation-cancel"].tap()
-        XCTAssertTrue(app.buttons["native-ai-annotate"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["native-ai-model-pill"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(highlighter.isSelected, "Cancel must restore the actual previous Pencil tool")
         XCTAssertFalse(app.buttons["첨부 제거"].exists, "Cancel must not produce an attachment")
         closeInspector(app)
@@ -63,7 +63,7 @@ final class NativeAnnotationUITests: XCTestCase {
 
         beginAnnotation(app)
         app.buttons["native-ai-annotation-cancel"].tap()
-        XCTAssertTrue(app.buttons["native-ai-annotate"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["native-ai-model-pill"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["첨부 제거"].exists)
         closeInspector(app)
         field.tap(); field.typeText(" after cancel")
@@ -161,6 +161,10 @@ final class NativeAnnotationUITests: XCTestCase {
     }
     @MainActor private func beginAnnotation(_ app: XCUIApplication) {
         openAI(app)
+        // 지목해서 질문 sits in the model popover: the Figma composer has no button for it.
+        let pill = app.buttons["native-ai-model-pill"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), app.debugDescription)
+        pill.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
         let annotate = app.buttons["native-ai-annotate"]
         // Right after a web form's keyboard is dismissed XCUITest can report the
         // left AI column as not hittable although a real touch reaches it.
@@ -178,7 +182,7 @@ final class NativeAnnotationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["첨부 제거"].waitForExistence(timeout: 15),
                       "Capture must create an actual draft attachment, not merely close selection mode.\n" + app.debugDescription)
         XCTAssertFalse(app.buttons["native-ai-annotation-cancel"].exists)
-        XCTAssertTrue(app.buttons["native-ai-annotate"].exists)
+        XCTAssertTrue(app.buttons["native-ai-model-pill"].exists)
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "첨부 제거")).count, 1,
                        "Each gesture should create exactly one attachment")
     }
