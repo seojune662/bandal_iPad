@@ -25,7 +25,7 @@ extension View {
                                       radius: CGFloat = 22, padding: CGFloat = BandalMetrics.padding,
                                       @ViewBuilder content: @escaping () -> Content) -> some View {
         modifier(BandalDeferredPopover(isPresented: isPresented, arrowEdge: arrowEdge) {
-            BandalPopoverBody(width: width, radius: radius, padding: padding, close: { isPresented.wrappedValue = false }, content: content)
+            BandalPopoverBody(width: width, radius: radius, padding: padding, arrowEdge: arrowEdge, close: { isPresented.wrappedValue = false }, content: content)
         })
     }
 
@@ -51,11 +51,12 @@ extension View {
     }
 
     /// A popover's surface: the design's own glass card with no arrow and no system chrome.
-    func bandalPopoverSurface(radius: CGFloat = 22) -> some View {
+    /// `arrowEdge` is the one given to `.popover`: the card sits on the opposite side of the anchor.
+    func bandalPopoverSurface(radius: CGFloat = 22, arrowEdge: Edge? = .top) -> some View {
         bandalGlass(in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .padding(BandalMetrics.popoverShadowInset)
             .presentationBackground(.clear)
-            .background { BandalPopoverArrowless().frame(width: 0, height: 0).accessibilityHidden(true) }
+            .background { BandalPopoverArrowless(edge: arrowEdge).frame(width: 0, height: 0).accessibilityHidden(true) }
     }
 
     /// Anything that floats (palette, bars, popovers, menus, toasts): Figma `Glass/팝업`. A tint over glass,
@@ -101,6 +102,7 @@ private struct BandalPopoverBody<Content: View>: View {
     let width: CGFloat?
     var radius: CGFloat = 22
     var padding = BandalMetrics.padding
+    var arrowEdge: Edge? = .top
     let close: () -> Void
     @ViewBuilder let content: () -> Content
     var body: some View {
@@ -108,7 +110,7 @@ private struct BandalPopoverBody<Content: View>: View {
             .padding(padding)
             .frame(width: width, alignment: .leading)
             .foregroundStyle(NativeDesktopTheme.text)
-            .bandalPopoverSurface(radius: radius)
+            .bandalPopoverSurface(radius: radius, arrowEdge: arrowEdge)
             .presentationCompactAdaptation(.popover)
             .background { BandalEscapeKey(action: close) }
     }
@@ -585,28 +587,32 @@ struct BandalChoiceRow: View {
     }
 }
 
-/// Takes the arrow off the system popover this sits in and keeps the card next to its anchor:
-/// without an arrow UIKit centres a popover on its source rect, so the rect is moved to where the centre belongs.
+/// Takes the system chrome off the popover this sits in: a background with no arrow and no drawing,
+/// so UIKit still places the card beside its anchor and the card's own glass is all that shows.
 private struct BandalPopoverArrowless: UIViewControllerRepresentable {
+    final class ClearBackground: UIPopoverBackgroundView {
+        override static func arrowHeight() -> CGFloat { 6 }
+        override static func arrowBase() -> CGFloat { 0 }
+        override static func contentViewInsets() -> UIEdgeInsets { .zero }
+        override static var wantsDefaultContentAppearance: Bool { false }
+        private var direction = UIPopoverArrowDirection.any
+        private var offset: CGFloat = 0
+        override var arrowDirection: UIPopoverArrowDirection { get { direction } set { direction = newValue } }
+        override var arrowOffset: CGFloat { get { offset } set { offset = newValue } }
+        override init(frame: CGRect) { super.init(frame: frame); layer.shadowOpacity = 0; backgroundColor = .clear }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    }
     final class Controller: UIViewController {
-        private static let gap: CGFloat = 6
+        override func willMove(toParent parent: UIViewController?) {
+            super.willMove(toParent: parent)
+            parent?.popoverPresentationController?.popoverBackgroundViewClass = ClearBackground.self
+        }
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
-            guard let popover = popoverPresentationController, !popover.permittedArrowDirections.isEmpty,
-                  let source = popover.sourceView, let host = popover.presentedViewController as UIViewController? else { return }
-            let size = host.preferredContentSize
-            guard size.width > 0, size.height > 0 else { return }
-            let anchor = popover.sourceRect.isNull || popover.sourceRect.isEmpty ? source.bounds : popover.sourceRect
-            let directions = popover.permittedArrowDirections
-            let center: CGPoint
-            if directions == .down { center = CGPoint(x: anchor.midX, y: anchor.minY - Self.gap - size.height / 2) }
-            else if directions == .left { center = CGPoint(x: anchor.maxX + Self.gap + size.width / 2, y: anchor.midY) }
-            else if directions == .right { center = CGPoint(x: anchor.minX - Self.gap - size.width / 2, y: anchor.midY) }
-            else { center = CGPoint(x: anchor.midX, y: anchor.maxY + Self.gap + size.height / 2) }
-            popover.permittedArrowDirections = []
-            popover.sourceRect = CGRect(origin: center, size: .zero)
+            popoverPresentationController?.popoverBackgroundViewClass = ClearBackground.self
         }
     }
+    var edge: Edge?
     func makeUIViewController(context: Context) -> Controller { Controller() }
     func updateUIViewController(_ controller: Controller, context: Context) {}
 }
