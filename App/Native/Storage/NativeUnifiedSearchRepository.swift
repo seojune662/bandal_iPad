@@ -11,6 +11,8 @@ final class NativeUnifiedSearchRepository {
     /// Requires `native_search_documents` (NativeSearchRepository) and `handwriting_text` (NativeHandwritingRepository).
     init(context: NativeRepositoryContext) throws {
         self.context = context
+        // The tables and their first fill are one transaction: an index that exists is always a filled one.
+        try context.transaction {
         let fresh = try !context.tableExists("native_search_fts")
         try context.db.exec("""
         CREATE VIRTUAL TABLE IF NOT EXISTS native_search_fts USING fts5(body,content='native_search_documents',content_rowid='rowid',tokenize='trigram');
@@ -23,10 +25,9 @@ final class NativeUnifiedSearchRepository {
         """)
         // Text indexed and conversations held before this build.
         if fresh {
-            try context.transaction {
-                try context.run("INSERT INTO native_search_fts(native_search_fts) VALUES('rebuild')")
-                try context.run("INSERT INTO chat_search(rowid,text) SELECT rowid,COALESCE(json_extract(payload_json,'$.text'),'') FROM message_blocks WHERE kind='text' AND json_valid(payload_json)")
-            }
+            try context.run("INSERT INTO native_search_fts(native_search_fts) VALUES('rebuild')")
+            try context.run("INSERT INTO chat_search(rowid,text) SELECT rowid,COALESCE(json_extract(payload_json,'$.text'),'') FROM message_blocks WHERE kind='text' AND json_valid(payload_json)")
+        }
         }
     }
 

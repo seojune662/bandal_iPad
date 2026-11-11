@@ -69,9 +69,12 @@ final class DesktopRuntime: @unchecked Sendable {
             self.recordings = NativeRecordingRepository(context:context)
             self.preferences = NativePreferencesRepository(context:context)
             self.search = try NativeSearchRepository(context:context)
-            self.handwriting = try NativeHandwritingRepository(context:context,pdf:pdf)
+            // Search is an extra: a failure to prepare its tables must not keep documents from opening.
+            do {
+                self.handwriting = try NativeHandwritingRepository(context:context,pdf:pdf)
+                self.unifiedSearch = try NativeUnifiedSearchRepository(context:context)
+            } catch { self.log.record("search.index.unavailable",code:(error as? DesktopRuntimeError)?.code) }
             self.handwritingState.enabled = (try? self.preferences?.settings())?["handwritingSearch"] as? Bool != false
-            self.unifiedSearch = try NativeUnifiedSearchRepository(context:context)
             let learning = NativeLearningRepository(context:context)
             self.learning = learning
             // Interrupted-run recovery walks every course folder; it runs after the UI is ready.
@@ -190,6 +193,9 @@ final class DesktopRuntime: @unchecked Sendable {
             if channel == "materials:delete", let course = request["courseId"] as? String, let path = request["relPath"] as? String {
                 try handwriting?.forget(courseID:course,relativePath:path)
                 scheduleHandwriting(after:0)
+            } else if ["materials:import","materials:importShared","materials:duplicate","materials:adoptFile","courses:restore","courses:relink"].contains(channel) {
+                // A file that comes back, or a course that does, brings its ink pages with it.
+                scheduleHandwriting(after:handwritingTiming.debounce)
             }
             return result
         }
@@ -325,7 +331,7 @@ final class DesktopRuntime: @unchecked Sendable {
         if wait > 0 { scheduleHandwriting(after:wait); return }
         do {
             let plan = try handwriting.plan()
-            let jobs = plan.jobs.filter { !handwritingState.skipped.contains($0.key) }
+            let jobs = plan.jobs.filter { !handwritingState.skipped.contains($0.key + ":" + $0.digest) }
             handwritingState.total = plan.total - (plan.jobs.count - jobs.count)
             handwritingState.done = handwritingState.total - jobs.count
             handwritingState.running = !jobs.isEmpty; handwritingState.again = false
@@ -340,7 +346,11 @@ final class DesktopRuntime: @unchecked Sendable {
                     if self.handwritingState.again { self.scheduleHandwriting(after:0) }
                 }
             }
-        } catch { log.record("handwriting.plan.failed",code:(error as? DesktopRuntimeError)?.code) }
+        } catch {
+            log.record("handwriting.plan.failed",code:(error as? DesktopRuntimeError)?.code)
+            // A busy database now is not a reason to stay unindexed until the next stroke.
+            scheduleHandwriting(after:handwritingTiming.idle)
+        }
     }
     /// One page at a time on a utility task. Only the short reads and writes run on the storage queue.
     private func recognizeHandwriting(_ jobs: [NativeHandwritingJob]) async {
@@ -352,9 +362,10 @@ final class DesktopRuntime: @unchecked Sendable {
                 var lines: [NativeHandwritingLine]?
                 if !source.unchanged {
                     if opened?.url != source.url { opened = PDFDocument(url:source.url).map { (source.url,$0) } }
-                    let size = opened.flatMap { NativeHandwritingRecognizer.pageSize(of:$0.document,page:job.page) }
+                    // An original that cannot be opened right now is skipped, not recorded as a page without writing.
+                    guard let size = opened.flatMap({ NativeHandwritingRecognizer.pageSize(of:$0.document,page:job.page) }) else { throw DesktopRuntimeError("PDF page is unavailable",code:"NOT_FOUND") }
                     let started = ProcessInfo.processInfo.systemUptime
-                    lines = try size.map { try NativeHandwritingRecognizer.lines(rows:source.rows,pageSize:$0) } ?? []
+                    lines = try NativeHandwritingRecognizer.lines(rows:source.rows,pageSize:size)
                     DesktopSignpost.benchmark("handwriting.page",startedAt:started)
                 }
                 let recognized = lines
@@ -365,7 +376,8 @@ final class DesktopRuntime: @unchecked Sendable {
                 }
             } catch {
                 log.record("handwriting.page.skipped",code:(error as? DesktopRuntimeError)?.code)
-                _ = try? await onQueue { self.handwritingState.skipped.insert(job.key); self.handwritingState.total = max(self.handwritingState.done,self.handwritingState.total - 1) }
+                // Skipped for this session while its ink stays as it is; an edit makes it a new job.
+                _ = try? await onQueue { self.handwritingState.skipped.insert(job.key + ":" + job.digest); self.handwritingState.total = max(self.handwritingState.done,self.handwritingState.total - 1) }
             }
         }
     }
