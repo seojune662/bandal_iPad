@@ -13,8 +13,6 @@ enum BandalMetrics {
     static let radius: CGFloat = 8
     static let radiusLarge: CGFloat = 12
     static let shadow = Color.black.opacity(0.14)
-    /// Room around a popover's card for its shadow; the system popover itself is drawn clear.
-    static let popoverShadowInset: CGFloat = 0
 }
 
 extension View {
@@ -54,9 +52,7 @@ extension View {
     /// `arrowEdge` is the one given to `.popover`: the card sits on the opposite side of the anchor.
     func bandalPopoverSurface(radius: CGFloat = 22, arrowEdge: Edge? = .top) -> some View {
         bandalGlass(in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .padding(BandalMetrics.popoverShadowInset)
             .presentationBackground(.clear)
-            .background { BandalPopoverArrowless(edge: arrowEdge).frame(width: 0, height: 0).accessibilityHidden(true) }
     }
 
     /// Anything that floats (palette, bars, popovers, menus, toasts): Figma `Glass/팝업`. A tint over glass,
@@ -79,12 +75,11 @@ private struct BandalDeferredPopover<Body: View>: ViewModifier {
     @ViewBuilder let body: () -> Body
     @State private var shown = false
     @State private var appeared = false
+    @Environment(\.self) private var environment
     func body(content: Content) -> some View {
         let presented = Binding(get: { shown }, set: { shown = $0; if !$0 { isPresented = false } })
-        return Group {
-            if let arrowEdge { content.popover(isPresented: presented, arrowEdge: arrowEdge) { body().onAppear { appeared = true } } }
-            else { content.popover(isPresented: presented, attachmentAnchor: .rect(.bounds), arrowEdge: nil) { body().onAppear { appeared = true } } }
-        }
+        return content
+            .background { BandalPopoverPresenter(isPresented: presented, edge: arrowEdge, environment: environment) { body().onAppear { appeared = true } } }
             .onChange(of: isPresented, initial: true) { _, wanted in
                 guard wanted else { shown = false; appeared = false; return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { if isPresented { shown = true } }
@@ -587,10 +582,17 @@ struct BandalChoiceRow: View {
     }
 }
 
-/// Takes the system chrome off the popover this sits in: a background with no arrow and no drawing,
-/// so UIKit still places the card beside its anchor and the card's own glass is all that shows.
-private struct BandalPopoverArrowless: UIViewControllerRepresentable {
+/// Presents `content` as a UIKit popover whose chrome is empty: no arrow, no background, no shadow of its own.
+/// UIKit still places it beside the anchor, dismisses it on an outside tap and keeps it clear of the keyboard;
+/// what shows is the card the content draws (`bandalPopoverSurface`). SwiftUI's `.popover` cannot drop the arrow.
+private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
+    @Binding var isPresented: Bool
+    let edge: Edge?
+    let environment: EnvironmentValues
+    @ViewBuilder let content: () -> Content
+
     final class ClearBackground: UIPopoverBackgroundView {
+        /// The gap between the anchor and the card.
         override static func arrowHeight() -> CGFloat { 6 }
         override static func arrowBase() -> CGFloat { 0 }
         override static func contentViewInsets() -> UIEdgeInsets { .zero }
@@ -599,20 +601,62 @@ private struct BandalPopoverArrowless: UIViewControllerRepresentable {
         private var offset: CGFloat = 0
         override var arrowDirection: UIPopoverArrowDirection { get { direction } set { direction = newValue } }
         override var arrowOffset: CGFloat { get { offset } set { offset = newValue } }
-        override init(frame: CGRect) { super.init(frame: frame); layer.shadowOpacity = 0; backgroundColor = .clear }
+        override init(frame: CGRect) { super.init(frame: frame); backgroundColor = .clear; layer.shadowOpacity = 0 }
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     }
-    final class Controller: UIViewController {
-        override func willMove(toParent parent: UIViewController?) {
-            super.willMove(toParent: parent)
-            parent?.popoverPresentationController?.popoverBackgroundViewClass = ClearBackground.self
-        }
-        override func viewWillAppear(_ animated: Bool) {
-            super.viewWillAppear(animated)
-            popoverPresentationController?.popoverBackgroundViewClass = ClearBackground.self
+    final class Coordinator: NSObject, UIPopoverPresentationControllerDelegate {
+        var host: UIHostingController<AnyView>?
+        var close: () -> Void = {}
+        var wanted = false
+        var root = AnyView(EmptyView())
+        var edge: Edge?
+        private var attempts = 0
+        func adaptivePresentationStyle(for controller: UIPresentationController, traitCollection: UITraitCollection) -> UIModalPresentationStyle { .none }
+        func presentationControllerDidDismiss(_ controller: UIPresentationController) { host = nil; close() }
+        func sync(_ anchor: UIView) {
+            guard wanted else {
+                attempts = 0
+                if let host { self.host = nil; host.dismiss(animated: true) }
+                return
+            }
+            if let host { host.rootView = root; return }
+            // The anchor may not be in a window yet, or a menu may still be closing over the presenter: ask again shortly.
+            guard anchor.window != nil, let presenter = BandalPopoverAnchor.controller(for: anchor), presenter.presentedViewController == nil else {
+                attempts += 1
+                if attempts < 12 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak anchor] in if let self, let anchor, self.host == nil { self.sync(anchor) } } }
+                return
+            }
+            attempts = 0
+            let host = UIHostingController(rootView: root)
+            host.view.backgroundColor = .clear
+            host.sizingOptions = .preferredContentSize
+            host.modalPresentationStyle = .popover
+            if let popover = host.popoverPresentationController {
+                popover.sourceView = anchor; popover.sourceRect = anchor.bounds
+                popover.permittedArrowDirections = switch edge { case .top: .up; case .bottom: .down; case .leading: .left; case .trailing: .right; case nil: .any }
+                popover.popoverBackgroundViewClass = ClearBackground.self
+                popover.delegate = self
+            }
+            self.host = host
+            presenter.present(host, animated: true)
         }
     }
-    var edge: Edge?
-    func makeUIViewController(context: Context) -> Controller { Controller() }
-    func updateUIViewController(_ controller: Controller, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIView(context: Context) -> UIView { let view = UIView(); view.isUserInteractionEnabled = false; view.isAccessibilityElement = false; return view }
+    func updateUIView(_ anchor: UIView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.close = { isPresented = false }
+        coordinator.wanted = isPresented; coordinator.edge = edge
+        coordinator.root = AnyView(content().environment(\.self, environment))
+        coordinator.sync(anchor)
+    }
+    static func dismantleUIView(_ anchor: UIView, coordinator: Coordinator) { coordinator.host?.dismiss(animated: false); coordinator.host = nil }
+}
+
+enum BandalPopoverAnchor {
+    static func controller(for view: UIView) -> UIViewController? {
+        var responder: UIResponder? = view
+        while let next = responder?.next { if let controller = next as? UIViewController { return controller }; responder = next }
+        return view.window?.rootViewController
+    }
 }
