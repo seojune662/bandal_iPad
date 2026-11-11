@@ -5,10 +5,6 @@ import SwiftUI
 /// (`NativePDFPenSettings`, `NativePDFToolPopovers`).
 @MainActor enum NativePDFPaletteLook {
     static let colorNames = ["ink": "먹색", "red": "빨강", "orange": "주황", "yellow": "노랑", "green": "초록", "blue": "파랑", "violet": "보라"]
-    static func toolName(_ tool: String) -> String {
-        ["pen": "펜", "ballpoint": "볼펜", "highlighter": "형광펜", "eraser": "지우개", "line": "직선", "lasso": "올가미", "select": "손", "text": "텍스트",
-         "tape": "테이프", "laser": "레이저 포인터", "comment": "댓글"][tool] ?? "필기 도구"
-    }
     static func colorName(_ color: String) -> String { colorNames[color] ?? color }
     static func uiColor(_ color: String) -> Color { Color(uiColor: NativePDFInkSurface.color(color)) }
     /// Palette order (Figma 269:8719): writing tools, then the rest. The 22 pt line icons are the design's own vectors.
@@ -145,7 +141,7 @@ struct NativePDFPaletteQuickControls: View {
         if ["pen", "highlighter", "eraser", "lasso", "tape"].contains(value.0) {
             // A second tap on the chosen tool: its options, directly under the button.
             button.bandalPopover(isPresented: Binding(get: { model.showStyle && chosen }, set: { if !$0, chosen { model.showStyle = false } }),
-                                 width: pen ? 300 : 280, radius: 22, padding: 18) {
+                                 width: pen ? 300 : 280, radius: 22, padding: 18, dims: false) {
                 switch value.0 {
                 case "pen": NativePDFPenSettings(model: model)
                 case "highlighter": NativePDFHighlighterOptions(model: model)

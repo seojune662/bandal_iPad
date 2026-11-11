@@ -27,7 +27,7 @@ final class FigmaNoteScreenshotTests: XCTestCase {
 
         app.buttons["native-pdf-tool-comment"].tap()
         app.otherElements["native-pdf-workspace"].coordinate(withNormalizedOffset: .init(dx: 0.8, dy: 0.35)).tap()
-        let editor = app.textViews["native-pdf-comment-editor"]
+        let editor = app.descendants(matching: .any)["native-pdf-comment-editor"].firstMatch
         if editor.waitForExistence(timeout: 5) { editor.tap(); editor.typeText("메모"); app.buttons["native-pdf-save-comment"].tap(); sleep(1) }
         attach(app, "note 02 댓글 표시 \(appearance)")
 

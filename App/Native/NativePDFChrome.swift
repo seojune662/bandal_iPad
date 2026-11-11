@@ -137,10 +137,10 @@ struct NativePDFSelectionBar: View {
                         HStack(spacing: 4) { Text("스타일").font(.system(size: 14, weight: .medium)); Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.secondary) }
                             .padding(.horizontal, 10).frame(height: 36).contentShape(Rectangle())
                     }.accessibilityLabel("스타일").accessibilityIdentifier("native-pdf-selection-style")
-                        .bandalPopover(isPresented: $showStyle, arrowEdge: nil, width: 252, radius: 22, padding: 18) { NativePDFSelectionStyle(model: model) }
+                        .bandalPopover(isPresented: $showStyle, arrowEdge: nil, width: 252, radius: 22, padding: 18, dims: false) { NativePDFSelectionStyle(model: model) }
                     Button { showMore = true } label: { Image(systemName: "ellipsis").font(.system(size: 14, weight: .medium)).frame(width: 36, height: 36).contentShape(Rectangle()) }
                         .accessibilityLabel("선택 더 보기").accessibilityIdentifier("native-pdf-selection-more")
-                        .bandalPopover(isPresented: $showMore, arrowEdge: nil, width: 240, radius: 14, padding: 8) { more }
+                        .bandalPopover(isPresented: $showMore, arrowEdge: nil, width: 240, radius: 14, padding: 8, dims: false) { more }
                 } else {
                     if model.selectedRegion != nil { copyRegion }
                     Button { model.pasteObjects() } label: { action("붙여넣기") }
@@ -152,7 +152,7 @@ struct NativePDFSelectionBar: View {
             }
             .padding(.horizontal, 8).padding(.vertical, 6).fixedSize()
             .buttonStyle(BandalRowStyle()).foregroundStyle(NativeDesktopTheme.text)
-            .bandalGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .bandalGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous), adaptive: false)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .position(x: min(max(frame.midX, width / 2 + 8), max(width / 2 + 8, geometry.size.width - width / 2 - 8)),
                       y: frame.minY - 40 > 40 ? frame.minY - 40 : min(frame.maxY + 40, geometry.size.height - 32))

@@ -169,7 +169,7 @@ struct NativePDFWidthSlots: View {
                 .accessibilityLabel("굵기 \(index + 1)").accessibilityValue(NativePDFPaletteStyle.stepLabel(step))
                 .accessibilityIdentifier("native-pdf-width-slot-\(index)").accessibilityAddTraits(selected == index ? .isSelected : [])
                 .bandalPopover(isPresented: Binding(get: { model.editingWidthSlot == index }, set: { if !$0, model.editingWidthSlot == index { model.editingWidthSlot = nil } }),
-                               width: 320, radius: 18, padding: 14) {
+                               width: 320, radius: 18, padding: 14, dims: false) {
                     NativePDFWidthSteps(color: tint, selected: model.widthSlots.indices.contains(index) ? model.widthSlots[index] : step) { model.setWidthStep($0, slot: index) }
                 }
             }
@@ -261,7 +261,7 @@ struct NativePDFCommentAnchor: View {
         GeometryReader { geometry in
             Color.clear.frame(width: 1, height: 1)
                 .bandalPopover(isPresented: Binding(get: { model.commentDraft != nil }, set: { if !$0, model.commentDraft != nil { model.saveComment() } }),
-                               arrowEdge: nil, width: 320, radius: 22, padding: 18) { NativePDFCommentPopover(model: model) }
+                               arrowEdge: nil, width: 320, radius: 22, padding: 18, dims: false) { NativePDFCommentPopover(model: model) }
                 .position(x: geometry.size.width / 2, y: geometry.size.height * 0.3)
         }.allowsHitTesting(false)
     }

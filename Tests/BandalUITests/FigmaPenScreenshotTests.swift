@@ -52,7 +52,7 @@ final class FigmaPenScreenshotTests: XCTestCase {
         }
 
         // 선택 메뉴 · 스타일
-        app.buttons["native-pdf-tool-lasso"].tap(); app.buttons["native-pdf-lasso-mode-box"].tap(); close.tap()
+        app.buttons["native-pdf-tool-lasso"].tap(); app.buttons["native-pdf-tool-lasso"].tap(); app.buttons["native-pdf-lasso-mode-box"].tap(); close.tap()
         body.coordinate(withNormalizedOffset: .init(dx: 0.3, dy: 0.36)).press(forDuration: 0.05, thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.62, dy: 0.58)), withVelocity: .slow, thenHoldForDuration: 0.05)
         let style = app.buttons["native-pdf-selection-style"]
         if style.waitForExistence(timeout: 10) {
@@ -60,8 +60,14 @@ final class FigmaPenScreenshotTests: XCTestCase {
             style.tap(); sleep(1); attach(app, "pen 10 선택 스타일 \(appearance)")
             app.buttons["native-pdf-selection-width-1"].tap(); sleep(1)
             app.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.95)).tap(); sleep(1)
-            app.buttons["native-pdf-selection-more"].tap(); sleep(1); attach(app, "pen 11 선택 더 보기 \(appearance)")
-            app.buttons["native-pdf-clear-selection"].tap(); sleep(1)
+            let more = app.buttons["native-pdf-selection-more"]
+            if !more.exists {
+                body.coordinate(withNormalizedOffset: .init(dx: 0.3, dy: 0.36)).press(forDuration: 0.05, thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.62, dy: 0.58)), withVelocity: .slow, thenHoldForDuration: 0.05)
+            }
+            if more.waitForExistence(timeout: 10) {
+                more.tap(); sleep(1); attach(app, "pen 11 선택 더 보기 \(appearance)")
+                app.buttons["native-pdf-clear-selection"].tap(); sleep(1)
+            }
         }
 
         // 테이프 on the page, then 메모

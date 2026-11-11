@@ -123,7 +123,7 @@ final class NativePDFWritingUITests: XCTestCase {
         openPalette(in: app)
         let correction = app.switches["native-pdf-shape-recognition"]
         XCTAssertTrue(correction.exists)
-        if correction.value as? String == "0" { correction.tap() }
+        if correction.value as? String == "0" { correction.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap() }
         closePalette(in: app)
         let body = app.otherElements["native-pdf-workspace"]
         body.coordinate(withNormalizedOffset: .init(dx: 0.32, dy: 0.28)).press(forDuration: 0.05,
@@ -289,7 +289,9 @@ final class NativePDFWritingUITests: XCTestCase {
         tap("native-pdf-tool-eraser", in: app)
         let partial = app.buttons["native-pdf-eraser-mode-partial"]
         XCTAssertTrue(partial.waitForExistence(timeout: 5), app.debugDescription); partial.tap()
-        app.buttons["native-pdf-width-slot-0"].tap()
+        // A tap on the size already chosen would open its twelve steps (the palette is shared across documents).
+        let smallest = app.buttons["native-pdf-width-slot-0"]
+        if !smallest.isSelected { smallest.tap() }
         closePalette(in: app)
         body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.32)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.52)))
@@ -310,11 +312,14 @@ final class NativePDFWritingUITests: XCTestCase {
         tap("native-pdf-tool-eraser", in: app)
         let highlighterOnly = app.switches["native-pdf-eraser-highlighter-only"]
         XCTAssertTrue(highlighterOnly.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(highlighterOnly.value as? String, "0"); highlighterOnly.tap()
+        XCTAssertEqual(highlighterOnly.value as? String, "0")
+        highlighterOnly.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap() // the switch itself, not its label
+        XCTAssertEqual(highlighterOnly.value as? String, "1")
         capture("Eraser options with 형광펜만 지우기")
         closePalette(in: app)
         body.coordinate(withNormalizedOffset: .init(dx: 0.63, dy: 0.34)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.63, dy: 0.54)))
+        sleep(2); capture("Only the highlighter line is erased")
         expectInk(1, in: app)
         tap("native-pdf-undo", in: app); expectInk(2, in: app)
     }
