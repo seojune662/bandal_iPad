@@ -59,12 +59,12 @@ enum NativePDFObjectRenderer {
             let tint = tapeColor(style["color"] as? String ?? "blue")
             context.addPath(outline)
             if style["revealed"] as? Bool == true {
-                // Peeled back: the covered text shows through a faint band.
-                context.setFillColor(tint.withAlphaComponent(0.16).cgColor); context.fillPath()
-                context.addPath(outline); context.setStrokeColor(tint.withAlphaComponent(0.9).cgColor)
-                context.setLineWidth(1); context.setLineDash(phase: 0, lengths: [4, 3]); context.strokePath()
+                // Peeled back (Figma 130:5078): the covered text shows through a 12% band inside a 1.5 pt outline.
+                context.setFillColor(tint.withAlphaComponent(0.12).cgColor); context.fillPath()
+                context.addPath(outline); context.setStrokeColor(tint.cgColor)
+                context.setLineWidth(1.5 * width / 640); context.strokePath()
             } else {
-                context.setFillColor(tint.cgColor); context.fillPath()
+                context.setFillColor(tint.withAlphaComponent(0.92).cgColor); context.fillPath()
             }
             return
         }
@@ -171,11 +171,19 @@ enum NativePDFObjectRenderer {
             return CGPoint(x: x.doubleValue * width, y: y.doubleValue * height)
         }
         guard points.count >= 2 else { return nil }
+        if points.count == 2 {
+            // A straight strip: the design's band with 4 pt corners on its 640 pt page.
+            let length = hypot(points[1].x - points[0].x, points[1].y - points[0].y), thickness = strokeWidth * width
+            let radius = min(4 * width / 640, thickness / 2, length / 2)
+            var transform = CGAffineTransform(translationX: points[0].x, y: points[0].y).rotated(by: atan2(points[1].y - points[0].y, points[1].x - points[0].x))
+            return CGPath(roundedRect: CGRect(x: 0, y: -thickness / 2, width: length, height: thickness), cornerWidth: radius, cornerHeight: radius, transform: &transform)
+        }
         let path = CGMutablePath(); path.addLines(between: points)
         return path.copy(strokingWithWidth: strokeWidth * width, lineCap: .butt, lineJoin: .round, miterLimit: 10)
     }
-    /// The seven ink colours, lightened to the pastel of masking tape.
+    /// The design's tape (#F5B83D) for yellow; the other ink colours lightened to the pastel of masking tape.
     nonisolated static func tapeColor(_ name: String) -> UIColor {
+        if name == "yellow" { return UIColor(red: 0xf5 / 255, green: 0xb8 / 255, blue: 0x3d / 255, alpha: 1) }
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
         color(name).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
         let lift: CGFloat = name == "ink" ? 0.72 : 0.55

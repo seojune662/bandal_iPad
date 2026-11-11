@@ -19,10 +19,11 @@ extension View {
     /// A popover anchored to this view: arrow, closes on an outside tap or Esc, stays a popover in compact width.
     /// `arrowEdge: nil` lets the system pick the side with room (a prompt that may open next to the keyboard).
     /// `radius` and `padding` follow the Figma frame of that popover (menus 8, forms 18).
+    /// `dims: false` leaves the screen behind as it is (the note's tool popovers: Figma 261:8407 has no dimming layer).
     func bandalPopover<Content: View>(isPresented: Binding<Bool>, arrowEdge: Edge? = .top, width: CGFloat? = 280,
-                                      radius: CGFloat = 22, padding: CGFloat = BandalMetrics.padding, fill: Color = NativeGlass.popup,
+                                      radius: CGFloat = 22, padding: CGFloat = BandalMetrics.padding, fill: Color = NativeGlass.popup, dims: Bool = true,
                                       @ViewBuilder content: @escaping () -> Content) -> some View {
-        modifier(BandalDeferredPopover(isPresented: isPresented, arrowEdge: arrowEdge) {
+        modifier(BandalDeferredPopover(isPresented: isPresented, arrowEdge: arrowEdge, dims: dims) {
             BandalPopoverBody(width: width, radius: radius, padding: padding, fill: fill, arrowEdge: arrowEdge, close: { isPresented.wrappedValue = false }, content: content)
         })
     }
@@ -57,8 +58,10 @@ extension View {
 
     /// Anything that floats (palette, bars, popovers, menus, toasts): Figma `Glass/팝업`. A tint over glass,
     /// a 0.5 pt rim and one soft shadow (0, 8, blur 48).
-    func bandalGlass<S: InsettableShape>(in shape: S, fill: Color = NativeGlass.popup) -> some View {
-        modifier(BandalGlassSurface(shape: shape, fill: fill))
+    /// `adaptive: false` for a bar that floats over the white page: system glass there turns light and hands its
+    /// content (and the popovers it opens) a light scheme in dark mode; a material keeps the app's.
+    func bandalGlass<S: InsettableShape>(in shape: S, fill: Color = NativeGlass.popup, adaptive: Bool = true) -> some View {
+        modifier(BandalGlassSurface(shape: shape, fill: fill, adaptive: adaptive))
     }
 
     /// A transient message at the bottom of this view; the binding clears itself after a few seconds.
@@ -72,6 +75,7 @@ extension View {
 private struct BandalDeferredPopover<Body: View>: ViewModifier {
     @Binding var isPresented: Bool
     let arrowEdge: Edge?
+    var dims = true
     @ViewBuilder let body: () -> Body
     @State private var shown = false
     @State private var appeared = false
@@ -79,7 +83,7 @@ private struct BandalDeferredPopover<Body: View>: ViewModifier {
     func body(content: Content) -> some View {
         let presented = Binding(get: { shown }, set: { shown = $0; if !$0 { isPresented = false } })
         return content
-            .background { BandalPopoverPresenter(isPresented: presented, edge: arrowEdge, environment: environment) { body().onAppear { appeared = true } } }
+            .background { BandalPopoverPresenter(isPresented: presented, edge: arrowEdge, dims: dims, environment: environment) { body().onAppear { appeared = true } } }
             .onChange(of: isPresented, initial: true) { _, wanted in
                 guard wanted else { shown = false; appeared = false; return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { if isPresented { shown = true } }
@@ -116,6 +120,7 @@ private struct BandalPopoverBody<Content: View>: View {
 private struct BandalGlassSurface<S: InsettableShape>: ViewModifier {
     let shape: S
     let fill: Color
+    var adaptive = true
     @Environment(\.colorScheme) private var scheme
     func body(content: Content) -> some View {
         glass(content.background(fill, in: shape))
@@ -123,7 +128,7 @@ private struct BandalGlassSurface<S: InsettableShape>: ViewModifier {
             .shadow(color: .black.opacity(scheme == .dark ? 0.5 : 0.25), radius: 24, y: 8)
     }
     @ViewBuilder private func glass(_ view: some View) -> some View {
-        if #available(iOS 26, *) { view.glassEffect(.regular, in: shape) }
+        if #available(iOS 26, *), adaptive { view.glassEffect(.regular, in: shape) }
         else { view.background(.ultraThinMaterial, in: shape) }
     }
 }
@@ -610,6 +615,7 @@ struct BandalChoiceRow: View {
 private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
     @Binding var isPresented: Bool
     let edge: Edge?
+    var dims = true
     let environment: EnvironmentValues
     @ViewBuilder let content: () -> Content
 
@@ -632,6 +638,7 @@ private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
         var wanted = false
         var root = AnyView(EmptyView())
         var edge: Edge?
+        var dims = true
         private var attempts = 0
         func adaptivePresentationStyle(for controller: UIPresentationController, traitCollection: UITraitCollection) -> UIModalPresentationStyle { .none }
         func presentationControllerDidDismiss(_ controller: UIPresentationController) { host = nil; close() }
@@ -661,6 +668,8 @@ private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
             }
             self.host = host
             presenter.present(host, animated: true)
+            // UIKit's dimming view stays (it takes the outside tap); only its tint goes.
+            if !dims { host.presentationController?.containerView?.subviews.first { String(describing: type(of: $0)).contains("Dimming") }?.alpha = 0.011 }
         }
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -668,7 +677,7 @@ private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
     func updateUIView(_ anchor: UIView, context: Context) {
         let coordinator = context.coordinator
         coordinator.close = { isPresented = false }
-        coordinator.wanted = isPresented; coordinator.edge = edge
+        coordinator.wanted = isPresented; coordinator.edge = edge; coordinator.dims = dims
         coordinator.root = AnyView(content().environment(\.self, environment))
         coordinator.sync(anchor)
     }
