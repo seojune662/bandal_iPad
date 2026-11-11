@@ -12,7 +12,7 @@ final class AppStoreScreenshotTests: XCTestCase {
         app.launch()
         let addCourse = app.buttons["native-course-add-menu"]
         XCTAssertTrue(addCourse.waitForExistence(timeout: 25), app.debugDescription)
-        addCourse.tap(); app.buttons["native-new-course"].tap()
+        addCourse.tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5)); paste("선형대수학", into: courseName, app: app)
         app.buttons["native-create-course"].tap()
@@ -77,8 +77,7 @@ final class AppStoreScreenshotTests: XCTestCase {
         capture("02-markdown-note", app: app)
 
         // 3. Handwriting and note side by side
-        let menu = app.buttons["native-open-documents"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap()
+        app.openNativeDockLayoutMenu()
         let columns = app.buttons["native-dock-preset-columns"]
         XCTAssertTrue(columns.waitForExistence(timeout: 5), app.debugDescription); columns.tap()
         XCTAssertTrue(app.otherElements["native-pdf-workspace"].waitForExistence(timeout: 10))

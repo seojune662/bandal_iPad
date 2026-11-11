@@ -61,7 +61,11 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     @AppStorage("native.fontScale") private var fontScale = 1.0
     @AppStorage("native.density") private var density = "comfortable"
 
-    private var headerHeight: CGFloat { chromeMode.showsTabs ? 44 : 0 }
+    /// Figma 129:1460: the home screen (one pane, nothing open) has no tab strip.
+    private func isHome(_ group: NativeDockGroup) -> Bool { navigation.groups.count == 1 && group.tabs.isEmpty }
+    private func contentFrame(_ pane: NativeDockPaneFrame, _ metrics: NativeDockStripMetrics) -> CGRect {
+        isHome(pane.group) ? pane.frame : NativeDockHeaderMetrics.contentFrame(for: pane.frame, controlsHeight: chromeMode.showsTabs ? metrics.total : 0)
+    }
     var body: some View {
         dockBody.onReceive(store.events) { event in
             if event.channel == "nativeDock:newTab", let id = (event.payload as? [String: Any])?["groupID"] as? String { newTabGroupID = id }
@@ -76,18 +80,19 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 let selectorHeight: CGFloat = focusMode && chromeMode.showsTabs ? 44 : 0
                 let bounds = CGRect(x: 0, y: selectorHeight, width: proxy.size.width, height: max(0, proxy.size.height - selectorHeight))
                 let geometry = focusMode ? NativeDockGeometry(panes: [.init(group: selected, frame: bounds)]) : layout.geometry(in: bounds)
+                let metrics = layout.groups.count > 1 && focusMode ? NativeDockStripMetrics.columns : NativeDockStripMetrics.resolve(paneFrames: geometry.panes.map(\.frame), bounds: bounds)
                 ZStack(alignment: .topLeading) {
                     // Sizes the stack; the paper glass behind the dock is the only fill.
                     Color.clear
                     ForEach(geometry.panes) { pane in
-                        paneChrome(pane, focused: layout.focusedGroupID == pane.id,
+                        paneChrome(pane, metrics: metrics,
                                    corner: pane.frame.maxX >= bounds.maxX - 1 && pane.frame.minY <= bounds.minY + 1)
                             .frame(width: pane.frame.width, height: pane.frame.height)
                             .position(x: pane.frame.midX, y: pane.frame.midY)
                     }
                     // Do not nest these in pane chrome: an editor retains identity
                     // when the same document moves to another group or the tree changes.
-                    ForEach(visibleDocuments(geometry, layout: layout, bounds: bounds)) { entry in
+                    ForEach(visibleDocuments(geometry, layout: layout, bounds: bounds, metrics: metrics)) { entry in
                         content(entry.document)
                             .environment(\.nativeEditorVisible, entry.visible && !covered)
                             .environment(\.nativeWorkspaceChromeMode, chromeMode)
@@ -106,18 +111,20 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                             .position(x: entry.frame.midX, y: entry.frame.midY)
                     }
                     ForEach(geometry.panes.filter { $0.group.activeID == nil }) { pane in
-                        let frame = NativeDockHeaderMetrics.contentFrame(for: pane.frame, controlsHeight: headerHeight)
+                        let frame = contentFrame(pane, metrics)
                         emptyPane(pane.group, groupCount: layout.groups.count)
                             .frame(width: frame.width, height: frame.height)
                             .position(x: frame.midX, y: frame.midY)
                     }
                     ForEach(geometry.dividers) { divider in
-                        NativeDockDivider(divider: divider, change: { navigation.resize(divider.id, fraction: $0) }, persist: persist)
+                        NativeDockDivider(divider: divider, wide: metrics == .columns,
+                            topInset: metrics == .columns && chromeMode.showsTabs ? NativeDockHeaderMetrics.height(for: divider.frame, controlsHeight: metrics.total) : 0,
+                            grip: Self.gripCenter(divider, in: geometry), change: { navigation.resize(divider.id, fraction: $0) }, persist: persist)
                             .frame(width: divider.hitFrame.width, height: divider.hitFrame.height)
                             .position(x: divider.frame.midX, y: divider.frame.midY)
                     }
                     ForEach(geometry.panes) { pane in
-                        let frame = NativeDockHeaderMetrics.contentFrame(for: pane.frame, controlsHeight: headerHeight)
+                        let frame = contentFrame(pane, metrics)
                         paneDropZones(pane)
                             .frame(width: frame.width, height: frame.height)
                             .position(x: frame.midX, y: frame.midY)
@@ -149,8 +156,26 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         var document: NativeDocumentReference; var groupID: String; var frame: CGRect; var visible: Bool
         var id: String { document.id }
     }
-    private func visibleDocuments(_ geometry: NativeDockGeometry, layout: NativeDockLayout, bounds: CGRect) -> [VisibleDocument] {
-        Self.projectDocuments(navigation.documents, geometry: geometry, layout: layout, bounds: bounds, headerHeight: headerHeight)
+    private func visibleDocuments(_ geometry: NativeDockGeometry, layout: NativeDockLayout, bounds: CGRect, metrics: NativeDockStripMetrics) -> [VisibleDocument] {
+        Self.projectDocuments(navigation.documents, geometry: geometry, layout: layout, bounds: bounds, headerHeight: chromeMode.showsTabs ? metrics.total : 0)
+    }
+    /// Where a seam's grip sits along it (Figma 130:6137): beside the first pane it borders,
+    /// and seams that continue one another across a split share the first one's grip.
+    static func gripCenter(_ divider: NativeDockDividerFrame, in geometry: NativeDockGeometry) -> CGFloat? {
+        let horizontal = divider.split.axis == .horizontal, frame = divider.frame
+        func along(_ rect: CGRect) -> CGFloat { horizontal ? rect.minY : rect.minX }
+        func across(_ rect: CGRect) -> CGFloat { horizontal ? rect.minX : rect.minY }
+        let continues = geometry.dividers.contains { other in
+            other.id != divider.id && other.split.axis == divider.split.axis && abs(across(other.frame) - across(frame)) < 1 && along(other.frame) < along(frame)
+        }
+        if continues { return nil }
+        let start = along(frame), end = horizontal ? frame.maxY : frame.maxX
+        let beside = geometry.panes.map(\.frame).filter { pane in
+            let edge: CGFloat = horizontal ? pane.maxX : pane.maxY, low = along(pane), high: CGFloat = horizontal ? pane.maxY : pane.maxX
+            return abs(edge - across(frame)) < 1 && low >= start - 1 && high <= end + 1
+        }
+        let first = beside.min { along($0) < along($1) }
+        return first.map { horizontal ? $0.midY - frame.minY : $0.midX - frame.minX } ?? (horizontal ? frame.height : frame.width) / 2
     }
     static func retainsEditor(_ document: NativeDocumentReference) -> Bool {
         // PDF warm-retention is deferred: a resumed (offscreen-then-shown) PDFKit view
@@ -163,7 +188,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             || document.learningTarget != nil || ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased())
     }
     static func projectDocuments(_ documents: [NativeDocumentReference], geometry: NativeDockGeometry, layout: NativeDockLayout,
-                                 bounds: CGRect, headerHeight: CGFloat = 44) -> [VisibleDocument] {
+                                 bounds: CGRect, headerHeight: CGFloat = NativeDockStripMetrics.single.total) -> [VisibleDocument] {
         // Compact mode hides other groups without ending their editor session.
         // Rotation or maximizing a pane must not race an asynchronous draft flush.
         let projected = layout.geometry(in: bounds)
@@ -191,86 +216,140 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     private func selectTab(_ id: String, in groupID: String) {
         if let select { select(id, groupID) } else { perform { navigation.select(id, in: groupID) } }
     }
-    private func paneChrome(_ pane: NativeDockPaneFrame, focused: Bool, corner: Bool) -> some View {
-        VStack(spacing: 0) {
-            if chromeMode.showsTabs { tabs(pane.group, topPadding: NativeDockHeaderMetrics.topPadding(for: pane.frame), corner: corner) }
+    private func paneChrome(_ pane: NativeDockPaneFrame, metrics: NativeDockStripMetrics, corner: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if chromeMode.showsTabs {
+                // Out of sight on the home screen, yet still the anchor of the new-tab menu for VoiceOver, keyboards and tests.
+                if isHome(pane.group) { addButton(pane.group, metrics: metrics, visible: false).padding(.top, NativeDockHeaderMetrics.topPadding(for: pane.frame)) }
+                else { tabs(pane.group, metrics: metrics, topPadding: NativeDockHeaderMetrics.topPadding(for: pane.frame), corner: corner) }
+            }
             Spacer(minLength: 0)
         }
     }
-    private func tabs(_ group: NativeDockGroup, topPadding: CGFloat, corner: Bool) -> some View {
+    private static var listWidth: CGFloat { 24 }
+    private static func addWidth(_ metrics: NativeDockStripMetrics) -> CGFloat { metrics.gap + metrics.plus + 4 }
+    static func symbol(_ document: NativeDocumentReference, split: Bool) -> String {
+        if ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased()) { return "square.and.pencil" }
+        switch document.kind {
+        // Figma 269:8464 draws a PDF with the pencil; the split frames (130:5992) draw it as a file.
+        case "pdf": return split ? "doc" : "pencil"
+        case "note": return "square.and.pencil"
+        case "whiteboard": return "rectangle.and.pencil.and.ellipsis"
+        case "browser": return "globe"
+        case "assistant": return "sparkles"
+        case "recordings": return "waveform"
+        case "planner": return "checklist"
+        default: return "doc"
+        }
+    }
+    private func sizing(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, available: CGFloat) -> NativeDockTabSizing {
+        let split = navigation.groups.count > 1
+        let widths = group.tabs.map { id in
+            navigation.document(id).map { NativeDockTabButton.naturalWidth(title: $0.title, symbol: Self.symbol($0, split: split), metrics: metrics, fontScale: fontScale, selected: id == group.activeID) } ?? 44
+        }
+        return NativeDockTabSizing(availableWidth: max(0, available), naturalWidths: widths,
+            activeIndex: group.tabs.firstIndex(of: group.activeID ?? "") ?? -1, spacing: density == "compact" ? 0 : metrics.gap)
+    }
+    private func tabs(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, topPadding: CGFloat, corner: Bool) -> some View {
         GeometryReader { geometry in
-            let shareable = navigation.document(group.activeID).map(NativeDockShareControls.supports) ?? false
-            let closable = navigation.groups.count > 1
-            let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - 152 - (closable ? 36 : 0) - (shareable ? NativeDockShareControls.width : 0) - (corner ? controlInset : 0)), count: group.tabs.count,
-                activeIndex: group.tabs.firstIndex(of: group.activeID ?? "") ?? -1, spacing: density == "compact" ? 0 : 4)
-            HStack(alignment: .bottom, spacing: 0) {
+            let split = navigation.groups.count > 1
+            // A split pane's strip is tabs, ＋ and its × only (Figma 130:5986); sharing moves to the tab's long-press menu.
+            let shareable = !split && (navigation.document(group.activeID).map(NativeDockShareControls.supports) ?? false)
+            let inset = corner ? controlInset : 0
+            let room = geometry.size.width - metrics.padding - Self.addWidth(metrics) - 8 - (split ? 44 : 0) - (shareable ? NativeDockShareControls.width + 14 : 0) - inset
+            let roomy = sizing(group, metrics: metrics, available: room - (split ? 0 : Self.listWidth))
+            // The list of open tabs stays in a split pane only while some of its tabs do not fit.
+            let showsList = !split || roomy.visibleIndices.count < group.tabs.count
+            let sizing = split && showsList ? sizing(group, metrics: metrics, available: room - Self.listWidth) : roomy
+            HStack(spacing: 0) {
                 HStack(spacing: sizing.spacing) {
                     ForEach(sizing.visibleIndices.map { group.tabs[$0] }, id: \.self) { id in
                         if let document = navigation.document(id), let index = group.tabs.firstIndex(of: id) {
-                            tab(document, group: group, index: index, sizing: sizing)
+                            tab(document, group: group, index: index, sizing: sizing, metrics: metrics)
                         }
                     }
-                }.frame(width: sizing.totalWidth, height: headerHeight, alignment: .leading).clipped()
-                Color.clear.frame(maxWidth: .infinity).frame(height: headerHeight)
+                }.frame(width: sizing.totalWidth, height: metrics.height, alignment: .leading).clipped()
+                addButton(group, metrics: metrics)
+                if showsList {
+                    Button { tabListGroupID = group.id } label: {
+                        Image(systemName: "chevron.down").font(.system(size: 13)).frame(width: 15).padding(.leading, 3).padding(.trailing, 6)
+                            .frame(height: metrics.height).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityLabel("이 영역의 열린 탭 \(group.tabs.count)개")
+                        .accessibilityIdentifier("native-dock-tabs-" + group.id)
+                        .popover(isPresented: Binding(get: { tabListGroupID == group.id }, set: { if !$0 { tabListGroupID = nil } }), arrowEdge: .top) {
+                            NativeDockTabList(documents: group.tabs.compactMap { navigation.document($0) }, activeID: group.activeID,
+                                select: { id in tabListGroupID = nil; selectTab(id, in: group.id) },
+                                close: { closeDocuments([$0]) })
+                                .presentationCompactAdaptation(.popover)
+                        }
+                }
+                Color.clear.frame(maxWidth: .infinity).frame(height: metrics.height)
                     .contentShape(Rectangle())
                     .onDrop(of: [NativeDockDragPayload.contentType], delegate: drop(group.id, index: group.tabs.count))
-                Button { focus(group.id); newTabGroupID = group.id } label: { Image(systemName: "plus").font(.system(size: 16)).frame(width: 44, height: 44).contentShape(Rectangle()) }
-                .buttonStyle(.plain)
-                .accessibilityLabel("새 탭 열기").accessibilityIdentifier("native-dock-add-" + group.id)
-                .popover(isPresented: Binding(get: { newTabGroupID == group.id }, set: { if !$0 { newTabGroupID = nil } }), arrowEdge: .top) {
-                    if let courseID = navigation.activeCourseID {
-                        NativeNewTabMenu(store: store, courseID: courseID, onAction: { openNewTab($0, group.id) }, onClose: { newTabGroupID = nil })
-                            .presentationCompactAdaptation(.popover)
-                    }
-                }
-                Button { tabListGroupID = group.id } label: {
-                    Image(systemName: "chevron.down").font(.system(size: 13)).frame(width: 44, height: 44).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel("이 영역의 열린 탭 \(group.tabs.count)개")
-                    .accessibilityIdentifier("native-dock-tabs-" + group.id)
-                    .popover(isPresented: Binding(get: { tabListGroupID == group.id }, set: { if !$0 { tabListGroupID = nil } }), arrowEdge: .top) {
-                        NativeDockTabList(documents: group.tabs.compactMap { navigation.document($0) }, activeID: group.activeID,
-                            select: { id in tabListGroupID = nil; selectTab(id, in: group.id) },
-                            close: { closeDocuments([$0]) })
-                            .presentationCompactAdaptation(.popover)
-                    }
-                groupMenu(group)
-                if shareable, let document = navigation.document(group.activeID) { NativeDockShareControls(document: document, store: store) }
+                if shareable, let document = navigation.document(group.activeID) { NativeDockShareControls(document: document, store: store).padding(.trailing, 14) }
                 // Closes this pane only: its tabs move to the neighbouring pane.
-                if closable, let other = navigation.groups.first(where: { $0.id != group.id }) {
+                if split, let other = navigation.groups.first(where: { $0.id != group.id }) {
                     Button { perform { if group.tabs.isEmpty { navigation.removeEmptyGroup(group.id) } else { navigation.merge(group.id, into: other.id) }; maximizedGroupID = nil } } label: {
-                        Image(systemName: "xmark").font(.system(size: 12)).frame(width: 36, height: 44).contentShape(Rectangle())
+                        Image(systemName: "xmark").font(.system(size: metrics.paneClose)).foregroundStyle(NativeDesktopTheme.muted).padding(.trailing, metrics.paneCloseInset)
+                            .frame(width: 44, height: metrics.height, alignment: .trailing).contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityLabel("이 칸 닫기").accessibilityIdentifier("native-dock-close-pane-" + group.id)
                 }
-                if corner && controlInset > 0 { Color.clear.frame(width: controlInset, height: 44) }
-            }.frame(height: headerHeight, alignment: .bottom).padding(.leading, 16).padding(.trailing, 4).padding(.top, topPadding)
+                if inset > 0 { Color.clear.frame(width: inset, height: metrics.height) }
+            }.frame(height: metrics.height).padding(.leading, metrics.padding).padding(.top, topPadding)
                 .foregroundStyle(NativeDesktopTheme.secondary)
         // No fill of its own: the strip is part of the paper glass behind the pane.
-        }.frame(height: headerHeight + topPadding).clipped()
+        }.frame(height: metrics.total + topPadding).clipped()
             .background { NativeDockTabStripBounds(groupID: group.id) }
             .overlay(alignment: .bottom) { NativeGlass.separator.frame(height: 1) }
             .onDrop(of: [NativeDockDragPayload.contentType], delegate: drop(group.id))
     }
-    private func tab(_ document: NativeDocumentReference, group: NativeDockGroup, index: Int, sizing: NativeDockTabSizing) -> some View {
-        HStack(spacing: 0) {
-            NativeDockDraggableTab(document: document, selected: group.activeID == document.id,
+    /// ＋ opens the new-tab menu; a long press opens the split and layout menu the design keeps out of the strip.
+    private func addButton(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, visible: Bool = true) -> some View {
+        Button { focus(group.id); newTabGroupID = group.id } label: {
+            if visible {
+                Image(systemName: "plus").font(.system(size: metrics.plus)).frame(width: metrics.plus + 1).padding(.leading, metrics.gap).padding(.trailing, 3)
+                    .frame(height: metrics.height).contentShape(Rectangle())
+            } else { Color.clear.frame(width: 44, height: 44).contentShape(Rectangle()) }
+        }
+        .buttonStyle(.plain)
+        .contextMenu { layoutMenu(group) }
+        .accessibilityLabel("새 탭 열기").accessibilityHint("길게 누르면 화면 나누기 메뉴가 열립니다").accessibilityIdentifier("native-dock-add-" + group.id)
+        .popover(isPresented: Binding(get: { newTabGroupID == group.id }, set: { if !$0 { newTabGroupID = nil } }), arrowEdge: .top) {
+            if let courseID = navigation.activeCourseID {
+                NativeNewTabMenu(store: store, courseID: courseID, onAction: { openNewTab($0, group.id) }, onClose: { newTabGroupID = nil })
+                    .presentationCompactAdaptation(.popover)
+            }
+        }
+    }
+    private func tab(_ document: NativeDocumentReference, group: NativeDockGroup, index: Int, sizing: NativeDockTabSizing, metrics: NativeDockStripMetrics) -> some View {
+        let selected = group.activeID == document.id, split = navigation.groups.count > 1
+        // Only the pane being written in fills its selected tab; the others stay at full strength in grey.
+        let active = selected && (!split || group.id == navigation.focusedGroupID)
+        let closeInside = selected && sizing.showsClose, width = sizing.width(of: index)
+        return HStack(spacing: 0) {
+            NativeDockDraggableTab(document: document, selected: selected, symbol: Self.symbol(document, split: split), metrics: metrics,
+                dimmed: !active, mutedIcon: split && !active, closeInside: closeInside,
                 fontScale: fontScale, density: sizing.density, courseID: navigation.activeCourseID ?? document.courseID, drag: drag,
                 close: { closeDocuments([document.id]) }) {
                 selectTab(document.id, in: group.id)
             }
-            .frame(width: max(0, sizing.width - (sizing.showsClose ? 32 : 0)), height: 44).clipped()
-            if sizing.showsClose {
+            .frame(width: max(0, width - (closeInside ? metrics.closeZone : 0)), height: metrics.height).clipped()
+            if closeInside {
                 Button { closeDocuments([document.id]) } label: {
-                    Image(systemName: "xmark").font(.system(size: 11)).frame(width: 32, height: 44).contentShape(Rectangle())
-                }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary).accessibilityLabel(document.title + " 닫기")
+                    Image(systemName: "xmark").font(.system(size: metrics.close)).frame(width: metrics.close + 1).padding(.leading, 6).padding(.trailing, metrics.tabPadding)
+                        .frame(height: metrics.height).contentShape(Rectangle())
+                }.buttonStyle(.plain).foregroundStyle(split ? NativeDesktopTheme.muted : NativeDesktopTheme.secondary).accessibilityLabel(document.title + " 닫기")
                     .accessibilityIdentifier(document.id == navigation.activeID ? "native-close-document" : "native-close-tab-" + document.id)
             }
         }
-        .frame(width: sizing.width, height: headerHeight).clipped()
-        .background {
-            RoundedRectangle(cornerRadius: 9).fill(group.activeID == document.id ? NativeGlass.tool : Color.clear).padding(.vertical, 6.5)
+        .frame(width: width, height: metrics.height).clipped()
+        .background { RoundedRectangle(cornerRadius: metrics.radius).fill(active ? NativeGlass.tool : Color.clear).frame(height: metrics.pillHeight) }
+        .overlay {
+            if split && active {
+                NativeDesktopTheme.accent.frame(height: 2).padding(.horizontal, metrics.tabPadding)
+                    .frame(height: metrics.pillHeight, alignment: .bottom).allowsHitTesting(false)
+            }
         }
-        // Only the pane being written in keeps its tabs at full strength.
-        .opacity(navigation.groups.count > 1 && group.id != navigation.focusedGroupID ? 0.5 : 1)
         .contextMenu { tabMenu(document, group: group) }
         .overlay(alignment: .leading) {
             if drag.target == .init(groupID: group.id, direction: .within, index: index) { NativeDesktopTheme.accent.frame(width: 3) }
@@ -303,8 +382,12 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         }
         if !document.isWorkspaceTool && !["whiteboard", "learning"].contains(document.kind) {
             Divider()
-            Button("파일 공유", systemImage: "square.and.arrow.up") {
-                resourceAction { try await store.flushDocuments(); _ = try await store.invoke("materials:share", ["courseId": document.courseID, "relPath": document.relativePath]) }
+            // A split pane's strip has no 미리보기 and 공유 buttons: their whole menu lives here instead.
+            if navigation.groups.count > 1, NativeDockShareControls.supports(document) { NativeDockShareControls(document: document, store: store).menuItems }
+            else {
+                Button("파일 공유", systemImage: "square.and.arrow.up") {
+                    resourceAction { try await store.flushDocuments(); _ = try await store.invoke("materials:share", ["courseId": document.courseID, "relPath": document.relativePath]) }
+                }
             }
             Button("경로 복사", systemImage: "link") {
                 resourceAction {
@@ -390,8 +473,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         }
         return ["kind": kind, "payload": payload]
     }
-    private func groupMenu(_ group: NativeDockGroup) -> some View {
-        Menu {
+    @ViewBuilder private func layoutMenu(_ group: NativeDockGroup) -> some View {
             Section("열린 자료") {
                 ForEach(navigation.groups.flatMap(\.tabs), id: \.self) { id in
                     if let document = navigation.document(id), let owner = navigation.group(containing: id) {
@@ -433,9 +515,6 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     if group.tabs.isEmpty { Button("빈 영역 닫기", systemImage: "xmark") { perform { navigation.removeEmptyGroup(group.id) } }.accessibilityIdentifier("native-dock-close-empty") }
                 }
             }
-        } label: { Image(systemName: "rectangle.split.2x1").font(.system(size: 14)).frame(width: 44, height: 44).contentShape(Rectangle()) }
-            .accessibilityLabel("열린 자료와 분할 보기")
-            .accessibilityIdentifier(group.id == navigation.focusedGroupID ? "native-open-documents" : "native-dock-layout-" + group.id)
     }
     @ViewBuilder private func emptyPane(_ group: NativeDockGroup, groupCount: Int) -> some View {
         if groupCount == 1 { empty() }
@@ -613,6 +692,11 @@ private struct NativeDockDropSurface: UIViewRepresentable {
 
 private struct NativeDockDivider: View {
     let divider: NativeDockDividerFrame
+    /// Left/right split: a 2-point seam below the strips with an 8×64 grip (Figma 130:5984). Otherwise 1 point and 6×56.
+    let wide: Bool
+    let topInset: CGFloat
+    /// Grip centre along the seam; nil when a neighbouring seam already shows it.
+    let grip: CGFloat?
     let change: (Double) -> Void
     let persist: () -> Void
     @State private var initial: Double?
@@ -634,13 +718,18 @@ private struct NativeDockDivider: View {
             .accessibilityAction(named: "같은 크기로", reset)
     }
     private var seam: some View {
-        NativeDesktopTheme.border
-            .frame(width: divider.frame.width, height: divider.frame.height)
-            .overlay(grip)
-    }
-    private var grip: some View {
-        Capsule().fill(NativeDesktopTheme.muted.opacity(0.45))
-            .frame(width: horizontal ? 2 : 28, height: horizontal ? 28 : 2)
+        let thickness: CGFloat = wide ? 2 : 1, short: CGFloat = wide ? 8 : 6, long: CGFloat = wide ? 64 : 56
+        return ZStack(alignment: .topLeading) {
+            NativeGlass.separator
+                .frame(width: horizontal ? thickness : divider.frame.width, height: horizontal ? max(0, divider.frame.height - topInset) : thickness)
+                // The wide seam keeps its right edge on the pane boundary, as drawn.
+                .offset(x: horizontal ? divider.frame.width - thickness : 0, y: horizontal ? topInset : 0)
+            if let grip {
+                RoundedRectangle(cornerRadius: short / 2).fill(NativeDesktopTheme.muted)
+                    .frame(width: horizontal ? short : long, height: horizontal ? long : short)
+                    .position(x: horizontal ? divider.frame.width - thickness / 2 : grip, y: horizontal ? grip : divider.frame.height / 2)
+            }
+        }.frame(width: divider.frame.width, height: divider.frame.height, alignment: .topLeading)
     }
     private var resizeGesture: some Gesture {
         DragGesture(minimumDistance: 3, coordinateSpace: .global)
@@ -649,7 +738,7 @@ private struct NativeDockDivider: View {
     }
     private func resize(_ value: DragGesture.Value) {
         if initial == nil { initial = divider.displayedFraction }
-        let extent: Double = max(1, Double(horizontal ? divider.bounds.width : divider.bounds.height) - 8)
+        let extent: Double = max(1, Double(horizontal ? divider.bounds.width : divider.bounds.height) - Double(NativeDockLayout.seam))
         let translation: Double = Double(horizontal ? value.translation.width : value.translation.height)
         change((initial ?? 0.5) + translation / extent)
     }
@@ -682,6 +771,11 @@ private struct NativeDockDropDelegate: DropDelegate {
 private struct NativeDockDraggableTab: UIViewRepresentable {
     let document: NativeDocumentReference
     let selected: Bool
+    let symbol: String
+    let metrics: NativeDockStripMetrics
+    let dimmed: Bool
+    let mutedIcon: Bool
+    let closeInside: Bool
     let fontScale: Double
     let density: NativeDockTabSizing.Density
     let courseID: String
@@ -697,8 +791,8 @@ private struct NativeDockDraggableTab: UIViewRepresentable {
     }
     func updateUIView(_ button: NativeDockTabButton, context: Context) {
         context.coordinator.owner = self
-        let symbol = document.kind == "pdf" ? "doc.richtext" : document.kind == "whiteboard" ? "rectangle.and.pencil.and.ellipsis" : document.kind == "browser" ? "globe" : document.kind == "assistant" ? "sparkle" : document.kind == "recordings" ? "waveform" : document.kind == "planner" ? "checklist" : "doc.text"
-        button.configure(title: document.title, symbol: symbol, density: density, fontScale: fontScale, selected: selected)
+        button.configure(title: document.title, symbol: symbol, density: density, fontScale: fontScale, selected: selected,
+                         metrics: metrics, dimmed: dimmed, mutedIcon: mutedIcon, closeInside: closeInside)
         button.accessibilityIdentifier = "native-document-tab-" + document.id
         button.accessibilityHint = "길게 눌러 다른 영역이나 탭 사이로 드래그할 수 있습니다"
         button.accessibilityCustomActions = [UIAccessibilityCustomAction(name: "닫기", actionHandler: { [weak coordinator = context.coordinator] _ in coordinator?.owner.close(); return true })]

@@ -12,7 +12,7 @@ final class NativeDockingUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]
         app.launch()
         let addCourse = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(addCourse.waitForExistence(timeout: 20)); addCourse.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(addCourse.waitForExistence(timeout: 20)); addCourse.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Docking Course")
         app.buttons["native-create-course"].tap()
@@ -79,13 +79,13 @@ final class NativeDockingUITests: XCTestCase {
 
         // Nest another column inside a cell: when it cannot meet minimum touch
         // sizes, the selector keeps the focused and all other panes reachable.
-        app.buttons["native-open-documents"].tap()
+        app.openNativeDockLayoutMenu()
         app.buttons["native-dock-split-right"].tap()
         let selector = app.buttons["native-dock-pane-selector"]
         XCTAssertTrue(selector.waitForExistence(timeout: 10), app.debugDescription)
         selector.tap()
         app.buttons["native-dock-select-group-0"].tap()
-        XCTAssertTrue(app.buttons["native-open-documents"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch.waitForExistence(timeout: 5))
         capture("Native compact pane selector")
         chooseLayout("single", app: app)
         expectEditorCount(1, app: app)
@@ -114,8 +114,7 @@ final class NativeDockingUITests: XCTestCase {
         app.textViews.matching(NSPredicate(format: "identifier == %@ AND value CONTAINS %@", "native-markdown-editor", "Keep \(title) across docking.")).firstMatch
     }
     @MainActor private func chooseLayout(_ preset: String, app: XCUIApplication) {
-        let menu = app.buttons["native-open-documents"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap()
+        app.openNativeDockLayoutMenu()
         let choice = app.buttons["native-dock-preset-" + preset]
         XCTAssertTrue(choice.waitForExistence(timeout: 5), app.debugDescription); choice.tap()
     }
@@ -133,6 +132,11 @@ final class NativeDockingUITests: XCTestCase {
 
 
 extension XCUIApplication {
+    /// The design has no split button in the strip: the layout menu is a long press on a strip's ＋.
+    @MainActor func openNativeDockLayoutMenu() {
+        let add = buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 10), debugDescription); add.press(forDuration: 1)
+    }
     /// The device's AssistiveTouch button can overlap the accessory Done action.
     /// Prefer the system keyboard's visible dismiss key and verify dismissal.
     @MainActor func dismissNativeTestKeyboard() {

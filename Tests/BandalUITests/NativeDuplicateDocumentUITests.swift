@@ -6,7 +6,7 @@ final class NativeDuplicateDocumentUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
         let courseMenu = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(courseMenu.waitForExistence(timeout: 25)); courseMenu.tap(); app.buttons["native-new-course"].firstMatch.tap()
+        XCTAssertTrue(courseMenu.waitForExistence(timeout: 25)); courseMenu.tap()
         let course = app.textFields["native-course-name"]; XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Shared document")
         app.buttons["native-create-course"].tap()
         let plus = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
@@ -16,7 +16,7 @@ final class NativeDuplicateDocumentUITests: XCTestCase {
         dismissKeyboard(app)
         let originalTab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-")).firstMatch
         let originalID = originalTab.identifier
-        app.buttons["native-open-documents"].tap()
+        app.openNativeDockLayoutMenu()
         let duplicate = app.buttons["native-duplicate-right"].firstMatch
         XCTAssertTrue(duplicate.waitForExistence(timeout: 5), app.debugDescription); duplicate.tap()
         expectEditors(2, app: app)

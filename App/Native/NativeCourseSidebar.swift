@@ -28,19 +28,20 @@ struct NativeCourseSidebar: View {
     private var visible: [NativeCourse] { courses.filter { query.isEmpty || $0.name.localizedStandardContains(query) } }
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 NativeRailSearchField(prompt: "과목 찾기", text: $query, identifier: "native-course-search")
-                Menu {
-                    Button("새 과목 만들기", systemImage: "plus") { adding = .course }.accessibilityIdentifier("native-new-course")
-                    Button("폴더에서 추가", systemImage: "folder.badge.plus") { adding = .manage }
-                    Button("과목 그룹 만들기", systemImage: "folder") { adding = .group }
-                    Button("보관된 과목 관리", systemImage: "archivebox") { adding = .manage }
-                } label: { Image(systemName: "plus").foregroundStyle(NativeDesktopTheme.secondary).frame(width: 40, height: 40).contentShape(Rectangle()) }
-                .accessibilityLabel("과목 추가").accessibilityIdentifier("native-course-add-menu")
-                .bandalPopover(isPresented: Binding(get: { adding != nil }, set: { if !$0 { adding = nil } }), width: adding == .manage ? 340 : 280) { addingContent }
-            }.padding(.leading, 12).padding(.trailing, 6).padding(.bottom, 8)
+                // ＋ makes a course; the rarer actions are on its long-press and in each course's ⋯ menu.
+                Button { adding = .course } label: { Image(systemName: "plus").font(.system(size: 16)).foregroundStyle(NativeGlass.panelIcon).frame(width: 44, height: 34).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).accessibilityLabel("과목 추가").accessibilityIdentifier("native-course-add-menu")
+                    .contextMenu {
+                        Button("폴더에서 추가", systemImage: "folder.badge.plus") { adding = .manage }
+                        Button("과목 그룹 만들기", systemImage: "folder") { adding = .group }
+                        Button("보관된 과목 관리", systemImage: "archivebox") { adding = .manage }
+                    }
+                    .bandalPopover(isPresented: Binding(get: { adding != nil }, set: { if !$0 { adding = nil } }), width: adding == .manage ? 340 : 280) { addingContent }
+            }.padding(.leading, 12).padding(.trailing, 9).padding(.bottom, 6)
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if let error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red).padding(8) }
                     if !query.isEmpty { ForEach(visible, content: courseRow) }
                     else {
@@ -65,43 +66,57 @@ struct NativeCourseSidebar: View {
             .onReceive(store.events) { event in if event.channel == "courses:changed" { Task { await loadGroups() } } }
             .onReceive(NotificationCenter.default.publisher(for: NativeHomeTab.newCourse)) { _ in adding = .course }
     }
+    /// The chosen course: 13 Medium on a 38 pt pill with its chevron and ⋯. The others: a 16 pt folder and 14 pt name, their menu on a long-press.
     private func courseRow(_ course: NativeCourse) -> some View {
-        VStack(spacing: 0) {
+        let selected = store.selectedCourseID == course.id, collapsed = contains(course.id, in: collapsedCourses)
+        return VStack(spacing: 0) {
             HStack(spacing: 0) {
-                Button { toggle(course.id, in: &collapsedCourses) } label: {
-                    Image(systemName: contains(course.id, in: collapsedCourses) ? "chevron.right" : "chevron.down").font(.system(size: 10)).frame(width: 44, height: 44)
-                }.accessibilityLabel(course.name + (contains(course.id, in: collapsedCourses) ? " 펼치기" : " 접기")).accessibilityIdentifier("native-course-expand-" + course.id)
+                if selected {
+                    Button { toggle(course.id, in: &collapsedCourses) } label: {
+                        Image(systemName: collapsed ? "chevron.right" : "chevron.down").font(.system(size: 13)).foregroundStyle(NativeGlass.panelIcon).frame(width: 30, height: 38).padding(.leading, 4).contentShape(Rectangle())
+                    }.accessibilityLabel(course.name + (collapsed ? " 펼치기" : " 접기")).accessibilityIdentifier("native-course-expand-" + course.id)
+                }
                 if renamingID == course.id {
-                    HStack(spacing: 8) {
-                        Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted)
-                        BandalInlineEditor(text: course.name, isEditing: renaming(course.id), font: NativeDesktopTheme.font(13), identifier: "native-course-rename") { name in
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeGlass.panelIcon).frame(width: 20)
+                        BandalInlineEditor(text: course.name, isEditing: renaming(course.id), font: NativeDesktopTheme.font(13, weight: .medium), identifier: "native-course-rename") { name in
                             mutate("courses:rename", ["courseId": course.id, "name": name])
                         }
-                    }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }.padding(.leading, selected ? 0 : 34).frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
                 } else {
                 Button {
-                    if contains(course.id, in: collapsedCourses) { toggle(course.id, in: &collapsedCourses) }
+                    if collapsed { toggle(course.id, in: &collapsedCourses) }
                     onSelect(course.id)
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted)
-                        Text(course.name).lineLimit(1)
-                        Circle().fill(course.tint).frame(width: 6, height: 6).accessibilityHidden(true)
+                    HStack(spacing: selected ? 6 : 8) {
+                        Image(systemName: "folder").font(.system(size: selected ? 14 : 16)).foregroundStyle(selected ? NativeGlass.panelIcon : NativeDesktopTheme.secondary).frame(width: selected ? 20 : 22)
+                        Text(course.name).font(NativeDesktopTheme.font(selected ? 13 : 14, weight: selected ? .medium : .regular)).foregroundStyle(selected ? NativeGlass.icon : NativeDesktopTheme.text).lineLimit(1)
                         Spacer(minLength: 0)
                         if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
-                    }.frame(minHeight: 44).contentShape(Rectangle())
+                    }.padding(.leading, selected ? 0 : 34).padding(.trailing, selected ? 0 : 8).frame(height: 38).contentShape(Rectangle())
                 }.accessibilityIdentifier("native-course-" + course.id)
                     .contextMenu { courseMenu(course) }
                     .simultaneousGesture(TapGesture(count: 2).onEnded { renamingID = course.id })
                 }
-                Menu { courseMenu(course) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel(course.name + " 과목 메뉴")
-            }.font(NativeDesktopTheme.font(13)).buttonStyle(.plain)
-                .background(store.selectedCourseID == course.id ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 6))
+                if selected {
+                    Menu { courseMenu(course) } label: { Image(systemName: "ellipsis").font(.system(size: 16)).foregroundStyle(NativeGlass.panelIcon).frame(width: 46, height: 38).contentShape(Rectangle()) }.accessibilityLabel(course.name + " 과목 메뉴")
+                }
+            }.buttonStyle(.plain)
+                .background(selected ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 8))
+                // A tab dropped on the chosen course becomes its favourite.
+                .onDrop(of: selected ? [NativeDockDragPayload.contentType] : [], isTargeted: nil) { providers in
+                    guard let provider = providers.first else { return false }
+                    provider.loadDataRepresentation(forTypeIdentifier: NativeDockDragPayload.contentType.identifier) { data, _ in
+                        guard let data, let id = String(data: data, encoding: .utf8) else { return }
+                        Task { @MainActor in NotificationCenter.default.post(name: NativeFavoritesSection.request, object: course.id, userInfo: ["documentID": id]) }
+                    }
+                    return true
+                }
                 .bandalConfirm("과목을 보관할까요?", isPresented: Binding(get: { archiveCourse?.id == course.id }, set: { if !$0 { archiveCourse = nil } }),
                                message: "파일과 즐겨찾기는 유지되고 과목 관리에서 다시 꺼낼 수 있어요.", action: "보관") {
                     mutate("courses:archive", ["courseId": course.id, "archived": true])
                 }
-            if !contains(course.id, in: collapsedCourses) {
+            if selected && !collapsed {
                 NativeFavoritesSection(store: store, courseID: course.id, currentDocument: navigation.active, descriptor: descriptor, documentByID: navigation.document, onOpen: onOpenFavorite)
             }
         }
@@ -113,7 +128,16 @@ struct NativeCourseSidebar: View {
             Button("그룹 없음") { mutate("courses:organize", ["courseId": course.id, "groupId": NSNull()]) }
             ForEach(groups) { group in Button(group.name) { mutate("courses:organize", ["courseId": course.id, "groupId": group.id]) } }
         }
+        if store.selectedCourseID == course.id {
+            Menu("즐겨찾기", systemImage: "star") {
+                Button("링크 추가", systemImage: "link.badge.plus") { NotificationCenter.default.post(name: NativeFavoritesSection.request, object: course.id) }.accessibilityIdentifier("native-favorite-add-link")
+                if let current = navigation.active, descriptor(current) != nil {
+                    Button("현재 탭 즐겨찾기에 추가", systemImage: "star") { NotificationCenter.default.post(name: NativeFavoritesSection.request, object: course.id, userInfo: ["current": true]) }.accessibilityIdentifier("native-favorite-add-current")
+                }
+            }
+        }
         Button("과목 보관", systemImage: "archivebox") { archiveCourse = course }
+        Button("과목 그룹 만들기", systemImage: "folder") { adding = .group }
         Button("폴더 연결 및 보관 관리", systemImage: "folder.badge.gearshape") { adding = .manage }
     }
     private func groupHeading(_ group: NativeSidebarCourseGroup) -> some View {

@@ -18,12 +18,12 @@ struct NativeSettingsWidgetDock: View {
         Group {
             if !enabled.isEmpty {
                 VStack(spacing: 0) {
-                    NativeDesktopTheme.border.frame(height: 1)
+                    NativeGlass.hairline.frame(height: 1)
                     HStack(spacing: 2) {
                         ForEach(enabled, id: \.self) { id in
                             Button(title(id)) { Task { do { _ = try await store.invoke("settings:set", ["widgets": ["active": id]]) } catch { self.error = error.localizedDescription } } }
                                 .font(NativeDesktopTheme.font(11, weight: .medium)).padding(.horizontal, 10).frame(height: 32)
-                                .background(active == id ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 6))
+                                .background(active == id ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                                 .accessibilityIdentifier("native-widget-" + id)
                         }
                         Spacer(minLength: 0)

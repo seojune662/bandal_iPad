@@ -19,10 +19,12 @@ struct NativeFavoritesSection: View {
     @State private var targeted = false
     @State private var loadRevision = 0
 
+    /// Posted with a course id by that course's row: no user info opens the link form, `current` saves the front tab, `documentID` saves a dropped tab.
+    static let request = Notification.Name("native.favorites.request")
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Text(favorites.isEmpty && !adding ? "탭을 끌어 즐겨찾기 추가" : "즐겨찾기")
+            if !favorites.isEmpty || adding { HStack(spacing: 4) {
+                Text("즐겨찾기")
                     .font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted)
                 Spacer(minLength: 0)
                 Menu {
@@ -32,7 +34,7 @@ struct NativeFavoritesSection: View {
                     }
                 } label: { Image(systemName: "plus").font(.system(size: 11)).frame(width: 32, height: 32).contentShape(Rectangle()) }
                 .accessibilityLabel("즐겨찾기 추가").accessibilityIdentifier("native-favorite-add-" + courseID)
-            }
+            } }
             if adding { linkForm }
             if let error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red).textSelection(.enabled) }
             ForEach(Array(favorites.enumerated()), id: \.element.id) { index, favorite in
@@ -57,7 +59,13 @@ struct NativeFavoritesSection: View {
                     .simultaneousGesture(TapGesture(count: 2).onEnded { renamingID = favorite.id })
                 }
             }
-        }.padding(.leading, 28).padding(.trailing, 8).padding(.bottom, 6)
+        }.padding(.leading, 34).padding(.trailing, 8).padding(.bottom, favorites.isEmpty && !adding && error == nil ? 0 : 6)
+            .onReceive(NotificationCenter.default.publisher(for: Self.request)) { note in
+                guard note.object as? String == courseID else { return }
+                if let id = note.userInfo?["documentID"] as? String { if let document = documentByID(id) { addDocument(document) } }
+                else if note.userInfo?["current"] != nil { if let currentDocument { addDocument(currentDocument) } }
+                else { adding = true }
+            }
             .background(targeted ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 6))
             .disabled(busy)
             .onDrop(of: [NativeDockDragPayload.contentType], isTargeted: $targeted) { providers in

@@ -12,7 +12,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["native-home-courses"].exists)
         XCTAssertTrue(app.buttons["native-home-projects"].exists)
         for removed in ["learning", "assistant", "tools"] { XCTAssertFalse(app.buttons["native-section-" + removed].exists) }
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        app.buttons["native-course-add-menu"].tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5)); courseName.tap(); courseName.typeText("Physics")
         app.buttons["native-create-course"].tap()
@@ -23,7 +23,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         app.buttons["만들기"].tap()
         openInspector(app)
         app.buttons["native-inspector-materials"].tap()
-        for action in ["native-library-view-menu", "native-library-import", "native-library-create"] {
+        for action in ["native-library-view-menu", "native-library-refresh", "native-library-create"] {
             XCTAssertTrue(app.buttons[action].waitForExistence(timeout: 15), app.debugDescription)
         }
         app.buttons["native-library-create"].tap(); app.buttons["새 마크다운"].tap()
@@ -73,22 +73,24 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 15), app.debugDescription); editor.tap(); editor.typeText("This paragraph stays editable after annotation.")
         app.dismissNativeTestKeyboard()
         openAI(app)
-        let annotate = app.buttons["native-ai-annotate"]
+        // 지목해서 질문 sits in the model popover: the Figma composer has no button for it.
+        let pill = app.buttons["native-ai-model-pill"], annotate = app.buttons["native-ai-annotate"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 10)); pill.tap()
         XCTAssertTrue(annotate.waitForExistence(timeout: 10)); annotate.tap()
         let toolbar = app.descendants(matching: .any).matching(identifier: "native-ai-annotation-toolbar").firstMatch
         XCTAssertTrue(toolbar.waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["native-ai-annotation-cancel"].tap()
-        XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(editor.exists)
         editor.tap(); editor.typeText(" Still editable.")
         XCTAssertTrue((editor.value as? String ?? "").contains("Still editable."))
         app.dismissNativeTestKeyboard()
-        annotate.tap()
+        pill.tap(); XCTAssertTrue(annotate.waitForExistence(timeout: 10)); annotate.tap()
         let region = app.descendants(matching: .any).matching(identifier: "native-ai-annotation-region").firstMatch
         XCTAssertTrue(region.waitForExistence(timeout: 10), app.debugDescription)
         region.coordinate(withNormalizedOffset: .init(dx: 0.1, dy: 0.1))
             .press(forDuration: 0.05, thenDragTo: region.coordinate(withNormalizedOffset: .init(dx: 0.75, dy: 0.4)))
-        XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(toolbar.exists)
         XCTAssertTrue(app.buttons["첨부 제거"].waitForExistence(timeout: 10), "The selected region is retained as an attachment")
         capture("Captured note is attached in the unified AI panel")
@@ -98,18 +100,20 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         XCTAssertTrue(toggle.waitForExistence(timeout: 10), app.debugDescription)
         openAI(app) // Opening materials made room by closing AI chat.
-        XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(toggle.isHittable)
-        XCTAssertTrue(annotate.isEnabled, app.debugDescription)
-        XCTAssertLessThan(annotate.frame.midX, app.frame.midX, "AI chat stays in the left column in portrait")
+        XCTAssertLessThan(pill.frame.midX, app.frame.midX, "AI chat stays in the left column in portrait")
         XCTAssertEqual(app.buttons.matching(identifier: "native-toggle-materials-rail").count, 1)
         capture("Portrait inspector keeps annotation attachment and controls available")
         // Exercise a real touch at the visible control after the drawer moves
         // across the pinned/overlay boundary, then assert its actual behavior.
+        pill.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(annotate.isEnabled, app.debugDescription)
         annotate.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(toolbar.waitForExistence(timeout: 10))
         app.buttons["native-ai-annotation-cancel"].tap()
-        XCTAssertTrue(annotate.waitForExistence(timeout: 10))
+        XCTAssertTrue(pill.waitForExistence(timeout: 10))
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(editor.waitForExistence(timeout: 10), app.debugDescription)
         capture("Inspector stays available after rotation")
@@ -120,7 +124,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
         openHome(app)
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        app.buttons["native-course-add-menu"].tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5)); courseName.tap(); courseName.typeText("Physics")
         app.buttons["native-create-course"].tap()

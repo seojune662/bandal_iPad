@@ -176,7 +176,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: select)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed, app.debugDescription)
         select.tap()
-        app.buttons["페이지 맞춤"].tap()
+        app.buttons["native-pdf-zoom"].tap(); app.buttons["native-pdf-fit"].tap() // fit lives in the "100% ∨" menu
         let pdf = app.otherElements["native-pdf-workspace"]
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.48)).press(forDuration: 1.2)
         let comment = app.buttons["native-pdf-comment-source"]
@@ -300,7 +300,6 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let app = launch(reset: true, pencil: false, extra: ["--native-free-tier"])
         createCourse(in: app)
         app.buttons["native-course-add-menu"].tap()
-        app.buttons["native-new-course"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap(); name.typeText("Physics")
@@ -340,7 +339,6 @@ final class NativeWorkspaceFlowTests: XCTestCase {
 
     @MainActor private func createCourse(in app: XCUIApplication) {
         app.buttons["native-course-add-menu"].tap()
-        app.buttons["native-new-course"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap(); name.typeText("Mathematics")

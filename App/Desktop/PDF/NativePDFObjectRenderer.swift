@@ -82,25 +82,24 @@ enum NativePDFObjectRenderer {
         guard let box = physicalBox(data, width: width, height: height), box.width > 0, box.height > 0 else { return }
         switch kind {
         case "comment":
-            // A speech-bubble pin drawn as paths (symbol images fill their whole
-            // box when recorded into the PDF texture). The note opens in a sheet.
-            let side = min(box.width, box.height), x = box.midX - side / 2, y = box.midY - side / 2
-            let body = CGRect(x: x, y: y, width: side, height: side * 0.78)
-            let bubble = CGMutablePath()
-            bubble.addRoundedRect(in: body, cornerWidth: side * 0.2, cornerHeight: side * 0.2)
-            bubble.move(to: CGPoint(x: x + side * 0.2, y: body.maxY - 1))
-            bubble.addLine(to: CGPoint(x: x + side * 0.16, y: y + side))
-            bubble.addLine(to: CGPoint(x: x + side * 0.46, y: body.maxY - 1))
-            bubble.closeSubpath()
-            context.setFillColor(color(style["color"] as? String ?? "yellow").cgColor)
-            context.addPath(bubble); context.fillPath()
-            context.setStrokeColor(UIColor.white.withAlphaComponent(0.95).cgColor)
-            context.setLineWidth(side * 0.08); context.setLineCap(.round)
-            for (row, length) in [(0.3, 0.56), (0.52, 0.38)] {
-                context.move(to: CGPoint(x: x + side * 0.22, y: y + side * row))
-                context.addLine(to: CGPoint(x: x + side * (0.22 + length), y: y + side * row))
-            }
-            context.strokePath()
+            // The design's memo mark (Figma 269:8677): a dark disc whose top-right corner is nearly square,
+            // with the number of notes in white. Drawn as paths and text; a symbol image would fill its whole box.
+            let side = min(box.width, box.height), rect = CGRect(x: box.midX - side / 2, y: box.midY - side / 2, width: side, height: side)
+            let round = side / 2, corner = side * 4 / 26
+            let mark = CGMutablePath()
+            mark.move(to: CGPoint(x: rect.midX, y: rect.minY))
+            mark.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.minY), tangent2End: CGPoint(x: rect.maxX, y: rect.maxY), radius: corner)
+            mark.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.maxY), tangent2End: CGPoint(x: rect.minX, y: rect.maxY), radius: round)
+            mark.addArc(tangent1End: CGPoint(x: rect.minX, y: rect.maxY), tangent2End: CGPoint(x: rect.minX, y: rect.minY), radius: round)
+            mark.addArc(tangent1End: CGPoint(x: rect.minX, y: rect.minY), tangent2End: CGPoint(x: rect.maxX, y: rect.minY), radius: round)
+            mark.closeSubpath()
+            context.setFillColor(UIColor(red: 0x1c / 255, green: 0x1c / 255, blue: 0x1e / 255, alpha: 1).cgColor)
+            context.addPath(mark); context.fillPath()
+            // One note per mark until replies exist.
+            let count = NSAttributedString(string: "1", attributes: [.font: UIFont.systemFont(ofSize: side * 11 / 26, weight: .bold), .foregroundColor: UIColor.white])
+            let size = count.size()
+            UIGraphicsPushContext(context); defer { UIGraphicsPopContext() }
+            count.draw(at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
         case "image", "clip":
             UIGraphicsPushContext(context); defer { UIGraphicsPopContext() }
             if let image, image.size.width > 0, image.size.height > 0 {
@@ -313,13 +312,13 @@ enum NativePDFObjectRenderer {
         let rgb: (CGFloat, CGFloat, CGFloat)
         switch name {
         case "canvasLightInk": rgb = (240,240,240)
-        case "red": rgb = (214,36,46)
+        case "red": rgb = (229,72,63)
         case "orange": rgb = (240,99,20)
         case "yellow": rgb = (245,184,10)
-        case "green": rgb = (26,148,77)
-        case "blue": rgb = (20,97,224)
+        case "green": rgb = (47,168,90)
+        case "blue": rgb = (59,111,224)
         case "violet": rgb = (125,54,209)
-        default: rgb = (20,23,31)
+        default: rgb = (26,26,26)
         }
         return UIColor(red: rgb.0/255, green: rgb.1/255, blue: rgb.2/255, alpha: 1)
     }

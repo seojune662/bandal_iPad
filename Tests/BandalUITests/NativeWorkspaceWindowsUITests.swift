@@ -120,10 +120,11 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
             waitEnabled(app.buttons["native-toggle-materials-rail"], app: app)
             XCTAssertEqual(app.frame.maxX - controls(app).frame.maxX, trailingInset, accuracy: 1,
                            "The capsule keeps the same inset from the screen's right edge")
+            // The design's group is 128 × 40: cells of 36 · 36 · 34.
             for id in ["native-workspace-chrome-menu", "native-workspace-windows-toggle", "native-toggle-materials-rail"] {
                 let button = app.buttons[id]
-                XCTAssertGreaterThanOrEqual(button.frame.width, 44, id)
-                XCTAssertGreaterThanOrEqual(button.frame.height, 44, id)
+                XCTAssertGreaterThanOrEqual(button.frame.width, 34, id)
+                XCTAssertGreaterThanOrEqual(button.frame.height, 40, id)
                 XCTAssertTrue(button.isHittable, id)
             }
             let inspectorHeader = app.buttons["native-inspector-materials"]
@@ -266,7 +267,7 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
     @MainActor private func createCourse(_ name: String, app: XCUIApplication) {
         openHome(app)
         app.buttons["native-home-courses"].tap()
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].tap()
+        app.buttons["native-course-add-menu"].tap()
         let field = app.textFields["native-course-name"]
         XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap(); field.typeText(name)
         app.buttons["native-create-course"].tap()

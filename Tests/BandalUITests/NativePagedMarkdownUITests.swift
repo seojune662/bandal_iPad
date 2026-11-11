@@ -9,7 +9,7 @@ final class NativePagedMarkdownUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "--native-pages-fixture"]
         app.launch()
         let add = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(add.waitForExistence(timeout: 25)); add.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 25)); add.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Linked pages")
         app.buttons["native-create-course"].tap()

@@ -37,7 +37,7 @@ final class NativeToolsFlowTests: XCTestCase {
     @MainActor
     func testBrowserDisplaysOnlyLocalWebsiteInsideNativeChrome() throws {
         let app = launch(extra: ["--native-browser-ui-fixture"])
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].tap()
+        app.buttons["native-course-add-menu"].tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Browser tools")
         app.buttons["native-create-course"].tap()
@@ -68,7 +68,7 @@ final class NativeToolsFlowTests: XCTestCase {
     @MainActor
     func testBoardCardMovesBetweenColumnsHidesWhenDoneFiltersByCourseAndDeletes() throws {
         let app = launch()
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].tap()
+        app.buttons["native-course-add-menu"].tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Board course")
         app.buttons["native-create-course"].tap()

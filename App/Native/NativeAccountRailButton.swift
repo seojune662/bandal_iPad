@@ -41,9 +41,8 @@ struct NativeAccountRailButton: View {
 
     var body: some View {
         Button { error = nil; showingHelp = false; inviting = false; showingMenu.toggle() } label: {
-            avatar(size: 26)
+            railAvatar
                 .frame(width: 36, height: 36)
-                .background(showingMenu ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: BandalMetrics.radiusSmall))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
             .accessibilityLabel(signedIn ? "계정: " + displayName : "로그인").accessibilityIdentifier("native-section-account")
@@ -133,6 +132,11 @@ struct NativeAccountRailButton: View {
         account = (try? await store.invoke("auth:getState")) as? [String: Any] ?? [:]
     }
 
+    /// The rail shows the account as a plain 26 pt disc; a profile photo fills it.
+    private var railAvatar: some View {
+        Circle().fill(Color(red: 0x3e / 255, green: 0x8e / 255, blue: 0x9a / 255)).frame(width: 26, height: 26)
+            .overlay { if signedIn, let avatarURL { AsyncImage(url: avatarURL) { $0.image?.resizable().scaledToFill() }.frame(width: 26, height: 26).clipShape(Circle()) } }
+    }
     @ViewBuilder private func avatar(size: CGFloat) -> some View {
         if signedIn, let avatarURL {
             AsyncImage(url: avatarURL) { phase in

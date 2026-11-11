@@ -76,9 +76,9 @@ final class NativePDFRetainedObjectTexturesTests: XCTestCase {
         let bitmap = try XCTUnwrap(Cache.rasterize(work))
         let inside = pixel(bitmap, work: work, x: 0.4*size.width, y: 0.4*size.height)
         XCTAssertEqual(Double(inside[3]), 128, accuracy: 2)
-        XCTAssertEqual(Double(inside[2]), 107, accuracy: 2)
-        XCTAssertEqual(Double(inside[1]), 18, accuracy: 2)
-        XCTAssertEqual(Double(inside[0]), 23, accuracy: 2)
+        XCTAssertEqual(Double(inside[2]), 115, accuracy: 2)
+        XCTAssertEqual(Double(inside[1]), 36, accuracy: 2)
+        XCTAssertEqual(Double(inside[0]), 32, accuracy: 2)
         XCTAssertEqual(bitmap.bytes[3], 0, "Transparent padding must not replace underlying paper/ink")
     }
 

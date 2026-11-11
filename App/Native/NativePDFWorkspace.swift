@@ -11,7 +11,16 @@ struct NativePDFWorkspace: View {
     @Environment(\.nativeWorkspaceChromeMode) private var chromeMode
     @Environment(\.nativeWorkspaceControlInset) private var controlInset
     @Environment(\.nativeWorkspaceTopInset) private var topInset
+    @Environment(\.nativePDFPaletteHost) private var paletteHost
+    @State private var bodyFrame = CGRect.zero
     private let tabID: String
+    private var showsPalette: Bool { visible && model.assistantAnnotation == nil && (chromeMode == .toolsHidden || model.toolsExpanded) }
+    /// The window draws the palette above the side panels; this pane only says where its page area is.
+    private func registerPalette() {
+        guard let paletteHost else { return }
+        if showsPalette, bodyFrame.width > 0 { paletteHost.entries[tabID] = .init(model: model, frame: bodyFrame) }
+        else if paletteHost.entries[tabID] != nil { paletteHost.entries[tabID] = nil }
+    }
 
     init(document: NativeDocumentReference, store: NativeWorkspaceStore, onOpenDocument: ((NativeDocumentReference) -> Void)? = nil) {
         tabID = document.id
@@ -50,7 +59,6 @@ struct NativePDFWorkspace: View {
                 NativePDFTextEditor(draft: draft, isBusy: model.isBusy, errorMessage: model.errorMessage, canCancel: !model.textSaveNeedsRecovery,
                     onSave: model.finishText, onCancel: model.cancelText, onDelete: model.deleteText)
             }
-            Divider()
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     if model.showPages && visible {
@@ -71,8 +79,9 @@ struct NativePDFWorkspace: View {
                         }
                         .overlay { if model.showStyle { NativePDFPaletteOverlay(model: model) } }
                         .overlay(alignment: .top) {
-                            if visible, model.assistantAnnotation == nil, chromeMode == .toolsHidden || model.toolsExpanded { NativePDFFloatingPalette(model: model) }
+                            if showsPalette, paletteHost?.floats(tabID) != true { NativePDFFloatingPalette(model: model).padding(.horizontal, 8).padding(.top, NativePDFFloatingPalette.top) }
                         }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bodyFrame = $0; registerPalette() }
                         .overlay(alignment: .bottom) { if visible, let started = model.recordingStartedAt { NativePDFRecordingBar(model: model, started: started) } }
                         .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame) } }
                     if model.showAnnotations && visible {
@@ -93,7 +102,8 @@ struct NativePDFWorkspace: View {
             }
         }
         .onChange(of: visible, initial: true) { _, value in model.setVisible(value) }
-        .background(NativeDesktopTheme.bgApp)
+        .onChange(of: showsPalette, initial: true) { _, _ in registerPalette() }
+        .onDisappear { paletteHost?.entries[tabID] = nil }
         .accessibilityElement(children: .contain).accessibilityIdentifier(visible ? "native-pdf-pane-" + tabID : "")
         // 원문 메모 and 댓글 open over the page; closing keeps the edit (Esc cancels, 실행 취소 undoes).
         .popover(isPresented: Binding(get: { model.showAnnotationEditor }, set: { if !$0, model.showAnnotationEditor { model.closeAnnotationEditor() } }),
@@ -150,6 +160,7 @@ struct NativePDFWorkspace: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in model.saveInBackground() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in model.recordingPausedForBackground() }
         .bandalToast(Binding(get: { model.recordingNotice }, set: { model.recordingNotice = $0 }))
+        .bandalToast(Binding(get: { model.aiNoteNotice }, set: { model.aiNoteNotice = $0 }), symbol: "checkmark.circle.fill", actionTitle: "되돌리기") { model.undo() }
     }
 
 }
@@ -243,6 +254,15 @@ final class NativePDFWorkspaceModel {
     var isInkTool: Bool { ["pen", "ballpoint", "highlighter"].contains(tool) }
     /// Ballpoint shares the pen favourites; only its width model differs.
     var isPenLike: Bool { tool == "pen" || tool == "ballpoint" }
+    /// The pen type the palette's one 펜 button returns to (만년필 "pen" or 볼펜 "ballpoint").
+    private(set) var penKind = "pen"
+    /// The palette's 펜 button: picks the last pen type, or opens its settings when already chosen.
+    func choosePen() { chooseTool(isPenLike ? tool : penKind) }
+    /// Pen settings: switches the pen type and keeps the settings open.
+    func choosePenKind(_ kind: String) {
+        guard ["pen", "ballpoint"].contains(kind), kind != tool else { return }
+        chooseTool(kind); if tool == kind { showStyle = true }
+    }
     var currentPreset: NativePDFPenPreset { .init(color: color, width: width, opacity: opacity) }
     /// The straight line draws with the pen's colours and widths.
     private var slotTool: String { tool == "line" ? "pen" : tool }
@@ -289,6 +309,8 @@ final class NativePDFWorkspaceModel {
     private(set) var recordingID: String?
     private(set) var recordingStartedAt: Date?
     var recordingNotice: String?
+    /// "노트에 넣었어요" after an AI answer landed on the page; its toast offers 되돌리기.
+    var aiNoteNotice: String?
     private(set) var summarizingRecording = false
     private(set) var selectionCount = 0
     private(set) var selectedText = false
@@ -422,6 +444,7 @@ final class NativePDFWorkspaceModel {
         tool = saved.tool; color = saved.color; width = saved.width; opacity = saved.opacity
         previousTool = saved.previousTool; savedPenStyle = saved.penStyle; savedHighlighterStyle = saved.highlighterStyle; savedBallpointStyle = saved.ballpointStyle
         toolsExpanded = saved.toolsExpanded; showPages = saved.showPages; showAnnotations = saved.showAnnotations
+        penKind = [tool, previousTool].first { $0 == "pen" || $0 == "ballpoint" } ?? "pen"
         lassoMode = saved.lassoMode; canPaste = Self.clipboardHasContent
         clipboardEvents = NotificationCenter.default.publisher(for: UIPasteboard.changedNotification).sink { [weak self] _ in
             self?.canPaste = Self.clipboardHasContent
@@ -789,6 +812,7 @@ final class NativePDFWorkspaceModel {
         rememberActiveStyle()
         gesture = nil; clearSelection(); clearSourceSelection(); advanceSceneEpoch()
         previousTool = tool; tool = next; pencilEraser = false
+        if isPenLike { penKind = next }
         if next != "select" { toolsExpanded = true }
         canPaste = Self.clipboardHasContent
         if next == "pen" { applyStyle(savedPenStyle) }
@@ -1226,7 +1250,7 @@ final class NativePDFWorkspaceModel {
     /// A tap with the comment tool opens a pin there, or the pin already there.
     private func openComment(at point: CGPoint, page: Int) {
         if let pin = comment(at: point, page: page) { openComment(pin, page: page); return }
-        let side = 0.032, ratio = aspect(page)
+        let side = 26.0 / 640, ratio = aspect(page) // 26 pt on the design's 640 pt page
         let box = CGRect(x: min(1 - side, max(0, point.x - side / 2)), y: min(1 - side / ratio, max(0, point.y - side / ratio / 2)), width: side, height: side / ratio)
         commentDraft = CommentDraft(page: page, box: box, id: nil, text: "", color: "yellow")
     }
@@ -2350,13 +2374,17 @@ final class NativePDFWorkspaceModel {
         host?.emit = { _, _ in }; host = nil
     }
     /// An AI answer lands on the page in view as a text box: movable, editable, one undo step.
-    func insertAINote(_ text: String) {
+    /// Figma A5 draws a memo card (grey fill, left bar, 원문 보기 · 내 글로 바꾸기); a text box has only the
+    /// seven palette fills and no actions, so the memo keeps the card's header line and body as text.
+    func insertAINote(_ text: String, model: String? = nil, sources: Int = 0) {
         guard !isLoading, !isBusy, errorMessage == nil, assistantAnnotation == nil else { return }
         if textEditorDraft != nil { finishText() }
         let plain = text.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "(?m)^#+\\s*", with: "", options: .regularExpression)
+        let header = (["✦ AI 메모"] + [model, sources > 0 ? "노트 \(sources)개 참고" : nil].compactMap { $0 }).joined(separator: " · ")
         let row: [String: Any] = ["page": page, "kind": "textbox", "style": NativePDFTextStyle.load(defaults: defaults).dictionary,
-            "data": ["text": "✦ AI 메모\n" + plain, "box": ["x": 0.1, "y": 0.12, "width": 0.8, "height": 0.1]]]
+            "data": ["text": header + "\n" + plain, "box": ["x": 0.1, "y": 0.12, "width": 0.8, "height": 0.1]]]
         performObjectEdit("create", values: [NativePDFTextDraft.fittedObject(row, pageSize: pageSize(page))], selectCreated: true)
+        aiNoteNotice = "노트에 넣었어요"
     }
     private func receiveStoreEvent(_ event: NativeWorkspaceEvent) {
         guard let payload = event.payload as? [String: Any], payload["courseId"] as? String == document.courseID,
@@ -2365,7 +2393,7 @@ final class NativePDFWorkspaceModel {
         switch event.channel {
         case "nativeWorkspace:insertAINote":
             if let tabID = payload["tabID"] as? String, tabID != document.id { return }
-            if let text = payload["text"] as? String { insertAINote(text) }
+            if let text = payload["text"] as? String { insertAINote(text, model: payload["model"] as? String, sources: payload["sources"] as? Int ?? 0) }
         case "nativeWorkspace:goToPage":
             if let tabID = payload["tabID"] as? String, tabID != document.id { return }
             guard let requested = payload["page"] as? Int, requested > 0 else { return }
@@ -2416,7 +2444,7 @@ private final class NativePDFBodyController: UIViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     private var mediaDrop: NativeEditorDropInteraction?
     override func viewDidLoad() {
-        super.viewDidLoad(); view.backgroundColor = .secondarySystemBackground; model.attach(to: view)
+        super.viewDidLoad(); view.backgroundColor = .clear; model.attach(to: view)
         let drop = NativeEditorDropInteraction(view: view, imagesOnly: true) { [weak model] items, point in model?.receiveMediaDrop(items, at: point) }
         drop.onBegin = { [weak model] point in model?.beginMediaDrop(at: point) }
         drop.onError = { [weak model] error in model?.reportMediaDropError(error) }

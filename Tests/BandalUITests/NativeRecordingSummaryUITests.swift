@@ -37,7 +37,7 @@ final class NativeRecordingSummaryUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"] + extra
         app.launch()
         XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 25), app.debugDescription)
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        app.buttons["native-course-add-menu"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Lecture")
         app.buttons["native-create-course"].tap()
