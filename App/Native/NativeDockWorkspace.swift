@@ -195,13 +195,12 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             if chromeMode.showsTabs { tabs(pane.group, topPadding: NativeDockHeaderMetrics.topPadding(for: pane.frame), corner: corner) }
             Spacer(minLength: 0)
         }
-        .background(NativeDesktopTheme.bgApp)
     }
     private func tabs(_ group: NativeDockGroup, topPadding: CGFloat, corner: Bool) -> some View {
         GeometryReader { geometry in
             let shareable = navigation.document(group.activeID).map(NativeDockShareControls.supports) ?? false
             let closable = navigation.groups.count > 1
-            let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - 140 - (closable ? 36 : 0) - (shareable ? NativeDockShareControls.width : 0) - (corner ? controlInset : 0)), count: group.tabs.count,
+            let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - 152 - (closable ? 36 : 0) - (shareable ? NativeDockShareControls.width : 0) - (corner ? controlInset : 0)), count: group.tabs.count,
                 activeIndex: group.tabs.firstIndex(of: group.activeID ?? "") ?? -1, spacing: density == "compact" ? 0 : 4)
             HStack(alignment: .bottom, spacing: 0) {
                 HStack(spacing: sizing.spacing) {
@@ -214,7 +213,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 Color.clear.frame(maxWidth: .infinity).frame(height: headerHeight)
                     .contentShape(Rectangle())
                     .onDrop(of: [NativeDockDragPayload.contentType], delegate: drop(group.id, index: group.tabs.count))
-                Button { focus(group.id); newTabGroupID = group.id } label: { Image(systemName: "plus").font(.system(size: 14)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                Button { focus(group.id); newTabGroupID = group.id } label: { Image(systemName: "plus").font(.system(size: 16)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .accessibilityLabel("새 탭 열기").accessibilityIdentifier("native-dock-add-" + group.id)
                 .popover(isPresented: Binding(get: { newTabGroupID == group.id }, set: { if !$0 { newTabGroupID = nil } }), arrowEdge: .top) {
@@ -224,7 +223,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     }
                 }
                 Button { tabListGroupID = group.id } label: {
-                    Image(systemName: "chevron.down").font(.system(size: 12)).frame(width: 44, height: 44).contentShape(Rectangle())
+                    Image(systemName: "chevron.down").font(.system(size: 13)).frame(width: 44, height: 44).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("이 영역의 열린 탭 \(group.tabs.count)개")
                     .accessibilityIdentifier("native-dock-tabs-" + group.id)
                     .popover(isPresented: Binding(get: { tabListGroupID == group.id }, set: { if !$0 { tabListGroupID = nil } }), arrowEdge: .top) {
@@ -242,10 +241,12 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     }.buttonStyle(.plain).accessibilityLabel("이 칸 닫기").accessibilityIdentifier("native-dock-close-pane-" + group.id)
                 }
                 if corner && controlInset > 0 { Color.clear.frame(width: controlInset, height: 44) }
-            }.frame(height: headerHeight, alignment: .bottom).padding(.horizontal, 4).padding(.top, topPadding)
-        }.frame(height: headerHeight + topPadding).clipped().background(NativeDesktopTheme.surface)
+            }.frame(height: headerHeight, alignment: .bottom).padding(.leading, 16).padding(.trailing, 4).padding(.top, topPadding)
+                .foregroundStyle(NativeDesktopTheme.secondary)
+        // No fill of its own: the strip is part of the paper glass behind the pane.
+        }.frame(height: headerHeight + topPadding).clipped()
             .background { NativeDockTabStripBounds(groupID: group.id) }
-            .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
+            .overlay(alignment: .bottom) { NativeGlass.separator.frame(height: 1) }
             .onDrop(of: [NativeDockDragPayload.contentType], delegate: drop(group.id))
     }
     private func tab(_ document: NativeDocumentReference, group: NativeDockGroup, index: Int, sizing: NativeDockTabSizing) -> some View {
@@ -258,14 +259,14 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             .frame(width: max(0, sizing.width - (sizing.showsClose ? 32 : 0)), height: 44).clipped()
             if sizing.showsClose {
                 Button { closeDocuments([document.id]) } label: {
-                    Image(systemName: "xmark").font(.system(size: 10)).frame(width: 32, height: 44).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel(document.title + " 닫기")
+                    Image(systemName: "xmark").font(.system(size: 11)).frame(width: 32, height: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary).accessibilityLabel(document.title + " 닫기")
                     .accessibilityIdentifier(document.id == navigation.activeID ? "native-close-document" : "native-close-tab-" + document.id)
             }
         }
         .frame(width: sizing.width, height: headerHeight).clipped()
         .background {
-            RoundedRectangle(cornerRadius: 6).fill(group.activeID == document.id ? NativeDesktopTheme.raised : Color.clear).padding(.vertical, 4)
+            RoundedRectangle(cornerRadius: 9).fill(group.activeID == document.id ? NativeGlass.tool : Color.clear).padding(.vertical, 6.5)
         }
         // Only the pane being written in keeps its tabs at full strength.
         .opacity(navigation.groups.count > 1 && group.id != navigation.focusedGroupID ? 0.5 : 1)

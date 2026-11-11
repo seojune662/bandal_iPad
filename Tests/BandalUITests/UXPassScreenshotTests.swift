@@ -96,8 +96,24 @@ final class UXPassScreenshotTests: XCTestCase {
         }
     }
 
-    @MainActor private func launch(courses: Bool = false, extra: [String] = []) -> XCUIApplication {
-        XCUIDevice.shared.orientation = .portrait
+    /// The window's glass: rail, sidebar, tab strip, paper and the right panel over the backdrop, then the AI panel.
+    @MainActor func testGlassChromeLight() throws { try glassChrome(appearance: "light") }
+    @MainActor func testGlassChromeDark() throws { try glassChrome(appearance: "dark") }
+    @MainActor private func glassChrome(appearance: String) throws {
+        let app = launch(courses: true, extra: ["-native.appearance", appearance], orientation: .landscapeLeft)
+        let create = app.buttons["native-library-create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 15), app.debugDescription); create.tap(); app.buttons["새 노트"].firstMatch.tap()
+        let title = app.textFields["native-new-note-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("3주차 리서치 노트"); app.buttons["native-new-note-create"].tap()
+        XCTAssertTrue(app.otherElements["native-pdf-workspace"].waitForExistence(timeout: 20), app.debugDescription)
+        sleep(2); attach(app, "glass 01 메인 \(appearance)")
+        let toggle = app.buttons["native-ai-rail-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10)); toggle.tap(); sleep(2)
+        attach(app, "glass 02 AI 패널 \(appearance)")
+    }
+
+    @MainActor private func launch(courses: Bool = false, extra: [String] = [], orientation: UIDeviceOrientation = .portrait) -> XCUIApplication {
+        XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"] + extra
         app.launch()
@@ -110,7 +126,8 @@ final class UXPassScreenshotTests: XCTestCase {
     }
 
     @MainActor private func attach(_ app: XCUIApplication, _ name: String) {
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        // A landscape capture of the whole screen comes out rotated and cropped; the window does not.
+        let shot = XCTAttachment(screenshot: name.hasPrefix("glass") ? app.windows.firstMatch.screenshot() : app.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
     }
 }
 

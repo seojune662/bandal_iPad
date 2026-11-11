@@ -34,7 +34,7 @@ struct NativeSettingsWidgetDock: View {
                         else { Text("설정 → 위젯에서 학교 메일이나 메일 주소를 연결하세요.").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).padding().frame(maxWidth: .infinity, maxHeight: .infinity) }
                     } else { NativeWidgetTasks(store: store, board: active == "board").id(active) }
                 }.frame(height: min(max(160, availableHeight * 0.65), max(220, availableHeight * ((widgets["heightRatio"] as? NSNumber)?.doubleValue ?? 0.38))))
-                    .background(NativeDesktopTheme.surface).clipped()
+                    .clipped()
             }
         }.task { do { settings = try await store.invoke("settings:get") as? [String: Any] ?? [:] } catch { self.error = error.localizedDescription } }
             .onReceive(store.events) { event in if event.channel == "settings:changed", let value = event.payload as? [String: Any] { settings = value["settings"] as? [String: Any] ?? value } }

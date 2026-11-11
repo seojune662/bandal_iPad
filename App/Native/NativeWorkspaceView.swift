@@ -216,6 +216,8 @@ struct NativeWorkspaceView: View {
                 HStack(spacing: 0) { aiRail.frame(width: aiHostWidth); railDivider }
                     .frame(width: aiVisible ? aiHostWidth + 1 : 0, alignment: .trailing)
                     .clipped()
+                    // Outside the clip, so the glass reaches under the home indicator like the other panels.
+                    .background(NativeGlass.panel)
                     .opacity(aiVisible ? 1 : 0).allowsHitTesting(aiVisible && annotation.request == nil).accessibilityHidden(!aiVisible)
                 // Editors and the inspector remain mounted while covered. Navigation
                 // and opening a keyboard must not discard an in-progress draft.
@@ -247,7 +249,7 @@ struct NativeWorkspaceView: View {
                             NativeToolsWorkspace(section: section, store: store, services: services)
                         }
                     }
-                }.frame(maxWidth: .infinity, maxHeight: .infinity).background(NativeDesktopTheme.bgApp)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).background(NativeGlass.paper)
                 if chrome.rightPinned {
                     railDivider
                     Color.clear.frame(width: chrome.rightWidth)
@@ -265,7 +267,7 @@ struct NativeWorkspaceView: View {
                     HStack(spacing: 0) {
                         courseSidebar.frame(width: min(320, geometry.size.width - 48))
                             .nativeWorkspacePreviewExcluded(occludesContent: true)
-                            .background(NativeDesktopTheme.surface).overlay(alignment: .trailing) { railDivider }
+                            .background(NativeGlass.panel).overlay(alignment: .trailing) { railDivider }
                             .transition(.move(edge: .leading))
                         Color.black.opacity(0.12).onTapGesture { setCourseRail(false, width: geometry.size.width) }
                     }.padding(.leading, NativeDesktopTheme.navigationWidth).clipped()
@@ -284,7 +286,7 @@ struct NativeWorkspaceView: View {
                                height: max(0, geometry.size.height - NativeWorkspaceWindowControls.inspectorTop))
                         .padding(.top, NativeWorkspaceWindowControls.inspectorTop)
                         .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
-                        .background(NativeDesktopTheme.surface)
+                        .background(NativeGlass.panel)
                         .overlay(alignment: .leading) { if rightVisible && !chrome.rightPinned { railDivider } }
                         .offset(x: rightVisible ? 0 : (chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth))
                         .opacity(rightVisible ? 1 : 0).allowsHitTesting(rightVisible).accessibilityHidden(!rightVisible)
@@ -364,7 +366,7 @@ struct NativeWorkspaceView: View {
         }
         .font(NativeDesktopTheme.font(14))
         .foregroundStyle(NativeDesktopTheme.text)
-        .background(NativeDesktopTheme.surface.ignoresSafeArea())
+        .background(NativeWorkspaceBackdrop())
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         .tint(NativeDesktopTheme.accent)
         .environment(\.nativeWorkspacePreviewController, previews)
@@ -556,7 +558,8 @@ struct NativeWorkspaceView: View {
             .id(store.reloadIdentity(for:document))
     }
 
-    private var railDivider: some View { NativeDesktopTheme.border.frame(width: 1) }
+    /// Opaque: a translucent hairline between two glass panels would show the raw backdrop.
+    private var railDivider: some View { NativeGlass.separator.frame(width: 1) }
     private static let railAnimation = Animation.spring(response: 0.32, dampingFraction: 0.88)
     private enum Rail { case course, ai, materials }
     private func chromeLayout(width: CGFloat) -> NativeWorkspaceChromeLayout {
@@ -632,9 +635,9 @@ struct NativeWorkspaceView: View {
         setRail(.ai, open: true, width: windowWidth)
     }
     private func globalNavigation(width: CGFloat) -> some View {
-        VStack(spacing: 8) {
-            NativeChromeButton(title: "홈", symbol: "house.fill", selected: showsWorkspace && railVisible(.course, width: width),
-                               selectedFill: NativeDesktopTheme.surface, joinsPanel: chromeLayout(width: width).leftPinned) {
+        VStack(spacing: Self.railSpacing) {
+            NativeChromeButton(title: "홈", symbol: "house", selected: showsWorkspace && railVisible(.course, width: width),
+                               joinsPanel: chromeLayout(width: width).leftPinned) {
                 if showsWorkspace { if NativeLocalPreferences.bool(NativeLocalPreferences.homeTogglesSidebar) || !railVisible(.course, width: width) { toggleCourseRail(width: width) } } else {
                     transition {
                         section = .library; auxiliary = nil; learningHome = false
@@ -643,10 +646,10 @@ struct NativeWorkspaceView: View {
                 }
             }.accessibilityIdentifier("native-section-library")
             NativeChromeButton(title: railVisible(.ai, width: width) ? "AI 닫기" : "AI 열기", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width),
-                               selectedFill: NativeDesktopTheme.aiSurface, joinsPanel: chromeLayout(width: width).aiPinned) {
+                               joinsPanel: chromeLayout(width: width).aiPinned) {
                 if showsWorkspace { toggleAIRail(width: width) } else { transition { openAIRail() } }
             }.accessibilityIdentifier("native-ai-rail-toggle")
-            NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen, selectedFill: NativeDesktopTheme.surface) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
+            NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
             if NativeReleaseFlags.showsMarketplace {
                 NativeChromeButton(title: "마켓플레이스", symbol: "storefront", selected: auxiliary == .marketplace) { transition { section = .library; auxiliary = .marketplace; learningHome = false } }.accessibilityIdentifier("native-section-marketplace")
             }
@@ -655,11 +658,18 @@ struct NativeWorkspaceView: View {
                 NativeAccountRailButton(store: store, openSettings: openSettings,
                     openHelp: { transition { section = .library; auxiliary = .help; learningHome = false } })
             }
-            NativeChromeButton(title: "설정", symbol: "gearshape", selected: section == .settings, selectedFill: NativeDesktopTheme.surface) { openSettings("general") }.accessibilityIdentifier("native-section-settings")
-        }.padding(.top, 12).padding(.bottom, 12).frame(width: NativeDesktopTheme.navigationWidth)
-            // The divider is behind the buttons: the open panel's button covers it and joins the panel.
-            .background(alignment: .trailing) { railDivider }.background(NativeDesktopTheme.rail)
+            NativeChromeButton(title: "설정", symbol: "gearshape", selected: section == .settings) { openSettings("general") }.accessibilityIdentifier("native-section-settings")
+        }.padding(.top, Self.railTop).padding(.bottom, 12).frame(width: NativeDesktopTheme.navigationWidth)
+            // The open panel's button is a tab of that panel: the rail's glass is cut away behind it.
+            .background {
+                let layout = chromeLayout(width: width)
+                let home = showsWorkspace && layout.leftPinned && railVisible(.course, width: width)
+                let ai = showsWorkspace && layout.aiPinned && railVisible(.ai, width: width) && !home
+                NativeRailSurface(tabCenter: home ? Self.railTop + 22 : ai ? Self.railTop + 44 + Self.railSpacing + 22 : nil, reachesTop: home)
+            }
     }
+    /// Rail buttons are 44 pt on a 48 pt pitch, so neighbouring 52 pt panel tabs meet without a gap.
+    private static let railSpacing: CGFloat = 4, railTop: CGFloat = 6
     private var courseSidebar: some View {
         VStack(spacing: 0) {
             ScrollView {
@@ -679,7 +689,7 @@ struct NativeWorkspaceView: View {
             case .projects:
                 NativeProjectSidebar(store: store, selectedID: workspaceContext?.id, onOpen: changeWorkspace)
             }
-        }.background(NativeDesktopTheme.surface)
+        }.background(NativeGlass.panel)
     }
     private func toggleAcademicBoard() {
         transition {
@@ -875,7 +885,7 @@ struct NativeWorkspaceView: View {
                 }.id(context.id).frame(maxHeight: .infinity)
                 NativeSettingsWidgetDock(store: store, services: services, availableHeight: 600)
             } else { noWorkspacePlaceholder }
-        }.background(NativeDesktopTheme.surface)
+        }.background(NativeGlass.panel)
     }
     private var aiRail: some View {
         VStack(spacing: 0) {
@@ -884,11 +894,11 @@ struct NativeWorkspaceView: View {
                     attachments: pendingAttachments[context.id] ?? [],
                     onConsumeAttachments: { pendingAttachments[context.id] = nil },
                     onOpenDocument: openWorkspaceResult, onOpenSettings: openSettings, onAnnotate: beginAnnotation,
-                    onClose: { setRail(.ai, open: false, width: windowWidth) }, surface: NativeDesktopTheme.aiSurface)
+                    onClose: { setRail(.ai, open: false, width: windowWidth) }, surface: .clear)
                     .environment(\.nativeWorkspaceTarget, navigation.captureTarget())
                     .id(context.id)
             } else { noWorkspacePlaceholder }
-        }.background(NativeDesktopTheme.aiSurface)
+        }
     }
     private var noWorkspacePlaceholder: some View {
         VStack(spacing: 12) {

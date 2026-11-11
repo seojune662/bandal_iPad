@@ -60,7 +60,7 @@ struct NativeCourseSidebar: View {
                     } else if !query.isEmpty && visible.isEmpty { Text("일치하는 과목이 없어요").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted).padding() }
                 }.padding(.horizontal, 8).padding(.bottom, 16)
             }
-        }.background(NativeDesktopTheme.surface).disabled(busy)
+        }.disabled(busy)
             .task { await loadGroups() }
             .onReceive(store.events) { event in if event.channel == "courses:changed" { Task { await loadGroups() } } }
             .onReceive(NotificationCenter.default.publisher(for: NativeHomeTab.newCourse)) { _ in adding = .course }

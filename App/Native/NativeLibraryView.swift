@@ -116,7 +116,6 @@ struct NativeLibraryView: View {
             libraryContent.frame(maxHeight: .infinity)
             NativeLibrarySourceTray(store: store, folderPath: folderPath, model: sourceTrayModel)
         }
-        .background(NativeDesktopTheme.surface)
         .buttonStyle(.plain)
         .fileImporter(isPresented: $importing, allowedContentTypes: importTypes, allowsMultipleSelection: true) { result in
             let destination = importDestination
