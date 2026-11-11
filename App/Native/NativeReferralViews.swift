@@ -16,7 +16,7 @@ struct NativeReferralCodeEntry: View {
     @State private var linked: String?
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var colorScheme
-    private var height: CGFloat { large ? 56 : 44 }
+    private var height: CGFloat { large ? 50 : 44 }
 
     var body: some View {
         VStack(alignment: large ? .center : .leading, spacing: 8) {
@@ -28,7 +28,7 @@ struct NativeReferralCodeEntry: View {
                     field
                     // Made again when the theme changes: the system draws it in the colours it was given.
                     NativeReferralPasteControl { text = Referral.normalize($0) }.frame(height: height).id(colorScheme)
-                }.frame(maxWidth: large ? 280 : nil)
+                }.frame(maxWidth: large ? 520 : nil)
                 outcome.frame(minHeight: 18)
             }
         }
@@ -60,12 +60,12 @@ struct NativeReferralCodeEntry: View {
 
     private var field: some View {
         TextField("", text: $text, prompt: Text("6자리 코드"))
-            .font(.system(size: large ? 24 : 15, weight: .semibold, design: .monospaced)).multilineTextAlignment(large ? .center : .leading)
+            .font(.system(size: large ? 17 : 15, weight: .semibold, design: .monospaced)).multilineTextAlignment(large ? .center : .leading)
             .textFieldStyle(.plain).keyboardType(.asciiCapable).textInputAutocapitalization(.characters).autocorrectionDisabled()
             .focused($focused)
             .padding(.horizontal, 12).frame(maxWidth: large ? .infinity : 150).frame(height: height)
-            .background(large ? NativeDesktopTheme.surface : NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: BandalMetrics.radius))
-            .overlay { RoundedRectangle(cornerRadius: BandalMetrics.radius).strokeBorder(NativeDesktopTheme.border) }
+            .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: large ? 14 : BandalMetrics.radius, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: large ? 14 : BandalMetrics.radius, style: .continuous).strokeBorder(NativeDesktopTheme.border) }
             .accessibilityLabel("초대 코드").accessibilityIdentifier("native-referral-field")
     }
 
