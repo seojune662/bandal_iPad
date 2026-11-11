@@ -7,6 +7,7 @@ struct NativeWorkspaceView: View {
     @StateObject private var navigation = NativeWorkspaceNavigation()
     @StateObject private var previews = NativeWorkspacePreviewController()
     @State private var windowsOverviewOpen = false
+    @State private var pdfPalette = NativePDFPaletteHost()
     @State private var shortcutContentHeight: CGFloat = 200
     @StateObject private var services: NativePlatformServices
     @ObservedObject private var annotation: NativeAnnotationCoordinator
@@ -231,6 +232,7 @@ struct NativeWorkspaceView: View {
                         openNewTab: openNewTab, covered: covered, select: selectTab,
                         chromeMode: navigation.chromeMode, controlInset: chrome.rightPinned ? 0 : NativeWorkspaceWindowControls.width + NativeWorkspaceWindowControls.trailing)
                         .environment(\.nativeWorkspacePreviewController, previews)
+                        .environment(\.nativePDFPaletteHost, pdfPalette)
                     }
                         .opacity(covered && !settingsOpen ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered)
                     if windowsOverviewOpen {
@@ -300,6 +302,8 @@ struct NativeWorkspaceView: View {
                         .position(x: geometry.size.width - chrome.rightWidth - 0.5, y: geometry.size.height / 2)
                 }
             }
+            // The PDF palette floats over the side panels; under a drawer it stays inside its pane.
+            .overlay { NativePDFPaletteLayer(host: pdfPalette, covered: compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) || rightVisible && !chrome.rightPinned) }
             .overlay(alignment: .topTrailing) {
                 NativeWorkspaceWindowControls(mode: navigation.chromeMode, overview: windowsOverviewOpen,
                     rightVisible: rightVisible, enabled: showsWorkspace && !boardOverlayOpen && workspaceContext != nil && !busy && annotation.request == nil,

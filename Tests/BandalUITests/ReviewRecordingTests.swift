@@ -58,7 +58,7 @@ final class ReviewRecordingTests: XCTestCase {
     @MainActor private func writeOnPDF() {
         let pdf = app.otherElements["native-pdf-workspace"]
         tool("pen")
-        let style = app.buttons["native-pdf-style"]
+        let style = app.buttons["native-pdf-tool-pen"] // a second tap on the chosen pen opens its settings
         if style.exists, style.isHittable {
             tap(style); tap(app.buttons["native-pdf-color-blue"], wait: 5)
             let close = app.buttons["native-pdf-style-close"].firstMatch
