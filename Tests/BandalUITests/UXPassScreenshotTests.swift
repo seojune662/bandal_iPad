@@ -8,7 +8,7 @@ final class UXPassScreenshotTests: XCTestCase {
     @MainActor func testRailSidebarAndCourseMenus() throws {
         let app = launch()
         XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 25), app.debugDescription)
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        app.buttons["native-course-add-menu"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Linear Algebra")
         attach(app, "01 새 과목")
@@ -61,7 +61,7 @@ final class UXPassScreenshotTests: XCTestCase {
             create.tap(); app.buttons["새 폴더"].firstMatch.tap(); sleep(1); attach(app, "17 새 폴더")
             dismiss(app)
         }
-        app.buttons["native-course-add-menu"].tap(); app.buttons["보관된 과목 관리"].firstMatch.tap(); sleep(1); attach(app, "18 과목 관리")
+        app.buttons["native-course-add-menu"].press(forDuration: 1); app.buttons["보관된 과목 관리"].firstMatch.tap(); sleep(1); attach(app, "18 과목 관리")
         dismiss(app)
         app.buttons["native-section-planner"].tap()
         let add = app.buttons["native-task-add"]
@@ -118,7 +118,7 @@ final class UXPassScreenshotTests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"] + extra
         app.launch()
         guard courses, app.buttons["native-course-add-menu"].waitForExistence(timeout: 25) else { return app }
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        app.buttons["native-course-add-menu"].tap()
         let name = app.textFields["native-course-name"]
         if name.waitForExistence(timeout: 5) { name.tap(); name.typeText("Linear Algebra"); app.buttons["native-create-course"].tap() }
         sleep(1)

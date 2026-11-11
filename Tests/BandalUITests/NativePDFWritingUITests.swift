@@ -171,7 +171,7 @@ final class NativePDFWritingUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = arguments(reset: true) + extra; app.launch()
         let add = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(add.waitForExistence(timeout: 25)); add.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 25)); add.tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Writing Integration")
         app.buttons["native-create-course"].tap()

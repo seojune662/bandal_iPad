@@ -33,13 +33,12 @@ final class ReviewRecordingTests: XCTestCase {
 
     @MainActor private func createCourse() {
         tap(app.buttons["native-course-add-menu"], wait: 30)
-        tap(app.buttons["native-new-course"])
         type("선형대수학", into: app.textFields["native-course-name"])
         tap(app.buttons["native-create-course"]); pause(2)
     }
 
     @MainActor private func importAndOpenPDF() {
-        tap(app.buttons["native-library-import"]); pause(2)
+        tap(app.buttons["native-library-create"]); tap(app.buttons["native-library-import"]); pause(2)
         // System document picker: On My iPad › app folder. The picker opens on iCloud Drive, so the
         // seconds before the app folder shows are blurred in the exported video (personal file names).
         let file = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", sample)).firstMatch

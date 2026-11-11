@@ -21,10 +21,10 @@ struct NativeWorkspaceWindowControls: View {
     let toggleOverview: () -> Void
     let toggleInspector: () -> Void
 
-    static let width: CGFloat = 140
-    static let trailing: CGFloat = 4
-    static let top: CGFloat = 16
-    static let inspectorTop: CGFloat = 64
+    static let width: CGFloat = 128
+    static let trailing: CGFloat = 10
+    static let top: CGFloat = 12
+    static let inspectorTop: CGFloat = 61
 
     var body: some View {
         HStack(spacing: 0) {
@@ -33,30 +33,31 @@ struct NativeWorkspaceWindowControls: View {
                 Button { changeMode(.tabsHidden) } label: { label("탭만 숨김", mode: .tabsHidden) }
                 Button { changeMode(.toolsHidden) } label: { label("탭·일반 도구 숨김", mode: .toolsHidden) }
                 Text("펜·지우개 등 필기 도구는 유지됩니다.")
-            } label: { icon("rectangle.topthird.inset.filled") }
+            } label: { icon("macwindow").padding(.leading, 5) }
                 .disabled(!enabled).accessibilityLabel("탭과 도구 표시")
                 .accessibilityIdentifier("native-workspace-chrome-menu")
-            Button(action: toggleOverview) { icon("rectangle.on.rectangle", selected: overview) }
+            Button(action: toggleOverview) { icon("rectangle.on.rectangle", selected: overview).padding(.leading, 5) }
                 .disabled(!enabled).accessibilityLabel(overview ? "윈도우 관리 닫기" : "윈도우 관리")
                 .accessibilityIdentifier("native-workspace-windows-toggle")
                 // The inspector remains usable in overview. Keep Escape in the
                 // window's command scope even when focus moves to that sibling.
                 .keyboardShortcut(overview ? KeyboardShortcut(.escape, modifiers: []) : nil)
-            Button(action: toggleInspector) { icon("sidebar.right", selected: rightVisible) }
+            Button(action: toggleInspector) { icon("sidebar.right", selected: rightVisible, width: 34).padding(.leading, 7).padding(.trailing, 5) }
                 .accessibilityLabel(rightVisible ? "오른쪽 패널 접기" : "오른쪽 패널 펼치기")
                 .accessibilityIdentifier("native-toggle-materials-rail")
         }
-        .buttonStyle(.plain).padding(.horizontal, 4)
-        .background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(NativeDesktopTheme.border, lineWidth: 1) }
+        .buttonStyle(.plain)
+        .background(NativeGlass.selection, in: RoundedRectangle(cornerRadius: 11))
+        .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(NativeGlass.fieldStroke, lineWidth: 1) }
         .accessibilityElement(children: .contain).accessibilityIdentifier("native-workspace-controls")
     }
 
-    private func icon(_ name: String, selected: Bool = false) -> some View {
-        Image(systemName: name).font(.system(size: 17, weight: .medium))
-            .foregroundStyle(selected ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
-            .frame(width: 44, height: 44)
-            .background(selected ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 8))
+    /// Three cells of 36 · 36 · 34 in a 128 × 40 group; the chosen one carries a 34 × 30 pill.
+    private func icon(_ name: String, selected: Bool = false, width: CGFloat = 36) -> some View {
+        Image(systemName: name).font(.system(size: 16))
+            .foregroundStyle(selected ? NativeGlass.icon : NativeGlass.panelIcon)
+            .frame(width: width, height: 40)
+            .background { if selected { RoundedRectangle(cornerRadius: 8).fill(NativeGlass.selection).frame(width: 34, height: 30) } }
             .contentShape(Rectangle())
     }
     @ViewBuilder private func label(_ title: String, mode value: NativeWorkspaceChromeMode) -> some View {

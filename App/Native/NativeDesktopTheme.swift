@@ -59,6 +59,9 @@ struct NativeChromeButton: View {
     var selected = false
     /// The highlight behind a selected button.
     var selectedFill = NativeDesktopTheme.raised
+    /// The highlight's inset from the 44 pt button and its radius.
+    var selectedInset: CGFloat = 5
+    var selectedRadius: CGFloat = 8
     /// A rail button whose panel is open beside it: `NativeRailSurface` draws the panel's tab behind it,
     /// so the button itself draws no highlight.
     var joinsPanel = false
@@ -68,7 +71,7 @@ struct NativeChromeButton: View {
             Image(systemName: symbol).font(.system(size: 18, weight: .regular))
                 .foregroundStyle(NativeGlass.icon)
                 .frame(width: 44, height: 44)
-                .background { if selected, !joinsPanel { RoundedRectangle(cornerRadius: 8).fill(selectedFill).padding(5) } }
+                .background { if selected, !joinsPanel { RoundedRectangle(cornerRadius: selectedRadius).fill(selectedFill).padding(selectedInset) } }
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel(title).help(title)
     }

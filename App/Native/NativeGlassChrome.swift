@@ -22,6 +22,14 @@ enum NativeGlass {
     static let rim = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.14) : UIColor(white: 0xdb / 255, alpha: 1) })
     /// Rail and panel-header icons (`Brand/Accent`).
     static let icon = NativeDesktopTheme.adaptive(0x1a1a1a, 0xededed)
+    /// Icons and small labels on the side panels (sidebar rows, the files header, the window buttons).
+    static let panelIcon = NativeDesktopTheme.adaptive(0x555555, 0x9a9a9a)
+    static let panelTertiary = NativeDesktopTheme.adaptive(0x737373, 0x9a9a9a)
+    /// A search field on a side panel: fill, stroke, magnifier and prompt.
+    static let field = fill(0xffffff, 0.7, 0x1c1c1e, 0.7)
+    static let fieldStroke = NativeDesktopTheme.adaptive(0xe6e6e6, 0x222222)
+    static let fieldGlyph = NativeDesktopTheme.adaptive(0x999999, 0x4a4a4a)
+    static let fieldPrompt = NativeDesktopTheme.adaptive(0xa8a8a8, 0x4a4a4a)
     /// `Surface/Tool`: the chosen tab's pill.
     static let tool = NativeDesktopTheme.adaptive(0xf7f7f7, 0x1f1f1f)
 
@@ -78,7 +86,7 @@ struct NativeRailSurface: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
-                NativeGlass.rail.overlay(alignment: .trailing) { NativeGlass.separator.frame(width: 1) }.ignoresSafeArea()
+                NativeGlass.rail.ignoresSafeArea()
                 if let tabCenter { tab(tabCenter).foregroundStyle(.black).blendMode(.destinationOut) }
             }.compositingGroup()
             if let tabCenter { tab(tabCenter).foregroundStyle(NativeGlass.panel) }

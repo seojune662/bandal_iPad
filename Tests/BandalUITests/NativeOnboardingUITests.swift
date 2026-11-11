@@ -213,7 +213,7 @@ final class NativeOnboardingUITests: XCTestCase {
         let app = launch([])
         let add = app.buttons["native-course-add-menu"]
         XCTAssertTrue(add.waitForExistence(timeout: 25), app.debugDescription)
-        add.tap(); app.buttons["native-new-course"].firstMatch.tap()
+        add.tap()
         let name = app.textFields["native-course-name"]
         // Return creates the course. Tapping 만들기 did not on an iPad mini in landscape (why was not looked into).
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Physics\n")

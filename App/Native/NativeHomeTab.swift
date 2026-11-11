@@ -19,42 +19,41 @@ struct NativeHomeTab: View {
     private var subjects: [NativeCourse] { store.courses.filter { $0.workspaceKind != "study-space" } }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: 22) {
             if let recent, let courseID = store.selectedCourseID {
-                section("이어서 쓰기") {
-                    Button { onOpen(recent.document(in: courseID)) } label: {
-                        HStack(spacing: 16) {
-                            VStack(alignment: .leading, spacing: 6) { ForEach([36, 28, 40, 22], id: \.self) { Capsule().fill(NativeDesktopTheme.border).frame(width: $0, height: 3) } }
-                                .frame(width: 60, height: 76).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 8))
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text((recent.name as NSString).deletingPathExtension).font(NativeDesktopTheme.font(16, weight: .semibold)).lineLimit(1)
-                                Text(courseTitle + " · " + Self.ago(recent.mtime ?? 0)).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
-                            }
-                            Spacer(minLength: 0)
-                            Image(systemName: "chevron.right").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted)
-                        }.padding(12).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 16)).contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityIdentifier("native-home-continue")
-                }
+                title("이어서 쓰기")
+                Button { onOpen(recent.document(in: courseID)) } label: {
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 7) { ForEach([46, 36, 50, 26], id: \.self) { RoundedRectangle(cornerRadius: 2).fill(NativeDesktopTheme.border).frame(width: $0, height: 4) } }
+                            .padding(10).frame(width: 72, height: 92, alignment: .topLeading).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 8))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text((recent.name as NSString).deletingPathExtension).font(NativeDesktopTheme.font(18, weight: .semibold)).lineLimit(1)
+                            Text(courseTitle + " · " + Self.ago(recent.mtime ?? 0)).font(NativeDesktopTheme.font(14)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right").font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.muted)
+                    }.padding(14).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 16)).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityIdentifier("native-home-continue")
             }
-            section("과목") {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 12)], alignment: .leading, spacing: 12) {
-                    ForEach(subjects) { course in
-                        Button { onSelectCourse(course.id) } label: { tile(course.name, "folder").background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 14)) }
-                            .buttonStyle(.plain).accessibilityIdentifier("native-home-course-" + course.id)
-                    }
-                    Button(action: onNewCourse) {
-                        tile("새 과목", "plus").foregroundStyle(NativeDesktopTheme.muted)
-                            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(NativeDesktopTheme.border, style: StrokeStyle(lineWidth: 1, dash: [4])))
-                    }.buttonStyle(.plain).accessibilityIdentifier("native-home-new-course")
+            title("과목")
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 14, alignment: .top)], alignment: .leading, spacing: 14) {
+                ForEach(subjects) { course in
+                    Button { onSelectCourse(course.id) } label: { tile(course.name, "folder", height: 85, icon: NativeDesktopTheme.accent).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 14)) }
+                        .buttonStyle(.plain).accessibilityIdentifier("native-home-course-" + course.id)
                 }
+                Button(action: onNewCourse) {
+                    tile("새 과목", "plus", height: 88, icon: NativeDesktopTheme.secondary).foregroundStyle(NativeDesktopTheme.secondary)
+                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(NativeDesktopTheme.border, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+                }.buttonStyle(.plain).accessibilityIdentifier("native-home-new-course")
             }
             HStack(spacing: 18) {
                 Button(action: onNewNote) {
-                    Label("새 노트", systemImage: "square.and.pencil").font(NativeDesktopTheme.font(15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.onAccent)
-                        .padding(.horizontal, 22).frame(height: 48).background(NativeDesktopTheme.accent, in: Capsule())
-                        .shadow(color: .black.opacity(0.18), radius: 10, y: 4).contentShape(Rectangle())
+                    HStack(spacing: 8) { Image(systemName: "square.and.pencil").font(.system(size: 18)); Text("새 노트").font(NativeDesktopTheme.font(17, weight: .semibold)) }
+                        .foregroundStyle(NativeDesktopTheme.onAccent)
+                        .padding(.horizontal, 26).frame(height: 49).background(NativeDesktopTheme.accent, in: Capsule())
+                        .shadow(color: .black.opacity(0.12), radius: 12, y: 8).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("새 노트 쓰기").accessibilityIdentifier("native-home-new-note")
-                Button("PDF · 폴더에서 추가") { importing = true }.buttonStyle(.plain).font(NativeDesktopTheme.font(14)).frame(minHeight: 44)
+                Button("PDF · 폴더에서 추가") { importing = true }.buttonStyle(.plain).font(NativeDesktopTheme.font(15, weight: .medium)).foregroundStyle(NativeDesktopTheme.accent).frame(minHeight: 44)
                     .accessibilityIdentifier("native-home-import")
             }.frame(maxWidth: .infinity)
         }
@@ -64,15 +63,14 @@ struct NativeHomeTab: View {
             Task { do { try await store.importFiles(urls) } catch { store.errorMessage = error.localizedDescription } }
         }
     }
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityAddTraits(.isHeader)
-            content()
-        }
+    private func title(_ text: LocalizedStringKey) -> some View {
+        Text(text).font(NativeDesktopTheme.font(15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityAddTraits(.isHeader)
     }
-    private func tile(_ title: String, _ symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) { Image(systemName: symbol).font(.system(size: 20)); Text(title).font(NativeDesktopTheme.font(13, weight: .medium)).lineLimit(1) }
-            .padding(14).frame(maxWidth: .infinity, minHeight: 84, alignment: .leading).contentShape(Rectangle())
+    private func tile(_ title: String, _ symbol: String, height: CGFloat, icon: Color) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 22)).foregroundStyle(icon).frame(height: 26)
+            Text(title).font(NativeDesktopTheme.font(14, weight: .medium)).lineLimit(1)
+        }.padding(16).frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading).contentShape(Rectangle())
     }
     static func ago(_ mtime: Double) -> String {
         // Repository mtimes are Unix milliseconds; accept seconds for legacy data.

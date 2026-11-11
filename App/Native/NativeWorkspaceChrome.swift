@@ -63,40 +63,39 @@ struct NativeWorkspaceChromeLayout: Equatable {
 struct NativeHomeSectionPicker: View {
     @Binding var selection: NativeHomeSection
     var body: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 18) {
             ForEach(NativeHomeSection.allCases) { section in
                 Button { selection = section } label: {
-                    Text(section.title).font(NativeDesktopTheme.font(14, weight: selection == section ? .semibold : .regular))
-                        .foregroundStyle(selection == section ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
-                        .frame(minHeight: 44)
+                    Text(section.title).font(NativeDesktopTheme.font(13, weight: selection == section ? .semibold : .regular))
+                        .foregroundStyle(selection == section ? NativeGlass.icon : NativeGlass.panelTertiary)
+                        .frame(height: 39)
                         .overlay(alignment: .bottom) {
-                            if selection == section { Capsule().fill(NativeDesktopTheme.text).frame(height: 2) }
+                            if selection == section { RoundedRectangle(cornerRadius: 1).fill(NativeGlass.icon).frame(height: 2).padding(.horizontal, -1) }
                         }
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("native-home-" + section.rawValue)
                     .accessibilityAddTraits(selection == section ? .isSelected : [])
             }
             Spacer(minLength: 0)
-        }.padding(.horizontal, 16)
-            .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
-            .padding(.bottom, 10)
+        }.padding(.horizontal, 16).padding(.bottom, 1)
+            .overlay(alignment: .bottom) { NativeGlass.hairline.frame(height: 1) }
+            .padding(.bottom, 11)
     }
 }
 
-/// Search field shared by the course and project rails.
+/// Search field shared by the course and project rails and the files panel.
 struct NativeRailSearchField: View {
     let prompt: String
     @Binding var text: String
     let identifier: String
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 12))
-            TextField(prompt, text: $text).textFieldStyle(.plain).foregroundStyle(NativeDesktopTheme.text).accessibilityIdentifier(identifier)
-            if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).accessibilityLabel("검색어 지우기") }
-        }.font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.muted)
-            .padding(.horizontal, 10).frame(minHeight: 36)
-            .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 8))
-            .overlay { RoundedRectangle(cornerRadius: 8).stroke(NativeDesktopTheme.border) }
+        HStack(spacing: 3) {
+            Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(NativeGlass.fieldGlyph).frame(width: 16)
+            TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(NativeGlass.fieldPrompt)).textFieldStyle(.plain).foregroundStyle(NativeDesktopTheme.text).accessibilityIdentifier(identifier)
+            if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(NativeGlass.fieldGlyph) }.buttonStyle(.plain).accessibilityLabel("검색어 지우기") }
+        }.font(NativeDesktopTheme.font(12))
+            .padding(.leading, 9).padding(.trailing, 8).frame(height: 34)
+            .background(NativeGlass.field, in: RoundedRectangle(cornerRadius: 8))
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(NativeGlass.fieldStroke) }
     }
 }
-
