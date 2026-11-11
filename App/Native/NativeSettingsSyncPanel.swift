@@ -5,8 +5,15 @@ import UIKit
 /// so nothing here mentions either. Choosing iCloud or Google Drive reads the root first and asks
 /// only when it already holds data (the connection sheet); Drive asks for a Google account first.
 /// While on, the other storage is reached by moving (spec v2.7), never by connecting again.
+/// The page is the design's (Figma 132:3879): a status card, the iCloud switch and the linked folders.
+/// `detail` is its 더 보기: Google Drive, moving, this device's name and disconnecting.
 struct NativeSettingsSyncPanel: View {
     var store: NativeWorkspaceStore
+    var detail = false
+    var openDetail: () -> Void = {}
+    /// Courses that are folders of the Files app (연결한 폴더), and the one being asked about.
+    @State private var linked: [[String: Any]] = []
+    @State private var unlinking: String?
     @State private var status: [String: Any] = [:]
     @State private var deviceName = ""
     @State private var preview: [String: Any]?
@@ -36,61 +43,13 @@ struct NativeSettingsSyncPanel: View {
     private var moveWaits: Bool { (movePlan?["initialUpload"] as? [String: Any])?["going"] as? Bool == true || movePlan?["downloading"] != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 28) {
             if let error { NativeToolError(message: error) }
-            if let notice { Label(notice, systemImage: "checkmark.circle").font(NativeDesktopTheme.font(13)).foregroundStyle(.green) }
-            NativeSettingsCard(title: "동기화", description: "같은 Apple ID 또는 Google 계정의 기기끼리 과목과 자료를 맞춰요.") {
-                Picker("동기화", selection: Binding(get: { on ? provider : "off" }, set: { $0 == "off" ? (offConfirmation = true) : on ? beginMove($0) : turnOn($0) })) {
-                    Text("끔").tag("off")
-                    Text("iCloud").tag("icloud")
-                    Text("Google Drive").tag("drive")
-                }.pickerStyle(.segmented).frame(maxWidth: 400).accessibilityIdentifier("native-sync-provider")
-                    // Start, turn off and the connection choice all hang off the picker that asked for them.
-                    .bandalConfirm(startMessage, isPresented: $startConfirmation, action: "올리기", identifier: "native-sync-start-confirm") { connect(["mode": "start"]) }
-                    .background(Color.clear.bandalConfirm(offMessage, isPresented: $offConfirmation, action: "끄기", destructive: true, identifier: "native-sync-off-confirm") {
-                        run { status = try await invoke("cloudSync:disconnect"); preview = nil }
-                    })
-                    .overlay(Color.clear.allowsHitTesting(false).bandalPopover(isPresented: Binding(get: { preview?["sameName"] != nil && preview?["empty"] as? Bool == false }, set: { if !$0 { preview = nil } }), width: 380) {
-                        if let preview { NativeSyncConnectSheet(preview: preview, connect: connect) }
-                    })
-                if on { state }
-                if shown == "icloud", preview?["available"] as? Bool == false || reason == "signed-out" { signedOut }
-                if provider == "drive" && (reason == "drive-signed-out" || status["message"] as? String == GoogleDriveAuth.signedOut.localizedDescription)
-                    || error == GoogleDriveAuth.signedOut.localizedDescription {
-                    Button("Google에 다시 연결") { run { status = try await invoke("cloudSync:signInDrive") } }
-                }
-                if let count = preview?["downloading"] as? Int {
-                    Text("\(CloudSyncService.name(shown))에서 반달 폴더를 내려받는 중이에요(\(count)개). 잠시 뒤 다시 켜 주세요.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
-                }
-                if preview?["blocked"] != nil { Text("새 버전의 반달이 만든 폴더예요. 앱을 업데이트한 뒤 켜 주세요.").font(.caption).foregroundStyle(.orange) }
-                if let uploading = preview?["initialUpload"] as? [String: Any], waitingFor != nil {
-                    Text("‘\(uploading["device"] as? String ?? "")’에서 \(CloudSyncService.name(shown))에 처음 올리는 중이에요. 30초마다 다시 확인해요.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
-                }
-                if on { advanced }
-            }
-            if on, status["moving"] == nil {
-                moveOffer
-                moveCard
-            }
-            NativeSettingsCard(title: "이 기기") {
-                LabeledContent("이름") {
-                    // Saved on Enter; the name labels conflict copies.
-                    TextField("iPad", text: $deviceName).multilineTextAlignment(.trailing).frame(maxWidth: 240).accessibilityIdentifier("native-sync-device-name")
-                        .onSubmit {
-                            guard !deviceName.trimmingCharacters(in: .whitespaces).isEmpty, deviceName != status["deviceName"] as? String else { return }
-                            run { status = try await invoke("cloudSync:setDeviceName", ["name": deviceName]); notice = "기기 이름을 바꿨어요." }
-                        }
-                }
-                Text("과목·PDF·필기·텍스트 노트가 동기화돼요. 하이라이트·화이트보드·연결 폴더 과목은 빠져요.").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
-            }
-            if status["previousProfile"] as? Bool == true {
-                NativeSettingsCard(title: "이전 자료", description: "클라우드 자료를 가져오기 전에 이 iPad에 있던 자료로 돌아갑니다. 동기화는 꺼집니다.") {
-                    Button("이전 자료로 돌아가기") { run { _ = try await invoke("cloudSync:returnToPrevious") } }
-                }
-            }
+            if let notice { Label(notice, systemImage: "checkmark.circle").font(.system(size: 13)).foregroundStyle(NativeSettingsRowMetrics.green) }
+            if detail { details } else { overview }
         }
         .disabled(busy)
-        .task { await load() }
+        .task { await load(); await loadLinked() }
         .task(id: waitingFor) {
             // Another device's first upload is looked at again every 30 s (spec v2.6); the sheet opens once it is done or stopped.
             while let kind = waitingFor {
@@ -110,6 +69,129 @@ struct NativeSettingsSyncPanel: View {
         .onReceive(store.events) { event in
             guard event.channel == "runtime:cloudSyncChanged", let value = event.payload as? [String: Any] else { return }
             status = status.filter { ["provider", "deviceName", "previousProfile", "lastSuccessAt", "driveEmail"].contains($0.key) }.merging(value) { $1 }
+        }
+    }
+
+    /// Start, turn off and the connection choice all hang off the control that asked for them.
+    private func asking(_ control: some View) -> some View {
+        control
+            .bandalConfirm(startMessage, isPresented: $startConfirmation, action: "올리기", identifier: "native-sync-start-confirm") { connect(["mode": "start"]) }
+            .background(Color.clear.bandalConfirm(offMessage, isPresented: $offConfirmation, action: "끄기", destructive: true, identifier: "native-sync-off-confirm") {
+                run { status = try await invoke("cloudSync:disconnect"); preview = nil }
+            })
+            .overlay(Color.clear.allowsHitTesting(false).bandalPopover(isPresented: Binding(get: { preview?["sameName"] != nil && preview?["empty"] as? Bool == false }, set: { if !$0 { preview = nil } }), width: 380) {
+                if let preview { NativeSyncConnectSheet(preview: preview, connect: connect) }
+            })
+    }
+
+    /// What stands in the way of turning sync on, under the control that tried.
+    @ViewBuilder private var notes: some View {
+            if shown == "icloud", preview?["available"] as? Bool == false || reason == "signed-out" { signedOut }
+            if provider == "drive" && (reason == "drive-signed-out" || status["message"] as? String == GoogleDriveAuth.signedOut.localizedDescription)
+                || error == GoogleDriveAuth.signedOut.localizedDescription {
+                Button("Google에 다시 연결") { run { status = try await invoke("cloudSync:signInDrive") } }
+            }
+            if let count = preview?["downloading"] as? Int {
+                Text("\(CloudSyncService.name(shown))에서 반달 폴더를 내려받는 중이에요(\(count)개). 잠시 뒤 다시 켜 주세요.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
+            }
+            if preview?["blocked"] != nil { Text("새 버전의 반달이 만든 폴더예요. 앱을 업데이트한 뒤 켜 주세요.").font(.caption).foregroundStyle(.orange) }
+            if let uploading = preview?["initialUpload"] as? [String: Any], waitingFor != nil {
+                Text("‘\(uploading["device"] as? String ?? "")’에서 \(CloudSyncService.name(shown))에 처음 올리는 중이에요. 30초마다 다시 확인해요.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
+            }
+    }
+
+    /// The status card's four parts.
+    private var summary: (symbol: String, tint: Color, title: String, detail: String) {
+        let place = CloudSyncService.name(provider)
+        guard on else { return ("icloud.slash", NativeDesktopTheme.muted, "동기화 꺼짐", "켜면 같은 계정의 기기끼리 과목과 자료를 맞춰요") }
+        switch phase {
+        case "idle": return ("checkmark.circle.fill", NativeSettingsRowMetrics.green, "모두 동기화됨", (relative ?? "방금 전") + " · " + place)
+        case "paused", "error": return ("exclamationmark.circle.fill", phase == "error" ? NativeSettingsRowMetrics.red : .orange, phaseText, status["message"] as? String ?? place)
+        default: return ("arrow.triangle.2.circlepath.circle.fill", NativeDesktopTheme.secondary, phaseText, place)
+        }
+    }
+
+    @ViewBuilder private var overview: some View {
+        let summary = summary
+        HStack(spacing: 14) {
+            Image(systemName: summary.symbol).font(.system(size: 26)).foregroundStyle(summary.tint).frame(width: 31, height: 31).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                BandalText(summary.title).font(.system(size: 18, weight: .semibold)).contextMenu { if let absolute { Text(absolute) } }.accessibilityIdentifier("native-sync-status")
+                BandalText(summary.detail).font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            Button("지금 동기화") { run { status = try await invoke("cloudSync:syncNow") } }.buttonStyle(BandalButtonStyle(kind: .soft)).frame(height: 31)
+                .disabled(!on || phase == "paused" || phase == "syncing").accessibilityIdentifier("native-sync-now")
+        }.padding(21).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(NativeDesktopTheme.border))
+        // 준비 중: syncing over cellular is the system's switch, and every document already has its copy on this iPad.
+        NativeSettingsGroup(description: "셀룰러 데이터 · 오프라인 설정은 준비 중이에요.") {
+            asking(NativeSettingsToggle(title: "iCloud 동기화", isOn: Binding(get: { provider == "icloud" }, set: { value in
+                if !value { offConfirmation = true } else if on { openDetail(); beginMove("icloud") } else { turnOn("icloud") }
+            })).accessibilityIdentifier("native-sync-icloud"))
+            NativeSettingsToggle(title: "셀룰러 데이터 사용", isOn: .constant(false)).disabled(true).accessibilityIdentifier("native-sync-cellular")
+            NativeSettingsToggle(title: "오프라인에서도 열기", note: "기기에 사본을 저장해요", isOn: .constant(true)).disabled(true).accessibilityIdentifier("native-sync-offline")
+            notes
+        }
+        NativeSettingsGroup(title: "연결한 폴더") {
+            ForEach(Array(linked.enumerated()), id: \.offset) { _, course in
+                let id = course["id"] as? String ?? ""
+                NativeSettingsRow(title: course["name"] as? String ?? "", note: Self.place(course["folderPath"] as? String ?? "")) {
+                    Button { unlinking = id } label: { Text("연결 해제").foregroundStyle(NativeSettingsRowMetrics.red) }.frame(height: 31).accessibilityIdentifier("native-sync-unlink-" + id)
+                        // The course is put away, as 과목 보관 does: its folder and its notes stay.
+                        .bandalConfirm("폴더 연결을 해제할까요?", isPresented: Binding(get: { unlinking == id }, set: { if !$0, unlinking == id { unlinking = nil } }),
+                                       message: "과목을 보관해 목록에서 빼요. 폴더의 파일은 그대로 남아요.", action: "연결 해제", destructive: true, identifier: "native-sync-unlink-confirm") {
+                            run { try await store.flushDocuments(); _ = try await store.invoke("courses:archive", ["courseId": id, "archived": true]); await loadLinked() }
+                        }
+                }
+            }
+            NativeSettingsActionRow(title: "＋ 폴더 연결") {
+                run {
+                    guard let folder = try await store.invoke("courses:pickFolder") as? [String: Any], let path = folder["path"] as? String else { return }
+                    let result = try await store.invoke("courses:addFromFolder", ["folderPath": path, "name": folder["name"] as? String ?? "연결한 과목", "color": "blue"]) as? [String: Any]
+                    if result?["status"] as? String == "failed" { throw DesktopRuntimeError(result?["reason"] as? String ?? "폴더를 연결하지 못했습니다.") }
+                    await loadLinked()
+                }
+            }.accessibilityIdentifier("native-sync-link-folder")
+        }
+        NativeSettingsMoreRow(action: openDetail)
+    }
+
+    private static func place(_ path: String) -> String { (["파일 앱"] + URL(fileURLWithPath: path).pathComponents.suffix(2)).joined(separator: " › ") }
+    private func loadLinked() async {
+        linked = ((try? await store.invoke("courses:list")) as? [[String: Any]] ?? []).filter { $0["source"] as? String == "linked" }
+    }
+
+    /// 동기화 › 더 보기.
+    @ViewBuilder private var details: some View {
+        NativeSettingsGroup(title: "동기화", description: "같은 Apple ID 또는 Google 계정의 기기끼리 과목과 자료를 맞춰요.") {
+            asking(Picker("동기화", selection: Binding(get: { on ? provider : "off" }, set: { $0 == "off" ? (offConfirmation = true) : on ? beginMove($0) : turnOn($0) })) {
+                Text("끔").tag("off")
+                Text("iCloud").tag("icloud")
+                Text("Google Drive").tag("drive")
+            }.pickerStyle(.segmented).frame(maxWidth: 400).accessibilityIdentifier("native-sync-provider"))
+            if on { state }
+            notes
+            if on { advanced }
+        }
+        if on, status["moving"] == nil {
+            moveOffer
+            moveCard
+        }
+        NativeSettingsGroup(title: "이 기기") {
+            LabeledContent("이름") {
+                // Saved on Enter; the name labels conflict copies.
+                TextField("iPad", text: $deviceName).multilineTextAlignment(.trailing).frame(maxWidth: 240).accessibilityIdentifier("native-sync-device-name")
+                    .onSubmit {
+                        guard !deviceName.trimmingCharacters(in: .whitespaces).isEmpty, deviceName != status["deviceName"] as? String else { return }
+                        run { status = try await invoke("cloudSync:setDeviceName", ["name": deviceName]); notice = "기기 이름을 바꿨어요." }
+                    }
+            }
+            Text("과목·PDF·필기·텍스트 노트가 동기화돼요. 하이라이트·화이트보드·연결 폴더 과목은 빠져요.").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
+        }
+        if status["previousProfile"] as? Bool == true {
+            NativeSettingsGroup(title: "이전 자료", description: "클라우드 자료를 가져오기 전에 이 iPad에 있던 자료로 돌아갑니다. 동기화는 꺼집니다.") {
+                Button("이전 자료로 돌아가기") { run { _ = try await invoke("cloudSync:returnToPrevious") } }
+            }
         }
     }
 
@@ -205,7 +287,7 @@ struct NativeSettingsSyncPanel: View {
     @ViewBuilder private var moveOffer: some View {
         if moveTarget == nil, let moved = status["moved"] as? [String: Any], let kind = moved["provider"] as? String, let t = (moved["t"] as? NSNumber)?.int64Value {
             let account = (moved["account"] as? String).map { "(\($0))" } ?? ""
-            NativeSettingsCard(title: "\(moved["device"] as? String ?? "")에서 \(CloudSyncService.name(kind))\(account)로 옮겼어요",
+            NativeSettingsGroup(title: "\(moved["device"] as? String ?? "")에서 \(CloudSyncService.name(kind))\(account)로 옮겼어요",
                                description: "이 iPad도 옮길까요? 같은 자료는 다시 올리지 않고, \(CloudSyncService.name(provider))의 파일은 지우지 않아요.") {
                 HStack {
                     Button("나중에") { run { status = try await invoke("cloudSync:dismissMove", ["t": t]) } }.accessibilityIdentifier("native-sync-move-later")
@@ -217,7 +299,7 @@ struct NativeSettingsSyncPanel: View {
 
     /// Moving to the other storage from here: what it holds is shown first, then the move.
     private var moveCard: some View {
-        NativeSettingsCard(title: "저장소 옮기기", description: "자료를 \(CloudSyncService.name(other))로 옮기고 이 iPad를 그쪽에 연결해요. 다른 기기에는 따라 옮길지 묻는 안내가 떠요. \(CloudSyncService.name(provider))의 파일은 지우지 않아요.") {
+        NativeSettingsGroup(title: "저장소 옮기기", description: "자료를 \(CloudSyncService.name(other))로 옮기고 이 iPad를 그쪽에 연결해요. 다른 기기에는 따라 옮길지 묻는 안내가 떠요. \(CloudSyncService.name(provider))의 파일은 지우지 않아요.") {
             if let target = moveTarget {
                 if let prepared = movePlan { moveStep(prepared, to: target) } else { Text("\(CloudSyncService.name(target))를 확인하는 중").foregroundStyle(NativeDesktopTheme.secondary) }
             } else {

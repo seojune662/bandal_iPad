@@ -228,7 +228,7 @@ final class NativeOnboardingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["native-university-choose"].exists, "No school yet, and still no onboarding")
     }
 
-    /// 설정 › 일반 › 언어 switches the app at once, and 계정 › 학교 opens the same picker with a country chip.
+    /// 설정 › 일반 › 언어 switches the app at once, and 일반 › 학교 opens the same picker with a country chip.
     @MainActor
     func testSettingsLanguageAppliesAtOnceAndSettingsHostsThePicker() {
         let app = launch(["--native-school-fixture"])
@@ -243,7 +243,7 @@ final class NativeOnboardingUITests: XCTestCase {
         app.buttons["English"].tap()
         XCTAssertTrue(wait(for: choose) { $0.label == "Choose school" }, "The sidebar behind Settings is already in English: " + choose.label)
 
-        app.buttons["native-settings-category-account"].tap()
+        app.openNativeSettingsSchool()
         let pick = app.buttons["native-settings-school-choose"]
         XCTAssertTrue(pick.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(pick.label, "Choose my school")
@@ -279,7 +279,7 @@ final class NativeOnboardingUITests: XCTestCase {
         XCTAssertTrue(language.waitForExistence(timeout: 10))
         for _ in 0..<5 where !app.buttons["한국어"].exists { language.tap(); _ = app.buttons["한국어"].waitForExistence(timeout: 2) }
         app.buttons["한국어"].tap()
-        app.buttons["native-settings-category-account"].tap()
+        app.openNativeSettingsSchool()
         XCTAssertTrue(wait(for: pick) { $0.label == "내 학교 바꾸기" }, pick.label)
     }
 
@@ -290,7 +290,7 @@ final class NativeOnboardingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["native-university-choose"].waitForExistence(timeout: 25), app.debugDescription)
         app.buttons["native-section-settings"].tap()
         let account = app.buttons["native-settings-category-account"]
-        XCTAssertTrue(account.waitForExistence(timeout: 15), app.debugDescription); account.tap()
+        XCTAssertTrue(account.waitForExistence(timeout: 15), app.debugDescription); app.openNativeSettingsSchool()
         let pick = app.buttons["native-settings-school-choose"]
         XCTAssertTrue(pick.waitForExistence(timeout: 10), app.debugDescription); pick.tap()
         let search = app.textFields["native-school-search"]

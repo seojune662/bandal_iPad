@@ -520,6 +520,7 @@
 		E59AC90414F7717D680906EE /* NativeBrowserFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46C706C69F0200346CCCC7F /* NativeBrowserFeatures.swift */; };
 		E6FE3C243A3CBAC162592B27 /* NativePDFCommittedSceneCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BEA47B8C9352CAA8C035E5A /* NativePDFCommittedSceneCacheTests.swift */; };
 		E762B73AB1F4673A34375890 /* NativePDFInkV4Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D612D5D2852DDB5AFCEBD4C2 /* NativePDFInkV4Tests.swift */; };
+		E7A3F5A37EBBB07D3E491C7A /* FigmaSettingsScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA1B0B9EAA9ABC68950D8420 /* FigmaSettingsScreenshotTests.swift */; };
 		E7A54699B84ABC6E77216C1C /* NativePDFFractionalRasterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BB066B01977EF7182E23CE3 /* NativePDFFractionalRasterTests.swift */; };
 		E7D3350597EBE3EE7F27D45D /* NativePDFInkUpdateScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDD2F8F50B40E3BA2489BB3 /* NativePDFInkUpdateScheduler.swift */; };
 		E7F936DC1A995C70E8BAF295 /* DesktopFileStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E83C57B093E863517AE6D48 /* DesktopFileStaging.swift */; };
@@ -1061,6 +1062,7 @@
 		D99F855AE79C5D6AE774DF0C /* NativePreferencesRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePreferencesRepository.swift; sourceTree = "<group>"; };
 		D9A8F3B5FA9EE8B8CF464CFD /* BrowserAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAgent.swift; sourceTree = "<group>"; };
 		DA0D3CC1241434687D651680 /* NativePDFRetainedInkHitTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRetainedInkHitTest.swift; sourceTree = "<group>"; };
+		DA1B0B9EAA9ABC68950D8420 /* FigmaSettingsScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaSettingsScreenshotTests.swift; sourceTree = "<group>"; };
 		DA2D14E4F15ADFBA41EEBA1F /* NativePDFPaletteStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPaletteStyle.swift; sourceTree = "<group>"; };
 		DA33C8ED6E36F5E113588364 /* ReviewStroke.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ReviewStroke.m; sourceTree = "<group>"; };
 		DB75AEF25EC29E8C196F0865 /* NativeSettingsIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsIntegrationTests.swift; sourceTree = "<group>"; };
@@ -1773,6 +1775,7 @@
 				F356907DDC8170ECA8C19306 /* FigmaHomeChromeScreenshotTests.swift */,
 				141F1AE72F6B905D11C44C00 /* FigmaNoteScreenshotTests.swift */,
 				6492B435FF8660DFFF54A367 /* FigmaOnboardingScreenshotTests.swift */,
+				DA1B0B9EAA9ABC68950D8420 /* FigmaSettingsScreenshotTests.swift */,
 				89159E0F81215474D59C0D4C /* FigmaTabStripScreenshotTests.swift */,
 				DEE90787A9EB52F9E38987C7 /* NativeAIModelPickerUITests.swift */,
 				033D44E19032ECF43A49CD24 /* NativeAnnotationUITests.swift */,
@@ -2248,6 +2251,7 @@
 				4316E46F993A63D7CBE99378 /* FigmaHomeChromeScreenshotTests.swift in Sources */,
 				089894B9A8507C43A838A024 /* FigmaNoteScreenshotTests.swift in Sources */,
 				9F0CE7A121345F1C7E5B9661 /* FigmaOnboardingScreenshotTests.swift in Sources */,
+				E7A3F5A37EBBB07D3E491C7A /* FigmaSettingsScreenshotTests.swift in Sources */,
 				7E197A0E2434B9D9D3BB949A /* FigmaTabStripScreenshotTests.swift in Sources */,
 				AE9AAB69F4CC2EC89D6E0B76 /* NativeAIModelPickerUITests.swift in Sources */,
 				A85DC63DF09E5B2BCA7B9736 /* NativeAnnotationUITests.swift in Sources */,

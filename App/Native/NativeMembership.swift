@@ -94,10 +94,13 @@ struct AICreditButton: View {
     }
 }
 
-/// Settings › 구독: what this iPad has made against the free allowance, the paywall, restore and
-/// Apple's subscription management. Signing in is never asked for.
+/// Settings › 구독·사용량 (Figma 132:3441): the plan card, this month's AI use and this iPad's storage, the usage
+/// alert and Apple's purchase history. `detail` is its 더 보기: the free allowance, restore, 충전 and invitation
+/// credit. Signing in is never asked for.
 struct NativeSettingsSubscriptionPanel: View {
     var store: NativeWorkspaceStore
+    var detail = false
+    var openDetail: () -> Void = {}
     @ObservedObject private var membership = Membership.shared
     @ObservedObject private var ai = AIUsage.shared
     @State private var usage: [String: Any] = [:]
@@ -105,77 +108,128 @@ struct NativeSettingsSubscriptionPanel: View {
     @AppStorage(NativeAIPreferences.usageAlertKey) private var usageAlert = true
     @State private var notice: String?
     @State private var error: String?
+    /// When the subscription renews (StoreKit), and what Bandal keeps on this iPad against the iPad's capacity.
+    @State private var renewal: Date?
+    @State private var storage: (used: Int64, total: Int64)?
     @Environment(\.locale) private var locale
+    private static let planFill = NativeDesktopTheme.adaptive(0xfff5de, 0x3a2f1a)
+    private static let planBadge = NativeDesktopTheme.adaptive(0xf5b83d, 0xe6a93a)
+    #if DEBUG
+    /// A Plus member renewing on 10 December, for the design screenshots.
+    private static let fixture = ProcessInfo.processInfo.arguments.contains("--native-settings-plan-fixture")
+    #else
+    private static let fixture = false
+    #endif
+    private var tier: Membership.Tier { Self.fixture ? .plus : membership.tier }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 28) {
             if let error { NativeToolError(message: error) }
-            if let notice { Label(notice, systemImage: "checkmark.circle").font(NativeDesktopTheme.font(13)).foregroundStyle(.green) }
-            HStack(spacing: 12) {
-                Image(systemName: "moon.fill").font(.system(size: 18)).foregroundStyle(.white).frame(width: 40, height: 40)
-                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 10))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(membership.tier == .pro ? "반달 프로" : membership.tier == .plus ? "반달 플러스" : "반달 무료").font(.system(size: 16, weight: .semibold))
-                    Text(membership.tier == .free ? "플러스는 과목·자료 무제한, 프로는 AI를 플러스의 4배" : "결제일과 해지는 구독 관리에서 볼 수 있어요").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary)
-                }
-                Spacer(minLength: 8)
-                Button(membership.tier == .free ? "플랜 보기" : "구독 관리") { if membership.tier == .free { MembershipPaywall.present() } else { managing = true } }
-                    .buttonStyle(.plain).font(.system(size: 13, weight: .medium)).padding(.horizontal, 12).frame(height: 32)
-                    .background(NativeDesktopTheme.overlay, in: RoundedRectangle(cornerRadius: 8)).accessibilityIdentifier("native-membership-manage")
-            }.padding(14).background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
-            NativeSettingsCard(title: "반달 멤버십") {
-                LabeledContent("상태", value: Self.title(membership.tier)).accessibilityIdentifier("native-membership-state")
-                if membership.tier < .plus {
-                    LabeledContent("이 iPad에서 만든 과목", value: "\(usage["courses"] as? Int ?? 0) / \(FreeTier.courses)")
-                    LabeledContent("이 iPad에서 만든 자료", value: "\(usage["documents"] as? Int ?? 0) / \(FreeTier.documents)")
-                }
-                Button("플랜 변경") { MembershipPaywall.present() }.accessibilityIdentifier("native-membership-open")
-                HStack {
-                    Button("구매 복원") { restore() }
-                    Button("구독 관리") { managing = true }
-                }
-                Text("이미 있는 과목과 자료는 구독과 관계없이 계속 열고 고칠 수 있어요.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
-            }
-            // Only with an account (the server's numbers); this panel never asks anyone to sign in.
-            if let percent = ai.percent {
-                NativeSettingsCard(title: "AI 사용량", description: "매달 1일 00시(한국 시간)에 다시 채워져요") {
-                    ProgressView(value: Double(min(percent, 100)), total: 100) { Text("AI 사용량 \(percent)%") }
-                        .accessibilityIdentifier("native-ai-usage")
-                    if let left = ai.autoQuestionsLeft { Text("Auto 질문 약 \(left.formatted())회 남음").font(.callout) }
-                    if ai.creditUcents > 0 { Text("충전한 사용량이 남아 있어요 (위 회수에 포함).").font(.caption).foregroundStyle(NativeDesktopTheme.secondary) }
-                    AICreditButton()
-                }
-            }
-            // What invitations have brought this account so far. The server keeps one pooled balance,
-            // so this is not what is left of it.
-            if let uses = store.referral.status.map({ Referral.uses($0.creditMicrocents) }), uses > 0 {
-                NativeSettingsCard(title: NativeAppLocale.string("친구 초대", locale)) {
-                    BandalSettingRow(title: NativeAppLocale.string("초대 크레딧", locale), note: NativeAppLocale.string("친구 초대로 지금까지 받은 양이에요", locale)) {
-                        Text("AI \(uses)회").accessibilityIdentifier("native-referral-credit")
-                    }
-                }
-            }
-            NativeSettingsCard(title: "알림과 결제") {
-                Toggle("사용량 \(AIUsage.alertPercent)%가 되면 알림", isOn: $usageAlert).accessibilityIdentifier("native-settings-usage-alert")
-                Divider()
-                Link(destination: URL(string: "https://reportaproblem.apple.com")!) {
-                    BandalSettingRow(title: "결제 내역", note: "Apple의 구입 내역에서 열려요") { Image(systemName: "arrow.up.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary) }
-                }.buttonStyle(.plain).accessibilityIdentifier("native-settings-purchase-history")
-            }
+            if let notice { Label(notice, systemImage: "checkmark.circle").font(.system(size: 13)).foregroundStyle(NativeSettingsRowMetrics.green) }
+            if detail { details } else { overview }
         }
         .manageSubscriptionsSheet(isPresented: $managing)
         .task(id: membership.tier) {
             do { usage = try await store.invokePrivate("nativeMembership:usage") as? [String: Any] ?? [:] }
             catch { self.error = error.localizedDescription }
         }
+        .task(id: membership.currentProduct) {
+            renewal = Self.fixture ? Calendar.current.date(from: DateComponents(year: 2026, month: 12, day: 10)) : nil
+            for await result in Transaction.currentEntitlements {
+                if case .verified(let transaction) = result, transaction.productID == membership.currentProduct, transaction.revocationDate == nil { renewal = transaction.expirationDate }
+            }
+        }
         .task {
             await membership.refresh()
             _ = try? await store.invokePrivate("native:aiConfig", ["refresh": true])
             _ = try? await store.referral.loadStatus()
+            if let status = try? await store.invokePrivate("nativeSettings:status") as? [String: Any],
+               let used = ((status["storage"] as? [String: Any])?["documentsBytes"] as? NSNumber)?.int64Value,
+               let total = try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [.volumeTotalCapacityKey]).volumeTotalCapacity { storage = (used, Int64(total)) }
             #if DEBUG
             // A Pro account out of AI, for the 충전 popover's UI test and screenshot.
             if ProcessInfo.processInfo.arguments.contains("--native-ai-usage-fixture") { ai.update(["plan": "pro", "percent": 100, "autoQuestionsLeft": 0]) }
             #endif
+        }
+    }
+
+    @ViewBuilder private var overview: some View {
+        HStack(spacing: 16) {
+            Image(systemName: "moon").font(.system(size: 22)).foregroundStyle(NativeDesktopTheme.bgApp).frame(width: 48, height: 48)
+                .background(Self.planBadge, in: RoundedRectangle(cornerRadius: 12)).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(tier == .pro ? "반달 프로" : tier == .plus ? "반달 플러스" : "반달 무료").font(.system(size: 20, weight: .bold))
+                Group {
+                    if tier == .free { Text("플러스는 과목·자료 무제한, 프로는 AI를 플러스의 4배") }
+                    else if let renewal { Text("다음 결제일 \(renewal, format: .dateTime.month().day())") }
+                    else { Text("결제일과 해지는 구독 관리에서 볼 수 있어요") }
+                }.font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            Button(tier == .free ? "플랜 보기" : "구독 관리") { if tier == .free { MembershipPaywall.present() } else { managing = true } }
+                .buttonStyle(BandalButtonStyle(kind: .soft)).frame(height: 31).accessibilityIdentifier("native-membership-manage")
+        }.padding(20).background(Self.planFill, in: RoundedRectangle(cornerRadius: 12))
+        VStack(alignment: .leading, spacing: 8) {
+            Text("이번 달 사용량").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityAddTraits(.isHeader)
+            VStack(spacing: 20) {
+                // Only with an account (the server's numbers); this panel never asks anyone to sign in.
+                if let percent = ai.percent { meter("AI 사용량", value: "\(percent)%", fraction: Double(percent) / 100).accessibilityIdentifier("native-ai-usage") }
+                if let storage { meter("저장 공간", value: Self.bytes(storage.used) + " / " + Self.bytes(storage.total), fraction: Double(storage.used) / Double(max(storage.total, 1))).accessibilityIdentifier("native-settings-storage") }
+            }.padding(17).frame(maxWidth: .infinity).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(NativeDesktopTheme.border))
+            Text("AI 사용량은 매달 1일에 다시 채워져요").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted)
+        }
+        NativeSettingsGroup {
+            NativeSettingsToggle(title: "사용량 \(AIUsage.alertPercent)%가 되면 알림", isOn: $usageAlert).accessibilityIdentifier("native-settings-usage-alert")
+            Link(destination: URL(string: "https://reportaproblem.apple.com")!) { NativeSettingsRow(title: "결제 내역") { NativeSettingsValue() } }
+                .buttonStyle(.plain).accessibilityIdentifier("native-settings-purchase-history")
+        }
+        NativeSettingsMoreRow(action: openDetail)
+    }
+
+    /// One line of the usage card: the name, the amount, and a 6 pt bar.
+    private func meter(_ title: String, value: String, fraction: Double) -> some View {
+        VStack(spacing: 8) {
+            HStack { BandalText(title); Spacer(minLength: 8); Text(verbatim: value).fontWeight(.semibold) }.font(.system(size: 15))
+            GeometryReader { bar in
+                Capsule().fill(NativeDesktopTheme.surface)
+                    .overlay(alignment: .leading) { Capsule().fill(NativeDesktopTheme.accent).frame(width: max(fraction > 0 ? 6 : 0, bar.size.width * min(fraction, 1))) }
+            }.frame(height: 6)
+        }.accessibilityElement(children: .ignore).accessibilityLabel(NativeAppLocale.string(title, locale)).accessibilityValue(value)
+    }
+
+    /// "3.2GB", as the design writes it.
+    private static func bytes(_ value: Int64) -> String { ByteCountFormatter.string(fromByteCount: value, countStyle: .file).replacingOccurrences(of: " ", with: "") }
+
+    /// 구독·사용량 › 더 보기.
+    @ViewBuilder private var details: some View {
+        NativeSettingsGroup(title: "반달 멤버십", description: "이미 있는 과목과 자료는 구독과 관계없이 계속 열고 고칠 수 있어요.") {
+            LabeledContent("상태", value: Self.title(membership.tier)).accessibilityIdentifier("native-membership-state")
+            if membership.tier < .plus {
+                LabeledContent("이 iPad에서 만든 과목", value: "\(usage["courses"] as? Int ?? 0) / \(FreeTier.courses)")
+                LabeledContent("이 iPad에서 만든 자료", value: "\(usage["documents"] as? Int ?? 0) / \(FreeTier.documents)")
+            }
+            HStack {
+                Button("플랜 변경") { MembershipPaywall.present() }.accessibilityIdentifier("native-membership-open")
+                Button("구매 복원") { restore() }
+                Button("구독 관리") { managing = true }
+            }
+        }
+        if ai.percent != nil {
+            NativeSettingsGroup(title: "AI 사용량", description: "매달 1일 00시(한국 시간)에 다시 채워져요") {
+                if let left = ai.autoQuestionsLeft { Text("Auto 질문 약 \(left.formatted())회 남음") }
+                if ai.creditUcents > 0 { Text("충전한 사용량이 남아 있어요 (위 회수에 포함).").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary) }
+                AICreditButton()
+            }
+        }
+        // What invitations have brought this account so far. The server keeps one pooled balance,
+        // so this is not what is left of it.
+        if let uses = store.referral.status.map({ Referral.uses($0.creditMicrocents) }), uses > 0 {
+            NativeSettingsGroup(title: NativeAppLocale.string("친구 초대", locale)) {
+                NativeSettingsRow(title: NativeAppLocale.string("초대 크레딧", locale), note: NativeAppLocale.string("친구 초대로 지금까지 받은 양이에요", locale)) {
+                    Text("AI \(uses)회").accessibilityIdentifier("native-referral-credit")
+                }
+            }
         }
     }
 

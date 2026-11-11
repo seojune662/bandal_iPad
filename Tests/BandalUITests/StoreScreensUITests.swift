@@ -99,7 +99,9 @@ final class StoreScreensUITests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 25), app.debugDescription); settings.tap()
         let category = app.buttons["native-settings-category-subscription"]
         XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription)
-        for _ in 0..<5 where !app.buttons["native-membership-open"].waitForExistence(timeout: 2) { category.tap() }
+        // Settings ignores taps while its first load runs. 플랜 변경 and 충전 are on the section's 더 보기 page.
+        for _ in 0..<5 where !category.isSelected { category.tap(); _ = app.buttons["native-membership-manage"].waitForExistence(timeout: 2) }
+        app.openNativeSettingsMore()
         XCTAssertTrue(app.buttons["native-membership-open"].waitForExistence(timeout: 10), app.debugDescription)
     }
 

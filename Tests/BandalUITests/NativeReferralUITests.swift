@@ -110,7 +110,7 @@ final class NativeReferralUITests: XCTestCase {
             let settings = app.buttons["native-section-settings"], category = app.buttons["native-settings-category-account"]
             // The first tap outside only closes the popover.
             for _ in 0..<3 where !category.exists { settings.tap(); _ = category.waitForExistence(timeout: 5) }
-            select(category)
+            select(category); app.openNativeSettingsMore()
             let open = app.buttons["native-referral-settings-open"]
             XCTAssertTrue(open.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertEqual(open.label, "초대하기"); open.tap()
@@ -147,7 +147,7 @@ final class NativeReferralUITests: XCTestCase {
 
         let settings = app.buttons["native-section-settings"], category = app.buttons["native-settings-category-account"]
         for _ in 0..<3 where !category.exists { settings.tap(); _ = category.waitForExistence(timeout: 5) }
-        select(category)
+        select(category); app.openNativeSettingsMore()
         let open = app.buttons["native-referral-settings-open"]
         XCTAssertTrue(open.waitForExistence(timeout: 10), app.debugDescription); open.tap()
         XCTAssertTrue(apple.waitForExistence(timeout: 10), app.debugDescription)
@@ -174,7 +174,7 @@ final class NativeReferralUITests: XCTestCase {
             let banner = app.staticTexts["native-referral-banner"]
             XCTAssertTrue(settings.waitForExistence(timeout: 25), app.debugDescription)
             XCTAssertFalse(banner.exists)
-            settings.tap(); select(account)
+            settings.tap(); select(account); app.openNativeSettingsMore()
             let field = app.textFields["native-referral-field"]
             XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertTrue(app.staticTexts["초대 코드 입력"].exists)
@@ -203,13 +203,13 @@ final class NativeReferralUITests: XCTestCase {
             capture("보상 토스트 (\(name))")
             XCTAssertTrue(waitForAbsence(banner), "Paid: the reminder is gone")
 
-            settings.tap(); select(app.buttons["native-settings-category-subscription"])
+            settings.tap(); select(app.buttons["native-settings-category-subscription"]); app.openNativeSettingsMore()
             let credit = app.staticTexts["native-referral-credit"]
             XCTAssertTrue(credit.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertEqual(credit.label, "AI 400회", "What invitations have brought in total")
             XCTAssertTrue(app.staticTexts["초대 크레딧"].exists && app.staticTexts["친구 초대로 지금까지 받은 양이에요"].exists)
             capture("설정 › 구독·사용량 › 초대 크레딧 (\(name))")
-            select(account)
+            select(account); app.openNativeSettingsMore()
             XCTAssertTrue(applied.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertEqual(applied.label, "코드 적용됨 — AI 100회를 받았어요")
             XCTAssertFalse(field.exists)
@@ -317,7 +317,7 @@ final class NativeReferralUITests: XCTestCase {
 
         let settings = app.buttons["native-section-settings"], category = app.buttons["native-settings-category-account"]
         for _ in 0..<3 where !category.exists { settings.tap(); _ = category.waitForExistence(timeout: 5) }
-        select(category)
+        select(category); app.openNativeSettingsMore()
         XCTAssertTrue(app.buttons["native-referral-settings-open"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(app.buttons["native-referral-settings-open"].label, "Invite")
         XCTAssertTrue(app.staticTexts["Enter an invite code"].exists)
@@ -334,7 +334,7 @@ final class NativeReferralUITests: XCTestCase {
         XCTAssertTrue(course.waitForExistence(timeout: 5), app.debugDescription); course.tap(); course.typeText("Physics\n")
         XCTAssertTrue(app.staticTexts["100 AI uses added"].waitForExistence(timeout: 20), app.debugDescription)
         capture("Reward toast in English")
-        settings.tap(); select(app.buttons["native-settings-category-subscription"])
+        settings.tap(); select(app.buttons["native-settings-category-subscription"]); app.openNativeSettingsMore()
         let credit = app.staticTexts["native-referral-credit"]
         XCTAssertTrue(credit.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(credit.label, "400 AI uses")

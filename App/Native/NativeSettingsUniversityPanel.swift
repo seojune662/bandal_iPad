@@ -64,9 +64,9 @@ struct NativeSettingsUniversityPanel: View {
     private var university: [String: Any] { settings["university"] as? [String: Any] ?? [:] }
     private var services: [NativeUniversityService] { NativeUniversityCatalog.resolvedServices(settings: settings, includeHidden: true) }
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 28) {
             if let error { NativeToolError(message: error) }
-            NativeSettingsCard(title: "내 학교", description: "학교를 선택하면 학사·강의실·도서관 바로가기가 표시됩니다.") {
+            NativeSettingsGroup(title: "내 학교", description: "학교를 선택하면 학사·강의실·도서관 바로가기가 표시됩니다.") {
                 // Search, AI and 직접 입력 all live in the picker; the sites are managed below.
                 let chosen = NativeUniversityCatalog.university(settings)
                 HStack(spacing: 8) {
@@ -88,7 +88,7 @@ struct NativeSettingsUniversityPanel: View {
                         .accessibilityLabel(chosen == nil ? Text("내 학교 고르기") : Text("내 학교 바꾸기")).accessibilityIdentifier("native-settings-school-choose")
                 }.frame(minHeight: 36)
             }
-            NativeSettingsCard(title: "학교 사이트", description: "표시 순서와 열리는 위치를 선택합니다. 보안 프로그램이 필요한 일부 사이트는 iPad에서 제공되지 않을 수 있습니다.") {
+            NativeSettingsGroup(title: "학교 사이트", description: "표시 순서와 열리는 위치를 선택합니다. 보안 프로그램이 필요한 일부 사이트는 iPad에서 제공되지 않을 수 있습니다.") {
                 ForEach(Array(services.enumerated()), id: \.element.id) { index, service in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { Text(service.label).fontWeight(.medium); Spacer(); Button("열기", systemImage: "arrow.up.right") { open(service) } }
@@ -106,8 +106,7 @@ struct NativeSettingsUniversityPanel: View {
                             Spacer()
                             if service.custom { Button("삭제", role: .destructive) { persist(["customServices": (university["customServices"] as? [[String: Any]] ?? []).filter { $0["id"] as? String != service.id }]) } }
                         }
-                        Divider()
-                    }
+                    }.padding(.vertical, 8)
                 }
                 DisclosureGroup("사이트 직접 추가") {
                     TextField("사이트 이름", text: $label).nativeToolField()

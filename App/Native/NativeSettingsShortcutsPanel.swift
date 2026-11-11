@@ -46,12 +46,12 @@ struct NativeSettingsShortcutsPanel: View {
     private var bindings: [String: Any] { settings["keybindings"] as? [String: Any] ?? [:] }
     private var matching: [NativeBrowserShortcuts.Spec] { NativeBrowserShortcuts.specs.filter { query.isEmpty || $0.label.localizedStandardContains(query) || $0.id.localizedStandardContains(query) } }
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 28) {
             if let error { NativeToolError(message: error) }
-            NativeSettingsCard(title: "단축키 우선권", description: "반달과 사이트가 같은 키를 쓸 때") {
+            NativeSettingsGroup(title: "단축키 우선권", description: "반달과 사이트가 같은 키를 쓸 때") {
                 Picker("우선권", selection: Binding(get: { settings["shortcutPriority"] as? String ?? "bandal" }, set: { persist(["shortcutPriority": $0]) })) { Text("반달 우선").tag("bandal"); Text("사이트 우선").tag("site") }
             }
-            NativeSettingsCard(title: "키 조합", description: "⌘ mod · ⌥ alt · ⇧ shift") {
+            NativeSettingsGroup(title: "키 조합", description: "⌘ mod · ⌥ alt · ⇧ shift") {
                 TextField("단축키 검색", text: $query).nativeToolField()
                 ForEach(matching) { spec in
                     HStack {

@@ -42,9 +42,12 @@ enum NativeAppearancePreference {
   }
 }
 
+/// The settings sheet (Figma 132:2769…132:4097): the section list on the left, one page on the right.
+/// What the design leaves out of a page stays one row away, on the page its 더 보기 row pushes.
 struct NativeSettingsWorkspace: View {
   var store: NativeWorkspaceStore
   let initialCategory: String
+  var close: () -> Void = {}
   @AppStorage("native.appearance") private var appearance = "system"
   @AppStorage("native.fontScale") private var fontScale = 1.0
   @AppStorage("native.density") private var density = "comfortable"
@@ -67,6 +70,8 @@ struct NativeSettingsWorkspace: View {
   @State private var deleteAccountConfirmation = false
   @State private var newProfileConfirmation = false
   @State private var nickname = ""
+  @State private var nicknameDraft = ""
+  @State private var editingName = false
   @State private var loading = false
   @State private var busy = false
   @State private var error: String?
@@ -79,57 +84,46 @@ struct NativeSettingsWorkspace: View {
     let variant: String
   }
   private var signedIn: Bool { account["phase"] as? String == "signed-in" }
-  private var browserSettings: [String: Any] { settings["browser"] as? [String: Any] ?? [:] }
-  @State private var category = "appearance"
+  @State private var category: String
+  /// The page pushed inside the sheet: "more" (what the design leaves out of this section) or "university".
+  @State private var subpage: String?
   @State private var query = ""
   @FocusState private var searchFocused: Bool
   private var locale: String { settings["locale"] as? String ?? "ko-KR" }
+  private var english: Bool { locale == "en-US" }
   private var categories: [NativeSettingsCategory] { NativeSettingsCatalog.localized(locale) }
   private var activeCategory: NativeSettingsCategory { categories.first { $0.id == category } ?? categories[0] }
   private var matchingCategories: [NativeSettingsCategory] { NativeSettingsCatalog.matching(query, locale: locale) }
-  init(store: NativeWorkspaceStore, initialCategory: String = "appearance") {
+  private var schoolName: String? { NativeUniversityCatalog.university(settings)?["nameKo"] as? String }
+  private static let navFill = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.05) : UIColor.black.withAlphaComponent(0.04) })
+  init(store: NativeWorkspaceStore, initialCategory: String = "general", close: @escaping () -> Void = {}) {
     self.store = store
-    self.initialCategory = NativeSettingsCatalog.resolve(initialCategory)
-    _category = State(initialValue: self.initialCategory)
+    self.initialCategory = initialCategory
+    self.close = close
+    _category = State(initialValue: NativeSettingsCatalog.resolve(initialCategory))
+    _subpage = State(initialValue: NativeSettingsCatalog.subpage(initialCategory))
   }
   var body: some View {
     GeometryReader { geometry in
+      let wide = geometry.size.width >= 620
       HStack(spacing: 0) {
-        if geometry.size.width >= 620 { sidebar.frame(width: 232) }
+        if wide { sidebar.frame(width: 250).disabled(loading || busy) }
         VStack(spacing: 0) {
-          if geometry.size.width < 620 {
-            HStack {
-              Menu {
-                ForEach(categories) { item in Button(item.title) { category = item.id } }
-              } label: {
-                Label(activeCategory.title, systemImage: "line.3.horizontal").font(
-                  NativeDesktopTheme.font( 13))
-              }
-              Spacer()
-            }.padding(16).background(NativeDesktopTheme.surface)
-          }
-          ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-              VStack(alignment: .leading, spacing: 4) {
-                Text(activeCategory.title).font(.system(size: 20, weight: .semibold))
-                Text(activeCategory.description).font(NativeDesktopTheme.font( 13)).foregroundStyle(
-                  NativeDesktopTheme.secondary)
-              }.padding(.bottom, 8)
-              if let error { NativeToolError(message: error) }
-              if let notice {
-                Label(notice, systemImage: "checkmark.circle").font(NativeDesktopTheme.font( 13))
-                  .foregroundStyle(.green)
-              }
-              settingsPanel
-            }.padding(geometry.size.width < 760 ? 24 : 48).frame(maxWidth: 960, alignment: .leading)
-              .frame(maxWidth: .infinity, alignment: .topLeading)
-          }
+          header(wide: wide).padding(.top, 24).padding(.horizontal, wide ? 32 : 20)
+          ScrollViewReader { proxy in
+            ScrollView {
+              VStack(alignment: .leading, spacing: 28) {
+                if let error { NativeToolError(message: error) }
+                if let notice { Label(notice, systemImage: "checkmark.circle").font(.system(size: 13)).foregroundStyle(NativeSettingsRowMetrics.green) }
+                page
+              }.padding(.top, 28).padding(.bottom, 24).padding(.horizontal, wide ? 32 : 20).frame(maxWidth: .infinity, alignment: .topLeading).id("top")
+            }
+            .onChange(of: subpage) { _, _ in proxy.scrollTo("top", anchor: .top) }
+            .onChange(of: category) { _, _ in proxy.scrollTo("top", anchor: .top) }
+          }.disabled(loading || busy).refreshable { await load() }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-    }.background(NativeDesktopTheme.bgApp).foregroundStyle(NativeDesktopTheme.text).font(
-      NativeDesktopTheme.font( 13)
-    )
-    .disabled(loading || busy)
+    }.foregroundStyle(NativeDesktopTheme.text).font(.system(size: 16))
     .overlay {
       if loading || busy {
         ProgressView().padding().background(
@@ -137,14 +131,14 @@ struct NativeSettingsWorkspace: View {
       }
     }
     .task { await load() }
-    .onChange(of: initialCategory) { _, value in
-      category = NativeSettingsCatalog.resolve(value)
-      query = ""
-      searchFocused = false
+    .task(id: signedIn) {
+      aiModel = NativeAIPreferences.model; aiEffort = NativeAIPreferences.effort
+      if signedIn, let config = try? await store.invokePrivate("native:aiConfig") as? [String: Any] { aiCatalog = NativeAIModelCatalog(config) }
+      else { aiCatalog = NativeAIModelCatalog() }
     }
-    .refreshable { await load() }
+    .onChange(of: initialCategory) { _, value in open(value); searchFocused = false }
     .onReceive(store.events) { event in
-      if event.channel == "nativeSettings:select", let value = (event.payload as? [String: Any])?["category"] as? String { category = NativeSettingsCatalog.resolve(value); query = "" }
+      if event.channel == "nativeSettings:select", let value = (event.payload as? [String: Any])?["category"] as? String { open(value) }
       if event.channel == "auth:changed", let state = event.payload as? [String: Any] {
         account = state
         setNicknameFromAccount()
@@ -178,99 +172,111 @@ struct NativeSettingsWorkspace: View {
       }
     }
   }
+  /// A section id, or the id of a page that used to be one (deep links): its section and the page inside it.
+  private func open(_ id: String) { category = NativeSettingsCatalog.resolve(id); subpage = NativeSettingsCatalog.subpage(id); query = "" }
+  private func circleButton(_ symbol: String, label: String, identifier: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Image(systemName: symbol).font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.secondary).frame(width: 32, height: 32)
+        .background(NativeDesktopTheme.surface, in: Circle()).padding(6).contentShape(Rectangle()).padding(-6)
+    }.buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(identifier)
+  }
+  /// The content's first row: the page title (24 Bold) and the close circle; a pushed page adds the way back.
+  private func header(wide: Bool) -> some View {
+    HStack(spacing: 12) {
+      if subpage != nil { circleButton("chevron.left", label: "뒤로", identifier: "native-settings-back") { subpage = nil } }
+      let title = Text(verbatim: subpage == "university" ? (english ? "School & shortcuts" : "학교와 바로가기") : subpage == "more" ? activeCategory.title + " · " + (english ? "More" : "더 보기") : activeCategory.title)
+        .font(.system(size: 24, weight: .bold)).lineLimit(1)
+      if wide { title.accessibilityAddTraits(.isHeader) } else {
+        Menu { ForEach(categories) { item in Button(item.title) { category = item.id; subpage = nil } } } label: { HStack(spacing: 6) { title; Image(systemName: "chevron.down").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted) } }
+          .foregroundStyle(NativeDesktopTheme.text)
+      }
+      Spacer(minLength: 8)
+      circleButton("xmark", label: "설정 닫기", identifier: "native-settings-close", action: close)
+    }.frame(height: 32)
+  }
   private var sidebar: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text(locale == "en-US" ? "Settings" : "설정").font(NativeDesktopTheme.font( 18, weight: .medium)).padding(.horizontal, 8).padding(.top, 16)
+    VStack(alignment: .leading, spacing: 2) {
+      Text(english ? "Settings" : "설정").font(.system(size: 22, weight: .bold)).padding(.horizontal, 12).padding(.vertical, 4).accessibilityAddTraits(.isHeader)
+      Color.clear.frame(height: 10)
+      ForEach(categories) { item in
+        let on = category == item.id
+        Button { category = item.id; subpage = nil } label: {
+          HStack(spacing: 12) {
+            Image(systemName: item.icon).font(.system(size: 16)).foregroundStyle(on ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary).frame(width: 22, height: 22)
+            Text(item.title).font(.system(size: 16, weight: on ? .semibold : .regular)).foregroundStyle(on ? NativeDesktopTheme.accent : NativeDesktopTheme.text)
+              .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+          }.padding(.horizontal, 12).frame(height: 42)
+            .background(on ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 10)).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityIdentifier("native-settings-category-" + item.id)
+          .accessibilityAddTraits(on ? .isSelected : [])
+      }
+    }.padding(.vertical, 20).padding(.horizontal, 12).frame(maxHeight: .infinity, alignment: .top).background { Rectangle().fill(Self.navFill) }
+  }
+  private var moreRow: some View { NativeSettingsMoreRow { subpage = "more" } }
+  @ViewBuilder private var page: some View {
+    let more = subpage == "more"
+    if subpage == "university" { expandedPanel("university") } else {
+      switch category {
+      case "ai": if more { aiMore } else { aiPage; moreRow }
+      case "account": if more { accountMore } else { accountPage; moreRow }
+      // One view for the page and its 더 보기: a connection begun on one is finished on the other.
+      case "sync": NativeSettingsSyncPanel(store: store, detail: more) { subpage = "more" }
+      case "subscription": NativeSettingsSubscriptionPanel(store: store, detail: more) { subpage = "more" }
+      case "integrations": if more { expandedPanel("calendar"); expandedPanel("browser") } else { integrationsPage; moreRow }
+      case "appearance": if more { fontsGroup; expandedPanel("tabs"); expandedPanel("widgets") } else { appearancePage; moreRow }
+      default:
+        if more { searchGroup; expandedPanel("general-extra"); expandedPanel("notifications"); expandedPanel("shortcuts"); expandedPanel("advanced"); versionGroup }
+        else { expandedPanel("general"); moreRow }
+      }
+    }
+  }
+  /// 일반 › 더 보기: the search the section list used to carry. A hit opens its section.
+  private var searchGroup: some View {
+    NativeSettingsGroup(title: "설정 검색") {
       HStack(spacing: 8) {
-        Image(systemName: "magnifyingglass").foregroundStyle(NativeDesktopTheme.muted)
-        TextField(locale == "en-US" ? "Search settings" : "설정 검색", text: $query).textFieldStyle(.plain).accessibilityIdentifier(
+        Image(systemName: "magnifyingglass").font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.secondary)
+        TextField(english ? "Search settings" : "설정 검색", text: $query).textFieldStyle(.plain).accessibilityIdentifier(
           "native-settings-search").focused($searchFocused).submitLabel(.search).onSubmit { searchFocused = false }
-        if !query.isEmpty { Button("검색 지우기", systemImage:"xmark.circle.fill") { query = "" }.labelStyle(.iconOnly).buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.muted).accessibilityIdentifier("native-settings-clear-search") }
-      }.font(NativeDesktopTheme.font( 13)).padding(.horizontal, 12).frame(height: 36).background(
-        NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 8))
-      ScrollView {
-        VStack(alignment: .leading, spacing: 16) {
-          ForEach(NativeSettingsCatalog.groups, id: \.id) { group in
-            let items = matchingCategories.filter { $0.group == group.id }
-            if !items.isEmpty {
-              VStack(alignment: .leading, spacing: 4) {
-                ForEach(items) { item in
-                  Button {
-                    searchFocused = false; category = item.id
-                  } label: {
-                    HStack(spacing: 12) {
-                      Image(systemName: item.icon).frame(width: 16)
-                      Text(item.title).frame(maxWidth: .infinity, alignment: .leading)
-                    }.font(NativeDesktopTheme.font( 13, weight: .medium)).padding(.horizontal, 12).frame(
-                      minHeight: 36
-                    )
-                    .foregroundStyle(
-                      category == item.id ? NativeDesktopTheme.text : NativeDesktopTheme.secondary
-                    )
-                    .background(
-                      category == item.id ? NativeDesktopTheme.accentMuted : .clear,
-                      in: RoundedRectangle(cornerRadius: 6))
-                  }.buttonStyle(.plain).accessibilityIdentifier(
-                    "native-settings-category-" + item.id)
-                  .accessibilityAddTraits(category == item.id ? .isSelected : [])
-                }
-              }
-            }
-          }
-          if matchingCategories.isEmpty {
-            Text(locale == "en-US" ? "No results found." : "검색 결과가 없습니다.").font(NativeDesktopTheme.font( 12)).foregroundStyle(NativeDesktopTheme.muted)
-              .padding(12)
-          }
+        if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill").frame(width: 28, height: 35).contentShape(Rectangle()) }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.muted).accessibilityLabel("검색 지우기").accessibilityIdentifier("native-settings-clear-search") }
+      }
+      if !query.isEmpty {
+        ForEach(matchingCategories) { item in
+          Button { searchFocused = false; open(item.id) } label: { NativeSettingsRow(title: item.title, note: item.description) { NativeSettingsValue() } }
+            .buttonStyle(.plain).accessibilityIdentifier("native-settings-search-result-" + item.id)
         }
+        if matchingCategories.isEmpty { Text(english ? "No results found." : "검색 결과가 없습니다.").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted) }
       }
-      HStack(spacing: 8) {
-        Image(systemName: "moon")
-        Text("반달")
-        Spacer()
-        Text(
-          (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") + " (" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") + ")")
-          .accessibilityIdentifier("native-settings-version")
-      }
-      .font(NativeDesktopTheme.font( 12)).foregroundStyle(NativeDesktopTheme.muted).padding(8).overlay(
-        alignment: .top
-      ) { NativeDesktopTheme.border.frame(height: 1) }
-    }.padding(12).background(NativeDesktopTheme.surface).overlay(alignment: .trailing) {
-      NativeDesktopTheme.border.frame(width: 1)
     }
   }
-  @ViewBuilder private var settingsPanel: some View {
-    // Seven sections; each stacks the panels that used to be separate pages.
-    switch category {
-    case "ai": aiPanel
-    case "account": VStack(alignment: .leading, spacing: 20) { accountPanel; NativeReferralSettingsCard(store: store); expandedPanel("university"); if NativeReleaseFlags.legacyCloudSync { subscriptionPanel; syncPanel; profilePanel } }
-    case "sync": NativeSettingsSyncPanel(store: store)
-    case "subscription": NativeSettingsSubscriptionPanel(store: store)
-    case "integrations": VStack(alignment: .leading, spacing: 20) { integrationsOverview; expandedPanel("calendar"); expandedPanel("browser") }
-    case "appearance": VStack(alignment: .leading, spacing: 20) { appearancePanel; expandedPanel("tabs"); expandedPanel("widgets") }
-    default: VStack(alignment: .leading, spacing: 20) { expandedPanel("general"); expandedPanel("notifications"); expandedPanel("shortcuts"); expandedPanel("advanced") }
+  /// 일반 › 더 보기, last: the version the section list used to show at its foot.
+  private var versionGroup: some View {
+    NativeSettingsGroup(title: "정보") {
+      NativeSettingsRow(title: "버전") {
+        Text(verbatim: (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") + " (" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") + ")")
+          .font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityIdentifier("native-settings-version")
+      }
     }
   }
-  /// 학교 사이트, the sidebar's AI sites and the services this iPad can connect to.
-  private var integrationsOverview: some View {
-    VStack(alignment: .leading, spacing: 20) {
-      NativeSettingsCard(title: "학교 사이트") {
-        Button { category = NativeSettingsCatalog.resolve("university") } label: {
-          BandalSettingRow(title: "학교와 바로가기", note: "사이드바 위쪽에 보이는 학교 사이트") { HStack(spacing: 4) { Text("편집"); Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)) }.foregroundStyle(NativeDesktopTheme.secondary) }
-            .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityIdentifier("native-settings-integrations-school")
-      }
-      NativeSettingsCard(title: "외부 AI 사이트") {
-        BandalSettingRow(title: "사이드바에 보이기", note: NativeAIWebShortcut.all.map(\.title).joined(separator: " · ")) { Text("고정").foregroundStyle(NativeDesktopTheme.secondary) }
-      }
-      NativeSettingsCard(title: "연결된 서비스") {
-        ForEach(Array([("Google 캘린더", "과제 마감 기한을 가져와요"), ("Google Drive", "자료로 가져오기"), ("Notion", "페이지를 자료로 가져오기")].enumerated()), id: \.offset) { index, item in
-          if index > 0 { Divider() }
-          BandalSettingRow(title: item.0, note: item.1) {
-            Text("준비 중").font(.system(size: 12, weight: .medium)).foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 10).frame(height: 26)
-              .background(NativeDesktopTheme.text.opacity(0.05), in: Capsule())
-          }
-        }
-        Text("Apple 캘린더는 아래에서 바로 연결할 수 있어요. Google Drive 동기화는 동기화에서 켜요.").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
+  /// 통합 (132:4097): 학교 사이트, the sidebar's AI sites and the services this iPad can connect to.
+  @ViewBuilder private var integrationsPage: some View {
+    let services = NativeUniversityCatalog.resolvedServices(settings: settings)
+    let rest = services.count - 3
+    let shortcuts = services.isEmpty ? NativeAppLocale.string("학교를 고르면 바로가기가 보여요", Locale(identifier: locale))
+      : services.prefix(3).map(\.label).joined(separator: " · ") + (rest > 0 ? String(format: NativeAppLocale.string(" 외 %lld개", Locale(identifier: locale)), rest) : "")
+    NativeSettingsGroup(title: "학교 사이트") {
+      Button { subpage = "university" } label: { NativeSettingsRow(title: "학교") { NativeSettingsValue(schoolName ?? "고르기") } }
+        .buttonStyle(.plain).accessibilityIdentifier("native-settings-integrations-school")
+      Button { subpage = "university" } label: { NativeSettingsRow(title: "바로가기", note: shortcuts) { NativeSettingsValue("편집") } }
+        .buttonStyle(.plain).accessibilityIdentifier("native-settings-integrations-shortcuts")
+    }
+    // 준비 중: the list of AI sites is fixed, and none of the three services has a connection yet.
+    NativeSettingsGroup(title: "외부 AI 사이트") {
+      NativeSettingsRow(title: "사이드바에 보이기", note: NativeAIWebShortcut.all.map(\.title).joined(separator: " · ")) { NativeSettingsValue("편집") }
+        .accessibilityElement(children: .combine).accessibilityHint("준비 중")
+    }
+    NativeSettingsGroup(title: "연결된 서비스", description: "Google 캘린더 · Drive · Notion 연결은 준비 중이에요. Apple 캘린더는 더 보기에서 연결해요.") {
+      ForEach([("Google 캘린더", "과제 마감 기한을 가져와요"), ("Google Drive", "자료로 가져오기"), ("Notion", "페이지를 자료로 가져오기")], id: \.0) { title, note in
+        NativeSettingsRow(title: title, note: note) { Button("연결") {}.disabled(true).accessibilityLabel(title + " 연결").accessibilityHint("준비 중") }
       }
     }
   }
@@ -280,159 +286,191 @@ struct NativeSettingsWorkspace: View {
         throw DesktopRuntimeError("설정 저장 결과를 확인하지 못했습니다.")
       }
       settings = value; NativeAppearancePreference.apply(value)
-    }, navigate: { category = NativeSettingsCatalog.resolve($0) })
-  }
-  private func settingsCard<Content: View>(_ title: String, @ViewBuilder content: @escaping () -> Content) -> some View {
-    NativeSettingsCard(title: title, content: content)
+    }, navigate: { id in if id == "university" { subpage = "university" } else { open(id) } })
   }
 
-  private var appearancePanel: some View {
-    VStack(spacing: 24) {
-    settingsCard("테마") {
-      BandalSettingRow(title: "모양") {
+  private static let fontScales = [0.9, 1, 1.1, 1.2]
+  /// 글자 크기 as the design draws it: 가 13, a 180 × 6 bar, 가 19. Four steps; a touch or drag picks the nearest.
+  private var fontScaleBar: some View {
+    let index = Self.fontScales.firstIndex(of: fontScale) ?? 1
+    let pick = { (step: Int) in let value = Self.fontScales[min(3, max(0, step))]; if value != fontScale { savePreference(["fontScale": value]) } }
+    return HStack(spacing: 10) {
+      Text("가").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityHidden(true)
+      Capsule().fill(NativeDesktopTheme.surface).frame(width: 180, height: 6)
+        .overlay(alignment: .leading) { Capsule().fill(NativeDesktopTheme.accent).frame(width: 45 * CGFloat(index + 1)) }
+        .padding(.vertical, 19).contentShape(Rectangle())
+        .gesture(DragGesture(minimumDistance: 0).onEnded { pick(Int($0.location.x / 45)) })
+        .padding(.vertical, -19)
+        .accessibilityElement().accessibilityLabel("글자 크기").accessibilityValue("\(Int(fontScale * 100))%")
+        .accessibilityAdjustableAction { pick(index + ($0 == .increment ? 1 : -1)) }.accessibilityIdentifier("native-settings-font-scale")
+      Text("가").font(.system(size: 19)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityHidden(true)
+    }
+  }
+  /// 화면 (132:2998): 테마, 사이드바, 펜슬.
+  @ViewBuilder private var appearancePage: some View {
+    NativeSettingsGroup(title: "테마") {
+      NativeSettingsRow(title: "모양", height: 61) {
         BandalSegmented(options: [("light", "라이트"), ("dark", "다크"), ("system", "시스템")],
                         selection: Binding(get: { appearance }, set: { saveAppearance($0) }), identifierPrefix: "native-settings-theme-")
       }
-      Divider()
-      BandalSettingRow(title: "글자 크기") {
-        HStack(spacing: 8) {
-          Text("가").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
-          Slider(value: Binding(get: { fontScale }, set: { value in let snapped = (value * 10).rounded() / 10; if snapped != fontScale { savePreference(["fontScale": snapped]) } }), in: 0.9...1.2, step: 0.1)
-            .frame(width: 160).accessibilityLabel("글자 크기").accessibilityValue("\(Int(fontScale * 100))%").accessibilityIdentifier("native-settings-font-scale")
-          Text("가").font(.system(size: 17)).foregroundStyle(NativeDesktopTheme.muted)
-        }
-      }
+      NativeSettingsRow(title: "글자 크기", height: 51) { fontScaleBar }
     }
-    NativeSettingsCard(title: "사이드바") {
-      Toggle("홈 버튼으로 접고 펼치기", isOn: $homeTogglesSidebar).accessibilityIdentifier("native-settings-home-toggles-sidebar")
-      Divider()
-      Toggle(isOn: $keyboardFoldsPanels) {
-        VStack(alignment: .leading, spacing: 2) { Text("키보드를 쓰면 자동으로 접기"); Text("마크다운에서 키보드가 올라올 때").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted) }
-      }.accessibilityIdentifier("native-settings-keyboard-folds-panels")
+    NativeSettingsGroup(title: "사이드바") {
+      NativeSettingsToggle(title: "홈 버튼으로 접고 펼치기", isOn: $homeTogglesSidebar).accessibilityIdentifier("native-settings-home-toggles-sidebar")
+      NativeSettingsToggle(title: "키보드를 쓰면 자동으로 접기", note: "마크다운에서 키보드가 올라올 때", isOn: $keyboardFoldsPanels).accessibilityIdentifier("native-settings-keyboard-folds-panels")
     }
-    NativeSettingsCard(title: "펜슬") {
-      BandalSettingRow(title: "손가락은 스크롤만", note: "필기는 펜슬로만 해요") { Text("항상").foregroundStyle(NativeDesktopTheme.secondary) }
-      Divider()
-      BandalSettingRow(title: "펜슬 두 번 탭", note: "iPad 설정 › Apple Pencil에서 바꿔요") { Text(pencilTapTitle).foregroundStyle(NativeDesktopTheme.secondary) }
-    }
-    NativeSettingsCard(title: "글꼴과 밀도") {
-      Picker("필기 글꼴", selection: Binding(get: { settings["editorFont"] as? String ?? "sans" }, set: { savePreference(["editorFont": $0]) })) {
-        Text("산세리프").tag("sans"); Text("세리프").tag("serif"); Text("고정폭").tag("mono")
-      }.accessibilityIdentifier("native-settings-editor-font")
-      Picker("밀도", selection: Binding(get: { density }, set: { savePreference(["density": $0]) })) {
-        Text("편안하게").tag("comfortable"); Text("촘촘하게").tag("compact")
-      }.pickerStyle(.segmented).accessibilityIdentifier("native-settings-density")
-    }
+    // 준비 중: finger drawing is a per-note tool option, with no app-wide default to switch here.
+    NativeSettingsGroup(title: "펜슬", description: "‘손가락은 스크롤만’을 끄는 설정은 준비 중이에요.") {
+      NativeSettingsToggle(title: "손가락은 스크롤만", note: "필기는 펜슬로만 해요", isOn: .constant(true)).disabled(true).accessibilityIdentifier("native-settings-finger-scrolls")
+      // The double tap is the system's setting: the row shows it and opens Settings.
+      Button { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } } label: {
+        NativeSettingsRow(title: "펜슬 두 번 탭") { NativeSettingsValue(pencilTapTitle) }
+      }.buttonStyle(.plain).accessibilityIdentifier("native-settings-pencil-tap")
     }
   }
-  private func appearanceChoice(_ title: String, value: String) -> some View {
-    Button {
-      saveAppearance(value)
-    } label: {
-      VStack(alignment: .leading, spacing: 10) {
-        HStack(spacing: 0) {
-          Rectangle().fill(value == "dark" ? Color(white: 0.1) : Color(white: 0.94)).frame(
-            width: 22)
-          VStack(alignment: .leading, spacing: 6) {
-            RoundedRectangle(cornerRadius: 2).fill(
-              value == "dark" ? Color(white: 0.44) : Color(white: 0.75)
-            ).frame(width: 32, height: 5)
-            RoundedRectangle(cornerRadius: 2).fill(
-              value == "dark" ? Color(white: 0.26) : Color(white: 0.9)
-            ).frame(height: 17)
-            RoundedRectangle(cornerRadius: 2).fill(
-              value == "dark" ? Color(white: 0.26) : Color(white: 0.9)
-            ).frame(height: 17)
-          }.padding(10).frame(maxWidth: .infinity).background(
-            value == "dark" ? Color(white: 0.13) : .white)
-          if value == "system" { Rectangle().fill(Color(white: 0.13)).frame(width: 24) }
-        }.frame(height: 76).clipShape(RoundedRectangle(cornerRadius: 6)).overlay(
-          RoundedRectangle(cornerRadius: 6).strokeBorder(NativeDesktopTheme.border))
-        HStack(spacing: 4) {
-          Text(title).font(NativeDesktopTheme.font( 12)).lineLimit(1).minimumScaleFactor(0.8)
-          Spacer(minLength: 0)
-          Image(systemName: appearance == value ? "checkmark.circle.fill" : "circle").font(
-            NativeDesktopTheme.font( 13)
-          ).foregroundStyle(
-            appearance == value ? NativeDesktopTheme.accent : NativeDesktopTheme.muted)
-        }
-      }.padding(10).frame(maxWidth: .infinity)
-        .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(
-          RoundedRectangle(cornerRadius: 8).strokeBorder(
-            appearance == value ? NativeDesktopTheme.accent : NativeDesktopTheme.border,
-            lineWidth: appearance == value ? 2 : 1))
-    }.buttonStyle(.plain).accessibilityLabel(title).accessibilityAddTraits(
-      appearance == value ? .isSelected : []).accessibilityIdentifier("native-settings-theme-" + value)
-  }
-  /// 기본 모델·effort (the composer's picker), consent per provider, fair-use link. Signed out it
-  /// is read-only under a one-line sign-in banner.
-  private var aiPanel: some View {
-    VStack(alignment: .leading, spacing: 20) {
-      if !signedIn {
-        HStack(spacing: 8) {
-          Image(systemName: "person.crop.circle.badge.exclamationmark").foregroundStyle(NativeDesktopTheme.secondary)
-          Text("로그인하면 바로 쓸 수 있어요").font(.system(size: BandalMetrics.bodySize)).accessibilityIdentifier("native-ai-summary")
-          Spacer()
-          Button("로그인") { aiSignIn = true }.font(.system(size: BandalMetrics.bodySize, weight: .semibold)).accessibilityIdentifier("native-ai-settings-sign-in")
-            .bandalPopover(isPresented: $aiSignIn, width: 260) { NativeSignInButtons(store: store, error: $aiSignInError, identifierPrefix: "native-ai-settings") }
-        }.padding(.horizontal, BandalMetrics.padding).frame(minHeight: 40)
-          .background(NativeDesktopTheme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: BandalMetrics.radius))
+  /// 화면 › 더 보기.
+  private var fontsGroup: some View {
+    NativeSettingsGroup(title: "글꼴과 밀도") {
+      LabeledContent("필기 글꼴") {
+        Picker("필기 글꼴", selection: Binding(get: { settings["editorFont"] as? String ?? "sans" }, set: { savePreference(["editorFont": $0]) })) {
+          Text("산세리프").tag("sans"); Text("세리프").tag("serif"); Text("고정폭").tag("mono")
+        }.accessibilityIdentifier("native-settings-editor-font")
       }
-      NativeSettingsCard(title: "기본 모델") {
-        NativeAIModelPicker(catalog: aiCatalog, model: aiModel, effort: aiModel == "default" ? nil : aiEffort,
-                            onSelect: { model, effort, _ in NativeAIPreferences.remember(model: model, effort: effort); aiModel = model; aiEffort = effort ?? aiEffort },
-                            titled: false)
-          .disabled(!signedIn).opacity(signedIn ? 1 : 0.6)
-          .accessibilityIdentifier("native-settings-ai-picker")
+      NativeSettingsRow(title: "밀도", height: 61) {
+        BandalSegmented(options: [("comfortable", "편안하게"), ("compact", "촘촘하게")], selection: Binding(get: { density }, set: { savePreference(["density": $0]) }), identifierPrefix: "native-settings-density-")
       }
-      NativeSettingsCard(title: "답변") {
-        BandalSettingRow(title: "답변 언어") {
-          BandalSegmented(options: [("auto", "질문 따라"), ("ko", "한국어"), ("en", "English")], selection: $answerLanguage, identifierPrefix: "native-settings-ai-language-")
-        }
-        Text("AI는 반달이 제공해요. 키를 따로 넣지 않아도 돼요.").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
-      }
-      NativeSettingsCard(title: "자료 참고") {
-        BandalSettingRow(title: "참고 범위", note: referenceScope == "note" ? "지금 열어 둔 문서만 읽어요" : "과목의 자료를 필요할 때 읽어요") {
-          BandalSegmented(options: [("note", "지금 노트"), ("course", "과목 전체")], selection: $referenceScope, identifierPrefix: "native-settings-ai-scope-")
-        }
-        Divider()
-        Toggle(isOn: $showsSources) {
-          VStack(alignment: .leading, spacing: 2) { Text("AI 답변 출처 표시"); Text("답변 아래에 읽은 자료를 보여 줘요").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted) }
-        }.accessibilityIdentifier("native-settings-ai-sources")
-      }
-      NativeSettingsCard(title: "대화 기록") {
-        Toggle(isOn: $savesHistory) {
-          VStack(alignment: .leading, spacing: 2) { Text("대화 기록 저장"); Text(savesHistory ? "지난 대화를 목록에서 다시 열 수 있어요" : "지금부터 시작하는 대화는 목록에 남지 않고, 앱을 다시 열면 지워져요").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted) }
-        }.accessibilityIdentifier("native-settings-ai-saves-history")
-        Divider()
-        Button("대화 기록 모두 지우기", role: .destructive) { deleteChatsConfirmation = true }.accessibilityIdentifier("native-settings-delete-chats")
-          .bandalConfirm("대화 기록을 모두 지울까요?", isPresented: $deleteChatsConfirmation, message: "모든 과목의 AI 대화가 지워져요. 노트와 자료는 그대로예요.", action: "모두 지우기", destructive: true, identifier: "native-settings-delete-chats-confirm") {
-            run { _ = try await store.invoke("chat:deleteAll"); notice = "대화 기록을 지웠어요." }
-          }
-      }
-      NativeSettingsCard(title: "전송 동의") {
-        ForEach(NativeAIProvider.allCases.filter { $0 != .google || aiCatalog.providers.contains("google") }) { provider in consentRow(provider) }
-        Link(destination: URL(string: "https://bandal.io/ko/docs/ai-fair-use")!) { Label("공정 이용 안내", systemImage: "arrow.up.right.square") }
-          .font(.system(size: BandalMetrics.bodySize)).accessibilityIdentifier("native-ai-fair-use")
-      }
-    }
-    .task(id: signedIn) {
-      aiModel = NativeAIPreferences.model; aiEffort = NativeAIPreferences.effort
-      if signedIn, let config = try? await store.invokePrivate("native:aiConfig") as? [String: Any] { aiCatalog = NativeAIModelCatalog(config) }
-      else { aiCatalog = NativeAIModelCatalog() }
     }
   }
   @State private var aiCatalog = NativeAIModelCatalog()
   @State private var aiModel = NativeAIPreferences.model
   @State private var aiEffort = NativeAIPreferences.effort
   @State private var aiSignIn = false
+  @State private var pickingModel = false
+  @State private var pickingLanguage = false
   @AppStorage(NativeAIPreferences.answerLanguageKey) private var answerLanguage = "auto"
   @AppStorage(NativeAIPreferences.referenceScopeKey) private var referenceScope = "course"
   @AppStorage(NativeAIPreferences.showsSourcesKey) private var showsSources = true
   @AppStorage(NativeAIPreferences.savesHistoryKey) private var savesHistory = true
   @State private var deleteChatsConfirmation = false
   @State private var aiSignInError: String?
+  private static let answerLanguages = [("auto", "질문 따라"), ("ko", "한국어"), ("en", "English")]
+  /// AI (132:3654): 모델, 자료 참고, 대화 기록. Signed out, the model row asks to sign in instead.
+  @ViewBuilder private var aiPage: some View {
+    NativeSettingsGroup(title: "모델", description: "AI는 반달이 제공해요. 따로 API 키를 넣지 않아도 돼요.") {
+      // Not one button: the note stays a text of its own for VoiceOver and the tests.
+      HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("기본 모델")
+          Text(signedIn ? "질문에 맞춰 알아서 골라요" : "로그인하면 바로 쓸 수 있어요").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityIdentifier("native-ai-summary")
+        }
+        Spacer(minLength: 8)
+        Button { if signedIn { pickingModel = true } else { aiSignIn = true } } label: {
+          NativeSettingsValue(signedIn ? (aiModel == "default" ? "자동 (추천)" : aiCatalog.label(aiModel)) : "로그인").frame(minHeight: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityIdentifier(signedIn ? "native-settings-ai-model" : "native-ai-settings-sign-in")
+          .bandalPopover(isPresented: $aiSignIn, width: 260) { NativeSignInButtons(store: store, error: $aiSignInError, identifierPrefix: "native-ai-settings") }
+          .background(Color.clear.bandalPopover(isPresented: $pickingModel, width: 320, radius: 14, padding: 8) {
+            NativeAIModelPicker(catalog: aiCatalog, model: aiModel, effort: aiModel == "default" ? nil : aiEffort,
+                                onSelect: { model, effort, closes in NativeAIPreferences.remember(model: model, effort: effort); aiModel = model; aiEffort = effort ?? aiEffort; if closes { pickingModel = false } })
+              .accessibilityIdentifier("native-settings-ai-picker")
+          })
+      }.frame(minHeight: 45)
+      Button { pickingLanguage = true } label: {
+        NativeSettingsRow(title: "답변 언어") { NativeSettingsValue(Self.answerLanguages.first { $0.0 == answerLanguage }?.1 ?? "질문 따라") }
+      }.buttonStyle(.plain).accessibilityIdentifier("native-settings-ai-language")
+        .bandalPopover(isPresented: $pickingLanguage, width: 220, radius: 16, padding: 8) {
+          VStack(spacing: 0) {
+            ForEach(Self.answerLanguages, id: \.0) { id, title in
+              BandalMenuRow(title, checked: answerLanguage == id) { answerLanguage = id; pickingLanguage = false }.accessibilityIdentifier("native-settings-ai-language-" + id)
+            }
+          }
+        }
+    }
+    NativeSettingsGroup(title: "자료 참고") {
+      NativeSettingsRow(title: "참고 범위", height: 61) {
+        BandalSegmented(options: [("note", "지금 노트"), ("course", "과목 전체")], selection: $referenceScope, identifierPrefix: "native-settings-ai-scope-")
+      }
+      NativeSettingsToggle(title: "AI 답변 출처 표시", isOn: $showsSources).accessibilityIdentifier("native-settings-ai-sources")
+    }
+    NativeSettingsGroup(title: "대화 기록", description: savesHistory ? "" : "지금부터 시작하는 대화는 목록에 남지 않고, 앱을 다시 열면 지워져요") {
+      NativeSettingsToggle(title: "대화 기록 저장", isOn: $savesHistory).accessibilityIdentifier("native-settings-ai-saves-history")
+      NativeSettingsActionRow(title: "대화 기록 모두 지우기", destructive: true) { deleteChatsConfirmation = true }.accessibilityIdentifier("native-settings-delete-chats")
+        .bandalConfirm("대화 기록을 모두 지울까요?", isPresented: $deleteChatsConfirmation, message: "모든 과목의 AI 대화가 지워져요. 노트와 자료는 그대로예요.", action: "모두 지우기", destructive: true, identifier: "native-settings-delete-chats-confirm") {
+          run { _ = try await store.invoke("chat:deleteAll"); notice = "대화 기록을 지웠어요." }
+        }
+    }
+  }
+  /// AI › 더 보기: consent per provider and the fair-use page.
+  private var aiMore: some View {
+    NativeSettingsGroup(title: "전송 동의") {
+      ForEach(NativeAIProvider.allCases.filter { $0 != .google || aiCatalog.providers.contains("google") }) { provider in consentRow(provider) }
+      Link(destination: URL(string: "https://bandal.io/ko/docs/ai-fair-use")!) { NativeSettingsRow(title: "공정 이용 안내") { Image(systemName: "arrow.up.right").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted) } }
+        .buttonStyle(.plain).accessibilityIdentifier("native-ai-fair-use")
+    }
+  }
+  private var loginMethod: String? {
+    // The sign-in buttons carry these Korean labels in both languages; here English names the provider.
+    switch account["provider"] as? String { case "apple": english ? "Apple" : "Apple로 로그인"; case "google": english ? "Google" : "Google로 로그인"; case "email": english ? "Email" : "이메일로 로그인"; default: nil }
+  }
+  /// 계정 (132:3229): the profile card, 계정 정보, then 로그아웃 and 계정 삭제. Signed out it offers the sign-in buttons.
+  @ViewBuilder private var accountPage: some View {
+    if signedIn {
+      let email = account["email"] as? String
+      HStack(spacing: 16) {
+        Text(String((nickname.isEmpty ? (email ?? "반") : nickname).prefix(1))).font(.system(size: 20, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary)
+          .frame(width: 56, height: 56).background(NativeDesktopTheme.border, in: Circle()).accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 4) {
+          Text(nickname.isEmpty ? "이름 없음" : nickname).font(.system(size: 20, weight: .semibold))
+          if let email { Text(email).font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.secondary) }
+        }
+        Spacer(minLength: 0)
+      }.padding(21).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(NativeDesktopTheme.border))
+      if account["errorCode"] as? String == "reauthentication-required" {
+        NativeSettingsGroup(description: "안전을 위해 다시 로그인해 주세요. 기기의 자료는 계속 사용할 수 있어요.") {
+          NativeSettingsActionRow(title: "Apple로 다시 로그인") { signIn("apple") }
+          NativeSettingsActionRow(title: "Google로 다시 로그인") { signIn("google") }
+        }
+      }
+      NativeSettingsGroup(title: "계정 정보") {
+        Button { nicknameDraft = nickname; editingName = true } label: { NativeSettingsRow(title: "이름") { NativeSettingsValue(nickname) } }
+          .buttonStyle(.plain).accessibilityIdentifier("native-settings-nickname-row")
+          .bandalPopover(isPresented: $editingName, width: 280) {
+            // Saved on Enter, no save button.
+            BandalField(prompt: "닉네임", text: $nicknameDraft, identifier: "native-settings-nickname") { editingName = false; saveNickname() }
+          }
+        if let email { NativeSettingsRow(title: "이메일") { NativeSettingsValue(email, chevron: false) } }
+        if let loginMethod { NativeSettingsRow(title: "로그인 방식") { NativeSettingsValue(loginMethod, chevron: false) } }
+      }
+      NativeSettingsGroup {
+        NativeSettingsActionRow(title: "로그아웃") { signOutConfirmation = true }.accessibilityIdentifier("native-settings-sign-out")
+          .bandalConfirm("로그아웃할까요?", isPresented: $signOutConfirmation, action: "로그아웃") {
+            run { _ = try await store.invoke("auth:signOut"); try await loadAccount(); try await loadSync() }
+          }
+        NativeSettingsActionRow(title: "계정 삭제", note: "서버의 계정 정보가 지워져요. 이 iPad의 자료는 남아요.", destructive: true) { deleteAccountConfirmation = true }
+          .accessibilityIdentifier("native-settings-delete-account")
+          .bandalConfirm("계정을 삭제할까요?", isPresented: $deleteAccountConfirmation, message: "서버의 계정 정보가 지워져요. 이 iPad의 자료는 남아요.", action: "계정 삭제", destructive: true, identifier: "native-settings-delete-account-confirm") {
+            run { _ = try await store.invoke("auth:deleteAccount"); try await loadAccount(); try await loadSync(); notice = "계정을 삭제했어요." }
+          }
+      }
+    } else {
+      NativeSettingsGroup(title: "반달 계정") {
+        VStack(alignment: .leading, spacing: 12) {
+          Text(accountPhase).font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.secondary)
+          NativeSignInButtons(store: store, error: $error, identifierPrefix: "native-settings").frame(maxWidth: 280)
+        }.padding(.vertical, 8)
+      }
+    }
+  }
+  /// 계정 › 더 보기: 친구 초대, linking another sign-in, and the cloud-sync panels of the older builds.
+  @ViewBuilder private var accountMore: some View {
+    NativeReferralSettingsCard(store: store)
+    if signedIn {
+      NativeSettingsGroup(title: "다른 로그인 방법 연결") {
+        NativeSettingsActionRow(title: "Apple 연결") { linkProvider("apple") }
+        NativeSettingsActionRow(title: "Google 연결") { linkProvider("google") }
+      }
+    }
+    if NativeReleaseFlags.legacyCloudSync { subscriptionPanel; syncPanel; profilePanel }
+  }
   private func consentRow(_ provider: NativeAIProvider) -> some View {
     let target: AIProvider = switch provider { case .openAI: .openai; case .anthropic: .claude; case .google: .gemini }
     let english = locale == "en-US"
@@ -450,58 +488,12 @@ struct NativeSettingsWorkspace: View {
       }
     }
   }
-  private var accountPanel: some View {
-    settingsCard("반달 계정") {
-      if signedIn {
-        HStack(spacing: 12) {
-          Text(String((nickname.isEmpty ? (account["email"] as? String ?? "반") : nickname).prefix(1))).font(.system(size: 17, weight: .semibold))
-            .frame(width: 44, height: 44).background(NativeDesktopTheme.text.opacity(0.08), in: Circle())
-          VStack(alignment: .leading, spacing: 2) {
-            Text(nickname.isEmpty ? "이름 없음" : nickname).font(.system(size: 16, weight: .semibold))
-            if let email = account["email"] as? String { Text(email).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary) }
-          }
-        }.padding(.vertical, 4)
-        Divider()
-        if let email = account["email"] as? String { LabeledContent("이메일", value: email) }
-        LabeledContent("이름") {
-          // Saved on Enter, no save button.
-          TextField("닉네임", text: $nickname).multilineTextAlignment(.trailing).frame(maxWidth: 220)
-            .onSubmit { saveNickname() }.accessibilityIdentifier("native-settings-nickname")
-        }
-        if account["errorCode"] as? String == "reauthentication-required" {
-          Text("안전을 위해 다시 로그인해 주세요. 기기의 자료는 계속 사용할 수 있어요.").font(.caption).foregroundStyle(.red)
-          Button("Apple로 다시 로그인") { signIn("apple") }
-          Button("Google로 다시 로그인") { signIn("google") }
-        }
-        DisclosureGroup("다른 로그인 방법 연결") {
-          Button("Apple 연결") { linkProvider("apple") }
-          Button("Google 연결") { linkProvider("google") }
-        }
-        Button("로그아웃") { signOutConfirmation = true }
-          .bandalConfirm("로그아웃할까요?", isPresented: $signOutConfirmation, action: "로그아웃") {
-            run { _ = try await store.invoke("auth:signOut"); try await loadAccount(); try await loadSync() }
-          }
-        Button(role: .destructive) { deleteAccountConfirmation = true } label: {
-          VStack(alignment: .leading, spacing: 2) {
-            Text("계정 삭제")
-            Text("서버의 계정 정보가 지워져요. 이 iPad의 자료는 남아요.").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
-          }
-        }.accessibilityIdentifier("native-settings-delete-account")
-          .bandalConfirm("계정을 삭제할까요?", isPresented: $deleteAccountConfirmation, message: "서버의 계정 정보가 지워져요. 이 iPad의 자료는 남아요.", action: "계정 삭제", destructive: true, identifier: "native-settings-delete-account-confirm") {
-            run { _ = try await store.invoke("auth:deleteAccount"); try await loadAccount(); try await loadSync(); notice = "계정을 삭제했어요." }
-          }
-      } else {
-        Text(accountPhase).foregroundStyle(.secondary)
-        NativeSignInButtons(store: store, error: $error, identifierPrefix: "native-settings").frame(maxWidth: 280)
-      }
-    }
-  }
   private func saveNickname() {
-    guard !nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-    run { _ = try await store.invoke("auth:setNickname", ["nickname": nickname]); try await loadAccount(); notice = "이름을 바꿨어요." }
+    guard !nicknameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    run { _ = try await store.invoke("auth:setNickname", ["nickname": nicknameDraft]); try await loadAccount(); notice = "이름을 바꿨어요." }
   }
   private var subscriptionPanel: some View {
-    settingsCard("동기화 구독") {
+    NativeSettingsGroup(title: "동기화 구독") {
       if !signedIn {
         Text("로그인하면 구독 상태를 확인할 수 있어요.").foregroundStyle(.secondary)
       } else {
@@ -529,7 +521,7 @@ struct NativeSettingsWorkspace: View {
     }
   }
   private var profilePanel: some View {
-    settingsCard("기기 프로필") {
+    NativeSettingsGroup(title: "기기 프로필") {
       LabeledContent("프로필", value: store.root.lastPathComponent)
       Button("현재 자료 백업", systemImage: "externaldrive") {
         run {
@@ -542,7 +534,7 @@ struct NativeSettingsWorkspace: View {
     }
   }
   private var syncPanel: some View {
-    settingsCard("자료 동기화") {
+    NativeSettingsGroup(title: "자료 동기화") {
       Toggle("자료 동기화 사용", isOn: Binding(get: { sync["enabled"] as? Bool == true }, set: { value in
         run { sync = try await store.invoke("sync:setEnabled", ["enabled": value]) as? [String: Any] ?? sync; try await loadSync() }
       })).disabled(!signedIn)
@@ -585,21 +577,6 @@ struct NativeSettingsWorkspace: View {
       }
     }
   }
-  private var browserPanel: some View {
-    settingsCard("웹 탐색과 보호") {
-      Toggle("스와이프로 뒤로·앞으로 이동", isOn: browserBool("swipeNavigation", fallback: true))
-      Toggle("추적 거부 요청", isOn: browserBool("doNotTrack", fallback: true))
-      Picker("추적 방지", selection: browserString("trackingProtection", fallback: "balanced")) {
-        Text("사용 안 함").tag("off")
-        Text("균형").tag("balanced")
-        Text("엄격").tag("strict")
-      }
-      Picker("팝업", selection: browserString("popupBehavior", fallback: "balanced")) {
-        Text("균형").tag("balanced")
-        Text("허용한 사이트만").tag("strict")
-      }
-    }
-  }
   private var accountPhase: String {
     switch account["phase"] as? String {
     case "unconfigured": "계정 서버 설정이 필요합니다."
@@ -629,6 +606,10 @@ struct NativeSettingsWorkspace: View {
   }
   private func loadAccount() async throws {
     account = try await store.invoke("auth:getState") as? [String: Any] ?? [:]
+    #if DEBUG
+    // A signed-in account for the design screenshots.
+    if ProcessInfo.processInfo.arguments.contains("--native-settings-account-fixture") { account = ["phase": "signed-in", "email": "banddal@snu.ac.kr", "provider": "apple", "profile": ["nickname": "김반달"]] }
+    #endif
     setNicknameFromAccount()
   }
   private func setNicknameFromAccount() {
@@ -669,23 +650,6 @@ struct NativeSettingsWorkspace: View {
       try await loadAccount()
     }
   }
-  private func browserBool(_ key: String, fallback: Bool) -> Binding<Bool> {
-    Binding(
-      get: { browserSettings[key] as? Bool ?? fallback },
-      set: { value in saveBrowser(key, value: value) })
-  }
-  private func browserString(_ key: String, fallback: String) -> Binding<String> {
-    Binding(
-      get: { browserSettings[key] as? String ?? fallback },
-      set: { value in saveBrowser(key, value: value) })
-  }
-  private func saveBrowser(_ key: String, value: Any) {
-    run {
-      settings =
-        try await store.invoke("settings:set", ["browser": [key: value]]) as? [String: Any]
-        ?? settings
-    }
-  }
   private func savePreference(_ patch: [String: Any]) {
     run {
       guard let value = try await store.invoke("settings:set", patch) as? [String: Any] else { throw DesktopRuntimeError("설정 저장 결과를 확인하지 못했습니다.") }
@@ -714,13 +678,5 @@ struct NativeSettingsWorkspace: View {
     let payload = local?["payload"] as? [String: Any]
     return payload?["title"] as? String ?? payload?["name"] as? String ?? local?["kind"] as? String
       ?? "자료"
-  }
-  private static func pretty(_ value: Any?) -> String {
-    guard let value,
-      let data = try? JSONSerialization.data(
-        withJSONObject: value, options: [.prettyPrinted, .sortedKeys, .fragmentsAllowed]),
-      let text = String(data: data, encoding: .utf8)
-    else { return "내용을 읽지 못했습니다." }
-    return text
   }
 }
