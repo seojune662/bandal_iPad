@@ -194,6 +194,36 @@ final class NativeSchoolPickerTests: XCTestCase {
         XCTAssertEqual(picker.phase, .signIn)
     }
 
+    /// "다시 찾기 · 오늘 N번 남음": each AI search started today is counted on this iPad, a search left
+    /// running (닫고 기다리기) says how it ended, and the server's "used up" empties the count.
+    func testAISearchesAreCountedForTheDayAndADetachedSearchAnnouncesItsEnd() async throws {
+        let suite = "school-picker-" + UUID().uuidString, defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var limited = false
+        func picker() -> NativeSchoolPickerModel {
+            NativeSchoolPickerModel(directory: directory(setup: { if limited { throw SchoolDirectoryError.rateLimited(limit: 3) }; return nil }), country: "KR", locale: "ko-KR",
+                                    debounce: .zero, defaults: defaults, save: { _ in }, done: { _ in })
+        }
+        let first = picker()
+        XCTAssertEqual(first.remaining, 3)
+        first.query = "없는대학교"
+        var ended: [NativeSchoolPickerModel.Phase] = []
+        first.announce = { phase, _ in ended.append(phase) }
+        await first.findWithAI()
+        XCTAssertEqual(first.phase, .notFound); XCTAssertEqual(first.remaining, 2); XCTAssertEqual(ended, [.notFound])
+        await first.findAgain()
+        XCTAssertEqual(first.phase, .notFound); XCTAssertEqual(calls.setups.count, 2)
+        XCTAssertEqual(picker().remaining, 1, "The count is the iPad's, not one picker's")
+        defaults.set("2000-01-01:3", forKey: NativeSchoolPickerModel.usedKey)
+        XCTAssertEqual(picker().remaining, 3, "Another day starts over")
+        limited = true
+        let last = picker(); last.query = "반달대"
+        await last.findWithAI()
+        XCTAssertEqual(last.notice, .rateLimited(3)); XCTAssertEqual(last.remaining, 0)
+        last.query = "반달대학교"
+        XCTAssertNil(last.notice, "Another name gives the list back")
+    }
+
     func testRateLimitedAndUnavailableAISearchGoBackToTheSearchWithAReason() async {
         let limited = model(directory(setup: { throw SchoolDirectoryError.rateLimited(limit: 3) }))
         limited.query = "반달대"

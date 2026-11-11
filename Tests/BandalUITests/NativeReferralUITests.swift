@@ -357,7 +357,7 @@ final class NativeReferralUITests: XCTestCase {
         let next = app.buttons["native-onboarding-next"]
         XCTAssertTrue(next.waitForExistence(timeout: 25), app.debugDescription); next.tap()
         let school = app.buttons["native-school-result-snu"]
-        XCTAssertTrue(school.waitForExistence(timeout: 10), app.debugDescription); school.tap()
+        XCTAssertTrue(school.waitForExistence(timeout: 10), app.debugDescription); school.tap(); next.tap()
         let field = app.textFields["native-referral-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
         return field

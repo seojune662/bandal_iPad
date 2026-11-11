@@ -560,6 +560,17 @@ struct BandalChoiceCard<Content: View>: View {
     }
 }
 
+/// The design's check mark: two strokes with round ends, 10.6 × 7.4 at weight 2.4 in a list row.
+struct BandalCheck: View {
+    var width: CGFloat = 10.6
+    var weight: CGFloat = 2.4
+    var body: some View {
+        Path { path in path.move(to: CGPoint(x: 0, y: 0.524)); path.addLine(to: CGPoint(x: 1.0 / 3, y: 1)); path.addLine(to: CGPoint(x: 1, y: 0)) }
+            .applying(CGAffineTransform(scaleX: width, y: width * 0.7))
+            .stroke(style: StrokeStyle(lineWidth: weight, lineCap: .round, lineJoin: .round)).frame(width: width, height: width * 0.7)
+    }
+}
+
 /// One row of a `BandalChoiceCard`: title over a detail, a check on the chosen one, 68 high (62 with `compact`).
 struct BandalChoiceRow: View {
     let title: String
@@ -567,19 +578,21 @@ struct BandalChoiceRow: View {
     var chosen = false
     var compact = false
     var showsDivider = true
+    /// The chosen row lies on `surface` (a list of results); a list of settings shows the check alone.
+    var tinted = true
     let action: () -> Void
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: title).font(.system(size: compact ? 15 : 16, weight: .medium)).foregroundStyle(NativeDesktopTheme.text).lineLimit(1)
-                    if let detail { Text(verbatim: detail).font(.system(size: compact ? 12 : 13)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1) }
+                    Text(verbatim: title).font(.system(size: compact ? 15 : 16, weight: .medium)).foregroundStyle(NativeDesktopTheme.text).lineLimit(1).frame(minHeight: compact ? 21 : 22)
+                    if let detail { Text(verbatim: detail).font(.system(size: compact ? 12 : 13)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1).frame(minHeight: compact ? 17 : 18) }
                 }
                 Spacer(minLength: 8)
-                if chosen { Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.accent) }
+                if chosen { BandalCheck(width: compact ? 9.4 : 10.6, weight: compact ? 2 : 2.4).foregroundStyle(NativeDesktopTheme.text).padding(.trailing, 3).accessibilityHidden(true) }
             }
             .padding(.horizontal, compact ? 14 : 16).frame(minHeight: compact ? 62 : 68)
-            .background(chosen ? NativeDesktopTheme.surface : .clear).contentShape(Rectangle())
+            .background(chosen && tinted ? NativeDesktopTheme.surface : .clear).contentShape(Rectangle())
             .overlay(alignment: .bottom) { if showsDivider { NativeDesktopTheme.border.frame(height: 1).padding(.leading, compact ? 14 : 16) } }
         }.buttonStyle(.plain).accessibilityAddTraits(chosen ? .isSelected : [])
     }
