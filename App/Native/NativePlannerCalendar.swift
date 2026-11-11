@@ -85,7 +85,7 @@ struct NativePlannerCalendar<Card: View>: View {
     }
     private func monthStep(_ title: String, symbol: String, by count: Int) -> some View {
         Button { if let date = calendar.date(byAdding: .month, value: count, to: month) { month = date } } label: {
-            Image(systemName: symbol).font(.system(size: 15, weight: .medium)).foregroundStyle(NativeDesktopTheme.secondary).frame(width: 30, height: 30).contentShape(Rectangle())
+            Image(systemName: symbol).font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.secondary).frame(width: 11, height: 30).contentShape(Rectangle().inset(by: -10))
         }.buttonStyle(.plain).accessibilityLabel(title)
     }
     private var weekdays: some View {
@@ -111,7 +111,7 @@ struct NativePlannerCalendar<Card: View>: View {
             }.scrollBounceBehavior(.basedOnSize)
         }
         .background(NativePlannerPalette.panel).clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(NativeDesktopTheme.border) }
+        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(NativePlannerPalette.panelStroke) }
     }
     private func dayCell(_ day: Date, size: CGSize) -> some View {
         let today = calendar.isDateInToday(day), selected = calendar.isDate(day, inSameDayAs: selectedDay)
@@ -124,13 +124,13 @@ struct NativePlannerCalendar<Card: View>: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 0) {
                     Text(String(calendar.component(.day, from: day))).font(.system(size: 14, weight: today ? .semibold : .regular))
-                        .foregroundStyle(today ? NativeDesktopTheme.onAccent : outside ? NativeDesktopTheme.muted : NativeDesktopTheme.text)
-                        .frame(width: 26, height: 26).background(today ? NativeDesktopTheme.accent : .clear, in: Circle())
+                        .foregroundStyle(today ? NativePlannerPalette.paper : outside ? NativeDesktopTheme.muted : NativeDesktopTheme.text)
+                        .frame(width: 26, height: 26).background(today ? NativeDesktopTheme.text : .clear, in: Circle())
                     Spacer(minLength: 0)
                     if total > shown { Text("+\(total - shown)").font(.system(size: 11, weight: .medium)).foregroundStyle(NativeDesktopTheme.muted) }
                 }
                 ForEach(entries.prefix(shown)) { task in
-                    chip(task.title, color: task.completed ? NativeDesktopTheme.muted : task.dueBadge()?.urgent == true ? .red : NativeDesktopTheme.text) {
+                    chip(task.title, color: task.completed ? NativeDesktopTheme.muted : task.dueBadge()?.urgent == true ? NativePlannerPalette.urgent : NativeDesktopTheme.text) {
                         Circle().fill(store.courses.first { $0.id == task.courseId }?.tint ?? NativeDesktopTheme.muted).frame(width: 6, height: 6)
                     }
                 }
@@ -140,7 +140,7 @@ struct NativePlannerCalendar<Card: View>: View {
             }
             .padding(8).frame(width: size.width, height: size.height, alignment: .topLeading)
             // Today already carries the dark circle; another chosen day is filled lightly.
-            .background(NativeDesktopTheme.text.opacity(selected && !today ? 0.06 : 0))
+            .background(selected && !today ? NativeGlass.selection : .clear)
             .overlay { Rectangle().strokeBorder(NativeDesktopTheme.text.opacity(0.06), lineWidth: 0.5) }
             .contentShape(Rectangle())
         }
@@ -158,7 +158,7 @@ struct NativePlannerCalendar<Card: View>: View {
             label
             // minWidth 0: without it the frame grows to the title instead of cutting it.
             label.frame(minWidth: 0, maxWidth: .infinity, alignment: .leading).clipped()
-                .mask { LinearGradient(stops: [.init(color: .black, location: 0.72), .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing) }
+                .mask { HStack(spacing: 0) { Color.black; LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 20) } }
         }
         .padding(.horizontal, 6).frame(maxWidth: .infinity, minHeight: 23, maxHeight: 23, alignment: .leading)
         .background(NativePlannerPalette.paper, in: RoundedRectangle(cornerRadius: 6))
@@ -174,9 +174,9 @@ struct NativePlannerCalendar<Card: View>: View {
                 Text(title).font(.system(size: 19, weight: .bold)).lineLimit(1)
                 Spacer(minLength: 0)
                 Button { onCreate(selectedDay) } label: {
-                    Image(systemName: "plus").font(.system(size: 17)).frame(width: 30, height: 30).contentShape(Rectangle())
+                    Image(systemName: "plus").font(.system(size: 16)).frame(width: 17, height: 27).contentShape(Rectangle().inset(by: -10))
                 }.buttonStyle(.plain).accessibilityLabel(title + "에 할 일 추가").accessibilityIdentifier("native-task-add")
-            }.frame(height: 30)
+            }.frame(height: 27)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if entries.isEmpty && external.isEmpty {
