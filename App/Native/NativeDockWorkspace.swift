@@ -196,7 +196,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             || document.learningTarget != nil || ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased())
     }
     static func projectDocuments(_ documents: [NativeDocumentReference], geometry: NativeDockGeometry, layout: NativeDockLayout,
-                                 bounds: CGRect, headerHeight: CGFloat = NativeDockStripMetrics.single.total) -> [VisibleDocument] {
+                                 bounds: CGRect, headerHeight: CGFloat = NativeDockStripMetrics.single.total, windowed: Bool? = nil) -> [VisibleDocument] {
+        let windowed = windowed ?? Self.windowed
         // Compact mode hides other groups without ending their editor session.
         // Rotation or maximizing a pane must not race an asynchronous draft flush.
         let projected = layout.geometry(in: bounds)
@@ -204,7 +205,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             guard let document = documents.first(where: { $0.id == original.group.activeID }) else { return nil }
             let visible = geometry.panes.first { $0.id == original.id }
             let frame = visible?.frame ?? CGRect(x: -10000, y: -10000, width: max(280, original.frame.width), height: max(220, original.frame.height))
-            let inset = NativeDockHeaderMetrics.height(for: visible?.frame ?? original.frame, controlsHeight: headerHeight, windowed: Self.windowed)
+            let inset = NativeDockHeaderMetrics.height(for: visible?.frame ?? original.frame, controlsHeight: headerHeight, windowed: windowed)
             return VisibleDocument(document: document, groupID: original.id,
                 frame: CGRect(x: frame.minX, y: frame.minY + inset, width: frame.width, height: max(0, frame.height - inset)), visible: visible != nil)
         }
@@ -214,7 +215,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         // receive UIKit input. PDF retains its existing checkpoint path.
         for document in documents where retainsEditor(document) && !activeIDs.contains(document.id) {
             let original = projected.panes.first { $0.group.tabs.contains(document.id) }
-            let inset = NativeDockHeaderMetrics.height(for: original?.frame ?? bounds, controlsHeight: headerHeight, windowed: Self.windowed)
+            let inset = NativeDockHeaderMetrics.height(for: original?.frame ?? bounds, controlsHeight: headerHeight, windowed: windowed)
             result.append(VisibleDocument(document: document, groupID: original?.id ?? "",
                 frame: CGRect(x: -10000, y: -10000, width: max(280, original?.frame.width ?? bounds.width),
                               height: max(220, (original?.frame.height ?? bounds.height) - inset)), visible: false))

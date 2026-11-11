@@ -291,7 +291,9 @@ struct NativeWorkspaceView: View {
                         .background(NativeGlass.panel)
                         .overlay(alignment: .leading) { if rightVisible && !chrome.rightPinned { railDivider } }
                         // Off the window's edge while closed, and opaque on the way: a fade would show the wallpaper through the glass.
+                        // It turns clear only once the slide is over, which is what takes its UIKit host out of the accessibility tree.
                         .offset(x: rightVisible ? 0 : (chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth) + 1)
+                        .animation(rightVisible ? nil : .linear(duration: 0.01).delay(0.45)) { $0.opacity(rightVisible ? 1 : 0) }
                         .allowsHitTesting(rightVisible).accessibilityHidden(!rightVisible)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
