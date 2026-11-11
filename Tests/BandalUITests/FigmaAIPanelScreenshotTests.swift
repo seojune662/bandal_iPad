@@ -58,7 +58,7 @@ final class FigmaAIPanelScreenshotTests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "-native.appearance", appearance] + extra
         app.launch()
         XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 25), app.debugDescription)
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        app.buttons["native-course-add-menu"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("디자인 스튜디오")
         app.buttons["native-create-course"].tap(); sleep(1)

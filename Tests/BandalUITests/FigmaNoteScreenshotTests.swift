@@ -14,7 +14,7 @@ final class FigmaNoteScreenshotTests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "-native.appearance", appearance]
         app.launch()
         let add = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(add.waitForExistence(timeout: 25), app.debugDescription); add.tap(); app.buttons["native-new-course"].firstMatch.tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 25), app.debugDescription); add.tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("UX 리서치"); app.buttons["native-create-course"].tap()
         let create = app.buttons["native-library-create"]
