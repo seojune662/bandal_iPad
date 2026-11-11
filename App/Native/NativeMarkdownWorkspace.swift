@@ -232,7 +232,7 @@ struct NativeMarkdownWorkspace: View {
         [("본문", "paragraph", "¶", false)],
         [("제목 1", "h1", "H1", false), ("제목 2", "h2", "H2", false), ("제목 3", "h3", "H3", false)],
         [("굵게", "bold", "B", false), ("기울임", "italic", "I", false), ("취소선", "strike", "S", false)],
-        [("글머리 목록", "bullet", "list.dash", true), ("번호 목록", "number", "list.number", true), ("할 일 목록", "task", "text.badge.checkmark", true)],
+        [("글머리 목록", "bullet", "list.dash", true), ("번호 목록", "number", "list.number", true), ("할 일 목록", "task", "checkmark.square", true)],
         [("인용", "quote", "quote.opening", true), ("링크", "link", "arrow.up.right", true), ("이미지", "image", "photo", true),
          ("인라인 코드", "code", "chevron.left.chevron.right", true), ("코드 블록", "codeblock", "curlybraces", true)]]
     private static let formatIDs = Set(formatGroups.joined().map(\.id))
