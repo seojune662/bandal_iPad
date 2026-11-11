@@ -33,13 +33,12 @@ final class ReviewRecordingTests: XCTestCase {
 
     @MainActor private func createCourse() {
         tap(app.buttons["native-course-add-menu"], wait: 30)
-        tap(app.buttons["native-new-course"])
         type("선형대수학", into: app.textFields["native-course-name"])
         tap(app.buttons["native-create-course"]); pause(2)
     }
 
     @MainActor private func importAndOpenPDF() {
-        tap(app.buttons["native-library-import"]); pause(2)
+        tap(app.buttons["native-library-create"]); tap(app.buttons["native-library-import"]); pause(2)
         // System document picker: On My iPad › app folder. The picker opens on iCloud Drive, so the
         // seconds before the app folder shows are blurred in the exported video (personal file names).
         let file = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", sample)).firstMatch
@@ -59,7 +58,7 @@ final class ReviewRecordingTests: XCTestCase {
     @MainActor private func writeOnPDF() {
         let pdf = app.otherElements["native-pdf-workspace"]
         tool("pen")
-        let style = app.buttons["native-pdf-style"]
+        let style = app.buttons["native-pdf-tool-pen"] // a second tap on the chosen pen opens its settings
         if style.exists, style.isHittable {
             tap(style); tap(app.buttons["native-pdf-color-blue"], wait: 5)
             let close = app.buttons["native-pdf-style-close"].firstMatch
@@ -95,7 +94,7 @@ final class ReviewRecordingTests: XCTestCase {
         let done = app.buttons["완료"].firstMatch
         if done.exists && done.isHittable { done.tap() }
         pause(1.5)
-        tap(app.buttons["native-open-documents"])
+        app.openNativeDockLayoutMenu()
         // iPadOS 27 drops SwiftUI identifiers on menu items; match the title too.
         tap(app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "native-dock-preset-columns", "좌우 2분할")).firstMatch)
         pause(2.5)
@@ -116,16 +115,20 @@ final class ReviewRecordingTests: XCTestCase {
         tap(app.buttons["native-section-assistant"]); pause(2)
         type("예제 행렬의 고유값을 단계별로 설명해 줘", into: app.textFields["native-chat-input"])
         tap(app.buttons["native-chat-send"])
-        XCTAssertTrue(app.buttons["native-ai-consent-cancel"].waitForExistence(timeout: 10), app.debugDescription)
+        // Since 1.4.0 AI goes through the Bandal server: signed out, the chat asks to sign in first; signed in,
+        // the per-provider consent sheet follows (record that part on a device with an account).
+        let consent = app.buttons["native-ai-consent-cancel"]
+        let signIn = app.staticTexts.containing(NSPredicate(format: "label CONTAINS '로그인'")).firstMatch
+        XCTAssertTrue(consent.waitForExistence(timeout: 10) || signIn.exists, app.debugDescription)
         pause(6)
-        tap(app.buttons["native-ai-consent-cancel"]); pause(2.5)
+        if consent.exists { tap(consent); pause(2.5) }
     }
 
     @MainActor private func showSettings() {
         tap(app.buttons["native-section-settings"]); pause(2.5)
         tap(app.buttons["native-settings-category-ai"]); pause(3)
         // The category list is taller than an 11-inch screen; scroll it to reach the privacy section.
-        let privacy = app.buttons["native-settings-category-privacy"]
+        let privacy = app.buttons["native-settings-category-general"]
         for _ in 0..<3 where !privacy.isHittable { app.buttons["native-settings-category-general"].swipeUp(velocity: .slow); pause(1) }
         tap(privacy); pause(4)
     }

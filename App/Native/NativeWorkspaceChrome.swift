@@ -59,74 +59,43 @@ struct NativeWorkspaceChromeLayout: Equatable {
     }
 }
 
-/// The tab on the trailing edge of the left columns that shows or hides AI chat.
-struct NativeAIRailHandle: View {
-    static let height: CGFloat = 96
-    let open: Bool
-    let action: () -> Void
-    private var shape: UnevenRoundedRectangle { UnevenRoundedRectangle(bottomTrailingRadius: 12, topTrailingRadius: 12) }
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: open ? "chevron.left" : "sparkles").font(.system(size: 13, weight: .semibold))
-                if !open { Text("AI").font(.system(size: 10, weight: .bold)) }
-            }
-            .foregroundStyle(open ? NativeDesktopTheme.secondary : NativeDesktopTheme.text)
-            .frame(width: 26, height: 72)
-            .background(open ? NativeDesktopTheme.surface : NativeDesktopTheme.bgApp, in: shape)
-            .overlay { shape.stroke(NativeDesktopTheme.border) }
-            .frame(width: 44, height: Self.height, alignment: .leading).contentShape(Rectangle())
-        }.buttonStyle(NativeAIRailHandleStyle())
-            .accessibilityLabel(open ? "AI 닫기" : "AI 열기")
-            .accessibilityIdentifier("native-ai-rail-toggle")
-    }
-}
-
-private struct NativeAIRailHandleStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.94 : 1, anchor: .leading)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
-    }
-}
 
 struct NativeHomeSectionPicker: View {
     @Binding var selection: NativeHomeSection
     var body: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 18) {
             ForEach(NativeHomeSection.allCases) { section in
                 Button { selection = section } label: {
-                    Text(section.title).font(NativeDesktopTheme.font(14, weight: selection == section ? .semibold : .regular))
-                        .foregroundStyle(selection == section ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
-                        .frame(minHeight: 44)
+                    Text(section.title).font(NativeDesktopTheme.font(13, weight: selection == section ? .semibold : .regular))
+                        .foregroundStyle(selection == section ? NativeGlass.icon : NativeGlass.panelTertiary)
+                        .frame(height: 39)
                         .overlay(alignment: .bottom) {
-                            if selection == section { Capsule().fill(NativeDesktopTheme.text).frame(height: 2) }
+                            if selection == section { RoundedRectangle(cornerRadius: 1).fill(NativeGlass.icon).frame(height: 2).padding(.horizontal, -1) }
                         }
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("native-home-" + section.rawValue)
                     .accessibilityAddTraits(selection == section ? .isSelected : [])
             }
             Spacer(minLength: 0)
-        }.padding(.horizontal, 16)
-            .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
-            .padding(.bottom, 10)
+        }.padding(.horizontal, 16).padding(.bottom, 1)
+            .overlay(alignment: .bottom) { NativeGlass.hairline.frame(height: 1) }
+            .padding(.bottom, 11)
     }
 }
 
-/// Search field shared by the course and project rails.
+/// Search field shared by the course and project rails and the files panel.
 struct NativeRailSearchField: View {
     let prompt: String
     @Binding var text: String
     let identifier: String
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 12))
-            TextField(prompt, text: $text).textFieldStyle(.plain).foregroundStyle(NativeDesktopTheme.text).accessibilityIdentifier(identifier)
-            if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).accessibilityLabel("검색어 지우기") }
-        }.font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.muted)
-            .padding(.horizontal, 10).frame(minHeight: 36)
-            .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 8))
-            .overlay { RoundedRectangle(cornerRadius: 8).stroke(NativeDesktopTheme.border) }
+        HStack(spacing: 3) {
+            Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(NativeGlass.fieldGlyph).frame(width: 16)
+            TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(NativeGlass.fieldPrompt)).textFieldStyle(.plain).foregroundStyle(NativeDesktopTheme.text).accessibilityIdentifier(identifier)
+            if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(NativeGlass.fieldGlyph) }.buttonStyle(.plain).accessibilityLabel("검색어 지우기") }
+        }.font(NativeDesktopTheme.font(12))
+            .padding(.leading, 9).padding(.trailing, 8).frame(height: 34)
+            .background(NativeGlass.field, in: RoundedRectangle(cornerRadius: 8))
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(NativeGlass.fieldStroke) }
     }
 }
-

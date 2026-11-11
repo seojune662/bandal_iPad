@@ -9,7 +9,7 @@ final class NativeDockTabSizingUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "--native-browser-ui-fixture", "--native-browser-long-title-ui-fixture"]
         app.launch()
         let courseMenu = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(courseMenu.waitForExistence(timeout: 25)); courseMenu.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(courseMenu.waitForExistence(timeout: 25)); courseMenu.tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Uniform tabs")
         app.buttons["native-create-course"].tap()
@@ -20,9 +20,13 @@ final class NativeDockTabSizingUITests: XCTestCase {
         XCTAssertTrue(browser.waitForExistence(timeout: 15))
         XCTAssertGreaterThan(browser.label.count, 80)
         let browserID = String(browser.identifier.dropFirst("native-document-tab-".count))
-        for action in ["new-note", "chat", "new-whiteboard", "board"] { open(action, app: app) }
-        assertUniformTabs(app, expectedVisibleCount: 5)
-        let wider = try XCTUnwrap(tabs(app).first).frame.width
+        for action in ["new-note", "chat", "new-whiteboard"] { open(action, app: app) }
+        // With room to spare every tab hugs its own title (Figma 155:7541); the long browser title stops at the cap.
+        assertTabsFit(app, expectedVisibleCount: 4)
+        let roomy = tabs(app)
+        XCTAssertGreaterThan(try XCTUnwrap(roomy.max { $0.frame.width < $1.frame.width }).frame.width, try XCTUnwrap(roomy.min { $0.frame.width < $1.frame.width }).frame.width + 20)
+        let wider = try XCTUnwrap(roomy.first).frame.width
+        XCTAssertLessThanOrEqual(wider, 209)
         for _ in 0..<11 { open("new-note", app: app) }
         let shrunk = tabs(app)
         XCTAssertLessThan(shrunk.count, 16, "Overflow remains in the full tab list, without horizontal scrolling")
@@ -66,22 +70,24 @@ final class NativeDockTabSizingUITests: XCTestCase {
     @MainActor private func tabs(_ app: XCUIApplication) -> [XCUIElement] {
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-")).allElementsBoundByIndex.filter { $0.frame.intersects(app.frame) }.sorted { $0.frame.minX < $1.frame.minX }
     }
-    @MainActor private func assertUniformTabs(_ app: XCUIApplication, expectedVisibleCount: Int? = nil) {
+    @MainActor private func assertUniformTabs(_ app: XCUIApplication) { assertTabsFit(app, uniform: true) }
+    @MainActor private func assertTabsFit(_ app: XCUIApplication, expectedVisibleCount: Int? = nil, uniform: Bool = false) {
         let values = tabs(app)
         if let expectedVisibleCount { XCTAssertEqual(values.count, expectedVisibleCount) }
         XCTAssertFalse(values.isEmpty)
         guard let first = values.first else { return }
         let strip = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-tab-strip-")).firstMatch
-        XCTAssertTrue(strip.exists); XCTAssertEqual(strip.frame.height, strip.frame.minY <= 1 ? 60 : 44, accuracy: 1)
+        XCTAssertTrue(strip.exists); XCTAssertEqual(strip.frame.height, strip.frame.minY <= 1 ? 68 : 52, accuracy: 1)
         let add = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
         for tab in values {
-            XCTAssertEqual(tab.frame.width, first.frame.width, accuracy: 1)
+            if uniform { XCTAssertEqual(tab.frame.width, first.frame.width, accuracy: 1) }
             XCTAssertGreaterThanOrEqual(tab.frame.minX, strip.frame.minX)
             XCTAssertLessThanOrEqual(tab.frame.maxX, add.frame.minX + 1)
             XCTAssertTrue(tab.isHittable)
         }
         for index in 1..<values.count { XCTAssertLessThanOrEqual(values[index - 1].frame.maxX, values[index].frame.minX + 1) }
-        XCTAssertGreaterThanOrEqual(add.frame.width, 44)
+        // ＋ and ∨ sit 6 points apart as drawn; the strip gives them its full height to touch.
+        XCTAssertGreaterThanOrEqual(add.frame.height, 44)
     }
     @MainActor private func capture(_ title: String) {
         let item = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); item.name = title; item.lifetime = .keepAlways; add(item)

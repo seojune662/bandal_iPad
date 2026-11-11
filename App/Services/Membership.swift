@@ -3,15 +3,21 @@ import StoreKit
 import os
 
 /// 반달 멤버십 (design §8.1): the App Store subscription group "Bandal Membership", judged on this iPad from
-/// StoreKit's signed entitlements, which work offline and carry expiry and refunds. Login and sync play no
-/// part in it: purchase and restore never need a 반달 account, and no transaction is sent anywhere.
+/// StoreKit's signed entitlements, which work offline and carry expiry and refunds. Courses and documents
+/// need no account. The AI budget is the server's: signed in, transactions are reported to ipad-store
+/// (StoreSync), and credit packs are finished only after the server paid them.
 @MainActor
 final class Membership: ObservableObject {
-    /// The group's tiers, lowest first. Pro joins above Plus later, with its own products below.
-    enum Tier: Comparable { case free, plus }
-    nonisolated static let products: [String: Tier] = ["app.bandal.ipad.plus.monthly": .plus, "app.bandal.ipad.plus.yearly": .plus]
+    /// The group's tiers, lowest first. Plus and Pro differ only in the AI budget.
+    enum Tier: Comparable { case free, plus, pro }
+    nonisolated static let products: [String: Tier] = [
+        "app.bandal.ipad.plus.monthly": .plus, "app.bandal.ipad.plus.yearly": .plus,
+        "app.bandal.ipad.pro.monthly": .pro, "app.bandal.ipad.pro.yearly": .pro,
+    ]
     static let shared = Membership()
     @Published private(set) var tier = Tier.free
+    /// The subscription giving `tier` (the one in effect, not a downgrade waiting for renewal).
+    @Published private(set) var currentProduct: String?
     /// The signed-in 반달 user id, sent as `appAccountToken` when there is one. Signed out, purchases go through the same.
     var accountToken: () async -> UUID? = { nil }
     private var updates: Task<Void, Never>?
@@ -37,14 +43,29 @@ final class Membership: ObservableObject {
         guard updates == nil else { return }
         updates = Task { [weak self] in
             for await update in Transaction.updates {
-                if case .verified(let transaction) = update { await transaction.finish() }
+                await Self.settle(update)
                 await self?.refresh()
+                await StoreSync.shared.syncSubscriptions()
             }
         }
         Task {
-            for await result in Transaction.unfinished { if case .verified(let transaction) = result { await transaction.finish() } }
+            for await result in Transaction.unfinished { await Self.settle(result) }
             await refresh()
+            await StoreSync.shared.syncSubscriptions()
         }
+    }
+
+    /// Finishes a transaction once it is accounted for: a credit pack only after the server paid it
+    /// (otherwise it stays unfinished and is redeemed at the next launch or sign-in).
+    /// Returns false for a pack the server has not paid yet.
+    @discardableResult
+    static func settle(_ result: VerificationResult<Transaction>) async -> Bool {
+        guard case .verified(let transaction) = result else { return false }
+        if transaction.productType == .consumable {
+            guard await StoreSync.shared.redeem(result) else { return false }
+        }
+        await transaction.finish()
+        return true
     }
 
     func refresh() async {
@@ -54,6 +75,7 @@ final class Membership: ObservableObject {
         }
         let tier = Self.tier(of: entitlements)
         self.tier = tier
+        currentProduct = Self.product(of: entitlements)
         Self.entitled.withLock { $0 = tier }
     }
 
@@ -63,6 +85,10 @@ final class Membership: ObservableObject {
         entitlements.filter { !$0.refunded }.compactMap { products[$0.productID] }.max() ?? .free
     }
 
+    nonisolated static func product(of entitlements: [(productID: String, refunded: Bool)]) -> String? {
+        entitlements.filter { !$0.refunded && products[$0.productID] != nil }.max { products[$0.productID]! < products[$1.productID]! }?.productID
+    }
+
     func purchaseOptions() async -> Set<Product.PurchaseOption> {
         guard let token = await accountToken() else { return [] }
         return [.appAccountToken(token)]
@@ -70,10 +96,10 @@ final class Membership: ObservableObject {
 }
 
 /// The free allowance (design §8.2–8.3, user decisions 2026-10-30 and 11-02): one course and ten documents (PDF or md)
-/// made on this iPad, and 20 AI requests a month. What arrived through sync does not count, and nothing
+/// made on this iPad. AI is metered on the server (ai-proxy). What arrived through sync does not count, and nothing
 /// already here is ever locked; only making more is refused, with `PLUS_REQUIRED`.
 enum FreeTier {
-    static let courses = 1, documents = 10, aiPerMonth = 20
+    static let courses = 1, documents = 10
     static let code = "PLUS_REQUIRED"
 
     /// Runs on the storage queue before a channel, with the runtime's library. Sync applies what it receives
@@ -123,26 +149,5 @@ enum FreeTier {
             return (rows.first?["n"] as? NSNumber)?.intValue ?? 0
         default: return 0
         }
-    }
-
-    /// AI requests this month, kept in the keychain so that reinstalling the app does not reset them.
-    struct AIAllowance {
-        var read: (String) -> String? = KeychainStore.read
-        var write: (String, String) throws -> Void = { try KeychainStore.write($1, account: $0) }
-        var now: () -> Date = Date.init
-        private static let account = "membership.ai-uses"
-
-        private var month: String { let date = Calendar.current.dateComponents([.year, .month], from: now()); return String(format: "%04d-%02d", date.year ?? 0, date.month ?? 0) }
-        func used() -> Int {
-            let saved = read(Self.account)?.split(separator: " ")
-            guard saved?.first.map(String.init) == month, let count = saved?.last.flatMap({ Int($0) }) else { return 0 }
-            return count
-        }
-        func check() throws {
-            guard used() >= aiPerMonth else { return }
-            throw DesktopRuntimeError("이번 달 무료 AI \(aiPerMonth)회를 모두 썼어요. 다음 달 1일에 다시 쓸 수 있어요.", code: code)
-        }
-        /// Counted once the answer came back, so a failed or cancelled request costs nothing.
-        func count() { try? write(Self.account, "\(month) \(used() + 1)") }
     }
 }

@@ -33,7 +33,12 @@ struct NativeLearningWorkspace: View {
                 await model.start()
                 if tab == "words" && model.rows("words").isEmpty { tab = "history" }
             }.onDisappear { Task { await model.close() } }
-            .alert("기사 주소", isPresented: $showingAdd) { TextField("https://…", text: $articleURL).textInputAutocapitalization(.never).keyboardType(.URL); Button("취소", role: .cancel) { }; Button("추가") { addArticle() } } message: { Text("기사의 원문을 학습 공간에 보관합니다.") }
+            // 기사 주소: one line under the header, from either "주소 추가" or the + menu.
+            .popover(isPresented: $showingAdd, attachmentAnchor: .point(.top), arrowEdge: .top) {
+                BandalTextEntry(title: "기사 주소", prompt: "https://…", actionTitle: "추가", keyboard: .URL, identifier: "native-learning-article-url") { url in
+                    showingAdd = false; articleURL = url; addArticle()
+                }.padding(BandalMetrics.padding).frame(width: 320).presentationCompactAdaptation(.popover)
+            }
     }
     private var header: some View {
         VStack(spacing: 8) {

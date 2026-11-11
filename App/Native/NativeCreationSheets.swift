@@ -20,65 +20,36 @@ struct NativeNewNoteSheet: View {
     @State private var busy = false
     @State private var error: String?
 
+    /// Popover under the library's + button: title, paper, orientation, 만들기 (or Enter).
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("제목") {
-                    TextField("새 노트", text: $title)
-                        .accessibilityIdentifier("native-new-note-title")
-                        .submitLabel(.done)
-                        .onSubmit(create)
-                }
-                Section("종이") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 108), spacing: 16)], spacing: 16) {
-                        ForEach(NativePaper.allCases) { option in
-                            Button { paper = option } label: {
-                                VStack(spacing: 8) {
-                                    NativePaperPreview(paper: option)
-                                        .frame(height: 112)
-                                        .overlay(alignment: .topTrailing) {
-                                            if paper == option {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .symbolRenderingMode(.palette)
-                                                    .foregroundStyle(.white, Color.accentColor)
-                                                    .padding(8)
-                                            }
-                                        }
-                                    Text(option.title).font(.subheadline.weight(paper == option ? .semibold : .regular))
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(option.title)
-                            .accessibilityAddTraits(paper == option ? .isSelected : [])
-                        }
-                    }.padding(.vertical, 8)
-                }
-                Section("방향") {
-                    Picker("방향", selection: $landscape) {
-                        Label("세로", systemImage: "rectangle.portrait").tag(false)
-                        Label("가로", systemImage: "rectangle").tag(true)
-                    }.pickerStyle(.segmented)
-                }
-                if let error { Section { Text(error).foregroundStyle(.red).accessibilityIdentifier("native-creation-error") } }
-            }
-            .disabled(busy)
-            .navigationTitle("새 노트")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() }.disabled(busy) }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(action: create) {
-                        if busy { ProgressView() } else { Text("만들기").fontWeight(.semibold) }
+        VStack(alignment: .leading, spacing: 8) {
+            BandalSectionHeader("새 노트")
+            TextField("새 노트", text: $title).font(.system(size: 14, weight: .medium)).textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("native-new-note-title").submitLabel(.done).onSubmit(create)
+            HStack(spacing: 8) {
+                ForEach(NativePaper.allCases) { option in
+                    Button { paper = option } label: {
+                        VStack(spacing: 4) {
+                            NativePaperPreview(paper: option).frame(height: 64)
+                                .overlay { RoundedRectangle(cornerRadius: 10).stroke(paper == option ? NativeDesktopTheme.accent : .clear, lineWidth: 2) }
+                            Text(option.title).font(.system(size: 11, weight: paper == option ? .semibold : .regular))
+                        }.contentShape(Rectangle())
                     }
-                    .disabled(busy)
-                    .accessibilityIdentifier("native-new-note-create")
+                    .buttonStyle(.plain).accessibilityLabel(option.title).accessibilityAddTraits(paper == option ? .isSelected : [])
                 }
             }
-            .interactiveDismissDisabled(busy)
+            Picker("방향", selection: $landscape) {
+                Label("세로", systemImage: "rectangle.portrait").tag(false)
+                Label("가로", systemImage: "rectangle").tag(true)
+            }.pickerStyle(.segmented)
+            if let error { Text(error).font(.system(size: 11)).foregroundStyle(.red).accessibilityIdentifier("native-creation-error") }
+            HStack {
+                Spacer()
+                Button(action: create) { if busy { ProgressView() } else { Text("만들기").fontWeight(.semibold) } }
+                    .font(.system(size: BandalMetrics.bodySize)).disabled(busy).accessibilityIdentifier("native-new-note-create")
+            }
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
+        .disabled(busy)
     }
 
     private func create() {

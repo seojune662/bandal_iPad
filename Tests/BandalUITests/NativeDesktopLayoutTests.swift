@@ -8,7 +8,7 @@ final class NativeDesktopLayoutTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]
         app.launch()
         let addCourse = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(addCourse.waitForExistence(timeout: 20)); addCourse.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(addCourse.waitForExistence(timeout: 20)); addCourse.tap()
         let courseName = app.textFields["native-course-name"]; XCTAssertTrue(courseName.waitForExistence(timeout: 5))
         courseName.tap(); courseName.typeText("Native desktop layout"); app.buttons["native-create-course"].tap()
         let add = app.buttons["native-library-create"]

@@ -14,6 +14,7 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
     var penStyle = NativePDFPenPreset.pen
     var highlighterStyle = NativePDFPenPreset.highlighter
     var ballpointStyle = NativePDFPenPreset.ballpoint
+    var brushStyle = NativePDFPenPreset.brush
     var lassoMode = "freeform"
     var shapeRecognitionEnabled = true
     var toolsExpanded = true
@@ -26,7 +27,7 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
     init() {}
     private enum CodingKeys: String, CodingKey {
         case tool, color, width, opacity, previousTool, penColor, highlighterColor, penStyle, highlighterStyle
-        case toolsExpanded, showPages, showAnnotations, viewport, pendingPage, shapeRecognitionEnabled, ballpointStyle, lassoMode
+        case toolsExpanded, showPages, showAnnotations, viewport, pendingPage, shapeRecognitionEnabled, ballpointStyle, lassoMode, brushStyle
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -44,6 +45,7 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
         highlighterStyle = try values.decodeIfPresent(NativePDFPenPreset.self, forKey: .highlighterStyle) ?? .init(color: highlighterColor, width: width, opacity: opacity)
         shapeRecognitionEnabled = try values.decodeIfPresent(Bool.self, forKey: .shapeRecognitionEnabled) ?? true
         ballpointStyle = try values.decodeIfPresent(NativePDFPenPreset.self, forKey: .ballpointStyle) ?? ballpointStyle
+        brushStyle = try values.decodeIfPresent(NativePDFPenPreset.self, forKey: .brushStyle) ?? brushStyle
         lassoMode = try values.decodeIfPresent(String.self, forKey: .lassoMode) ?? lassoMode
         toolsExpanded = try values.decodeIfPresent(Bool.self, forKey: .toolsExpanded) ?? toolsExpanded
         showPages = try values.decodeIfPresent(Bool.self, forKey: .showPages) ?? showPages
@@ -86,7 +88,7 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
         }
     }
 
-    static let tools = Set(["select", "lasso", "pen", "ballpoint", "highlighter", "eraser", "text", "tape", "laser", "comment"])
+    static let tools = Set(["select", "lasso", "pen", "ballpoint", "brush", "highlighter", "eraser", "line", "text", "tape", "laser", "comment"])
     static let lassoModes = Set(["freeform", "box"])
     static let colors = Set(["ink", "red", "orange", "yellow", "green", "blue", "violet"])
     static func key(root: URL, documentID: String, documentsRoot: URL? = nil) -> String {
@@ -127,7 +129,7 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
         if !Self.colors.contains(highlighterColor) { value.highlighterColor = "yellow" }
         value.penStyle = penStyle.validated()
         value.highlighterStyle = highlighterStyle.validated(highlighter: true)
-        value.ballpointStyle = ballpointStyle.validated()
+        value.ballpointStyle = ballpointStyle.validated(); value.brushStyle = brushStyle.validated()
         if !Self.lassoModes.contains(lassoMode) { value.lassoMode = "freeform" }
         let style = NativePDFPenPreset(color: value.color, width: width, opacity: opacity).validated(highlighter: value.tool == "highlighter")
         value.width = style.width; value.opacity = style.opacity
@@ -138,7 +140,7 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
         return value
     }
     var drawingStyle: [String: Any] {
-        var style: [String: Any] = ["color": color, "width": tool == "highlighter" ? max(0.014, width * 4) : width,
+        var style: [String: Any] = ["color": color, "width": tool == "highlighter" ? max(0.014, width * 4) : tool == "brush" ? width * NativePDFPaletteStyle.brushWidthScale : width,
                                     "opacity": tool == "highlighter" ? min(opacity, 0.34) : opacity]
         if tool == "ballpoint" { style["fixedWidth"] = true }
         return style

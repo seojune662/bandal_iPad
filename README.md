@@ -53,7 +53,7 @@ BANDAL_DESTINATION='platform=iOS Simulator,id=SIMULATOR_UUID' bash Scripts/test.
 
 `App/Resources/Configuration.plist`는 선택 사항입니다. 공개 서버 설정을 넣을 때는 `Scripts/configure-public-env.py`를 사용할 수 있습니다. API 키·계정 세션은 저장소에 넣지 않습니다. 서버 배포와 별도 검증은 [동기화 서버 안내](backend/README.md), [PowerPoint 변환 서버 안내](backend/ppt-converter/README.md)를 따릅니다. Python 서버는 앱 내부 실행 의존성이 아닙니다.
 
-UI 테스트는 `--native-ui-testing`으로 격리된 `BandalDesktop-Native-UI-Tests` 저장소를 사용하며, `--reset-native-ui-testing`을 명시한 경우에만 이를 초기화합니다. 합성 필기 입력은 DEBUG 전용 인자와 격리 경로를 요구합니다. 테스트에는 저장·복구·기존 데이터 호환성 및 실제 네이티브 화면 흐름 검사가 포함됩니다.
+UI 테스트는 `--native-ui-testing`으로 격리된 `BandalDesktop-Native-UI-Tests` 저장소를 사용하며, `--reset-native-ui-testing`을 명시한 경우에만 이를 초기화합니다. 첫 실행 온보딩은 테스트에서 `--native-onboarding`을 함께 준 경우에만 나타나고, DEBUG 전용 `--native-school-fixture`는 학교 검색·AI 찾기를 서버 없는 가짜 디렉터리로 바꿉니다. 합성 필기 입력은 DEBUG 전용 인자와 격리 경로를 요구합니다. 테스트에는 저장·복구·기존 데이터 호환성 및 실제 네이티브 화면 흐름 검사가 포함됩니다.
 
 `BandalDeviceSmoke` 스킴은 예외로 연결된 실기기의 일반 프로필을 **Release**로 확인합니다. 실행 인자 없이 기존 윈도우와 고정 버튼을 열고 닫으며 자료를 생성·편집·삭제하지 않습니다. 실행 전 Documents와 Preferences를 별도로 백업해야 합니다. 이 스킴은 Debug 전용 훅을 사용하는 단위 테스트를 빌드하지 않으므로 앱의 Release 설정을 바꾸지 않고 `xcodebuild -project Bandal.xcodeproj -scheme BandalDeviceSmoke -destination 'platform=iOS,id=DEVICE_UDID' test`로 실행할 수 있습니다.
 

@@ -43,11 +43,15 @@ final class NativeWorkspaceStore {
     @ObservationIgnored lazy var learningSessions = NativeLearningSessionRegistry(store: self)
     @ObservationIgnored lazy var panelViewStates = NativePanelViewStateStore(root: root)
     var root: URL { runtime.root }
-    var courses: [NativeCourse] = []
+    /// The first course the sidebar lists settles a friend's invitation that waits for it.
+    var courses: [NativeCourse] = [] { didSet { if hasCourse, !oldValue.contains(where: Self.isListed) { referral.advance() } } }
     var selectedCourseID: String?
     /// A newly created docked browser consumes its URL after its page exists.
     var assistantDocumentIDs = Set<String>()
     var pendingAssistantConversationIDs: [String: String] = [:]
+    /// Something elsewhere in the workspace asked the AI panel of a space (by context id) a question:
+    /// the panel attaches the material, fills in the prompt and, when asked to, sends it.
+    var pendingAssistantRequests: [String: NativeAssistantRequest] = [:]
     var documentSelections: [String: String] = [:]
     var documentDuplicateSourceIDs: [String: String] = [:]
     var pageNoteSourceTabIDs: [String: String] = [:]
@@ -72,6 +76,14 @@ final class NativeWorkspaceStore {
     /// Installed by the native scene's presenter for sharing, exporting and
     /// other UIKit presentation services. Repository calls remain independent.
     var nativeChannelHandler: (@MainActor (String, [String: Any]) async throws -> Any)?
+    /// The school directory behind the school picker; the platform services install the signed-in one.
+    @ObservationIgnored var schools: any SchoolDirectory = LiveSchoolDirectory()
+    /// A friend's invitation and this account's invite status; the platform services install the signed-in server.
+    @ObservationIgnored lazy var referral = NativeReferral(service: LiveReferralService(), hasCourse: { [weak self] in self?.hasCourse == true },
+        refreshUsage: { [weak self] in _ = try? await self?.invokePrivate("native:aiConfig", ["refresh": true]) })
+    /// A project's hidden study space is not a course.
+    var hasCourse: Bool { courses.contains(where: Self.isListed) }
+    private static func isListed(_ course: NativeCourse) -> Bool { course.workspaceKind != "study-space" }
 
     private let sessionID = UUID().uuidString
     private var startup: Task<Void, Error>?
@@ -118,6 +130,9 @@ final class NativeWorkspaceStore {
         }
     }
     private struct Selection: Codable { let courseID: String? }
+    /// Reset once per launch: a later store (a profile switch) resetting again would delete the folder
+    /// under a database that is still open ("disk I/O error").
+    private static var resetUITesting = false
 
     init(storageRoot: URL? = nil) {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -133,13 +148,21 @@ final class NativeWorkspaceStore {
         let folder = storageRoot ?? selectedRoot ?? documents.appendingPathComponent(testing ? testingFolder : "BandalDesktop", isDirectory: true)
         // An explicit test directory is never reset implicitly, so restart tests
         // and existing course data use exactly the same startup path.
-        if storageRoot == nil, testing, arguments.contains("--reset-native-ui-testing") {
+        if storageRoot == nil, testing, arguments.contains("--reset-native-ui-testing"), !Self.resetUITesting {
+            Self.resetUITesting = true
             do { if FileManager.default.fileExists(atPath: folder.path) { try FileManager.default.removeItem(at: folder) } }
             catch { initializationFailure = error }
             #if DEBUG
             // Each explicitly reset UI fixture starts with visible desktop rails.
             // Normal launches and restart tests preserve the user's preference.
-            for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.home.section", "native.desktop.aiRail", "native.inspector.width"] { UserDefaults.standard.removeObject(forKey: key) }
+            for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.home.section", "native.desktop.aiRail", "native.inspector.width",
+                        // Preferences a test may flip: the next fixture starts from the defaults again.
+                        "native.desktop.courseRailBeforeAI", "native.pdf.paletteCollapsed", NativeLocalPreferences.newDocumentKind, NativeLocalPreferences.homeTogglesSidebar,
+                        NativeLocalPreferences.keyboardFoldsPanels, NativeAIPreferences.answerLanguageKey, NativeAIPreferences.usageAlertKey,
+                        NativeAIPreferences.referenceScopeKey, NativeAIPreferences.showsSourcesKey, NativeAIPreferences.savesHistoryKey,
+                        NativeOnboardingGate.doneKey, NativeAppLocale.key, NativeReferral.pendingKey, NativeReferral.awaitingKey] { UserDefaults.standard.removeObject(forKey: key) }
+            // The palette's tool options and favourites are kept per root in the defaults, outside the reset folder.
+            UserDefaults.standard.removeObject(forKey: NativePDFPalettePreferences.key(root: folder, documentsRoot: documents))
             // Browser logins live in the Keychain, outside the reset folder.
             SecItemDelete(DesktopCredentialsService.keychainQuery(folder.lastPathComponent + ":default") as CFDictionary)
             #endif
@@ -687,6 +710,7 @@ final class NativeWorkspaceStore {
 
     private func receive(_ channel: String, payload: Any) {
         events.send(NativeWorkspaceEvent(channel: channel, payload: payload))
+        if channel == "auth:changed" { referral.accountChanged(signedIn: (payload as? [String: Any])?["phase"] as? String == "signed-in") }
         let courseID = (payload as? [String: Any])?["courseId"] as? String
         guard channel == "courses:changed" || channel == "materials:changed" && courseID == selectedCourseID else { return }
         if channel == "courses:changed" { refreshCoursesPending = true }

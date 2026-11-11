@@ -10,7 +10,7 @@ struct NativeDockRailResizer: View {
     private var title: String { side == .left ? "과목 사이드바 폭 조절" : "자료 사이드바 폭 조절" }
     var body: some View {
         Color.clear
-            .overlay { Capsule().fill(NativeDesktopTheme.muted.opacity(initial == nil ? 0.3 : 0.8)).frame(width: 3, height: 32) }
+            .overlay { Capsule().fill(NativeDesktopTheme.muted.opacity(initial == nil ? 0 : 0.8)).frame(width: 3, height: 32) }
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global).onChanged { value in
                 if initial == nil { initial = width }

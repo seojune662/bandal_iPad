@@ -8,7 +8,6 @@ enum NativeNewTabAction: Equatable {
 enum NativeNewTabCatalog {
     struct Item: Identifiable {
         let id: String, title: String, hint: String, symbol: String
-        let shortcutID: String?
         let action: NativeNewTabAction
     }
     static func url(_ input: String) -> String? {
@@ -21,82 +20,98 @@ enum NativeNewTabCatalog {
         guard let url = URL(string: result), url.host != nil else { return nil }
         return result
     }
-    static func items(query: String, courseName: String) -> [Item] {
+    static func items(query: String) -> [Item] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let url = url(trimmed)
         func matches(_ terms: [String]) -> Bool { trimmed.isEmpty || terms.contains { $0.localizedCaseInsensitiveContains(trimmed) } }
         let all: [(Item, [String])] = [
-            (.init(id: "new-browser", title: "브라우저", hint: url ?? "", symbol: "globe", shortcutID: "new-browser-tab", action: .browser(url: url)), ["브라우저", "웹", "browser"]),
-            (.init(id: "new-whiteboard", title: "노트", hint: "빈 종이 · 줄 · 모눈 · 점", symbol: "rectangle.and.pencil.and.ellipsis", shortcutID: "new-whiteboard", action: .note), ["노트", "필기", "종이", "화이트보드", "note"]),
-            (.init(id: "new-note", title: "마크다운", hint: "", symbol: "doc.text", shortcutID: "new-markdown", action: .markdown(title: nil)), ["마크다운", "문서", "markdown"]),
-            (.init(id: "chat", title: "AI", hint: courseName, symbol: "bubble.left.and.bubble.right", shortcutID: "new-ai-tab", action: .assistant), ["AI", "대화", "튜터"]),
-            (.init(id: "recording", title: "녹음", hint: "강의 · 실시간 자막", symbol: "waveform", shortcutID: "new-recording-tab", action: .recording), ["녹음", "강의", "실시간 자막", "STT", "recording"])
+            (.init(id: "new-browser", title: "브라우저", hint: "학교 사이트·웹 검색", symbol: "globe", action: .browser(url: url)), ["브라우저", "웹", "browser"]),
+            (.init(id: "new-whiteboard", title: "노트", hint: "펜슬로 쓰는 종이", symbol: "pencil", action: .note), ["노트", "필기", "종이", "화이트보드", "note"]),
+            (.init(id: "new-note", title: "마크다운", hint: "키보드로 쓰는 문서", symbol: "square.and.pencil", action: .markdown(title: nil)), ["마크다운", "문서", "markdown"]),
+            (.init(id: "chat", title: "AI", hint: "자료에 대해 질문", symbol: "sparkles", action: .assistant), ["AI", "대화", "튜터"]),
+            (.init(id: "recording", title: "녹음", hint: "강의 녹음 → 요약", symbol: "mic", action: .recording), ["녹음", "강의", "실시간 자막", "STT", "recording"])
         ]
         if url != nil { return [all[0].0] }
         return all.filter { matches($0.1) && (NativeReleaseFlags.showsRecording || $0.0.id != "recording") }.map(\.0)
     }
 }
 
+/// The ＋ menu (Figma 129:2809): five rows and no search bar. 브라우저's second line is the field: what is
+/// typed there filters the rows or is taken as a URL, and Enter opens the highlighted row. The menu itself
+/// holds the focus when it opens, so a hardware keyboard works at once and the on-screen one stays down.
 struct NativeNewTabMenu: View {
-    var store: NativeWorkspaceStore
-    let courseID: String
     let onAction: (NativeNewTabAction) -> Void
     let onClose: () -> Void
     @State private var query = ""
     @State private var highlighted = 0
-    @State private var settings: [String: Any] = [:]
-    @FocusState private var searchFocused: Bool
+    private enum Focus { case menu, search }
+    @FocusState private var focus: Focus?
+    @Environment(\.locale) private var locale
+    private static let browserID = "new-browser"
+    /// 브라우저 stays because it holds the field; the other rows are the ones that match.
     private var items: [NativeNewTabCatalog.Item] {
-        NativeNewTabCatalog.items(query: query, courseName: store.courses.first(where: { $0.id == courseID })?.name ?? "")
+        let found = NativeNewTabCatalog.items(query: query)
+        return [found.first { $0.id == Self.browserID } ?? NativeNewTabCatalog.items(query: "")[0]] + found.filter { $0.id != Self.browserID }
     }
     var body: some View {
-        Group {
-                VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(NativeDesktopTheme.muted)
-                        TextField("검색하거나 URL 입력…", text: $query).textFieldStyle(.plain)
-                            .autocorrectionDisabled().textInputAutocapitalization(.never).focused($searchFocused)
-                            .accessibilityIdentifier("native-new-tab-search")
-                            .onSubmit { activateHighlighted() }
-                            .onKeyPress(.downArrow) { highlighted = min(max(0, items.count - 1), highlighted + 1); return .handled }
-                            .onKeyPress(.upArrow) { highlighted = max(0, highlighted - 1); return .handled }
-                            .onKeyPress(.escape) { onClose(); return .handled }
-                    }.padding(.horizontal, 8).frame(height: 36)
-                        .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 5))
-                        .overlay(RoundedRectangle(cornerRadius: 5).stroke(NativeDesktopTheme.border, lineWidth: 1))
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            if items.isEmpty { Text("일치하는 항목이 없어요").foregroundStyle(NativeDesktopTheme.muted).padding(16) }
-                            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                                Button { activate(item) } label: { row(item, selected: highlighted == index) }
-                                    .buttonStyle(.plain).accessibilityIdentifier("native-new-tab-" + item.id)
-                                    .onHover { if $0 { highlighted = index } }
-                            }
-                        }
-                    }.frame(maxHeight: 340)
-                }
-        }.font(.system(size: 13)).padding(8).frame(width: 352)
-            .background(NativeDesktopTheme.surface)
-            .onChange(of: query) { _, _ in highlighted = 0 }
-            .task { settings = (try? await store.invoke("settings:get")) as? [String: Any] ?? [:]; searchFocused = true }
+        VStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                Button { activate(item) } label: { row(item, selected: highlighted == index, first: index == 0, last: index == items.count - 1) }
+                    .buttonStyle(.plain).accessibilityIdentifier("native-new-tab-" + item.id)
+                    .onHover { if $0 { highlighted = index } }
+                    .overlay { if item.id == Self.browserID { searchLine(item) } }
+            }
+        }
+        .focusable().focusEffectDisabled().focused($focus, equals: .menu)
+        .onKeyPress(.downArrow) { move(1) }.onKeyPress(.upArrow) { move(-1) }
+        .onKeyPress(.return) { activateHighlighted(); return .handled }
+        .onKeyPress(.escape) { onClose(); return .handled }
+        // The first typed character starts the search and hands the focus to the field.
+        .onKeyPress(phases: .down) { press in
+            guard focus == .menu, press.modifiers.subtracting(.shift).isEmpty, let first = press.characters.first, first.isLetter || first.isNumber else { return .ignored }
+            query += press.characters; focus = .search
+            return .handled
+        }
+        .onChange(of: query) { _, _ in highlighted = items.count > 1 && !query.isEmpty ? 1 : 0 }
+        // The preferred document starts highlighted, so Enter makes it.
+        .onAppear {
+            let preferred = UserDefaults.standard.string(forKey: NativeLocalPreferences.newDocumentKind) == "markdown" ? "new-note" : "new-whiteboard"
+            highlighted = items.firstIndex { $0.id == preferred } ?? 0
+            focus = .menu
+        }
     }
-    private func row(_ item: NativeNewTabCatalog.Item, selected: Bool) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: item.symbol).frame(width: 18).foregroundStyle(NativeDesktopTheme.muted)
-            Text(item.title).lineLimit(1)
-            Spacer(minLength: 4)
-            if !item.hint.isEmpty { Text(item.hint).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
-            if let chord = shortcut(item.shortcutID) { Text(chord).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).fixedSize() }
-        }.padding(.horizontal, 8).frame(height: 36).contentShape(Rectangle())
-            .background(selected ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 5))
+    /// The highlight runs edge to edge; only the first and last rows follow the card's corners.
+    private func row(_ item: NativeNewTabCatalog.Item, selected: Bool, first: Bool, last: Bool) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: item.symbol).font(.system(size: 18)).foregroundStyle(NativeDesktopTheme.accent)
+            VStack(alignment: .leading, spacing: 1) {
+                BandalText(item.title).font(.system(size: 15, weight: .medium)).foregroundStyle(NativeDesktopTheme.text)
+                BandalText(item.hint).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary).opacity(item.id == Self.browserID ? 0 : 1)
+            }.lineLimit(1)
+            Spacer(minLength: 0)
+        }.padding(.horizontal, 16).frame(height: 55).contentShape(Rectangle())
+            .background(selected ? NativeDesktopTheme.raised : .clear, in: UnevenRoundedRectangle(topLeadingRadius: first ? 18 : 0, bottomLeadingRadius: last ? 18 : 0,
+                                                                                               bottomTrailingRadius: last ? 18 : 0, topTrailingRadius: first ? 18 : 0, style: .continuous))
     }
-    private func shortcut(_ id: String?) -> String? {
-        guard let id else { return nil }
-        let bindings = settings["keybindings"] as? [String: Any] ?? [:]
-        if bindings[id] is NSNull { return nil }
-        guard let value = bindings[id] as? String ?? NativeBrowserShortcuts.specs.first(where: { $0.id == id })?.chord else { return nil }
-        return value.replacingOccurrences(of: "mod+", with: "⌘").replacingOccurrences(of: "alt+", with: "⌥").replacingOccurrences(of: "shift+", with: "⇧").uppercased()
+    /// Laid out as the row is, so the field lies exactly where the second line would be.
+    private func searchLine(_ item: NativeNewTabCatalog.Item) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: item.symbol).font(.system(size: 18)).hidden()
+            VStack(alignment: .leading, spacing: 1) {
+                BandalText(item.title).font(.system(size: 15, weight: .medium)).hidden()
+                TextField("", text: $query, prompt: Text(verbatim: NativeAppLocale.string(item.hint, locale)).foregroundStyle(NativeDesktopTheme.secondary))
+                    .font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.text).textFieldStyle(.plain)
+                    .autocorrectionDisabled().textInputAutocapitalization(.never).focused($focus, equals: .search)
+                    .accessibilityLabel("검색하거나 URL 입력").accessibilityIdentifier("native-new-tab-search")
+                    .onSubmit { activateHighlighted() }
+                    .onKeyPress(.downArrow) { move(1) }.onKeyPress(.upArrow) { move(-1) }
+                    .onKeyPress(.escape) { onClose(); return .handled }
+                    .frame(width: 200)
+            }
+            Spacer(minLength: 0)
+        }.padding(.horizontal, 16).frame(height: 55)
     }
+    private func move(_ step: Int) -> KeyPress.Result { highlighted = min(max(0, highlighted + step), items.count - 1); return .handled }
     private func activate(_ item: NativeNewTabCatalog.Item) { onClose(); onAction(item.action) }
     private func activateHighlighted() { if items.indices.contains(highlighted) { activate(items[highlighted]) } }
 }

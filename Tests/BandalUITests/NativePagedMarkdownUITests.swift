@@ -9,7 +9,7 @@ final class NativePagedMarkdownUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "--native-pages-fixture"]
         app.launch()
         let add = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(add.waitForExistence(timeout: 25)); add.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 25)); add.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Linked pages")
         app.buttons["native-create-course"].tap()
@@ -42,7 +42,8 @@ final class NativePagedMarkdownUITests: XCTestCase {
         let topTab = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-tab-strip-")).firstMatch
         XCTAssertLessThanOrEqual(topTab.frame.minY, 1, "The workspace starts at the top after hiding the system status bar")
         let toolbar = app.descendants(matching: .any)["native-markdown-toolbar"]
-        XCTAssertEqual(toolbar.frame.height, 44, accuracy: 1)
+        // The element reports the union of its controls: 44 with the page controls, 46 for the bar and its hairline (Figma 129:2615).
+        XCTAssertEqual(toolbar.frame.height, 45, accuracy: 1.5, "One formatting row")
         XCTAssertEqual(toolbar.frame.minY, topTab.frame.maxY, accuracy: 1, "No duplicate filename/save row above the formatting controls")
         capture("Continuous paper notes beside their source PDF")
         app.terminate(); app.launchArguments = ["--native-ui-testing", "--native-pages-fixture"]; app.launch()

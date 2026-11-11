@@ -85,8 +85,8 @@ indirect enum NativeDockNode: Codable, Equatable {
         case .group: return CGSize(width: 280, height: 220)
         case .split(let split):
             let a = split.first.minimumSize, b = split.second.minimumSize
-            return split.axis == .horizontal ? CGSize(width: a.width + b.width + 8, height: max(a.height, b.height))
-                : CGSize(width: max(a.width, b.width), height: a.height + b.height + 8)
+            return split.axis == .horizontal ? CGSize(width: a.width + b.width + NativeDockLayout.seam, height: max(a.height, b.height))
+                : CGSize(width: max(a.width, b.width), height: a.height + b.height + NativeDockLayout.seam)
         }
     }
 }
@@ -182,8 +182,8 @@ struct NativeDockDividerFrame: Identifiable {
     var frame: CGRect
     var bounds: CGRect
     var id: String { split.id }
-    /// The seam remains eight points wide; only its transparent touch target
-    /// overlaps the neighbouring editors.
+    /// The seam is one point of layout (Figma 130:6106); its grip and its
+    /// transparent touch target overlap the neighbouring editors.
     var hitFrame: CGRect {
         split.axis == .horizontal
             ? frame.insetBy(dx: -(max(44, frame.width) - frame.width) / 2, dy: 0)
@@ -197,19 +197,20 @@ struct NativeDockDividerFrame: Identifiable {
 }
 struct NativeDockGeometry { var panes: [NativeDockPaneFrame] = []; var dividers: [NativeDockDividerFrame] = [] }
 extension NativeDockLayout {
+    static let seam: CGFloat = 1
     func geometry(in bounds: CGRect) -> NativeDockGeometry {
         var result = NativeDockGeometry()
         func walk(_ node: NativeDockNode, _ frame: CGRect) {
             switch node {
             case .group(let group): result.panes.append(NativeDockPaneFrame(group: group, frame: frame))
             case .split(let split):
-                let horizontal = split.axis == .horizontal, extent = max(0, (horizontal ? frame.width : frame.height) - 8)
+                let horizontal = split.axis == .horizontal, extent = max(0, (horizontal ? frame.width : frame.height) - Self.seam)
                 let a = split.first.minimumSize, b = split.second.minimumSize
                 let low = horizontal ? a.width : a.height, high = horizontal ? b.width : b.height
                 let ratio = split.fraction.isFinite ? min(0.9, max(0.1, split.fraction)) : 0.5
                 let length = extent >= low + high ? min(extent - high, max(low, extent * ratio)) : extent * ratio
                 let first = CGRect(x: frame.minX, y: frame.minY, width: horizontal ? length : frame.width, height: horizontal ? frame.height : length)
-                let divider = CGRect(x: horizontal ? first.maxX : frame.minX, y: horizontal ? frame.minY : first.maxY, width: horizontal ? 8 : frame.width, height: horizontal ? frame.height : 8)
+                let divider = CGRect(x: horizontal ? first.maxX : frame.minX, y: horizontal ? frame.minY : first.maxY, width: horizontal ? Self.seam : frame.width, height: horizontal ? frame.height : Self.seam)
                 let second = CGRect(x: horizontal ? divider.maxX : frame.minX, y: horizontal ? frame.minY : divider.maxY, width: horizontal ? extent - length : frame.width, height: horizontal ? frame.height : extent - length)
                 result.dividers.append(NativeDockDividerFrame(split: split, frame: divider, bounds: frame)); walk(split.first, first); walk(split.second, second)
             }

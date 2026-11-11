@@ -20,6 +20,8 @@ struct NativeRichTextEditor: UIViewRepresentable {
     var compactPaperLayout = false
     var contentHeightChanged: ((CGFloat) -> Void)? = nil
     var focusChanged: ((Bool) -> Void)? = nil
+    /// Posted with `true` when a markdown editor starts editing and `false` when it stops.
+    static let editingChanged = Notification.Name("native.markdown.editingChanged")
     var captureViewChanged: ((UIView) -> Void)? = nil
     var selectionOnly = false
     var editorAccessibilityID = "native-markdown-textview"
@@ -29,7 +31,8 @@ struct NativeRichTextEditor: UIViewRepresentable {
         let view = NativeRichTextView(frame: .zero, textContainer: nil)
         let coordinator = context.coordinator
         coordinator.view = view; view.delegate = coordinator; view.textDropDelegate = coordinator
-        view.backgroundColor = UIColor(NativeDesktopTheme.bgApp); view.tintColor = UIColor(NativeDesktopTheme.accent)
+        // A whole-pane note sits on the paper glass; a page card keeps its own sheet.
+        view.backgroundColor = compactPaperLayout ? UIColor(NativeDesktopTheme.bgApp) : .clear; view.tintColor = UIColor(NativeDesktopTheme.accent)
         view.textContainer.lineFragmentPadding = 0; view.alwaysBounceVertical = true
         view.isScrollEnabled = scrollsInternally
         view.isEditable = !selectionOnly && !session.frozen && !session.retired
@@ -44,17 +47,6 @@ struct NativeRichTextEditor: UIViewRepresentable {
         coordinator.installCallbacks(); coordinator.reset()
         coordinator.installMediaDrop(on: view)
         captureViewChanged?(view)
-        let toolbar = UIToolbar()
-        toolbar.items = [
-            UIBarButtonItem(title: "제목", image: UIImage(systemName: "textformat.size"), primaryAction: UIAction { [weak coordinator] _ in coordinator?.format("h2") }),
-            UIBarButtonItem(title: "굵게", image: UIImage(systemName: "bold"), primaryAction: UIAction { [weak coordinator] _ in coordinator?.format("bold") }),
-            UIBarButtonItem(title: "할 일", image: UIImage(systemName: "checklist"), primaryAction: UIAction { [weak coordinator] _ in coordinator?.format("task") }),
-            UIBarButtonItem(title: "삽입", image: UIImage(systemName: "plus"), primaryAction: UIAction { [weak coordinator] _ in coordinator?.showInsertions(query: "", slashRange: nil) }),
-            UIBarButtonItem(systemItem: .flexibleSpace),
-            UIBarButtonItem(title: "실행 취소", image: UIImage(systemName: "arrow.uturn.backward"), primaryAction: UIAction { [weak view] _ in view?.undoManager?.undo() }),
-            UIBarButtonItem(title: "다시 실행", image: UIImage(systemName: "arrow.uturn.forward"), primaryAction: UIAction { [weak view] _ in view?.undoManager?.redo() }),
-            UIBarButtonItem(title: "완료", style: .done, target: coordinator, action: #selector(Coordinator.done))]
-        toolbar.sizeToFit(); view.inputAccessoryView = toolbar
         return view
     }
     func updateUIView(_ uiView: UITextView, context: Context) {
@@ -303,8 +295,8 @@ struct NativeRichTextEditor: UIViewRepresentable {
             }
             return true
         }
-        func textViewDidBeginEditing(_ textView: UITextView) { parent.focusChanged?(true) }
-        func textViewDidEndEditing(_ textView: UITextView) { finishComposition(); endTypingGroup(); parent.focusChanged?(false); Task { try? await parent.session.flush() } }
+        func textViewDidBeginEditing(_ textView: UITextView) { parent.focusChanged?(true); NotificationCenter.default.post(name: NativeRichTextEditor.editingChanged, object: true) }
+        func textViewDidEndEditing(_ textView: UITextView) { finishComposition(); endTypingGroup(); parent.focusChanged?(false); NotificationCenter.default.post(name: NativeRichTextEditor.editingChanged, object: false); Task { try? await parent.session.flush() } }
         func textViewDidChangeSelection(_ textView: UITextView) {
             guard !applying, textView.markedTextRange == nil else { return }
             if typingGroupOpen, !pendingUserEdit, view?.isProcessingTextInput != true, textView.selectedRange != typingSelection { endTypingGroup() }
@@ -388,6 +380,8 @@ struct NativeRichTextEditor: UIViewRepresentable {
         }
         func format(_ command: String) {
             guard let view, view.isEditable else { return }
+            // 완료 lives in the toolbar under the tabs; nothing sits above the keyboard.
+            if command == "done" { done(); return }
             commitComposition(); view.becomeFirstResponder()
             if command == "link", NativeRichTextCommands.link(in: projection, selection: view.selectedRange) != nil {
                 apply(NativeRichTextCommands.apply("unlink", to: projection, selection: view.selectedRange)); return
@@ -404,9 +398,9 @@ struct NativeRichTextEditor: UIViewRepresentable {
             }
             apply(NativeRichTextCommands.apply(command, to: projection, selection: view.selectedRange))
         }
-        private func font(_ size: CGFloat, bold: Bool = false, italic: Bool = false, mono: Bool = false) -> UIFont {
+        private func font(_ size: CGFloat, bold: Bool = false, italic: Bool = false, mono: Bool = false, heading: Bool = false) -> UIFont {
             let size = size * CGFloat(parent.fontScale)
-            var font: UIFont = mono || parent.editorFont == "mono" ? .monospacedSystemFont(ofSize: size, weight: bold ? .semibold : .regular) : .systemFont(ofSize: size, weight: bold ? .semibold : .regular)
+            var font: UIFont = mono || parent.editorFont == "mono" ? .monospacedSystemFont(ofSize: size, weight: bold ? .semibold : .regular) : .systemFont(ofSize: size, weight: heading ? .bold : bold ? .semibold : .regular)
             if parent.editorFont == "serif", !mono, let descriptor = font.fontDescriptor.withDesign(.serif) { font = UIFont(descriptor: descriptor, size: size) }
             if italic, let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(.traitItalic)) { font = UIFont(descriptor: descriptor, size: size) }
             return UIFontMetrics(forTextStyle: .body).scaledFont(for: font)
@@ -416,14 +410,16 @@ struct NativeRichTextEditor: UIViewRepresentable {
             guard let view, view.markedTextRange == nil else { return }
             applying = true; defer { applying = false }
             let selected = selection ?? view.selectedRange
-            let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 5; paragraph.paragraphSpacing = 9
-            let base: [NSAttributedString.Key: Any] = [.font: font(16, mono: parent.sourceMode), .foregroundColor: UIColor(NativeDesktopTheme.text), .paragraphStyle: paragraph]
+            // Figma 129:2615: body 18 on a 29-point pitch, 14 between blocks, list rows back to back.
+            let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 7.5; paragraph.paragraphSpacing = 6.5
+            let base: [NSAttributedString.Key: Any] = [.font: font(18, mono: parent.sourceMode), .foregroundColor: UIColor(NativeDesktopTheme.text), .paragraphStyle: paragraph]
             let attributed = NSMutableAttributedString(string: projection.text, attributes: base)
             for run in projection.runs {
                 let style = run.styles; var attributes: [NSAttributedString.Key: Any] = [:]
                 let heading = (1...6).first { style.contains("h\($0)") }
-                let size: CGFloat = heading.map { [30, 24, 20, 18, 17, 16][$0 - 1] } ?? 16
-                attributes[.font] = font(size, bold: heading != nil || style.contains("bold") || style.contains("bolditalic") || style.contains("callout") || style.contains("tableheader"), italic: style.contains("italic") || style.contains("bolditalic") || style.contains("math"), mono: style.contains("code") || style.contains("codeblock") || style.contains("table") || parent.sourceMode)
+                let size: CGFloat = heading.map { [30, 24, 20, 18, 18, 18][$0 - 1] } ?? 18
+                attributes[.font] = font(size, bold: heading != nil || style.contains("bold") || style.contains("bolditalic") || style.contains("callout") || style.contains("tableheader"), italic: style.contains("italic") || style.contains("bolditalic") || style.contains("math"), mono: style.contains("code") || style.contains("codeblock") || style.contains("table") || parent.sourceMode, heading: heading != nil)
+                if style.contains("list") || style.contains("listmarker") || style.contains("task") || style.contains("checked") { let p = paragraph.mutableCopy() as! NSMutableParagraphStyle; p.paragraphSpacing = 0; attributes[.paragraphStyle] = p }
                 if style.contains("strike") || style.contains("checked") { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
                 if style.contains("code") || style.contains("codeblock") || style.contains("callout") || style.contains("metadata") { attributes[.backgroundColor] = UIColor.secondarySystemFill }
                 if style.contains("quote") || style.contains("callout") { let p = paragraph.mutableCopy() as! NSMutableParagraphStyle; p.firstLineHeadIndent = 16; p.headIndent = 16; attributes[.paragraphStyle] = p; attributes[.foregroundColor] = UIColor.secondaryLabel }
@@ -676,7 +672,7 @@ private struct NativeMarkdownImageInspector: View {
                 Spacer()
                 Button("삭제", systemImage: "trash", role: .destructive) { action("image-delete") }
             }.font(.subheadline)
-        }.padding(20)
+        }.padding(20).bandalLocalized()
     }
 }
 
@@ -754,9 +750,10 @@ final class NativeRichTextView: UITextView {
         } else { command?(action) }
     }
     override func layoutSubviews() {
-        let horizontal = compactPaperLayout ? 16 : max(28, (bounds.width - 820) / 2)
+        // Figma 129:2615: a 900-wide column that starts 200 in from the paper's edge once there is room.
+        let left = compactPaperLayout ? 16 : max(28, min(200, (bounds.width - 900) / 2)), right = compactPaperLayout ? 16 : max(28, bounds.width - left - 900)
         // The compact page's top-right number occupies y=12...40.
-        let next = UIEdgeInsets(top: compactPaperLayout ? 48 : 40, left: horizontal, bottom: compactPaperLayout ? 20 : 100, right: horizontal)
+        let next = UIEdgeInsets(top: compactPaperLayout ? 48 : 32, left: left, bottom: compactPaperLayout ? 20 : 100, right: right)
         if textContainerInset != next { textContainerInset = next }
         if bounds.width > 0 {
             let width = max(1, bounds.width - next.left - next.right)

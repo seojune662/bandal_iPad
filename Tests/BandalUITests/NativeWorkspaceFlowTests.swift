@@ -90,8 +90,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         selectObjectTool("lasso", in: app)
         // A lasso selects a stroke when most of it is inside (Notability-style).
         // XCTest drags are straight, so the box lasso draws the enclosing shape.
-        let boxLasso = app.buttons["박스형"].firstMatch
-        XCTAssertTrue(boxLasso.waitForExistence(timeout: 5), app.debugDescription); boxLasso.tap()
+        lassoOption("native-pdf-lasso-mode-box", in: app)
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.32, dy: 0.56))
             .press(forDuration: 0.05, thenDragTo: pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.64, dy: 0.28)), withVelocity: .slow, thenHoldForDuration: 0.05)
         let remove = app.buttons["native-pdf-delete-selection"]
@@ -103,7 +102,8 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         expectInkCount(1, in: app)
         let moveCommitted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: remove)
         XCTAssertEqual(XCTWaiter.wait(for: [moveCommitted], timeout: 15), .completed, "Selection survives a move" + app.debugDescription)
-        app.buttons["선택 해제"].tap()
+        // 선택 해제 is behind the selection menu's ⋯.
+        app.buttons["native-pdf-selection-more"].tap(); app.buttons["native-pdf-clear-selection"].tap()
         let released = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: remove)
         XCTAssertEqual(XCTWaiter.wait(for: [released], timeout: 10), .completed, app.debugDescription)
         // This box holds most of the moved line but only the tip of the original
@@ -114,17 +114,16 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["native-pdf-selection-style"].exists, "Floating bar offers restyle")
         tapPDFControl("native-pdf-copy-selection", in: app)
         remove.tap(); expectInkCount(0, in: app)
-        // Paste lives in the lasso row so a copy can land on any page without a selection.
-        tapPDFControl("native-pdf-paste", in: app); expectInkCount(1, in: app)
+        // Paste lives in the lasso options so a copy can land on any page without a selection.
+        lassoOption("native-pdf-paste", in: app, closes: false); expectInkCount(1, in: app)
         attachScreenshot(app, name: "Pasted stroke from the clipboard")
-        let boxMode = app.buttons["박스형"].firstMatch
-        XCTAssertTrue(boxMode.waitForExistence(timeout: 5), app.debugDescription); boxMode.tap()
+        lassoOption("native-pdf-lasso-mode-box", in: app)
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.30, dy: 0.25))
             .press(forDuration: 0.05, thenDragTo: pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.72)), withVelocity: .slow, thenHoldForDuration: 0.05)
         XCTAssertTrue(remove.waitForExistence(timeout: 10), "Box lasso selects the pasted stroke" + app.debugDescription)
         attachScreenshot(app, name: "Box lasso selection with floating action bar")
         remove.tap(); expectInkCount(0, in: app)
-        app.buttons["자유형"].firstMatch.tap()
+        lassoOption("native-pdf-lasso-mode-freeform", in: app)
         tapPDFControl("native-pdf-undo", in: app); expectInkCount(1, in: app)
         selectObjectTool("text", in: app)
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.42, dy: 0.72)).tap()
@@ -148,6 +147,13 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         tapPDFControl("native-pdf-tool-" + name, in: app)
     }
 
+    /// The lasso's options open on a second tap of the chosen tool; 붙여넣기 closes them itself.
+    @MainActor private func lassoOption(_ identifier: String, in app: XCUIApplication, closes: Bool = true) {
+        app.buttons["native-pdf-tool-lasso"].tap()
+        let option = app.buttons[identifier]
+        XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription); option.tap()
+        if closes { app.buttons["native-pdf-style-close"].tap() }
+    }
     @MainActor private func tapPDFControl(_ identifier: String, in app: XCUIApplication) {
         let item = app.buttons[identifier]
         XCTAssertTrue(item.waitForExistence(timeout: 15), app.debugDescription)
@@ -176,7 +182,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: select)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed, app.debugDescription)
         select.tap()
-        app.buttons["페이지 맞춤"].tap()
+        app.buttons["native-pdf-zoom"].tap(); app.buttons["native-pdf-fit"].tap() // fit lives in the "100% ∨" menu
         let pdf = app.otherElements["native-pdf-workspace"]
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.48)).press(forDuration: 1.2)
         let comment = app.buttons["native-pdf-comment-source"]
@@ -244,7 +250,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: menu)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription)
         menu.tap(); app.buttons["native-pdf-page-delete"].tap()
-        let confirm = app.alerts.buttons.matching(identifier: "native-pdf-confirm-page-delete").firstMatch
+        let confirm = app.buttons.matching(identifier: "native-pdf-confirm-page-delete").firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription); confirm.tap()
     }
 
@@ -300,7 +306,6 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let app = launch(reset: true, pencil: false, extra: ["--native-free-tier"])
         createCourse(in: app)
         app.buttons["native-course-add-menu"].tap()
-        app.buttons["native-new-course"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap(); name.typeText("Physics")
@@ -310,17 +315,23 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         XCTAssertEqual(reason.label, "무료로는 이 iPad에서 과목을 1개까지 만들 수 있어요.")
         attachScreenshot(app, name: "Membership after a second course")
         app.buttons["membership-close"].tap()
-        XCTAssertFalse(app.alerts["작업을 완료하지 못했어요"].waitForExistence(timeout: 2))
-        app.buttons["취소"].firstMatch.tap()
-        XCTAssertFalse(app.alerts["작업을 완료하지 못했어요"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.staticTexts["bandal-toast"].waitForExistence(timeout: 2))
+        if app.textFields["native-course-name"].exists { app.closeBandalPopover() }
+        XCTAssertFalse(app.staticTexts["bandal-toast"].waitForExistence(timeout: 2))
         app.buttons["native-section-settings"].tap()
         let category = app.buttons["native-settings-category-subscription"]
         XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription); category.tap()
+        app.openNativeSettingsMore()
         let open = app.buttons["native-membership-open"]
         XCTAssertTrue(open.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS '로그인'")).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'I/O'")).firstMatch.exists, "a second reset deleted the live database")
+        XCTAssertEqual(app.staticTexts["native-membership-state"].label.contains("무료") || app.otherElements["native-membership-state"].exists, true)
+        attachScreenshot(app, name: "Settings subscription panel (free)")
         open.tap()
         XCTAssertTrue(app.buttons["membership-close"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["membership-title"].waitForExistence(timeout: 5), app.debugDescription)
+        attachScreenshot(app, name: "Membership paywall (Free, Plus and Pro)")
         XCTAssertFalse(reason.exists)
     }
 
@@ -335,7 +346,6 @@ final class NativeWorkspaceFlowTests: XCTestCase {
 
     @MainActor private func createCourse(in app: XCUIApplication) {
         app.buttons["native-course-add-menu"].tap()
-        app.buttons["native-new-course"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap(); name.typeText("Mathematics")

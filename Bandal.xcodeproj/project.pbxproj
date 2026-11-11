@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		002FC9A2DFCFD6508139ED63 /* NativeDockTabSizingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 724E0821D2AEE88A46CF52C5 /* NativeDockTabSizingUITests.swift */; };
 		0139E709683A56D039383F70 /* NativePDFNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FECFFD1B7D9AF54347643466 /* NativePDFNavigationView.swift */; };
+		01939119CE5B3B69AD059A54 /* NativeGlassChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B91F2E8B5349C2C0E4595CE /* NativeGlassChrome.swift */; };
 		01F0F17042D1101E0DE594B7 /* NativeSettingsSystemPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3CC986C5B25E8DF87343922 /* NativeSettingsSystemPanels.swift */; };
 		0213E5135059B36C3F5703B5 /* NativeBrowserShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF5ABE5918CF17821D0A200 /* NativeBrowserShortcuts.swift */; };
 		02DA8B79AE2281EF5CB08927 /* NativePDFEraseSplit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AD8C41CECDFCF142C6B43D6 /* NativePDFEraseSplit.swift */; };
@@ -16,10 +17,13 @@
 		03AD162C81C8FF256960FD38 /* SyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D91B7189B31E1D1A25CF110D /* SyncStore.swift */; };
 		0488665168A6F9CBD3D31098 /* NativePDFAsynchronousEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF9B9E3F6A7C6DC4F971247 /* NativePDFAsynchronousEditTests.swift */; };
 		049AA5AC7F4AB07F8EE629BD /* NativeSyncArtifacts.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD719244026414BE82EC0E21 /* NativeSyncArtifacts.swift */; };
+		06B9A5956D7F7B2417FDE35D /* NativeProfileMenuUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4BD723C60C6CDE9BD5FC945 /* NativeProfileMenuUITests.swift */; };
 		06C31BBD72EB45C6B9670A75 /* NativeDesktopLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F78DB5B684C1B3A444C2128 /* NativeDesktopLayoutTests.swift */; };
 		079D6D03EF9AFF2BB4757CC3 /* DesktopAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3159DC6FCB52C6FB4E33B87 /* DesktopAIService.swift */; };
 		07C5126FB823E6E59C5A2AEC /* NativePDFOpenPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAFDFD71F6786278981B5C5 /* NativePDFOpenPerformanceTests.swift */; };
+		089894B9A8507C43A838A024 /* FigmaNoteScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 141F1AE72F6B905D11C44C00 /* FigmaNoteScreenshotTests.swift */; };
 		09841EAA7B42B757DCCA6C94 /* NativeSidebarParityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF38841FCD9E82E38D2D0A6F /* NativeSidebarParityUITests.swift */; };
+		0A630304FAA75DFAACCF4F3D /* FigmaMenusScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D3C54400679192B093B5DC /* FigmaMenusScreenshotTests.swift */; };
 		0C2F64A10D96B25FFD7F63F7 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A63E7A276B9A38A74FFC18F /* KeychainStore.swift */; };
 		0C8CC241EE5D01EC5C01E283 /* NativeWhiteboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC7D28594A2E83DE1FF0253 /* NativeWhiteboardTests.swift */; };
 		0CDAD2ACC515FF22BDBB3620 /* NativeLearningActionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7496C098BFEC24611E5294EA /* NativeLearningActionTests.swift */; };
@@ -32,6 +36,7 @@
 		0F78F4DDB7DED88269DF0AB6 /* DesktopJSON.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B60F105CE21A576BA4E6E1 /* DesktopJSON.swift */; };
 		0F98BFA1BDEE5D61EE1CD50C /* DesktopBrowserKeyboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A47E4AD49A0127793B081AC /* DesktopBrowserKeyboardTests.swift */; };
 		0F9F0AD4CDF996719A3520DB /* NativeDockRailResizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C785584B53A4BE3CD142F1D6 /* NativeDockRailResizer.swift */; };
+		0FF3B95FFC0D885EE2C886DD /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 9CF6B23FD1B7F3DD5BBCA4E4 /* Localizable.strings */; };
 		0FF5DEECDA6A8EF8D424F3B6 /* NativeThumbnailWork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96BEB8A5596262DC54D6403E /* NativeThumbnailWork.swift */; };
 		10FB4AEB318CA57CD4AAE43C /* NativePDFRegionCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1963038D6A6ECA63E444DB7A /* NativePDFRegionCapture.swift */; };
 		11C0F637D5535547791B8DE4 /* NativeWhiteboardPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC0F94A2105CD78404C9521 /* NativeWhiteboardPersistence.swift */; };
@@ -51,6 +56,7 @@
 		155321FE34482049FF31DE32 /* NativeRichTextEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE1BAF3D2FFFB2A2D9E2430 /* NativeRichTextEditorTests.swift */; };
 		15B32C6CF7AA4C31E44F3E2E /* DesktopCredentialsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46DB7DDD2F88DB2C92C337D9 /* DesktopCredentialsService.swift */; };
 		168E2819029E40D7A5CB9293 /* NativePDFPageStatePerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7084166987D35D5CC59A4056 /* NativePDFPageStatePerformanceTests.swift */; };
+		170739769FD5DAD58A130595 /* NativeReferral.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAC011059AC8F60222CEE81B /* NativeReferral.swift */; };
 		17192149ED8186766CDF8CBA /* NativePDFRetainedMixedSurfaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C231CE6BDF2A36F7C4F7B84 /* NativePDFRetainedMixedSurfaceTests.swift */; };
 		179B62E2416B190DD182D443 /* DesktopSystemServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5F87F596F40B5D444390A9E /* DesktopSystemServices.swift */; };
 		183F583B6AC3481E7F544B72 /* NativeToolsWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B70D4019C673343FE2B8696 /* NativeToolsWorkspace.swift */; };
@@ -77,11 +83,14 @@
 		216AD88F3717B445834D90F4 /* NativePDFDrawingSnapshotStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7D689E2CF8EA772EC539117 /* NativePDFDrawingSnapshotStoreTests.swift */; };
 		216D4E918399A8B4FABCE557 /* NativeWhiteboardSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A5BA09A2BD3CD132C0A311F /* NativeWhiteboardSession.swift */; };
 		21BDED6B333F7DA17BF0BEDE /* NativePDFShapeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF908763AD45BE4ED30F23D /* NativePDFShapeTests.swift */; };
+		22097B9D1E8104B6F9F62A5C /* BandalComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F76870257BD3E7438A334900 /* BandalComponents.swift */; };
 		22AFAA2AED942AB9F5099A7D /* NativeNewTabMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CFE01007A30FFAFE9ECAE8D /* NativeNewTabMenu.swift */; };
+		2339CD739BCB0D0A4E2CFE92 /* FigmaPenScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A65F807AAB308C6A0F74630 /* FigmaPenScreenshotTests.swift */; };
 		234706EE5AF20ADDC9A01C5A /* NativePDFDrawingDecodeCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E839086B602A5CE7CB764CE /* NativePDFDrawingDecodeCache.swift */; };
 		2466E788029CAE411EE17F1A /* NativeWhiteboardWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 723DE87F3CA500042E3DB45E /* NativeWhiteboardWorkspace.swift */; };
 		24BD979D13E1808205B95517 /* NativePDFFileCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00259B4F6C8199734C4A4C0A /* NativePDFFileCoordinator.swift */; };
 		24DD70FA9AFDC24418604C4E /* NativeThumbnailPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F48AD81A6EF0F615217A02D2 /* NativeThumbnailPerformanceTests.swift */; };
+		25818A4061DE43CD06B1DE9F /* NativeAssistantParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10322DE511C9734DF46D6EB5 /* NativeAssistantParts.swift */; };
 		259741CA446920C296A52FCD /* DesktopArticleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F66AC6E67D2A092013BDCA2 /* DesktopArticleService.swift */; };
 		26FEEFA39958AB7D415FE1FF /* InkConcurrentRefreshTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBBEE940902FFE0F4475F9A2 /* InkConcurrentRefreshTests.swift */; };
 		271B068AAB5A3B13C5CE844B /* LocalSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5866A7018E825050DA9AEADE /* LocalSpeech.swift */; };
@@ -131,6 +140,8 @@
 		3CA88666805F66C6A30C76C5 /* NativePreferencesRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = D99F855AE79C5D6AE774DF0C /* NativePreferencesRepository.swift */; };
 		3D78AE764B713A00FAF6CEC7 /* NativeRecordingRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10DF88CB46D51877F6DC2A61 /* NativeRecordingRepository.swift */; };
 		3E1AC5D69BBCE3F7BEAA99FA /* NativeMarkdownWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A552DE1AAD03566B02132D7 /* NativeMarkdownWorkspace.swift */; };
+		3F0FA5FF017DB42858871973 /* NativeAssistantSourcesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA395AF2FC56908E85AC9803 /* NativeAssistantSourcesUITests.swift */; };
+		3F207E4154CD9DBA693E1F27 /* StoreScreensUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA87FD50111B7AE5C26603C8 /* StoreScreensUITests.swift */; };
 		3F90C35A92915AE4853860D1 /* NativePlatformServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D80E48384EA9BF065D3810B /* NativePlatformServices.swift */; };
 		408BDBDAA2DD4661FE8075BC /* NativePDFOperationLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 285F7968C8E41BE882525336 /* NativePDFOperationLedger.swift */; };
 		40C5F32F784BBC30009E5F04 /* DesktopFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6F77C9F993553E84116DC1A /* DesktopFileAccess.swift */; };
@@ -140,6 +151,7 @@
 		41C9CC9E32C3747E1B7130AC /* DesktopAccountTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B2ABD135E9B6543B6E9108 /* DesktopAccountTests.swift */; };
 		425A09554B94F28C78078284 /* NativePDFRetainedPaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43B924EE0DB295AA30FEC1AF /* NativePDFRetainedPaper.swift */; };
 		4296724FFEF8BBB7270AF7F8 /* NativePDFApertureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F05EFA1FB9D41C2271244A57 /* NativePDFApertureTests.swift */; };
+		4316E46F993A63D7CBE99378 /* FigmaHomeChromeScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F356907DDC8170ECA8C19306 /* FigmaHomeChromeScreenshotTests.swift */; };
 		43C06F396260514D002E9C34 /* NativePDFRetainedObjectTexturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 944E7A4B4C56A2470CEA9D12 /* NativePDFRetainedObjectTexturesTests.swift */; };
 		4412AA8317BB3656247003BE /* PDFExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEE1C0DA0344077A63AAC615 /* PDFExportTests.swift */; };
 		443F9AE9ABC19AC1935CFEA7 /* SyncOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F12C65EAA3C240F74656189 /* SyncOutbox.swift */; };
@@ -175,11 +187,14 @@
 		52B7821BAA095E22D3435A77 /* BrowserAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A8F3B5FA9EE8B8CF464CFD /* BrowserAgent.swift */; };
 		52CD40D28EDFF01E973705D8 /* NativePDFPageEditing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01B7CF78F23029323B2D1AF /* NativePDFPageEditing.swift */; };
 		5342E24BD3746F82CFEAB692 /* DesktopBookmarkImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA756BD2E3B8E40B6774F3A8 /* DesktopBookmarkImportService.swift */; };
+		5361B97B7CCDFCA840122D67 /* NativeSchoolPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DBFF31B77ED8C26C556C81F /* NativeSchoolPicker.swift */; };
 		550CAAB6347EDB1EEA2A29A4 /* BrowserContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C13229E67690218597EA87C /* BrowserContextMenu.swift */; };
 		55E0109C325067C8700AC19A /* BrowserDownload.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A704BADFE558F810006B26 /* BrowserDownload.swift */; };
+		5624754EC6EA90A59F12F33F /* StoreOffers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5329D9D0717196E82C9B08FE /* StoreOffers.swift */; };
 		5750A7B1302240572263195B /* NativeLibraryRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADCB806AE72A6869432F7518 /* NativeLibraryRepositoryTests.swift */; };
 		57692272493EB3AA2C76D6BE /* NativePDFPreferenceScopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1749E516108489B8F8FA11DF /* NativePDFPreferenceScopeTests.swift */; };
 		57C9B90FD9A1D8CBA1D1718B /* GoogleDriveAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B00DBD9BB5C5FCBCB3803E1 /* GoogleDriveAuth.swift */; };
+		582875406CC13E14E7BF8FE1 /* NativePlannerParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909F86BAEA3044AADCD14C89 /* NativePlannerParts.swift */; };
 		587B7D02E6AFCF54193EEEE3 /* ReviewStroke.m in Sources */ = {isa = PBXBuildFile; fileRef = DA33C8ED6E36F5E113588364 /* ReviewStroke.m */; };
 		58AE89317FCB61AF9BCA1EC5 /* NativeLegacyAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20AC57F900216E848F88AF12 /* NativeLegacyAudio.swift */; };
 		58DD404060BC2AAEE3AE8461 /* BrowserLinkedFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCA8B3FA83D85C4D54AE0D34 /* BrowserLinkedFile.swift */; };
@@ -188,6 +203,7 @@
 		59C2D8EF7D7F81C05805A5D2 /* NativePDFPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CA765580833E43851772D17 /* NativePDFPersistenceTests.swift */; };
 		5A4CF059271FE90B5148C439 /* DesktopRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDF873E5DA7BAEE661ABAA31 /* DesktopRuntime.swift */; };
 		5AEDC4F1A0A1AD734404B866 /* BrowserDownloadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86FD91F7CC172FE80229E45E /* BrowserDownloadStore.swift */; };
+		5B77460EE3F6A04C384F770B /* NativeReferralViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 736BB215FD1E59E87287A3C7 /* NativeReferralViews.swift */; };
 		5BA543F6876C97774E7944D0 /* NativeSyncDrawingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E92F6B0C8F3BCB9C8E7053A /* NativeSyncDrawingsTests.swift */; };
 		5C32823FD32B2E00E820796F /* PCMRecordingWriterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7F535FE5E97E065EB7A9BDF /* PCMRecordingWriterTests.swift */; };
 		5C589D2732671B94E6EC1196 /* NativeBrowserAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AE77E875F9AAF9EA9F4E9AB /* NativeBrowserAddress.swift */; };
@@ -199,6 +215,7 @@
 		5F7B7613597A0B153C888E7D /* NativePDFPageOperationRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B2C6F8B72D2EAA421407515 /* NativePDFPageOperationRecoveryTests.swift */; };
 		5FB8913588353DDCDF9E0E17 /* BrowserLMS.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8DDE59992443EF84CFE1FCC /* BrowserLMS.swift */; };
 		5FF160FF3C1A402B616A32C4 /* NativePDFProgressiveErasureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74AE4F748F2E0EC3CD5CAAB6 /* NativePDFProgressiveErasureTests.swift */; };
+		6072D9007759C0DFB8CFEEE9 /* NativeSettingsRowsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38373D53261FA2A3454250AC /* NativeSettingsRowsTests.swift */; };
 		60CE26C31446FB5FFC3E8B66 /* NativeLearningArticleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 795893665494E85C79B46E11 /* NativeLearningArticleView.swift */; };
 		616138DBB99584B1E6636BD0 /* NativePDFRetainedInkTextureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70D9333205528B5BFD7CC8E5 /* NativePDFRetainedInkTextureTests.swift */; };
 		61F2EB9CE8FEB905D8D6FF5C /* NativeLearningSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146D3776E3AEA82A97A922F6 /* NativeLearningSession.swift */; };
@@ -219,6 +236,7 @@
 		6854C234C5A35ABAD60DAAFC /* NativeSettingsUsageRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05FBE085E492BA57220D68CE /* NativeSettingsUsageRepository.swift */; };
 		69719F2C68B9D566D196EC89 /* NativeRecordingWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F4701F190C100F0BD760F6 /* NativeRecordingWorkspace.swift */; };
 		6A12081313E8269A65C41087 /* NativePDFWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D1A59DA8E399BC9FC4B5221 /* NativePDFWorkspace.swift */; };
+		6A2421BF9929A4C6A4AAAC54 /* NativeAppLocale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E6845A2E6611CAF21FA98D8 /* NativeAppLocale.swift */; };
 		6AB773C613D0D121311BDD2C /* DesktopAITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF9B7980D1FB3D1CA6F942CD /* DesktopAITests.swift */; };
 		6B2062BC06A11DF42A45009D /* NativePDFPageTestFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AF2E259B9D5E808EC500B0E /* NativePDFPageTestFixture.swift */; };
 		6C25FF38F737181EED8028B8 /* NativePDFPageInsertPaperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E5EF5102D76D974272071E /* NativePDFPageInsertPaperTests.swift */; };
@@ -228,6 +246,7 @@
 		6D7FC18DCA1159BD7EBEF178 /* BrowserPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD5F41566B3558E7AF226A51 /* BrowserPresentation.swift */; };
 		6D831C912BD3BC023F14D876 /* DesktopDictionaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F774779A8F272C10E8EB8502 /* DesktopDictionaryService.swift */; };
 		6DF66A1193A03749BC366623 /* DesktopPluginCatalogTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD34EC55862EE8B434AB0FD /* DesktopPluginCatalogTransport.swift */; };
+		6F08BDDEA1132CBE419DA6B7 /* NativeLongPressMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF151EA55727B2C38623FF0 /* NativeLongPressMenu.swift */; };
 		6F3E4550CB400640352D11C4 /* NativeSidebarContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12130F204CFD8E7C4DB16F64 /* NativeSidebarContractTests.swift */; };
 		6F75277E472F1D215808861D /* PortableInkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C6C6D4D62CF05176FF458A1 /* PortableInkTests.swift */; };
 		6FA668A2F2629F13495F8308 /* DesktopShellStabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E663F7ADD7A971EC57EB1A74 /* DesktopShellStabilityTests.swift */; };
@@ -236,6 +255,7 @@
 		708DBF49D5ACF876DA526B7F /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE5F2423E3FD256DA190118E /* Models.swift */; };
 		709BE0EC6F2FFF0EB123F8D3 /* NativePDFEraseSplitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6798DD6245EBD85EB818FEF5 /* NativePDFEraseSplitTests.swift */; };
 		71548CA616DC20C4217C2F94 /* DesktopNative in Resources */ = {isa = PBXBuildFile; fileRef = 24D9C7FB7F1E310FF294B8C6 /* DesktopNative */; };
+		7170CDA4C6CBAB3639BD2DBE /* NativeSchoolPickerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64FF078908A55B9E4ECE27A9 /* NativeSchoolPickerTests.swift */; };
 		717C0325EECAB66B40AF131A /* BrowserWebsiteCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F1996F6CDC67B13A51E5014 /* BrowserWebsiteCompatibilityTests.swift */; };
 		7198BE3760541B0E38B992AE /* NativePDFJournalQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79E377F95FB4E1FD439BE367 /* NativePDFJournalQueueTests.swift */; };
 		71E226202F4C7FD946F99393 /* NativeBrowserFeaturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D44E18BAB33FB48644E45B /* NativeBrowserFeaturesTests.swift */; };
@@ -246,8 +266,10 @@
 		74792275C4FF078D2603041C /* NativeDatabaseMigrations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27D33677860011AFB9A73565 /* NativeDatabaseMigrations.swift */; };
 		74A532ED6368E5D2DCEA0FDF /* NativePDFExportSizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9355A75EF61AD1477816CE05 /* NativePDFExportSizeTests.swift */; };
 		74AF2C5100893B89B2CA223F /* NativeDockWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE7340408F23ABE717816C4 /* NativeDockWorkspace.swift */; };
+		74F61E6BE55CB09AE9438B76 /* StoreSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF09CCEBA18264C2CD12FBFB /* StoreSync.swift */; };
 		7555E73A28E3ADB02F60D422 /* AIConsent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06CB61F5A862C0CF88BCD193 /* AIConsent.swift */; };
 		7717C5D347EF9C0F29C4CC4E /* NativePDFRetainedInkBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D63F37B8D9E87050D7E13F0 /* NativePDFRetainedInkBackdrop.swift */; };
+		771B05E934B4E3CE63299674 /* StoreOffersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B811C516902734243D06E72A /* StoreOffersTests.swift */; };
 		773F4BAF04957441FFE12E5F /* BrowserImageCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57E967D5B6DCF776FB84A1C4 /* BrowserImageCopy.swift */; };
 		7826B2E83A667207E32AAD21 /* NativeSettingsSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771E827CE99D3F34855BBC8F /* NativeSettingsSchema.swift */; };
 		786BC5135B7A35F0AFEF7E4A /* NativeShareInboxCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A0FA51A76F3E4ADE07FD1AA /* NativeShareInboxCoordinator.swift */; };
@@ -260,12 +282,14 @@
 		7C42393D380A25137D6FCBF1 /* BandalCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2322E4CFDF0FD071DF8074B3 /* BandalCore */; };
 		7D0DA874DB90CAAB50679734 /* NativePDFInkV3CacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71FA02EEB505E9743A538E7 /* NativePDFInkV3CacheTests.swift */; };
 		7DF91C36FC1E16E0FAE23FA0 /* NativePDFPageStateEquality.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8470B9EA66DBD0EA1B9DBC5 /* NativePDFPageStateEquality.swift */; };
+		7E197A0E2434B9D9D3BB949A /* FigmaTabStripScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89159E0F81215474D59C0D4C /* FigmaTabStripScreenshotTests.swift */; };
 		80B8B61EDDD7AA72228432B9 /* NativePDFNavigationHighlighterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C07BF543A988BB246A6D4B /* NativePDFNavigationHighlighterTests.swift */; };
 		81353D9C2B22A6DB368B88ED /* NativeSyncJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89066DD33F7EAD131F57B66 /* NativeSyncJournal.swift */; };
 		8138BEFC31CA7C9FE599BB9A /* NativePDFInkSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6E1FD6BB03AAAF7BAA0AD1 /* NativePDFInkSurface.swift */; };
 		82FDA236DCF2507CC5F939A0 /* BrowserIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83B7003D0B0826DE327AE74 /* BrowserIdentityTests.swift */; };
 		8350AB6366278CE97AC99476 /* NativeAssistantWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6522A32900B326D733BB93A5 /* NativeAssistantWorkspace.swift */; };
 		8501CED54C97063A19B8829C /* NativeLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6C8A1B727555C64DB4B5759 /* NativeLibraryView.swift */; };
+		8571C87C74950DC5B39693F8 /* UXPassScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F3FB52372C56E4648CFBB1 /* UXPassScreenshotTests.swift */; };
 		85750FA03D15E4B16DE31ABE /* NativeWorkspaceWindowControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = E44ECC94787583D6C693B7BB /* NativeWorkspaceWindowControls.swift */; };
 		863FD6C4A16F4382B1E87B36 /* LearningModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF6EB8E7F633A8ECF85C82B /* LearningModels.swift */; };
 		865EFFC71374A3A7606B670C /* NativeBrowserTabStripUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66E575649E541A80859A8E02 /* NativeBrowserTabStripUITests.swift */; };
@@ -277,6 +301,7 @@
 		89327143FF8662D35A8A85E0 /* NativeAuxiliaryDestinations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B1A22BEB310DB12EC6FC35A /* NativeAuxiliaryDestinations.swift */; };
 		8A47E40C7B45A9359EDBD50E /* DesktopPluginCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3DD6DC86AC2FA810D096E69 /* DesktopPluginCatalogTests.swift */; };
 		8AA96CC4A02DC6187EA8E269 /* DesktopScribbleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFAD5A2207AB6EBAEA6DF9CC /* DesktopScribbleTests.swift */; };
+		8B9DBF01E2E531C2AAFF6395 /* NativeAIModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28142427B4F2643E9AC94488 /* NativeAIModelPicker.swift */; };
 		8BEE0D1B5AF30401BDF5507E /* NativePagedMarkdownEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F83AD13D33529D5665B33BF9 /* NativePagedMarkdownEditor.swift */; };
 		8CD59288598B1CA8C42F173F /* NativePDFPageRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6B7DFB60106D6516FAC25E3 /* NativePDFPageRepositoryTests.swift */; };
 		8D182341DF63B16458EF3C47 /* NativePDFPageInsertionWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE6DD3CDFD238F554F562B63 /* NativePDFPageInsertionWriter.swift */; };
@@ -287,9 +312,11 @@
 		8FCE1828A3B97BECE0DDCBDF /* NativePDFCommittedSceneCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106F9C8EE5E42F028091DC51 /* NativePDFCommittedSceneCache.swift */; };
 		90C59F4A4B3DA836B96EA9E4 /* SyncJSON.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3200D65958ADB8F034D6A4A9 /* SyncJSON.swift */; };
 		92524A36943A3D30356541AC /* PublicArticleClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91DF33124CAE499B20CA61DA /* PublicArticleClient.swift */; };
+		92DBE61625C4D1C9C45E10DA /* NativePlannerBoardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7436166F2A74132333750FF /* NativePlannerBoardTests.swift */; };
 		9395813720D822FC78AA6DD9 /* DesktopBrowserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F941AE2A392043A8862AECBE /* DesktopBrowserTests.swift */; };
 		940480596640EA1AF32C8B5B /* NativePDFLegacyInkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED28B873ACC71FBB67C1F469 /* NativePDFLegacyInkTests.swift */; };
 		94C4F640D6E887C37A982987 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 6C3CBEDC2FC409197D933A01 /* InfoPlist.strings */; };
+		94D9CD821E43A2B7879BBBB1 /* NativeDocumentPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1962C933E21893DE3C720DE /* NativeDocumentPreview.swift */; };
 		95125033C5E9C03466761DA5 /* NativeRichTextTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4EC148DF69A115844C28784 /* NativeRichTextTable.swift */; };
 		952098FB35ADBAB209985C02 /* NativeStudyMarketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 939C1B5D60FC505EC49C4303 /* NativeStudyMarketClient.swift */; };
 		95800DAEAF9967CCDF9E0924 /* sherpa-onnx in Frameworks */ = {isa = PBXBuildFile; productRef = 0FD6F2575B119A4B89E51E83 /* sherpa-onnx */; };
@@ -297,6 +324,7 @@
 		9633989E676AF28DAF8F394A /* NativePDFCompletionBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE06950086C8F1E2FDF267CB /* NativePDFCompletionBuffer.swift */; };
 		9645FA528DDFA880DBE0A201 /* NativeAssistantContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1AE06A969D49A0DD39BB5B /* NativeAssistantContextTests.swift */; };
 		964E39EABBE97F2122AC0D26 /* NativeNotificationPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00BDA3207A7EBC02A2DE0761 /* NativeNotificationPlan.swift */; };
+		986AD7F6E0533364C412AE16 /* NativeMembershipPaywall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0408A3BD68AC874573B9DFAB /* NativeMembershipPaywall.swift */; };
 		9A49C78EFFD049A7A089B942 /* DesktopBookmarkImportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C244BB388CE49421D24B92A /* DesktopBookmarkImportTests.swift */; };
 		9A6831FBA7FCD80868091E04 /* DesktopSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57AF1148BFEC6E764E836FF1 /* DesktopSyncTests.swift */; };
 		9AABFFB713371E5EAF4254E7 /* NativePDFLegacyInk-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1FE3BBAB5DC0DF4A617CA8F7 /* NativePDFLegacyInk-LICENSE.txt */; };
@@ -309,6 +337,7 @@
 		9CC602CE051FCFDA177363AE /* NativePDFRetainedInkSceneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1533D1B505DBC2945DC034C /* NativePDFRetainedInkSceneTests.swift */; };
 		9D3D56CB969389C7BC5A9884 /* BrowserIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90379554A37278ECDD4E98B /* BrowserIdentity.swift */; };
 		9F002A5D87000AEB0970DEB2 /* NativeRichTextMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6B19F4C6BD6273C42095183 /* NativeRichTextMath.swift */; };
+		9F0CE7A121345F1C7E5B9661 /* FigmaOnboardingScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6492B435FF8660DFFF54A367 /* FigmaOnboardingScreenshotTests.swift */; };
 		9F27571B4594DB55F46D92E1 /* NativePDFObjectClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27078D8527372E114B83CC7B /* NativePDFObjectClipboard.swift */; };
 		9F36843EB417B04E821EAE55 /* BrowserDownloadRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 306868B6A963ADD099E5CD18 /* BrowserDownloadRecoveryTests.swift */; };
 		9F3F8ADE90B86B4B67A74BD7 /* NativeSwiftDomainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BDFF374038B05D0C19967BA /* NativeSwiftDomainTests.swift */; };
@@ -317,6 +346,7 @@
 		A105595C424E0791564D2C74 /* BrowserMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EDF6DE3C6340E8C1FF066D0 /* BrowserMemory.swift */; };
 		A13575A70F4845070D51FF6C /* NativeSyncMoveNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F72C445B1CB1C5E4042F020 /* NativeSyncMoveNotice.swift */; };
 		A14DC3F8E050E9543F6D1494 /* NativeLibraryRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A5871048C4DF2DF1509F29 /* NativeLibraryRepository.swift */; };
+		A14E41F59C0C52181DF00276 /* NativeOnboardingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DFC0BB944D0BF9BECEE1075 /* NativeOnboardingUITests.swift */; };
 		A17DD264FFBD985F486ED82C /* SyncMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 301C335A495896E3EFD26CA2 /* SyncMerge.swift */; };
 		A1B0F22C483F74C3252FC94D /* DriveProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FAEFD5D61971595113C995A /* DriveProvider.swift */; };
 		A2ACB9716EDE9688AC8B8405 /* DesktopCloudTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75F1D273EF17EE9763268FB7 /* DesktopCloudTests.swift */; };
@@ -330,6 +360,7 @@
 		A5A75ED2F680B1CF1DFCF461 /* NativePDFEditorSceneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F43D025E309B0AF80C5DC25A /* NativePDFEditorSceneTests.swift */; };
 		A5BC28C965DCA6BF8A508DB2 /* NativePDFRetainedInkHitTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0D3CC1241434687D651680 /* NativePDFRetainedInkHitTest.swift */; };
 		A6783D394D34F21F2C262902 /* NativeBrowserParityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D55AA6B8BF59A08F3B1961 /* NativeBrowserParityUITests.swift */; };
+		A68D36D3BB96CDF0E79831B6 /* SchoolDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = B176746CCA1CD3C0E2A69DB1 /* SchoolDirectory.swift */; };
 		A69A0B12F01BCFCA77A25F4E /* NativePDFLiveInkGeometryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7DDF873008E10155940A7D8 /* NativePDFLiveInkGeometryCache.swift */; };
 		A6B26697B2D070708CD109B5 /* DesktopVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 619BA2ABF56402E32341F9A5 /* DesktopVersion.swift */; };
 		A7371F307887FE39468ECCBA /* DesktopRecordingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A6528ED9B8660BF2E3E0671 /* DesktopRecordingTests.swift */; };
@@ -348,9 +379,11 @@
 		AC66A9A58F586A97A36C28C3 /* DesktopCloudRoundTripTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2FFD9C77CCF23AD70DC12D /* DesktopCloudRoundTripTests.swift */; };
 		AD0B51433C0F8968564EBF39 /* PDFWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17C8B26D7BC39090E84E161 /* PDFWorkspaceView.swift */; };
 		AD1F223380E44B2A2A0CFAFC /* NativePDFPageLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ECE29B72978E79D5E5AD81C /* NativePDFPageLinks.swift */; };
+		AD450221221537ADD2C27747 /* NativeSchoolPickerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E55011596BB8FA75EED4B3C /* NativeSchoolPickerModel.swift */; };
 		AE1897DAF8AAAFDE7033A563 /* CloudSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A92C59758443179D13CF96 /* CloudSyncEngine.swift */; };
 		AE2CEC52CB2F06DECF961F9A /* NativeWorkspaceWindows.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36D165B0DA778ACFB1689EA /* NativeWorkspaceWindows.swift */; };
 		AE2CFC7EB658BAA5104489FC /* BrowserBookmarkImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BEF0E2C1B0189CF19E95F5 /* BrowserBookmarkImport.swift */; };
+		AE9AAB69F4CC2EC89D6E0B76 /* NativeAIModelPickerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEE90787A9EB52F9E38987C7 /* NativeAIModelPickerUITests.swift */; };
 		AF951D5016217C65848E6B2B /* NativePDFNavigationContinuityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FF817C241EB274EBB09F0D0 /* NativePDFNavigationContinuityTests.swift */; };
 		AFD631051B15F712B62C18CA /* DesktopBrowserHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4287F38BBAFDC95872B41A36 /* DesktopBrowserHost.swift */; };
 		B0328C6FC815C7B806173132 /* NativeLearningHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632B9A61D2B88FB9C97BB2FC /* NativeLearningHome.swift */; };
@@ -364,6 +397,7 @@
 		B2B723D7CA1A107E75850424 /* NativePDFWorkspacePreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 550B00DDE34794F234C3D3A2 /* NativePDFWorkspacePreferences.swift */; };
 		B2FCA5CCD5A010D91E909237 /* NativeWorkspaceStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D260CA3BA5AFA24401AF50 /* NativeWorkspaceStoreTests.swift */; };
 		B32C20D698325EC22889DD29 /* SyncApply.swift in Sources */ = {isa = PBXBuildFile; fileRef = B87A53F4986407F4511A1BA6 /* SyncApply.swift */; };
+		B34AF97C140D45A81C55EE14 /* FigmaViewsScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5DC5F80E3200C3FBA664CD1 /* FigmaViewsScreenshotTests.swift */; };
 		B37241E26EF2D6C4D19BB7F7 /* NativePDFDrawingDecodeCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14C563FC30C549B0B5994224 /* NativePDFDrawingDecodeCacheTests.swift */; };
 		B3C1A52B1DD5E1CE80DD09BA /* NativePDFTextEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C4B5258537C0EAE2128159 /* NativePDFTextEditorTests.swift */; };
 		B3E2C5D21704EBF82620A172 /* NativeLearningWorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B9055FE8B834A9B1EE43531 /* NativeLearningWorkspaceModel.swift */; };
@@ -372,6 +406,7 @@
 		B5719B7897BBEE08247968F7 /* NativeSettingsSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9623B76D504848E7D3C8C7AB /* NativeSettingsSections.swift */; };
 		B5EC01C49E935A440C471409 /* NativeDockTabSizingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE85B3B4BF3B07613FD2CAA1 /* NativeDockTabSizingTests.swift */; };
 		B62500B5B9C21E21F05E2D1D /* NativePDFBackdropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FF7E2AAB89E902EEEC5F532 /* NativePDFBackdropTests.swift */; };
+		B67601A7DA39DA03F0429C24 /* AIUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA336CAEB648014853645A40 /* AIUsage.swift */; };
 		B67F5C967856BDCF2A50FD8E /* NativeSyncRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43310B951E80578E34321F2A /* NativeSyncRepositoryTests.swift */; };
 		B6CE7612977C45EC386C774D /* DesktopPresentationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1FBDA57057958AEE840F1B /* DesktopPresentationService.swift */; };
 		B7362CADE850EA9168A0E572 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F9B13CF53CE7557E1635855D /* PrivacyInfo.xcprivacy */; };
@@ -380,6 +415,7 @@
 		B838CFACFC027E748B4B29A8 /* NativePDFPageStateEqualityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43E2544913479DCF30401884 /* NativePDFPageStateEqualityTests.swift */; };
 		B83B80C79D19204816360F4D /* PCMRecordingWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B44B9690801DC7F3EF6B042E /* PCMRecordingWriter.swift */; };
 		B85C39CE4B419D9484D1E0EE /* NativePDFPencilGestureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34491AE50BD987508D26BCEB /* NativePDFPencilGestureTests.swift */; };
+		B86315FA397237D3E5DB5EE8 /* NativeReferralUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E5B472F18C73BD79A3A481 /* NativeReferralUITests.swift */; };
 		B8CEC53258CF027D502E73F7 /* NativeWorkspacePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56A09779677F3EBEB515B5DB /* NativeWorkspacePreview.swift */; };
 		B8FA7F4457F6340608C08D8F /* NativePDFPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 714F8FD6E8C0B5905A19BC03 /* NativePDFPalette.swift */; };
 		B9A0840F6268F50B837D8041 /* NativeMarkdownTextChange.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86B2E2D678BDF7543A59E8D0 /* NativeMarkdownTextChange.swift */; };
@@ -399,12 +435,16 @@
 		C05FCEDB30C5BCD2AAAEF1BC /* BrowserPrint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B79A3DBEA793C4BFA580339 /* BrowserPrint.swift */; };
 		C0D3AB9184FBA720F90C9034 /* NativePDFDrawingSnapshotFastReuseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29E992EEED6F2598D3B8A226 /* NativePDFDrawingSnapshotFastReuseTests.swift */; };
 		C0FE855BC9570C3FC68C31B7 /* NativeWorkspacePreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF464B9153FC51466591430B /* NativeWorkspacePreviewTests.swift */; };
+		C1507DF9455FA57E966FB721 /* Referral.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56844B15A35C509E199AB004 /* Referral.swift */; };
 		C18036850F9B66440E4F780B /* BrowserEngineImprovementsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F405F17DB0AFA34F1706C71B /* BrowserEngineImprovementsTests.swift */; };
 		C1F64794270ED572E8CA79B4 /* NativePDFShapeRecognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 949329528F555AE002A52040 /* NativePDFShapeRecognition.swift */; };
 		C24D402944D29507C5848489 /* NativePDFPageEditingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0A360CBB0ED8301FC334B65 /* NativePDFPageEditingTests.swift */; };
 		C2F96120CD733299C5A25BA5 /* NativePDFTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96E9AADA13D564BDF31AE0E5 /* NativePDFTypes.swift */; };
+		C31C68362CD450CDC010DC55 /* NativeOnboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E32EB7F3F50C0818E52F7ED /* NativeOnboarding.swift */; };
+		C38A45FA9FBE834394FA3047 /* NativeAssistantSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C5CBDAA2C1C1D0254354CF /* NativeAssistantSession.swift */; };
 		C3EC53076B76E33060A04EAA /* NativePDFInkV5IntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C920CB1A6E87F130E3E94DF5 /* NativePDFInkV5IntegrationTests.swift */; };
 		C41426D48BC6D151041BFB47 /* SyncConformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D189A0718836D098970AD1EC /* SyncConformanceTests.swift */; };
+		C46BE11969B7ADEB21F5396D /* NativeDockShareControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7B5E9CD7FB3AFC215EF8AE5 /* NativeDockShareControls.swift */; };
 		C4C0209128B395D326ADDA0C /* NativeEditorMediaImportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5ACBF13F82769C5039FE5CA /* NativeEditorMediaImportTests.swift */; };
 		C5039B820B7527CECCF0F17A /* NativeWorkspaceWindowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0579A879C774A23E66AD13B /* NativeWorkspaceWindowTests.swift */; };
 		C55A37CBFAEC1F284F3BA621 /* NativeDockingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D965C8BD4AE027FE550CBE /* NativeDockingUITests.swift */; };
@@ -414,6 +454,7 @@
 		C745636F43C172C0BBC10A53 /* NativeLibraryIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 797A656EB85B700422170346 /* NativeLibraryIndexTests.swift */; };
 		C76E29E929FB59DC574748FB /* DesktopNativePrimitives.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37ED1828E21FBE5C0B311CDC /* DesktopNativePrimitives.swift */; };
 		C79A738342F80CFB6C2F8C5A /* NativePDFPageRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40FBE3F620BC5C5CC9995289 /* NativePDFPageRepository.swift */; };
+		C93472ABE3E858F3041944E4 /* NativeTaskEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A766319B1C9D473FC339AF5 /* NativeTaskEditor.swift */; };
 		C935690640D164B3A90057D9 /* NativePDFPageContentDigest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8987F3ECA95B1708E45E93A /* NativePDFPageContentDigest.swift */; };
 		C9883554C79042DFB06787FB /* DesktopMCPVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CC3C887A81C0FB0A7823ED9 /* DesktopMCPVault.swift */; };
 		C9DBBC7C40B2EBAA4CDCD4D3 /* NativePanelViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C788A3062F4A76A0A257725 /* NativePanelViewState.swift */; };
@@ -434,6 +475,7 @@
 		CEF2A302689580D3E3EF1A24 /* DesktopRecordingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8983E6321BBD9C5B212C03F1 /* DesktopRecordingService.swift */; };
 		CFE2632C4A5E9B33541E3FA0 /* NativePDFRetainedInkHitTestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97ECC4CAC331F175EB4DA65D /* NativePDFRetainedInkHitTestTests.swift */; };
 		D00098D433F94A7D2AAB86B5 /* DesktopRendererDiagnosticTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11AFB1D2B76F0D0FE3DE09B3 /* DesktopRendererDiagnosticTests.swift */; };
+		D05D6597FFCE390B5C6AE2DB /* NativeRecordingSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CA44A9526B2F044F1F887A0 /* NativeRecordingSummaryTests.swift */; };
 		D09953305BC385C778F9EB28 /* NativeLearningArtifactView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D53CCF5A108E72972AFE09 /* NativeLearningArtifactView.swift */; };
 		D125FA3668AC39B6B1ECB0C4 /* NativePDFInkGeometryV3.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A20C00F81A88859450BCD3 /* NativePDFInkGeometryV3.swift */; };
 		D12B6FC8C1EF4AE1700AACD0 /* NativeToolsFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F772CB694AD95EB91B90520 /* NativeToolsFlowTests.swift */; };
@@ -452,12 +494,16 @@
 		D5B92EA76F592A3BA2768447 /* NativePDFInkGeometryV5Cache.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2AFC2C3FDBB15D52D96975B /* NativePDFInkGeometryV5Cache.swift */; };
 		D5EC69478B69F76E1FE8E1DE /* WhiteboardWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 644D4FC4D78D71368E723B98 /* WhiteboardWorkspaceView.swift */; };
 		D5FEB0337A196B0F811EC2A2 /* NativeCourseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C042FA1E0FF0892ACEF4B3B /* NativeCourseManager.swift */; };
+		D6380E5525EAAA1A5D48E2B1 /* NativeRecordingSummaryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FDB2D3D64FF97026C768AB1 /* NativeRecordingSummaryUITests.swift */; };
 		D8AD580BC7E56DD4283DB269 /* NativePDFEditingGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA11CE94AA82D26B81ED7372 /* NativePDFEditingGeometryTests.swift */; };
 		D8F9CAEA16CE35B2F4E3374F /* LocalSaveJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = E581D20C7B7A462C7B3E6D17 /* LocalSaveJournal.swift */; };
+		D97AB42930F62D83A1467252 /* NativeReferralTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90358F6CCA5904B046744FB2 /* NativeReferralTests.swift */; };
 		D9DCDE3670E902ADD0D8F19F /* NativeLegacyMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB81661EF8912C63F02C7802 /* NativeLegacyMigration.swift */; };
+		DA02C2546BC6157826489F7F /* NativePlannerReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F4CDF1789EA15E2320D597 /* NativePlannerReminder.swift */; };
 		DBCDCC47019431035EDF14DD /* ReviewHandwriting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5936C89667A12A2C06A58337 /* ReviewHandwriting.swift */; };
 		DC4B5E894E4D663794CF20F1 /* BrowserPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E915538FB54C15EC6C1FF0 /* BrowserPage.swift */; };
 		DE0EE49B2C16629DA2CA6303 /* SyncFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A6BD2A1CA0DC3540EEE785 /* SyncFormat.swift */; };
+		DECC985EEA09ACBD97445232 /* FigmaAIPanelScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C871E9C788B8BAD07F043B /* FigmaAIPanelScreenshotTests.swift */; };
 		DF5D22F187292BE72830C224 /* NativeProjectLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFFA10059FA284EC8586156B /* NativeProjectLibrary.swift */; };
 		DFA74EE7124EDCDD33C3466B /* NativePDFNativeEraseHostTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D075128BD62CD8F8F26FD025 /* NativePDFNativeEraseHostTests.swift */; };
 		DFA89949BD03FD381633B878 /* DesktopLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 022D8D1BB7E631638C206EAB /* DesktopLog.swift */; };
@@ -473,11 +519,13 @@
 		E3247BCE26772DEF11FF272D /* NativeSettingsBrowserPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962CEE5CBC888C361E1DF4FC /* NativeSettingsBrowserPanel.swift */; };
 		E3F0FAB56BDD784588AB44C7 /* NativePDFRepositoryValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BAAD8F5DE41C50507A70D31 /* NativePDFRepositoryValidation.swift */; };
 		E457D05EBB71073EDF4D3656 /* NativePDFInputOwnership.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9FD0848A19BD5FBBA58D813 /* NativePDFInputOwnership.swift */; };
+		E4BC9AD21B3027913CC29353 /* NativeInlineEditingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F36C90756886DB1F8F5BF8 /* NativeInlineEditingUITests.swift */; };
 		E4CC13E00029D8F8672041C4 /* CloudSyncEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 735969484D241B4E945B413B /* CloudSyncEngineTests.swift */; };
 		E4D147B41123F4F96ACF9886 /* NativeLibraryPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 099F503B4ADCE16F3E8408F7 /* NativeLibraryPresentationTests.swift */; };
 		E59AC90414F7717D680906EE /* NativeBrowserFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46C706C69F0200346CCCC7F /* NativeBrowserFeatures.swift */; };
 		E6FE3C243A3CBAC162592B27 /* NativePDFCommittedSceneCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BEA47B8C9352CAA8C035E5A /* NativePDFCommittedSceneCacheTests.swift */; };
 		E762B73AB1F4673A34375890 /* NativePDFInkV4Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D612D5D2852DDB5AFCEBD4C2 /* NativePDFInkV4Tests.swift */; };
+		E7A3F5A37EBBB07D3E491C7A /* FigmaSettingsScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA1B0B9EAA9ABC68950D8420 /* FigmaSettingsScreenshotTests.swift */; };
 		E7A54699B84ABC6E77216C1C /* NativePDFFractionalRasterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BB066B01977EF7182E23CE3 /* NativePDFFractionalRasterTests.swift */; };
 		E7D3350597EBE3EE7F27D45D /* NativePDFInkUpdateScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDD2F8F50B40E3BA2489BB3 /* NativePDFInkUpdateScheduler.swift */; };
 		E7F936DC1A995C70E8BAF295 /* DesktopFileStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E83C57B093E863517AE6D48 /* DesktopFileStaging.swift */; };
@@ -486,6 +534,7 @@
 		E95C29A4F73B0E51835C4BC2 /* DesktopNotificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAE99D413AF3F4173695B940 /* DesktopNotificationTests.swift */; };
 		EAA91C5C817EB38C858D23F2 /* NativeSettingsWidgetDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14A4F6BA95A1E872687B4675 /* NativeSettingsWidgetDock.swift */; };
 		EBF5983C37EA4FD63AA7CA4B /* NativePDFWorkspacePreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABF2C22A6125C0922A466D86 /* NativePDFWorkspacePreferencesTests.swift */; };
+		EC44F32250014C8EA6DE50B6 /* NativeHomeTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 808D9C8B3C66B0F718279391 /* NativeHomeTab.swift */; };
 		ECC8C1C2383CE69169DFD982 /* NativePDFPreferenceScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05FE43D614A9056D7BB9A34D /* NativePDFPreferenceScope.swift */; };
 		ED4818AE4644E9153C6EFAB6 /* NativeMarkdownPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4288A065A63719C9BE37E648 /* NativeMarkdownPersistenceTests.swift */; };
 		ED7A0DF517F91041BF65C6A6 /* NativePDFInkVertexCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC04CC437CCDA00509756560 /* NativePDFInkVertexCacheTests.swift */; };
@@ -498,6 +547,7 @@
 		F0D23F08CA7AC0328ADE59C2 /* NativePDFCanonicalHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63BB234E9014A84C13F1105B /* NativePDFCanonicalHandoffTests.swift */; };
 		F19F7C4CE8AD67B4A740735D /* NativePDFDrawingSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0B6A4541A68705108EDC72 /* NativePDFDrawingSnapshotStore.swift */; };
 		F259082D42B85CB48CA6251A /* DesktopAccountService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5108F4A57BBEA966A104826E /* DesktopAccountService.swift */; };
+		F2EE16BA8F1D9EB600075D17 /* NativePDFToolPopovers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0CF14FA9FF49C67EA9BF784 /* NativePDFToolPopovers.swift */; };
 		F3A705638A6E503068FD84E4 /* NativeWorkspaceNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AB92751847130D1F3516561 /* NativeWorkspaceNavigationTests.swift */; };
 		F4061E2A4CE316B2AEA6F101 /* NativeBrowserAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A6452229E6A6C2A9A257830 /* NativeBrowserAddressField.swift */; };
 		F49E5C380B7312F4D1E19D88 /* NativeShareInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 981C210D86C5A3C7E7497ABE /* NativeShareInboxTests.swift */; };
@@ -521,6 +571,8 @@
 		FC11B77ACCBB98060C5D80F1 /* NativePDFRetainedInkBackdropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 285B9ECEB9EED12E677DA654 /* NativePDFRetainedInkBackdropTests.swift */; };
 		FDADC149DE95705433E21204 /* NativeMediaDropBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA62D8C6D7D4DBA8E65827CE /* NativeMediaDropBudgetTests.swift */; };
 		FDC1B1E4AD5F88D8F06E3230 /* BandalApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 465F23C06AE823EE2C2B71EF /* BandalApp.swift */; };
+		FEDE48E7D5434087556E7004 /* NativePDFPenSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9912BC09E9B7C3D81893F1DD /* NativePDFPenSettings.swift */; };
+		FEF9CD45629A4FE07CBD6D5D /* FigmaBoardScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38D5B32AB6E5D3A3EE49268A /* FigmaBoardScreenshotTests.swift */; };
 		FFB495F0FBF3AA14B0756AAF /* InkCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A3984908F3358245819B09B /* InkCanvas.swift */; };
 		FFDE1A8FFECADCA87E5AA96C /* NativeBrowserTabStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3382995480E6F200589AAE2 /* NativeBrowserTabStrip.swift */; };
 		FFFB0FA32143EC578ADBB156 /* NativeWorkspaceKeyboardBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 703A7C08D355E8FAA2777465 /* NativeWorkspaceKeyboardBridge.swift */; };
@@ -555,6 +607,7 @@
 		033D44E19032ECF43A49CD24 /* NativeAnnotationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAnnotationUITests.swift; sourceTree = "<group>"; };
 		03F1FD03DB1CCBBCF7C2D556 /* NativePDFPageNoteDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageNoteDocument.swift; sourceTree = "<group>"; };
 		03F2588975CB24F581BD62B3 /* BrowserPageActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPageActions.swift; sourceTree = "<group>"; };
+		0408A3BD68AC874573B9DFAB /* NativeMembershipPaywall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMembershipPaywall.swift; sourceTree = "<group>"; };
 		045751E98794BE72471570F0 /* NativeMembership.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMembership.swift; sourceTree = "<group>"; };
 		05DE7E7FABFCDBA9BFF48C33 /* CloudSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSession.swift; sourceTree = "<group>"; };
 		05FBE085E492BA57220D68CE /* NativeSettingsUsageRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsUsageRepository.swift; sourceTree = "<group>"; };
@@ -577,7 +630,9 @@
 		0CFE01007A30FFAFE9ECAE8D /* NativeNewTabMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNewTabMenu.swift; sourceTree = "<group>"; };
 		0D0B6A4541A68705108EDC72 /* NativePDFDrawingSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFDrawingSnapshotStore.swift; sourceTree = "<group>"; };
 		0E44669BA478AFAE36158A0C /* AppStoreScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreScreenshotTests.swift; sourceTree = "<group>"; };
+		0FDB2D3D64FF97026C768AB1 /* NativeRecordingSummaryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRecordingSummaryUITests.swift; sourceTree = "<group>"; };
 		0FF817C241EB274EBB09F0D0 /* NativePDFNavigationContinuityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFNavigationContinuityTests.swift; sourceTree = "<group>"; };
+		10322DE511C9734DF46D6EB5 /* NativeAssistantParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAssistantParts.swift; sourceTree = "<group>"; };
 		106F9C8EE5E42F028091DC51 /* NativePDFCommittedSceneCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFCommittedSceneCache.swift; sourceTree = "<group>"; };
 		10B386237139BD0E81914E76 /* NativePDFRetainedPaperCropSurfaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRetainedPaperCropSurfaceTests.swift; sourceTree = "<group>"; };
 		10B656FDB0E1014035A46619 /* NativeLearningWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLearningWorkspace.swift; sourceTree = "<group>"; };
@@ -588,6 +643,7 @@
 		12130F204CFD8E7C4DB16F64 /* NativeSidebarContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSidebarContractTests.swift; sourceTree = "<group>"; };
 		12B383C94A6971636C6B62C0 /* NativePDFPageCoordinates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageCoordinates.swift; sourceTree = "<group>"; };
 		13D62C9D468A68A5F59252EB /* NativeAssistantAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAssistantAttachment.swift; sourceTree = "<group>"; };
+		141F1AE72F6B905D11C44C00 /* FigmaNoteScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaNoteScreenshotTests.swift; sourceTree = "<group>"; };
 		14357BED4A0081E69687FAD7 /* PublicArticleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicArticleTests.swift; sourceTree = "<group>"; };
 		146D3776E3AEA82A97A922F6 /* NativeLearningSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLearningSession.swift; sourceTree = "<group>"; };
 		149E2BD2747A8AA72CF2DB74 /* BrowserPageActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPageActionsTests.swift; sourceTree = "<group>"; };
@@ -597,6 +653,7 @@
 		1749E516108489B8F8FA11DF /* NativePDFPreferenceScopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPreferenceScopeTests.swift; sourceTree = "<group>"; };
 		1963038D6A6ECA63E444DB7A /* NativePDFRegionCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRegionCapture.swift; sourceTree = "<group>"; };
 		1A6A3FE7EEDFEA40482AD5F7 /* NativeAccountRailButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAccountRailButton.swift; sourceTree = "<group>"; };
+		1A766319B1C9D473FC339AF5 /* NativeTaskEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTaskEditor.swift; sourceTree = "<group>"; };
 		1BAAD8F5DE41C50507A70D31 /* NativePDFRepositoryValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRepositoryValidation.swift; sourceTree = "<group>"; };
 		1BC0F94A2105CD78404C9521 /* NativeWhiteboardPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWhiteboardPersistence.swift; sourceTree = "<group>"; };
 		1BD6A945EF9521FCEED197A8 /* DesktopStoragePath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopStoragePath.swift; sourceTree = "<group>"; };
@@ -624,6 +681,7 @@
 		27078D8527372E114B83CC7B /* NativePDFObjectClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFObjectClipboard.swift; sourceTree = "<group>"; };
 		276ACB9E84CA3FD536A0B34F /* NativePDFObjectClipboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFObjectClipboardTests.swift; sourceTree = "<group>"; };
 		27D33677860011AFB9A73565 /* NativeDatabaseMigrations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDatabaseMigrations.swift; sourceTree = "<group>"; };
+		28142427B4F2643E9AC94488 /* NativeAIModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAIModelPicker.swift; sourceTree = "<group>"; };
 		282E03A0E57A29D61C0A13E2 /* NativeFavoritesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeFavoritesSection.swift; sourceTree = "<group>"; };
 		285B9ECEB9EED12E677DA654 /* NativePDFRetainedInkBackdropTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRetainedInkBackdropTests.swift; sourceTree = "<group>"; };
 		285F7968C8E41BE882525336 /* NativePDFOperationLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFOperationLedger.swift; sourceTree = "<group>"; };
@@ -660,12 +718,15 @@
 		37746CCC3C02803D0ABEC976 /* SyncAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncAdapter.swift; sourceTree = "<group>"; };
 		37ED1828E21FBE5C0B311CDC /* DesktopNativePrimitives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNativePrimitives.swift; sourceTree = "<group>"; };
 		3818907AC989B14DCF0C07A4 /* NativePDFInkV5Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkV5Tests.swift; sourceTree = "<group>"; };
+		38373D53261FA2A3454250AC /* NativeSettingsRowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsRowsTests.swift; sourceTree = "<group>"; };
 		38B31C7795916BCFC6267070 /* AIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIClientTests.swift; sourceTree = "<group>"; };
+		38D5B32AB6E5D3A3EE49268A /* FigmaBoardScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaBoardScreenshotTests.swift; sourceTree = "<group>"; };
 		38E90128F398132CD71D3419 /* DesktopPermissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopPermissionTests.swift; sourceTree = "<group>"; };
 		3911D43DFF7131A2E3AFD0D4 /* NativeExternalShareUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeExternalShareUITests.swift; sourceTree = "<group>"; };
 		392D626D51C48E2C12164829 /* NativePDFTapeCommentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFTapeCommentTests.swift; sourceTree = "<group>"; };
 		3A6452229E6A6C2A9A257830 /* NativeBrowserAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBrowserAddressField.swift; sourceTree = "<group>"; };
 		3A6528ED9B8660BF2E3E0671 /* DesktopRecordingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopRecordingTests.swift; sourceTree = "<group>"; };
+		3AF151EA55727B2C38623FF0 /* NativeLongPressMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLongPressMenu.swift; sourceTree = "<group>"; };
 		3AF6EB8E7F633A8ECF85C82B /* LearningModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningModels.swift; sourceTree = "<group>"; };
 		3AF908763AD45BE4ED30F23D /* NativePDFShapeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFShapeTests.swift; sourceTree = "<group>"; };
 		3AF9B9E3F6A7C6DC4F971247 /* NativePDFAsynchronousEditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFAsynchronousEditTests.swift; sourceTree = "<group>"; };
@@ -674,6 +735,9 @@
 		3C244BB388CE49421D24B92A /* DesktopBookmarkImportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopBookmarkImportTests.swift; sourceTree = "<group>"; };
 		3C5597C9B0CDABC0915E9ACC /* Membership.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Membership.swift; sourceTree = "<group>"; };
 		3CF4223E7842C35A04CC2A2E /* DesktopNativeSurfaceState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNativeSurfaceState.swift; sourceTree = "<group>"; };
+		3DBFF31B77ED8C26C556C81F /* NativeSchoolPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSchoolPicker.swift; sourceTree = "<group>"; };
+		3DFC0BB944D0BF9BECEE1075 /* NativeOnboardingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeOnboardingUITests.swift; sourceTree = "<group>"; };
+		3E32EB7F3F50C0818E52F7ED /* NativeOnboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeOnboarding.swift; sourceTree = "<group>"; };
 		3E422C29BBF4B0854A2C6D7F /* NativeWorkspaceChromeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceChromeTests.swift; sourceTree = "<group>"; };
 		3EC08DC958FDE150B41A7B3A /* NativePDFPageThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageThumbnail.swift; sourceTree = "<group>"; };
 		3F12C65EAA3C240F74656189 /* SyncOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncOutbox.swift; sourceTree = "<group>"; };
@@ -695,6 +759,7 @@
 		43F708769C1BEE6C54B903D1 /* NativeAssistantAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAssistantAttachmentTests.swift; sourceTree = "<group>"; };
 		456E2BC99C9E30A8E9F21F26 /* NativePanelViewStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePanelViewStateTests.swift; sourceTree = "<group>"; };
 		465F23C06AE823EE2C2B71EF /* BandalApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BandalApp.swift; sourceTree = "<group>"; };
+		46C871E9C788B8BAD07F043B /* FigmaAIPanelScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaAIPanelScreenshotTests.swift; sourceTree = "<group>"; };
 		46DB7DDD2F88DB2C92C337D9 /* DesktopCredentialsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCredentialsService.swift; sourceTree = "<group>"; };
 		4740E3E5679298E6C18CD518 /* DesktopNativeSurfaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNativeSurfaceTests.swift; sourceTree = "<group>"; };
 		4745323F72B5360B6C4BF39F /* BandalUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = BandalUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -702,6 +767,7 @@
 		4844F482C8CAD46F7CABF86F /* BrowserPopupAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPopupAdmission.swift; sourceTree = "<group>"; };
 		48D70C1AB5F659D3B3FFE488 /* GoogleDriveAuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDriveAuthTests.swift; sourceTree = "<group>"; };
 		4A2B9BCBC0DF03FC3C21CE81 /* NativeDesktopTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDesktopTheme.swift; sourceTree = "<group>"; };
+		4A65F807AAB308C6A0F74630 /* FigmaPenScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaPenScreenshotTests.swift; sourceTree = "<group>"; };
 		4B5AD9866DB0F5E454C6184E /* DesktopNativeSurfaceMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNativeSurfaceMask.swift; sourceTree = "<group>"; };
 		4C284F3B0E56A2393AC9187C /* FreeTierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeTierTests.swift; sourceTree = "<group>"; };
 		4CA765580833E43851772D17 /* NativePDFPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPersistenceTests.swift; sourceTree = "<group>"; };
@@ -718,12 +784,15 @@
 		5218D677343B78F6B192AB7F /* LearningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningTests.swift; sourceTree = "<group>"; };
 		5299BE8BCA8669ABF596FCFD /* NativePDFRetainedMixedSceneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRetainedMixedSceneTests.swift; sourceTree = "<group>"; };
 		52E4EA77BEE511C6CDB0A450 /* NativeLibraryPresentationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLibraryPresentationUITests.swift; sourceTree = "<group>"; };
+		5329D9D0717196E82C9B08FE /* StoreOffers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreOffers.swift; sourceTree = "<group>"; };
 		53A4CC738BBA54CDDD502A74 /* NativePDFInkGeometryV3Cache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkGeometryV3Cache.swift; sourceTree = "<group>"; };
 		5487D35DFE0F5E4CD2B2D60F /* BrowserBookmarkImportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserBookmarkImportTests.swift; sourceTree = "<group>"; };
 		5497D8826C88C931F3EE5ACA /* DesktopJSONTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopJSONTests.swift; sourceTree = "<group>"; };
 		550B00DDE34794F234C3D3A2 /* NativePDFWorkspacePreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFWorkspacePreferences.swift; sourceTree = "<group>"; };
 		5581489D35CF21ED693A62FC /* DesktopMailService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopMailService.swift; sourceTree = "<group>"; };
+		56844B15A35C509E199AB004 /* Referral.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Referral.swift; sourceTree = "<group>"; };
 		56A09779677F3EBEB515B5DB /* NativeWorkspacePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspacePreview.swift; sourceTree = "<group>"; };
+		56F4CDF1789EA15E2320D597 /* NativePlannerReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePlannerReminder.swift; sourceTree = "<group>"; };
 		57AF1148BFEC6E764E836FF1 /* DesktopSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSyncTests.swift; sourceTree = "<group>"; };
 		57E967D5B6DCF776FB84A1C4 /* BrowserImageCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserImageCopy.swift; sourceTree = "<group>"; };
 		5866A7018E825050DA9AEADE /* LocalSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSpeech.swift; sourceTree = "<group>"; };
@@ -733,6 +802,7 @@
 		5B2C6F8B72D2EAA421407515 /* NativePDFPageOperationRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageOperationRecoveryTests.swift; sourceTree = "<group>"; };
 		5B79A3DBEA793C4BFA580339 /* BrowserPrint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPrint.swift; sourceTree = "<group>"; };
 		5B8F64EDF8B0ED207BEE58D1 /* NativeSidebarModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSidebarModels.swift; sourceTree = "<group>"; };
+		5B91F2E8B5349C2C0E4595CE /* NativeGlassChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassChrome.swift; sourceTree = "<group>"; };
 		5DBD8447D07DC5514FFC04F6 /* NativeLegacyMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLegacyMigrationTests.swift; sourceTree = "<group>"; };
 		5DC7D28594A2E83DE1FF0253 /* NativeWhiteboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWhiteboardTests.swift; sourceTree = "<group>"; };
 		5E6126448642609BA0E723BE /* DesktopFileServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopFileServices.swift; sourceTree = "<group>"; };
@@ -750,13 +820,16 @@
 		63BB234E9014A84C13F1105B /* NativePDFCanonicalHandoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFCanonicalHandoffTests.swift; sourceTree = "<group>"; };
 		63C4B5258537C0EAE2128159 /* NativePDFTextEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFTextEditorTests.swift; sourceTree = "<group>"; };
 		644D4FC4D78D71368E723B98 /* WhiteboardWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhiteboardWorkspaceView.swift; sourceTree = "<group>"; };
+		6492B435FF8660DFFF54A367 /* FigmaOnboardingScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaOnboardingScreenshotTests.swift; sourceTree = "<group>"; };
 		64E9555ACC2529E24CE66C77 /* DesktopNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNotificationService.swift; sourceTree = "<group>"; };
+		64FF078908A55B9E4ECE27A9 /* NativeSchoolPickerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSchoolPickerTests.swift; sourceTree = "<group>"; };
 		6522A32900B326D733BB93A5 /* NativeAssistantWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAssistantWorkspace.swift; sourceTree = "<group>"; };
 		6532ABC47789E39F30531126 /* NativeWorkspaceDeviceSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceDeviceSmokeUITests.swift; sourceTree = "<group>"; };
 		6584D74EE0DFE37DC66FDFD9 /* BrowserImageCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserImageCopyTests.swift; sourceTree = "<group>"; };
 		6673D0AFCAAEF6475AF94DCB /* NativePDFRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRepository.swift; sourceTree = "<group>"; };
 		66E575649E541A80859A8E02 /* NativeBrowserTabStripUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBrowserTabStripUITests.swift; sourceTree = "<group>"; };
 		6798DD6245EBD85EB818FEF5 /* NativePDFEraseSplitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFEraseSplitTests.swift; sourceTree = "<group>"; };
+		67D3C54400679192B093B5DC /* FigmaMenusScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaMenusScreenshotTests.swift; sourceTree = "<group>"; };
 		68CB17B4872D54F405D447BC /* DesktopScribble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopScribble.swift; sourceTree = "<group>"; };
 		698576C06CEBF7C0C2B39811 /* NativePDFCombinedLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFCombinedLifecycleTests.swift; sourceTree = "<group>"; };
 		69F870F08A17DF859365631B /* DesktopProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopProfileTests.swift; sourceTree = "<group>"; };
@@ -768,6 +841,7 @@
 		6BE1BAF3D2FFFB2A2D9E2430 /* NativeRichTextEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRichTextEditorTests.swift; sourceTree = "<group>"; };
 		6C13229E67690218597EA87C /* BrowserContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserContextMenu.swift; sourceTree = "<group>"; };
 		6D1FBDA57057958AEE840F1B /* DesktopPresentationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopPresentationService.swift; sourceTree = "<group>"; };
+		6E55011596BB8FA75EED4B3C /* NativeSchoolPickerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSchoolPickerModel.swift; sourceTree = "<group>"; };
 		6ECE29B72978E79D5E5AD81C /* NativePDFPageLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageLinks.swift; sourceTree = "<group>"; };
 		6F897658762DCCA8DEAFE3E3 /* DesktopSQLite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSQLite.swift; sourceTree = "<group>"; };
 		6FF7E2AAB89E902EEEC5F532 /* NativePDFBackdropTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFBackdropTests.swift; sourceTree = "<group>"; };
@@ -782,8 +856,10 @@
 		723DE87F3CA500042E3DB45E /* NativeWhiteboardWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWhiteboardWorkspace.swift; sourceTree = "<group>"; };
 		724E0821D2AEE88A46CF52C5 /* NativeDockTabSizingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDockTabSizingUITests.swift; sourceTree = "<group>"; };
 		735969484D241B4E945B413B /* CloudSyncEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncEngineTests.swift; sourceTree = "<group>"; };
+		736BB215FD1E59E87287A3C7 /* NativeReferralViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeReferralViews.swift; sourceTree = "<group>"; };
 		7496C098BFEC24611E5294EA /* NativeLearningActionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLearningActionTests.swift; sourceTree = "<group>"; };
 		74AE4F748F2E0EC3CD5CAAB6 /* NativePDFProgressiveErasureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFProgressiveErasureTests.swift; sourceTree = "<group>"; };
+		75E5B472F18C73BD79A3A481 /* NativeReferralUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeReferralUITests.swift; sourceTree = "<group>"; };
 		75F1D273EF17EE9763268FB7 /* DesktopCloudTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCloudTests.swift; sourceTree = "<group>"; };
 		766CF5F6DBACCFF5851F5F98 /* NativeSyncMaterials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSyncMaterials.swift; sourceTree = "<group>"; };
 		769867CEC78B22C9FE1F476C /* NativeBrowserPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBrowserPanels.swift; sourceTree = "<group>"; };
@@ -804,6 +880,8 @@
 		7ED1A6638CE193DE9185A9E7 /* NativePDFRetainedObjectTextures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRetainedObjectTextures.swift; sourceTree = "<group>"; };
 		7EDF6DE3C6340E8C1FF066D0 /* BrowserMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMemory.swift; sourceTree = "<group>"; };
 		8042CBB872F2FDDC92FEE509 /* NativePDFTextDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFTextDraft.swift; sourceTree = "<group>"; };
+		808D9C8B3C66B0F718279391 /* NativeHomeTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeTab.swift; sourceTree = "<group>"; };
+		80F3642E660E32311F3E4124 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		833C568D68E17E87439FB509 /* NativePDFRenderViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRenderViewport.swift; sourceTree = "<group>"; };
 		8481C9B57959283E405ED6DA /* NativePDFNavigationVectorReuseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFNavigationVectorReuseTests.swift; sourceTree = "<group>"; };
 		86B2E2D678BDF7543A59E8D0 /* NativeMarkdownTextChange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMarkdownTextChange.swift; sourceTree = "<group>"; };
@@ -812,6 +890,7 @@
 		87A7C519DAEC54D168B42514 /* NativeWorkspaceContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceContext.swift; sourceTree = "<group>"; };
 		87D55AA6B8BF59A08F3B1961 /* NativeBrowserParityUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBrowserParityUITests.swift; sourceTree = "<group>"; };
 		87F9C354688781E8831772F4 /* NativePDFWritingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFWritingUITests.swift; sourceTree = "<group>"; };
+		89159E0F81215474D59C0D4C /* FigmaTabStripScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaTabStripScreenshotTests.swift; sourceTree = "<group>"; };
 		8983E6321BBD9C5B212C03F1 /* DesktopRecordingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopRecordingService.swift; sourceTree = "<group>"; };
 		8A552DE1AAD03566B02132D7 /* NativeMarkdownWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMarkdownWorkspace.swift; sourceTree = "<group>"; };
 		8A5BA09A2BD3CD132C0A311F /* NativeWhiteboardSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWhiteboardSession.swift; sourceTree = "<group>"; };
@@ -821,9 +900,12 @@
 		8B4860E90C3980D56EADE910 /* NativeDockTabSizing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDockTabSizing.swift; sourceTree = "<group>"; };
 		8D80E48384EA9BF065D3810B /* NativePlatformServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePlatformServices.swift; sourceTree = "<group>"; };
 		8D8A0072D97055C91851B940 /* NativeValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeValue.swift; sourceTree = "<group>"; };
+		8E6845A2E6611CAF21FA98D8 /* NativeAppLocale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAppLocale.swift; sourceTree = "<group>"; };
 		8FE9B1DC0366C4B77F4A2068 /* NativePDFDeletionSuccessorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFDeletionSuccessorTests.swift; sourceTree = "<group>"; };
 		901541F0D0484DB4F808C1D7 /* DriveProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveProviderTests.swift; sourceTree = "<group>"; };
+		90358F6CCA5904B046744FB2 /* NativeReferralTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeReferralTests.swift; sourceTree = "<group>"; };
 		9037B31FCF4AECD017944F0C /* NativePDFRetainedInkSurfaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRetainedInkSurfaceTests.swift; sourceTree = "<group>"; };
+		909F86BAEA3044AADCD14C89 /* NativePlannerParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePlannerParts.swift; sourceTree = "<group>"; };
 		91DF33124CAE499B20CA61DA /* PublicArticleClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicArticleClient.swift; sourceTree = "<group>"; };
 		9284F1F34BE103B0F49A6BE8 /* NativeStudyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeStudyService.swift; sourceTree = "<group>"; };
 		933C24E8C335049FC04EA37A /* NativePDFInputOwnershipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInputOwnershipTests.swift; sourceTree = "<group>"; };
@@ -845,6 +927,7 @@
 		97EE3439035BD5A758666224 /* BandalUITests-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "BandalUITests-Bridging-Header.h"; sourceTree = "<group>"; };
 		981C210D86C5A3C7E7497ABE /* NativeShareInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeShareInboxTests.swift; sourceTree = "<group>"; };
 		98F1035E4CE409424131A935 /* NativePDFMetalFrameGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFMetalFrameGeometryTests.swift; sourceTree = "<group>"; };
+		9912BC09E9B7C3D81893F1DD /* NativePDFPenSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPenSettings.swift; sourceTree = "<group>"; };
 		9923A504471C5343EAF42CCD /* NativeNewTabMenuTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNewTabMenuTests.swift; sourceTree = "<group>"; };
 		99A65BFF2994534CA8D49DDC /* ReviewRecordingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewRecordingTests.swift; sourceTree = "<group>"; };
 		9A63E7A276B9A38A74FFC18F /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
@@ -852,6 +935,7 @@
 		9BB066B01977EF7182E23CE3 /* NativePDFFractionalRasterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFFractionalRasterTests.swift; sourceTree = "<group>"; };
 		9C788A3062F4A76A0A257725 /* NativePanelViewState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePanelViewState.swift; sourceTree = "<group>"; };
 		9C946E36374431C33274EC75 /* NativePDFErasureIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFErasureIdentityTests.swift; sourceTree = "<group>"; };
+		9CA44A9526B2F044F1F887A0 /* NativeRecordingSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRecordingSummaryTests.swift; sourceTree = "<group>"; };
 		9D1FA3FCF08DAF72EBCF8BCB /* NativeLearningStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLearningStartSheet.swift; sourceTree = "<group>"; };
 		9F62F78A6024511FEA3E9E0B /* SaveJournalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveJournalTests.swift; sourceTree = "<group>"; };
 		9F66AC6E67D2A092013BDCA2 /* DesktopArticleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopArticleService.swift; sourceTree = "<group>"; };
@@ -860,8 +944,10 @@
 		A01B7CF78F23029323B2D1AF /* NativePDFPageEditing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageEditing.swift; sourceTree = "<group>"; };
 		A02AA49EAC928EC65211DFB5 /* NativeWorkspaceKeyboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceKeyboardTests.swift; sourceTree = "<group>"; };
 		A037DD1E4E6490B428E25F64 /* NativePDFInkUpdateSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkUpdateSchedulerTests.swift; sourceTree = "<group>"; };
+		A0CF14FA9FF49C67EA9BF784 /* NativePDFToolPopovers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFToolPopovers.swift; sourceTree = "<group>"; };
 		A16B5A225139241A0E95C764 /* SyncConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncConnection.swift; sourceTree = "<group>"; };
 		A17C8B26D7BC39090E84E161 /* PDFWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFWorkspaceView.swift; sourceTree = "<group>"; };
+		A1962C933E21893DE3C720DE /* NativeDocumentPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDocumentPreview.swift; sourceTree = "<group>"; };
 		A1A6BD2A1CA0DC3540EEE785 /* SyncFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncFormat.swift; sourceTree = "<group>"; };
 		A1DBCCF18323C1E6CF4E9456 /* NativePDFJournalQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFJournalQueue.swift; sourceTree = "<group>"; };
 		A1F43278A2A256F6041E48A8 /* NativeAssistantService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAssistantService.swift; sourceTree = "<group>"; };
@@ -885,7 +971,9 @@
 		A8799BCF8F942661EB357289 /* NativeToolChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeToolChrome.swift; sourceTree = "<group>"; };
 		A92D894B49DF977C95E13C81 /* NativePDFSurfaceLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFSurfaceLifecycleTests.swift; sourceTree = "<group>"; };
 		A9E5EF5102D76D974272071E /* NativePDFPageInsertPaperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageInsertPaperTests.swift; sourceTree = "<group>"; };
+		A9F3FB52372C56E4648CFBB1 /* UXPassScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UXPassScreenshotTests.swift; sourceTree = "<group>"; };
 		AA756BD2E3B8E40B6774F3A8 /* DesktopBookmarkImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopBookmarkImportService.swift; sourceTree = "<group>"; };
+		AA87FD50111B7AE5C26603C8 /* StoreScreensUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreScreensUITests.swift; sourceTree = "<group>"; };
 		AACDDB6278105DBA9B98C065 /* NativePDFHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFHost.swift; sourceTree = "<group>"; };
 		ABE4632998940A5F1CE3D301 /* NativeWorkspaceChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceChrome.swift; sourceTree = "<group>"; };
 		ABF2C22A6125C0922A466D86 /* NativePDFWorkspacePreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFWorkspacePreferencesTests.swift; sourceTree = "<group>"; };
@@ -899,6 +987,7 @@
 		B0016CB4A886AABD0DB53D4B /* NativeCourseSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCourseSidebar.swift; sourceTree = "<group>"; };
 		B013C009FE7B2E7AB4E6E5DB /* DesktopAppleAuthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAppleAuthorization.swift; sourceTree = "<group>"; };
 		B0579A879C774A23E66AD13B /* NativeWorkspaceWindowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceWindowTests.swift; sourceTree = "<group>"; };
+		B176746CCA1CD3C0E2A69DB1 /* SchoolDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchoolDirectory.swift; sourceTree = "<group>"; };
 		B2A873C6508242736EE7E51C /* NativeDockTabList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDockTabList.swift; sourceTree = "<group>"; };
 		B2F273F041BE71F692BBE3E6 /* NativeSearchRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSearchRepository.swift; sourceTree = "<group>"; };
 		B3CC986C5B25E8DF87343922 /* NativeSettingsSystemPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsSystemPanels.swift; sourceTree = "<group>"; };
@@ -916,6 +1005,7 @@
 		B6F77C9F993553E84116DC1A /* DesktopFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopFileAccess.swift; sourceTree = "<group>"; };
 		B7246B7DEEDE25B292BA2133 /* NativePDFPencilGestureRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPencilGestureRecognizer.swift; sourceTree = "<group>"; };
 		B773C715150B1C87EDF4DBAA /* NativeLibraryDocumentThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLibraryDocumentThumbnail.swift; sourceTree = "<group>"; };
+		B811C516902734243D06E72A /* StoreOffersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreOffersTests.swift; sourceTree = "<group>"; };
 		B87A53F4986407F4511A1BA6 /* SyncApply.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncApply.swift; sourceTree = "<group>"; };
 		B8987F3ECA95B1708E45E93A /* NativePDFPageContentDigest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageContentDigest.swift; sourceTree = "<group>"; };
 		B8DDE59992443EF84CFE1FCC /* BrowserLMS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserLMS.swift; sourceTree = "<group>"; };
@@ -941,11 +1031,14 @@
 		C5E67573E792B01010064FA2 /* NativePDFChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFChrome.swift; sourceTree = "<group>"; };
 		C696794CDD530C377066F0EB /* DesktopCredentialsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCredentialsTests.swift; sourceTree = "<group>"; };
 		C6C8A1B727555C64DB4B5759 /* NativeLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLibraryView.swift; sourceTree = "<group>"; };
+		C7436166F2A74132333750FF /* NativePlannerBoardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePlannerBoardTests.swift; sourceTree = "<group>"; };
 		C785584B53A4BE3CD142F1D6 /* NativeDockRailResizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDockRailResizer.swift; sourceTree = "<group>"; };
 		C89066DD33F7EAD131F57B66 /* NativeSyncJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSyncJournal.swift; sourceTree = "<group>"; };
 		C920CB1A6E87F130E3E94DF5 /* NativePDFInkV5IntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkV5IntegrationTests.swift; sourceTree = "<group>"; };
 		C9C768CF462DA427D7374098 /* NativePDFMetalInk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFMetalInk.swift; sourceTree = "<group>"; };
 		C9E915538FB54C15EC6C1FF0 /* BrowserPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPage.swift; sourceTree = "<group>"; };
+		CA395AF2FC56908E85AC9803 /* NativeAssistantSourcesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAssistantSourcesUITests.swift; sourceTree = "<group>"; };
+		CAC011059AC8F60222CEE81B /* NativeReferral.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeReferral.swift; sourceTree = "<group>"; };
 		CB81661EF8912C63F02C7802 /* NativeLegacyMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLegacyMigration.swift; sourceTree = "<group>"; };
 		CC04CC437CCDA00509756560 /* NativePDFInkVertexCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkVertexCacheTests.swift; sourceTree = "<group>"; };
 		CCDD2F8F50B40E3BA2489BB3 /* NativePDFInkUpdateScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkUpdateScheduler.swift; sourceTree = "<group>"; };
@@ -956,6 +1049,7 @@
 		CEE7340408F23ABE717816C4 /* NativeDockWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDockWorkspace.swift; sourceTree = "<group>"; };
 		CEF5ABE5918CF17821D0A200 /* NativeBrowserShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBrowserShortcuts.swift; sourceTree = "<group>"; };
 		CF03A043846CF14752ADDB44 /* NativePlannerRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePlannerRepository.swift; sourceTree = "<group>"; };
+		CF09CCEBA18264C2CD12FBFB /* StoreSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreSync.swift; sourceTree = "<group>"; };
 		CF9B7980D1FB3D1CA6F942CD /* DesktopAITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAITests.swift; sourceTree = "<group>"; };
 		D059517B3DCFB66BD3C23617 /* NativeSyncRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSyncRepository.swift; sourceTree = "<group>"; };
 		D075128BD62CD8F8F26FD025 /* NativePDFNativeEraseHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFNativeEraseHostTests.swift; sourceTree = "<group>"; };
@@ -973,13 +1067,16 @@
 		D498CC47B07499D54EA1A21D /* SyncFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncFormatTests.swift; sourceTree = "<group>"; };
 		D5393B22835F31428B678385 /* DesktopMaterialFileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopMaterialFileTests.swift; sourceTree = "<group>"; };
 		D5D71B9B55649B0D025F7B64 /* NativePDFPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPaletteTests.swift; sourceTree = "<group>"; };
+		D5DC5F80E3200C3FBA664CD1 /* FigmaViewsScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaViewsScreenshotTests.swift; sourceTree = "<group>"; };
 		D612D5D2852DDB5AFCEBD4C2 /* NativePDFInkV4Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkV4Tests.swift; sourceTree = "<group>"; };
+		D7B5E9CD7FB3AFC215EF8AE5 /* NativeDockShareControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDockShareControls.swift; sourceTree = "<group>"; };
 		D889A55E002ACA4CCEA8C797 /* NativeRichTextDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRichTextDocument.swift; sourceTree = "<group>"; };
 		D8B262C5D8E81B8CA39A059D /* NativePDFNavigationInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFNavigationInputTests.swift; sourceTree = "<group>"; };
 		D91B7189B31E1D1A25CF110D /* SyncStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStore.swift; sourceTree = "<group>"; };
 		D99F855AE79C5D6AE774DF0C /* NativePreferencesRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePreferencesRepository.swift; sourceTree = "<group>"; };
 		D9A8F3B5FA9EE8B8CF464CFD /* BrowserAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAgent.swift; sourceTree = "<group>"; };
 		DA0D3CC1241434687D651680 /* NativePDFRetainedInkHitTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFRetainedInkHitTest.swift; sourceTree = "<group>"; };
+		DA1B0B9EAA9ABC68950D8420 /* FigmaSettingsScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaSettingsScreenshotTests.swift; sourceTree = "<group>"; };
 		DA2D14E4F15ADFBA41EEBA1F /* NativePDFPaletteStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPaletteStyle.swift; sourceTree = "<group>"; };
 		DA33C8ED6E36F5E113588364 /* ReviewStroke.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ReviewStroke.m; sourceTree = "<group>"; };
 		DB75AEF25EC29E8C196F0865 /* NativeSettingsIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsIntegrationTests.swift; sourceTree = "<group>"; };
@@ -990,9 +1087,11 @@
 		DD7CCC2116F10114E1E2C0AF /* NativePDFApertureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFApertureView.swift; sourceTree = "<group>"; };
 		DDB2388ACFB138B0D7851F3F /* NativePDFErasureLatencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFErasureLatencyTests.swift; sourceTree = "<group>"; };
 		DEAC1A7BEE87A96F4EED0940 /* NativePDFObjectRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFObjectRenderer.swift; sourceTree = "<group>"; };
+		DEE90787A9EB52F9E38987C7 /* NativeAIModelPickerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAIModelPickerUITests.swift; sourceTree = "<group>"; };
 		DFA44D4C111224DE535BC0AA /* NativeLearningModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLearningModels.swift; sourceTree = "<group>"; };
 		DFAD5A2207AB6EBAEA6DF9CC /* DesktopScribbleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopScribbleTests.swift; sourceTree = "<group>"; };
 		E0A360CBB0ED8301FC334B65 /* NativePDFPageEditingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageEditingTests.swift; sourceTree = "<group>"; };
+		E1F36C90756886DB1F8F5BF8 /* NativeInlineEditingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeInlineEditingUITests.swift; sourceTree = "<group>"; };
 		E2583459275A18BD9E844519 /* DesktopInteractionDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopInteractionDiagnostics.swift; sourceTree = "<group>"; };
 		E3382995480E6F200589AAE2 /* NativeBrowserTabStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBrowserTabStrip.swift; sourceTree = "<group>"; };
 		E34AC699972182895DADB8C7 /* NativeAssistantPreferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAssistantPreferenceTests.swift; sourceTree = "<group>"; };
@@ -1000,6 +1099,7 @@
 		E3A704BADFE558F810006B26 /* BrowserDownload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserDownload.swift; sourceTree = "<group>"; };
 		E3E534F8DB793DC9C113AF9F /* SyncStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStoreTests.swift; sourceTree = "<group>"; };
 		E44ECC94787583D6C693B7BB /* NativeWorkspaceWindowControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceWindowControls.swift; sourceTree = "<group>"; };
+		E4C5CBDAA2C1C1D0254354CF /* NativeAssistantSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAssistantSession.swift; sourceTree = "<group>"; };
 		E581D20C7B7A462C7B3E6D17 /* LocalSaveJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSaveJournal.swift; sourceTree = "<group>"; };
 		E5F80C141F081F7566A6F29F /* NativeDuplicateDocumentUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDuplicateDocumentUITests.swift; sourceTree = "<group>"; };
 		E663F7ADD7A971EC57EB1A74 /* DesktopShellStabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopShellStabilityTests.swift; sourceTree = "<group>"; };
@@ -1031,16 +1131,19 @@
 		F1A92C59758443179D13CF96 /* CloudSyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncEngine.swift; sourceTree = "<group>"; };
 		F1C07BF543A988BB246A6D4B /* NativePDFNavigationHighlighterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFNavigationHighlighterTests.swift; sourceTree = "<group>"; };
 		F2C33E3525B582CB5F27DDBC /* OAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthSession.swift; sourceTree = "<group>"; };
+		F356907DDC8170ECA8C19306 /* FigmaHomeChromeScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaHomeChromeScreenshotTests.swift; sourceTree = "<group>"; };
 		F39745639D8C421E16D5B165 /* NativePDFInkV3Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkV3Tests.swift; sourceTree = "<group>"; };
 		F405F17DB0AFA34F1706C71B /* BrowserEngineImprovementsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserEngineImprovementsTests.swift; sourceTree = "<group>"; };
 		F43D025E309B0AF80C5DC25A /* NativePDFEditorSceneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFEditorSceneTests.swift; sourceTree = "<group>"; };
 		F48AD81A6EF0F615217A02D2 /* NativeThumbnailPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeThumbnailPerformanceTests.swift; sourceTree = "<group>"; };
 		F49904FA339B1FD2CE264CC0 /* DesktopBrowserPrivacyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopBrowserPrivacyTests.swift; sourceTree = "<group>"; };
+		F4BD723C60C6CDE9BD5FC945 /* NativeProfileMenuUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProfileMenuUITests.swift; sourceTree = "<group>"; };
 		F4D260CA3BA5AFA24401AF50 /* NativeWorkspaceStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceStoreTests.swift; sourceTree = "<group>"; };
 		F59473FCE6B0D9531BB05569 /* NativeDuplicateDocumentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDuplicateDocumentTests.swift; sourceTree = "<group>"; };
 		F5F416BCE8F405CC4FDF51F6 /* DesktopDownloadTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDownloadTransportTests.swift; sourceTree = "<group>"; };
 		F5F87F596F40B5D444390A9E /* DesktopSystemServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSystemServices.swift; sourceTree = "<group>"; };
 		F63C6D1762860BE8D358DAA9 /* SyncProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncProvider.swift; sourceTree = "<group>"; };
+		F76870257BD3E7438A334900 /* BandalComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BandalComponents.swift; sourceTree = "<group>"; };
 		F774779A8F272C10E8EB8502 /* DesktopDictionaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDictionaryService.swift; sourceTree = "<group>"; };
 		F7D689E2CF8EA772EC539117 /* NativePDFDrawingSnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFDrawingSnapshotStoreTests.swift; sourceTree = "<group>"; };
 		F83AD13D33529D5665B33BF9 /* NativePagedMarkdownEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePagedMarkdownEditor.swift; sourceTree = "<group>"; };
@@ -1051,6 +1154,7 @@
 		F9B13CF53CE7557E1635855D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F9B2B9ED2496D48A9652E5E2 /* NativeWorkspaceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkspaceModels.swift; sourceTree = "<group>"; };
 		F9FDD16DF8EAA25D8C563F7B /* DesktopBillingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopBillingService.swift; sourceTree = "<group>"; };
+		FA336CAEB648014853645A40 /* AIUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage.swift; sourceTree = "<group>"; };
 		FA62D8C6D7D4DBA8E65827CE /* NativeMediaDropBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMediaDropBudgetTests.swift; sourceTree = "<group>"; };
 		FAE2776FE9F117D023DF30D5 /* DictionaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictionaryService.swift; sourceTree = "<group>"; };
 		FAE99D413AF3F4173695B940 /* DesktopNotificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNotificationTests.swift; sourceTree = "<group>"; };
@@ -1218,9 +1322,14 @@
 		28A6C898EBAB7A26A2A73429 /* Native */ = {
 			isa = PBXGroup;
 			children = (
+				F76870257BD3E7438A334900 /* BandalComponents.swift */,
 				1A6A3FE7EEDFEA40482AD5F7 /* NativeAccountRailButton.swift */,
+				28142427B4F2643E9AC94488 /* NativeAIModelPicker.swift */,
+				8E6845A2E6611CAF21FA98D8 /* NativeAppLocale.swift */,
 				13D62C9D468A68A5F59252EB /* NativeAssistantAttachment.swift */,
+				10322DE511C9734DF46D6EB5 /* NativeAssistantParts.swift */,
 				A1F43278A2A256F6041E48A8 /* NativeAssistantService.swift */,
+				E4C5CBDAA2C1C1D0254354CF /* NativeAssistantSession.swift */,
 				2D22F593B5FDAD22CFDE3EE2 /* NativeAssistantSupport.swift */,
 				6522A32900B326D733BB93A5 /* NativeAssistantWorkspace.swift */,
 				6B1A22BEB310DB12EC6FC35A /* NativeAuxiliaryDestinations.swift */,
@@ -1240,14 +1349,18 @@
 				4A2B9BCBC0DF03FC3C21CE81 /* NativeDesktopTheme.swift */,
 				AD8BDB4FF985BF07EB290CA5 /* NativeDockLayout.swift */,
 				C785584B53A4BE3CD142F1D6 /* NativeDockRailResizer.swift */,
+				D7B5E9CD7FB3AFC215EF8AE5 /* NativeDockShareControls.swift */,
 				61ABE7B79A5B6C81737BE29C /* NativeDockTabButton.swift */,
 				B2A873C6508242736EE7E51C /* NativeDockTabList.swift */,
 				8B4860E90C3980D56EADE910 /* NativeDockTabSizing.swift */,
 				CEE7340408F23ABE717816C4 /* NativeDockWorkspace.swift */,
 				2CD88BA956D17DD4FE158970 /* NativeDocumentAssistantHost.swift */,
+				A1962C933E21893DE3C720DE /* NativeDocumentPreview.swift */,
 				C3A0EF92024F5C9F13751E1A /* NativeEditorMediaImport.swift */,
 				282E03A0E57A29D61C0A13E2 /* NativeFavoritesSection.swift */,
 				4DDA4965BF37EE6A9D9B6A99 /* NativeFeatureLauncherPanel.swift */,
+				5B91F2E8B5349C2C0E4595CE /* NativeGlassChrome.swift */,
+				808D9C8B3C66B0F718279391 /* NativeHomeTab.swift */,
 				795893665494E85C79B46E11 /* NativeLearningArticleView.swift */,
 				B6D53CCF5A108E72972AFE09 /* NativeLearningArtifactView.swift */,
 				632B9A61D2B88FB9C97BB2FC /* NativeLearningHome.swift */,
@@ -1261,13 +1374,16 @@
 				DC12FC4F5DA29DD344A09478 /* NativeLibraryPresentation.swift */,
 				BFFE97AADAB747EEEAB44FC0 /* NativeLibrarySourceTray.swift */,
 				C6C8A1B727555C64DB4B5759 /* NativeLibraryView.swift */,
+				3AF151EA55727B2C38623FF0 /* NativeLongPressMenu.swift */,
 				A791F4B40D5E72AFA8E3570A /* NativeMarkdownPersistence.swift */,
 				86B2E2D678BDF7543A59E8D0 /* NativeMarkdownTextChange.swift */,
 				8A552DE1AAD03566B02132D7 /* NativeMarkdownWorkspace.swift */,
 				CD21B530CEE5824E4643CFD5 /* NativeMediaWorkspace.swift */,
 				045751E98794BE72471570F0 /* NativeMembership.swift */,
+				0408A3BD68AC874573B9DFAB /* NativeMembershipPaywall.swift */,
 				0CFE01007A30FFAFE9ECAE8D /* NativeNewTabMenu.swift */,
 				00BDA3207A7EBC02A2DE0761 /* NativeNotificationPlan.swift */,
+				3E32EB7F3F50C0818E52F7ED /* NativeOnboarding.swift */,
 				F83AD13D33529D5665B33BF9 /* NativePagedMarkdownEditor.swift */,
 				9C788A3062F4A76A0A257725 /* NativePanelViewState.swift */,
 				C5E67573E792B01010064FA2 /* NativePDFChrome.swift */,
@@ -1281,20 +1397,26 @@
 				3EC08DC958FDE150B41A7B3A /* NativePDFPageThumbnail.swift */,
 				714F8FD6E8C0B5905A19BC03 /* NativePDFPalette.swift */,
 				DA2D14E4F15ADFBA41EEBA1F /* NativePDFPaletteStyle.swift */,
+				9912BC09E9B7C3D81893F1DD /* NativePDFPenSettings.swift */,
 				BD14170AD439D8AF987BA5CA /* NativePDFPersistence.swift */,
 				05FE43D614A9056D7BB9A34D /* NativePDFPreferenceScope.swift */,
 				1963038D6A6ECA63E444DB7A /* NativePDFRegionCapture.swift */,
 				4EFFF0BF44F2EAA641740B2A /* NativePDFScenePatch.swift */,
 				8042CBB872F2FDDC92FEE509 /* NativePDFTextDraft.swift */,
 				7157381D442DAE51740E8B95 /* NativePDFTextEditor.swift */,
+				A0CF14FA9FF49C67EA9BF784 /* NativePDFToolPopovers.swift */,
 				2D1A59DA8E399BC9FC4B5221 /* NativePDFWorkspace.swift */,
 				550B00DDE34794F234C3D3A2 /* NativePDFWorkspacePreferences.swift */,
 				08C67415129574889AB36518 /* NativePlannerCalendar.swift */,
+				909F86BAEA3044AADCD14C89 /* NativePlannerParts.swift */,
+				56F4CDF1789EA15E2320D597 /* NativePlannerReminder.swift */,
 				9563AEFCA79F2014F5E73258 /* NativePlannerWorkspace.swift */,
 				8D80E48384EA9BF065D3810B /* NativePlatformServices.swift */,
 				EFFA10059FA284EC8586156B /* NativeProjectLibrary.swift */,
 				F9A80D421BE93866397E5217 /* NativeProviderMark.swift */,
 				A3F4701F190C100F0BD760F6 /* NativeRecordingWorkspace.swift */,
+				CAC011059AC8F60222CEE81B /* NativeReferral.swift */,
+				736BB215FD1E59E87287A3C7 /* NativeReferralViews.swift */,
 				A49D8897E4D69AC581647543 /* NativeReleaseFlags.swift */,
 				E943310DDC04E243CF4EFEF3 /* NativeRichTextCommands.swift */,
 				D889A55E002ACA4CCEA8C797 /* NativeRichTextDocument.swift */,
@@ -1302,6 +1424,8 @@
 				B6D255436391B3AA6EA97939 /* NativeRichTextLayoutManager.swift */,
 				E6B19F4C6BD6273C42095183 /* NativeRichTextMath.swift */,
 				B4EC148DF69A115844C28784 /* NativeRichTextTable.swift */,
+				3DBFF31B77ED8C26C556C81F /* NativeSchoolPicker.swift */,
+				6E55011596BB8FA75EED4B3C /* NativeSchoolPickerModel.swift */,
 				962CEE5CBC888C361E1DF4FC /* NativeSettingsBrowserPanel.swift */,
 				FF46BB7B6541B88D0B44CD9F /* NativeSettingsCatalog.swift */,
 				4D8B6B05941B73CA7D07B41A /* NativeSettingsPlatformService.swift */,
@@ -1318,6 +1442,7 @@
 				939C1B5D60FC505EC49C4303 /* NativeStudyMarketClient.swift */,
 				9284F1F34BE103B0F49A6BE8 /* NativeStudyService.swift */,
 				4F72C445B1CB1C5E4042F020 /* NativeSyncMoveNotice.swift */,
+				1A766319B1C9D473FC339AF5 /* NativeTaskEditor.swift */,
 				96BEB8A5596262DC54D6403E /* NativeThumbnailWork.swift */,
 				A8799BCF8F942661EB357289 /* NativeToolChrome.swift */,
 				20DDB22D8ED5697E767FB3BD /* NativeToolSelection.swift */,
@@ -1363,6 +1488,7 @@
 			isa = PBXGroup;
 			children = (
 				6C3CBEDC2FC409197D933A01 /* InfoPlist.strings */,
+				9CF6B23FD1B7F3DD5BBCA4E4 /* Localizable.strings */,
 			);
 			name = Localization;
 			path = App/Resources/Localization;
@@ -1553,12 +1679,17 @@
 				00A5CB5FA0E96F6B2A11AB27 /* NativePDFThumbnailRepositoryTests.swift */,
 				0687F12C8345A3FF25EAE19E /* NativePDFVectorRegistrationTests.swift */,
 				ABF2C22A6125C0922A466D86 /* NativePDFWorkspacePreferencesTests.swift */,
+				C7436166F2A74132333750FF /* NativePlannerBoardTests.swift */,
 				8A90D5D80A0BB5EF1F4045E6 /* NativeProjectWorkspaceTests.swift */,
+				9CA44A9526B2F044F1F887A0 /* NativeRecordingSummaryTests.swift */,
+				90358F6CCA5904B046744FB2 /* NativeReferralTests.swift */,
 				B675E157FA1D308E06E65DCF /* NativeRichTextDocumentTests.swift */,
 				6BE1BAF3D2FFFB2A2D9E2430 /* NativeRichTextEditorTests.swift */,
+				64FF078908A55B9E4ECE27A9 /* NativeSchoolPickerTests.swift */,
 				FD7047ACCC7E16EE2E704732 /* NativeSearchRepositoryTests.swift */,
 				DB75AEF25EC29E8C196F0865 /* NativeSettingsIntegrationTests.swift */,
 				25B8EFE2ED689B85B9CCFFCC /* NativeSettingsParityTests.swift */,
+				38373D53261FA2A3454250AC /* NativeSettingsRowsTests.swift */,
 				981C210D86C5A3C7E7497ABE /* NativeShareInboxTests.swift */,
 				12130F204CFD8E7C4DB16F64 /* NativeSidebarContractTests.swift */,
 				2BDFF374038B05D0C19967BA /* NativeSwiftDomainTests.swift */,
@@ -1579,6 +1710,7 @@
 				1C6C6D4D62CF05176FF458A1 /* PortableInkTests.swift */,
 				14357BED4A0081E69687FAD7 /* PublicArticleTests.swift */,
 				9F62F78A6024511FEA3E9E0B /* SaveJournalTests.swift */,
+				B811C516902734243D06E72A /* StoreOffersTests.swift */,
 				B556FE75D2139BA105221A98 /* SurfaceTextureRecoveryTests.swift */,
 				D189A0718836D098970AD1EC /* SyncConformanceTests.swift */,
 				D498CC47B07499D54EA1A21D /* SyncFormatTests.swift */,
@@ -1611,12 +1743,17 @@
 		998441AE76570AF5E431E6CE /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				FA336CAEB648014853645A40 /* AIUsage.swift */,
 				05DE7E7FABFCDBA9BFF48C33 /* CloudSession.swift */,
 				FAE2776FE9F117D023DF30D5 /* DictionaryService.swift */,
 				9A63E7A276B9A38A74FFC18F /* KeychainStore.swift */,
 				E581D20C7B7A462C7B3E6D17 /* LocalSaveJournal.swift */,
 				3C5597C9B0CDABC0915E9ACC /* Membership.swift */,
 				F2C33E3525B582CB5F27DDBC /* OAuthSession.swift */,
+				56844B15A35C509E199AB004 /* Referral.swift */,
+				B176746CCA1CD3C0E2A69DB1 /* SchoolDirectory.swift */,
+				5329D9D0717196E82C9B08FE /* StoreOffers.swift */,
+				CF09CCEBA18264C2CD12FBFB /* StoreSync.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -1651,7 +1788,19 @@
 			children = (
 				0E44669BA478AFAE36158A0C /* AppStoreScreenshotTests.swift */,
 				97EE3439035BD5A758666224 /* BandalUITests-Bridging-Header.h */,
+				46C871E9C788B8BAD07F043B /* FigmaAIPanelScreenshotTests.swift */,
+				38D5B32AB6E5D3A3EE49268A /* FigmaBoardScreenshotTests.swift */,
+				F356907DDC8170ECA8C19306 /* FigmaHomeChromeScreenshotTests.swift */,
+				67D3C54400679192B093B5DC /* FigmaMenusScreenshotTests.swift */,
+				141F1AE72F6B905D11C44C00 /* FigmaNoteScreenshotTests.swift */,
+				6492B435FF8660DFFF54A367 /* FigmaOnboardingScreenshotTests.swift */,
+				4A65F807AAB308C6A0F74630 /* FigmaPenScreenshotTests.swift */,
+				DA1B0B9EAA9ABC68950D8420 /* FigmaSettingsScreenshotTests.swift */,
+				89159E0F81215474D59C0D4C /* FigmaTabStripScreenshotTests.swift */,
+				D5DC5F80E3200C3FBA664CD1 /* FigmaViewsScreenshotTests.swift */,
+				DEE90787A9EB52F9E38987C7 /* NativeAIModelPickerUITests.swift */,
 				033D44E19032ECF43A49CD24 /* NativeAnnotationUITests.swift */,
+				CA395AF2FC56908E85AC9803 /* NativeAssistantSourcesUITests.swift */,
 				34A3C185731156FEC9A234E7 /* NativeBrowserLoginUITests.swift */,
 				87D55AA6B8BF59A08F3B1961 /* NativeBrowserParityUITests.swift */,
 				66E575649E541A80859A8E02 /* NativeBrowserTabStripUITests.swift */,
@@ -1660,10 +1809,15 @@
 				724E0821D2AEE88A46CF52C5 /* NativeDockTabSizingUITests.swift */,
 				E5F80C141F081F7566A6F29F /* NativeDuplicateDocumentUITests.swift */,
 				3911D43DFF7131A2E3AFD0D4 /* NativeExternalShareUITests.swift */,
+				E1F36C90756886DB1F8F5BF8 /* NativeInlineEditingUITests.swift */,
 				52E4EA77BEE511C6CDB0A450 /* NativeLibraryPresentationUITests.swift */,
+				3DFC0BB944D0BF9BECEE1075 /* NativeOnboardingUITests.swift */,
 				480B62EB4A3AEB67E3CFD8F7 /* NativePagedMarkdownUITests.swift */,
 				00E6AA1A99FFA8AAB564F5EA /* NativePDFDocumentFlowTests.swift */,
 				87F9C354688781E8831772F4 /* NativePDFWritingUITests.swift */,
+				F4BD723C60C6CDE9BD5FC945 /* NativeProfileMenuUITests.swift */,
+				0FDB2D3D64FF97026C768AB1 /* NativeRecordingSummaryUITests.swift */,
+				75E5B472F18C73BD79A3A481 /* NativeReferralUITests.swift */,
 				EFBD3E37C92B030B0E0A4845 /* NativeRichMarkdownTests.swift */,
 				B4E5CD3888FF2D9B38677D14 /* NativeSettingsParityUITests.swift */,
 				BF38841FCD9E82E38D2D0A6F /* NativeSidebarParityUITests.swift */,
@@ -1675,6 +1829,8 @@
 				99A65BFF2994534CA8D49DDC /* ReviewRecordingTests.swift */,
 				ECDF59816627BB5D399E660B /* ReviewStroke.h */,
 				DA33C8ED6E36F5E113588364 /* ReviewStroke.m */,
+				AA87FD50111B7AE5C26603C8 /* StoreScreensUITests.swift */,
+				A9F3FB52372C56E4648CFBB1 /* UXPassScreenshotTests.swift */,
 			);
 			name = BandalUITests;
 			path = Tests/BandalUITests;
@@ -1888,6 +2044,7 @@
 				71548CA616DC20C4217C2F94 /* DesktopNative in Resources */,
 				E1367F12E42845E00542D970 /* Dictionary in Resources */,
 				94C4F640D6E887C37A982987 /* InfoPlist.strings in Resources */,
+				0FF3B95FFC0D885EE2C886DD /* Localizable.strings in Resources */,
 				9AABFFB713371E5EAF4254E7 /* NativePDFLegacyInk-LICENSE.txt in Resources */,
 				B7362CADE850EA9168A0E572 /* PrivacyInfo.xcprivacy in Resources */,
 			);
@@ -2065,12 +2222,17 @@
 				331EDA79512CAE915AF7F577 /* NativePDFVectorRegistrationTests.swift in Sources */,
 				EBF5983C37EA4FD63AA7CA4B /* NativePDFWorkspacePreferencesTests.swift in Sources */,
 				CBF36536641945A30A9940C2 /* NativePanelViewStateTests.swift in Sources */,
+				92DBE61625C4D1C9C45E10DA /* NativePlannerBoardTests.swift in Sources */,
 				9AE98A26DD8A3290685EDABF /* NativeProjectWorkspaceTests.swift in Sources */,
+				D05D6597FFCE390B5C6AE2DB /* NativeRecordingSummaryTests.swift in Sources */,
+				D97AB42930F62D83A1467252 /* NativeReferralTests.swift in Sources */,
 				9BC2D68F8C3D4077901F4BC0 /* NativeRichTextDocumentTests.swift in Sources */,
 				155321FE34482049FF31DE32 /* NativeRichTextEditorTests.swift in Sources */,
+				7170CDA4C6CBAB3639BD2DBE /* NativeSchoolPickerTests.swift in Sources */,
 				D1A004FC0C4BE5B455DA67E5 /* NativeSearchRepositoryTests.swift in Sources */,
 				1EB3B3595A3A0996FCEC7D72 /* NativeSettingsIntegrationTests.swift in Sources */,
 				19EA9718FDE4855575AE5F81 /* NativeSettingsParityTests.swift in Sources */,
+				6072D9007759C0DFB8CFEEE9 /* NativeSettingsRowsTests.swift in Sources */,
 				F49E5C380B7312F4D1E19D88 /* NativeShareInboxTests.swift in Sources */,
 				6F3E4550CB400640352D11C4 /* NativeSidebarContractTests.swift in Sources */,
 				9F3F8ADE90B86B4B67A74BD7 /* NativeSwiftDomainTests.swift in Sources */,
@@ -2091,6 +2253,7 @@
 				6F75277E472F1D215808861D /* PortableInkTests.swift in Sources */,
 				5942E2E85ADB3E8919761966 /* PublicArticleTests.swift in Sources */,
 				391B57270D10D4C25851D2D3 /* SaveJournalTests.swift in Sources */,
+				771B05E934B4E3CE63299674 /* StoreOffersTests.swift in Sources */,
 				D4E80387253752F3D88B08FA /* SurfaceTextureRecoveryTests.swift in Sources */,
 				C41426D48BC6D151041BFB47 /* SyncConformanceTests.swift in Sources */,
 				D386FFC77BA4CEECC25BD896 /* SyncFormatTests.swift in Sources */,
@@ -2104,7 +2267,19 @@
 			buildActionMask = 2147483647;
 			files = (
 				2EEB19162846FDABA7B4DA00 /* AppStoreScreenshotTests.swift in Sources */,
+				DECC985EEA09ACBD97445232 /* FigmaAIPanelScreenshotTests.swift in Sources */,
+				FEF9CD45629A4FE07CBD6D5D /* FigmaBoardScreenshotTests.swift in Sources */,
+				4316E46F993A63D7CBE99378 /* FigmaHomeChromeScreenshotTests.swift in Sources */,
+				0A630304FAA75DFAACCF4F3D /* FigmaMenusScreenshotTests.swift in Sources */,
+				089894B9A8507C43A838A024 /* FigmaNoteScreenshotTests.swift in Sources */,
+				9F0CE7A121345F1C7E5B9661 /* FigmaOnboardingScreenshotTests.swift in Sources */,
+				2339CD739BCB0D0A4E2CFE92 /* FigmaPenScreenshotTests.swift in Sources */,
+				E7A3F5A37EBBB07D3E491C7A /* FigmaSettingsScreenshotTests.swift in Sources */,
+				7E197A0E2434B9D9D3BB949A /* FigmaTabStripScreenshotTests.swift in Sources */,
+				B34AF97C140D45A81C55EE14 /* FigmaViewsScreenshotTests.swift in Sources */,
+				AE9AAB69F4CC2EC89D6E0B76 /* NativeAIModelPickerUITests.swift in Sources */,
 				A85DC63DF09E5B2BCA7B9736 /* NativeAnnotationUITests.swift in Sources */,
+				3F0FA5FF017DB42858871973 /* NativeAssistantSourcesUITests.swift in Sources */,
 				B0F88FDB0D3F45E495E0D0DC /* NativeBrowserLoginUITests.swift in Sources */,
 				A6783D394D34F21F2C262902 /* NativeBrowserParityUITests.swift in Sources */,
 				865EFFC71374A3A7606B670C /* NativeBrowserTabStripUITests.swift in Sources */,
@@ -2113,10 +2288,15 @@
 				C55A37CBFAEC1F284F3BA621 /* NativeDockingUITests.swift in Sources */,
 				152496013B773991EB43FE48 /* NativeDuplicateDocumentUITests.swift in Sources */,
 				66DD6B6A6287EFC593903B78 /* NativeExternalShareUITests.swift in Sources */,
+				E4BC9AD21B3027913CC29353 /* NativeInlineEditingUITests.swift in Sources */,
 				11ED24B52B355238BB722E2F /* NativeLibraryPresentationUITests.swift in Sources */,
+				A14E41F59C0C52181DF00276 /* NativeOnboardingUITests.swift in Sources */,
 				3C91049F18C5442C5DDA1FCF /* NativePDFDocumentFlowTests.swift in Sources */,
 				6D6A215EDDEFFB0D31BA1DFC /* NativePDFWritingUITests.swift in Sources */,
 				CC3C39A2884F40B59473AC09 /* NativePagedMarkdownUITests.swift in Sources */,
+				06B9A5956D7F7B2417FDE35D /* NativeProfileMenuUITests.swift in Sources */,
+				D6380E5525EAAA1A5D48E2B1 /* NativeRecordingSummaryUITests.swift in Sources */,
+				B86315FA397237D3E5DB5EE8 /* NativeReferralUITests.swift in Sources */,
 				5168A0D932DD3923BC45720F /* NativeRichMarkdownTests.swift in Sources */,
 				0ED36DA7E347FFDAEC666C1E /* NativeSettingsParityUITests.swift in Sources */,
 				09841EAA7B42B757DCCA6C94 /* NativeSidebarParityUITests.swift in Sources */,
@@ -2127,6 +2307,8 @@
 				DBCDCC47019431035EDF14DD /* ReviewHandwriting.swift in Sources */,
 				1DD3616E10E15CA83E0CF2C7 /* ReviewRecordingTests.swift in Sources */,
 				587B7D02E6AFCF54193EEEE3 /* ReviewStroke.m in Sources */,
+				3F207E4154CD9DBA693E1F27 /* StoreScreensUITests.swift in Sources */,
+				8571C87C74950DC5B39693F8 /* UXPassScreenshotTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2136,7 +2318,9 @@
 			files = (
 				AC55F9629DC81A3410F91693 /* AIClient.swift in Sources */,
 				7555E73A28E3ADB02F60D422 /* AIConsent.swift in Sources */,
+				B67601A7DA39DA03F0429C24 /* AIUsage.swift in Sources */,
 				FDC1B1E4AD5F88D8F06E3230 /* BandalApp.swift in Sources */,
+				22097B9D1E8104B6F9F62A5C /* BandalComponents.swift in Sources */,
 				70046B10DDD58BB8FFF70F46 /* BandalShareInbox.swift in Sources */,
 				52B7821BAA095E22D3435A77 /* BrowserAgent.swift in Sources */,
 				B0C95AE3447F15B23687FE1D /* BrowserArticle.swift in Sources */,
@@ -2214,9 +2398,13 @@
 				271B068AAB5A3B13C5CE844B /* LocalSpeech.swift in Sources */,
 				7BB7B93EC5E703BC8EF38068 /* Membership.swift in Sources */,
 				708DBF49D5ACF876DA526B7F /* Models.swift in Sources */,
+				8B9DBF01E2E531C2AAFF6395 /* NativeAIModelPicker.swift in Sources */,
 				37AD5C4ABE1C4711F2A41B8F /* NativeAccountRailButton.swift in Sources */,
+				6A2421BF9929A4C6A4AAAC54 /* NativeAppLocale.swift in Sources */,
 				86C9B91EE2729611A60A32FB /* NativeAssistantAttachment.swift in Sources */,
+				25818A4061DE43CD06B1DE9F /* NativeAssistantParts.swift in Sources */,
 				2F1B913C3DC8AF2CD1DE7AC4 /* NativeAssistantService.swift in Sources */,
+				C38A45FA9FBE834394FA3047 /* NativeAssistantSession.swift in Sources */,
 				C6FDB6D7DC2636AC773590BD /* NativeAssistantSupport.swift in Sources */,
 				8350AB6366278CE97AC99476 /* NativeAssistantWorkspace.swift in Sources */,
 				89327143FF8662D35A8A85E0 /* NativeAuxiliaryDestinations.swift in Sources */,
@@ -2238,14 +2426,18 @@
 				BC3907754E0B5A5E0757EBBD /* NativeDesktopTheme.swift in Sources */,
 				79B366D0ED5753E0F1E6B762 /* NativeDockLayout.swift in Sources */,
 				0F9F0AD4CDF996719A3520DB /* NativeDockRailResizer.swift in Sources */,
+				C46BE11969B7ADEB21F5396D /* NativeDockShareControls.swift in Sources */,
 				2E303DFC1716516879A1CC28 /* NativeDockTabButton.swift in Sources */,
 				4AFABAC701ACE9129C86CDFD /* NativeDockTabList.swift in Sources */,
 				87752E614A6A42DD645FDC31 /* NativeDockTabSizing.swift in Sources */,
 				74AF2C5100893B89B2CA223F /* NativeDockWorkspace.swift in Sources */,
 				87BD7008674A7DC3283BD756 /* NativeDocumentAssistantHost.swift in Sources */,
+				94D9CD821E43A2B7879BBBB1 /* NativeDocumentPreview.swift in Sources */,
 				A81701CFB8DF808DB1A4A6D2 /* NativeEditorMediaImport.swift in Sources */,
 				206305151C34D6567BBA3A53 /* NativeFavoritesSection.swift in Sources */,
 				BF6BFC1140611B1A88888FC0 /* NativeFeatureLauncherPanel.swift in Sources */,
+				01939119CE5B3B69AD059A54 /* NativeGlassChrome.swift in Sources */,
+				EC44F32250014C8EA6DE50B6 /* NativeHomeTab.swift in Sources */,
 				60CE26C31446FB5FFC3E8B66 /* NativeLearningArticleView.swift in Sources */,
 				D09953305BC385C778F9EB28 /* NativeLearningArtifactView.swift in Sources */,
 				B0328C6FC815C7B806173132 /* NativeLearningHome.swift in Sources */,
@@ -2263,13 +2455,16 @@
 				A14DC3F8E050E9543F6D1494 /* NativeLibraryRepository.swift in Sources */,
 				A9697D8909EFDCFF5AB2333A /* NativeLibrarySourceTray.swift in Sources */,
 				8501CED54C97063A19B8829C /* NativeLibraryView.swift in Sources */,
+				6F08BDDEA1132CBE419DA6B7 /* NativeLongPressMenu.swift in Sources */,
 				6741E39F657D109FD28C54E4 /* NativeMarkdownPersistence.swift in Sources */,
 				B9A0840F6268F50B837D8041 /* NativeMarkdownTextChange.swift in Sources */,
 				3E1AC5D69BBCE3F7BEAA99FA /* NativeMarkdownWorkspace.swift in Sources */,
 				D4F5F5D2864BBE1AA3B1A261 /* NativeMediaWorkspace.swift in Sources */,
 				4F574D6D40D23E674A1D77AD /* NativeMembership.swift in Sources */,
+				986AD7F6E0533364C412AE16 /* NativeMembershipPaywall.swift in Sources */,
 				22AFAA2AED942AB9F5099A7D /* NativeNewTabMenu.swift in Sources */,
 				964E39EABBE97F2122AC0D26 /* NativeNotificationPlan.swift in Sources */,
+				C31C68362CD450CDC010DC55 /* NativeOnboarding.swift in Sources */,
 				EF378E29017B16A859107423 /* NativePDFApertureView.swift in Sources */,
 				BB63D6E7F907C4AD62CE6F33 /* NativePDFBackdropRenderer.swift in Sources */,
 				63A67296D003CE7FA3BED09A /* NativePDFChrome.swift in Sources */,
@@ -2318,6 +2513,7 @@
 				F84F113E11CA110465439AEF /* NativePDFPageThumbnail.swift in Sources */,
 				B8FA7F4457F6340608C08D8F /* NativePDFPalette.swift in Sources */,
 				CAFA1CC9113E3C7B4C1A28FA /* NativePDFPaletteStyle.swift in Sources */,
+				FEDE48E7D5434087556E7004 /* NativePDFPenSettings.swift in Sources */,
 				4960BF35758CD6D42DCFFD51 /* NativePDFPencilGestureRecognizer.swift in Sources */,
 				AB4B36507B13F7A8A2C3C861 /* NativePDFPersistence.swift in Sources */,
 				ECC8C1C2383CE69169DFD982 /* NativePDFPreferenceScope.swift in Sources */,
@@ -2338,12 +2534,15 @@
 				C1F64794270ED572E8CA79B4 /* NativePDFShapeRecognition.swift in Sources */,
 				67F503256EEED28A3A0BB8F7 /* NativePDFTextDraft.swift in Sources */,
 				A81D7914824CF49D5E8EBCAF /* NativePDFTextEditor.swift in Sources */,
+				F2EE16BA8F1D9EB600075D17 /* NativePDFToolPopovers.swift in Sources */,
 				C2F96120CD733299C5A25BA5 /* NativePDFTypes.swift in Sources */,
 				6A12081313E8269A65C41087 /* NativePDFWorkspace.swift in Sources */,
 				B2B723D7CA1A107E75850424 /* NativePDFWorkspacePreferences.swift in Sources */,
 				8BEE0D1B5AF30401BDF5507E /* NativePagedMarkdownEditor.swift in Sources */,
 				C9DBBC7C40B2EBAA4CDCD4D3 /* NativePanelViewState.swift in Sources */,
 				F9AE7D95CB7373BD651AAC1B /* NativePlannerCalendar.swift in Sources */,
+				582875406CC13E14E7BF8FE1 /* NativePlannerParts.swift in Sources */,
+				DA02C2546BC6157826489F7F /* NativePlannerReminder.swift in Sources */,
 				A0FF3AFEDA7BC2E0B9F95256 /* NativePlannerRepository.swift in Sources */,
 				353FCC79C69483FAC3A896DF /* NativePlannerWorkspace.swift in Sources */,
 				3F90C35A92915AE4853860D1 /* NativePlatformServices.swift in Sources */,
@@ -2352,6 +2551,8 @@
 				340AED27A1CE42F57ECFC980 /* NativeProviderMark.swift in Sources */,
 				3D78AE764B713A00FAF6CEC7 /* NativeRecordingRepository.swift in Sources */,
 				69719F2C68B9D566D196EC89 /* NativeRecordingWorkspace.swift in Sources */,
+				170739769FD5DAD58A130595 /* NativeReferral.swift in Sources */,
+				5B77460EE3F6A04C384F770B /* NativeReferralViews.swift in Sources */,
 				AAD722EC586BDF394D75B4F9 /* NativeReleaseFlags.swift in Sources */,
 				9BDC91D8E95C7106B9A0DD40 /* NativeRepositoryContext.swift in Sources */,
 				1386F56750DA757D305FFACD /* NativeRichTextCommands.swift in Sources */,
@@ -2360,6 +2561,8 @@
 				2085A5D8596A0729F3511796 /* NativeRichTextLayoutManager.swift in Sources */,
 				9F002A5D87000AEB0970DEB2 /* NativeRichTextMath.swift in Sources */,
 				95125033C5E9C03466761DA5 /* NativeRichTextTable.swift in Sources */,
+				5361B97B7CCDFCA840122D67 /* NativeSchoolPicker.swift in Sources */,
+				AD450221221537ADD2C27747 /* NativeSchoolPickerModel.swift in Sources */,
 				6546528C242092B842152DA0 /* NativeSearchRepository.swift in Sources */,
 				E3247BCE26772DEF11FF272D /* NativeSettingsBrowserPanel.swift in Sources */,
 				F7A9C7CD09B9C6A8372AD104 /* NativeSettingsCatalog.swift in Sources */,
@@ -2386,6 +2589,7 @@
 				492E9FC3C8FC477101DC1CF8 /* NativeSyncMaterials.swift in Sources */,
 				A13575A70F4845070D51FF6C /* NativeSyncMoveNotice.swift in Sources */,
 				1E36AB11726BA7718E320680 /* NativeSyncRepository.swift in Sources */,
+				C93472ABE3E858F3041944E4 /* NativeTaskEditor.swift in Sources */,
 				0FF5DEECDA6A8EF8D424F3B6 /* NativeThumbnailWork.swift in Sources */,
 				4C9802F6AD1AFE17B3C1ABE3 /* NativeToolChrome.swift in Sources */,
 				6C87A7E8253F509ADF605BC3 /* NativeToolSelection.swift in Sources */,
@@ -2410,6 +2614,10 @@
 				AD0B51433C0F8968564EBF39 /* PDFWorkspaceView.swift in Sources */,
 				14CB1958353AA768F2A714D2 /* PortableInk.swift in Sources */,
 				92524A36943A3D30356541AC /* PublicArticleClient.swift in Sources */,
+				C1507DF9455FA57E966FB721 /* Referral.swift in Sources */,
+				A68D36D3BB96CDF0E79831B6 /* SchoolDirectory.swift in Sources */,
+				5624754EC6EA90A59F12F33F /* StoreOffers.swift in Sources */,
+				74F61E6BE55CB09AE9438B76 /* StoreSync.swift in Sources */,
 				BB49D562BB8009730400285D /* SyncAdapter.swift in Sources */,
 				B32C20D698325EC22889DD29 /* SyncApply.swift in Sources */,
 				3541F6DB7E3B818804F9D739 /* SyncConnection.swift in Sources */,
@@ -2446,6 +2654,14 @@
 				D28B6E76FE660EC53539EE9D /* ko */,
 			);
 			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		9CF6B23FD1B7F3DD5BBCA4E4 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				80F3642E660E32311F3E4124 /* en */,
+			);
+			name = Localizable.strings;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */
@@ -2486,7 +2702,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 25;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = VUZ7Z98BW3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -2508,7 +2724,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -2558,7 +2774,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 25;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = VUZ7Z98BW3;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -2574,7 +2790,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

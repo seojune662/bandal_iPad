@@ -12,7 +12,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["native-home-courses"].exists)
         XCTAssertTrue(app.buttons["native-home-projects"].exists)
         for removed in ["learning", "assistant", "tools"] { XCTAssertFalse(app.buttons["native-section-" + removed].exists) }
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        app.buttons["native-course-add-menu"].tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5)); courseName.tap(); courseName.typeText("Physics")
         app.buttons["native-create-course"].tap()
@@ -23,7 +23,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         app.buttons["만들기"].tap()
         openInspector(app)
         app.buttons["native-inspector-materials"].tap()
-        for action in ["native-library-view-menu", "native-library-import", "native-library-create"] {
+        for action in ["native-library-view-menu", "native-library-refresh", "native-library-create"] {
             XCTAssertTrue(app.buttons[action].waitForExistence(timeout: 15), app.debugDescription)
         }
         app.buttons["native-library-create"].tap(); app.buttons["새 마크다운"].tap()
@@ -39,11 +39,8 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCTAssertTrue(input.waitForExistence(timeout: 10), app.debugDescription)
         input.tap(); input.typeText("Explain this material")
         app.dismissNativeTestKeyboard()
-        app.buttons["native-ai-mode-quiz"].tap()
-        XCTAssertTrue((input.value as? String ?? "").contains("Explain this material"))
-        app.buttons["native-ai-mode-expected-exam"].tap()
-        XCTAssertTrue((input.value as? String ?? "").contains("Explain this material"))
-        XCTAssertTrue(app.buttons["native-ai-connect"].exists, "No key is required to compose a request")
+        XCTAssertFalse(app.buttons["native-ai-mode-quiz"].exists, "The mode tabs are gone from the panel")
+        XCTAssertTrue(app.buttons["native-chat-send"].exists && !app.buttons["native-ai-connect"].exists, "No key or connect step to compose a request")
         XCTAssertFalse(app.otherElements["native-document-assistant"].exists)
         capture("Project notes and unified AI with exam mode")
         app.buttons["native-ai-rail-toggle"].tap(); openAI(app)
@@ -76,22 +73,24 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 15), app.debugDescription); editor.tap(); editor.typeText("This paragraph stays editable after annotation.")
         app.dismissNativeTestKeyboard()
         openAI(app)
-        let annotate = app.buttons["native-ai-annotate"]
+        // 지목해서 질문 sits in the model popover: the Figma composer has no button for it.
+        let pill = app.buttons["native-ai-model-pill"], annotate = app.buttons["native-ai-annotate"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 10)); pill.tap()
         XCTAssertTrue(annotate.waitForExistence(timeout: 10)); annotate.tap()
         let toolbar = app.descendants(matching: .any).matching(identifier: "native-ai-annotation-toolbar").firstMatch
         XCTAssertTrue(toolbar.waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["native-ai-annotation-cancel"].tap()
-        XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(editor.exists)
         editor.tap(); editor.typeText(" Still editable.")
         XCTAssertTrue((editor.value as? String ?? "").contains("Still editable."))
         app.dismissNativeTestKeyboard()
-        annotate.tap()
+        pill.tap(); XCTAssertTrue(annotate.waitForExistence(timeout: 10)); annotate.tap()
         let region = app.descendants(matching: .any).matching(identifier: "native-ai-annotation-region").firstMatch
         XCTAssertTrue(region.waitForExistence(timeout: 10), app.debugDescription)
         region.coordinate(withNormalizedOffset: .init(dx: 0.1, dy: 0.1))
             .press(forDuration: 0.05, thenDragTo: region.coordinate(withNormalizedOffset: .init(dx: 0.75, dy: 0.4)))
-        XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(toolbar.exists)
         XCTAssertTrue(app.buttons["첨부 제거"].waitForExistence(timeout: 10), "The selected region is retained as an attachment")
         capture("Captured note is attached in the unified AI panel")
@@ -101,18 +100,20 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         XCTAssertTrue(toggle.waitForExistence(timeout: 10), app.debugDescription)
         openAI(app) // Opening materials made room by closing AI chat.
-        XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(toggle.isHittable)
-        XCTAssertTrue(annotate.isEnabled, app.debugDescription)
-        XCTAssertLessThan(annotate.frame.midX, app.frame.midX, "AI chat stays in the left column in portrait")
+        XCTAssertLessThan(pill.frame.midX, app.frame.midX, "AI chat stays in the left column in portrait")
         XCTAssertEqual(app.buttons.matching(identifier: "native-toggle-materials-rail").count, 1)
         capture("Portrait inspector keeps annotation attachment and controls available")
         // Exercise a real touch at the visible control after the drawer moves
         // across the pinned/overlay boundary, then assert its actual behavior.
+        pill.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(annotate.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(annotate.isEnabled, app.debugDescription)
         annotate.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(toolbar.waitForExistence(timeout: 10))
         app.buttons["native-ai-annotation-cancel"].tap()
-        XCTAssertTrue(annotate.waitForExistence(timeout: 10))
+        XCTAssertTrue(pill.waitForExistence(timeout: 10))
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(editor.waitForExistence(timeout: 10), app.debugDescription)
         capture("Inspector stays available after rotation")
@@ -123,7 +124,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
         openHome(app)
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        app.buttons["native-course-add-menu"].tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5)); courseName.tap(); courseName.typeText("Physics")
         app.buttons["native-create-course"].tap()
@@ -148,7 +149,8 @@ final class NativeSidebarParityUITests: XCTestCase {
             let board = app.descendants(matching: .any)["native-board-overlay"]
             XCTAssertTrue(board.waitForExistence(timeout: 10), app.debugDescription)
             let window = app.windows.firstMatch.frame
-            XCTAssertLessThan(board.frame.width, window.width - 100, "A tappable margin stays around the board")
+            // The redesigned popup grows to 42 pt from each edge in portrait (940 of 1024); before iOS 26 its hairline adds a point.
+            XCTAssertLessThan(board.frame.width, window.width - 80, "A tappable margin stays around the board")
             XCTAssertGreaterThanOrEqual(board.frame.minY, 64, "The board stays below the window controls")
             capture("Study board (\(orientation == .portrait ? "portrait" : "landscape"))")
             let close = app.buttons["native-board-overlay-close"]
@@ -157,24 +159,23 @@ final class NativeSidebarParityUITests: XCTestCase {
             app.terminate()
         }
     }
+    /// 1.4.0: AI is a rail button under 홈; the panel opens beside the course rail and closes again.
     @MainActor func testAIRailHandleOpensChatBesideTheCourseRail() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
         openHome(app)
-        let handle = app.buttons["native-ai-rail-toggle"]
-        XCTAssertTrue(handle.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(handle.label, "AI 열기", "AI chat starts closed")
-        let closedX = handle.frame.minX
-        handle.tap()
-        wait(for: handle) { $0.frame.minX > closedX + 250 }
-        XCTAssertEqual(handle.label, "AI 닫기")
+        let toggle = app.buttons["native-ai-rail-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(toggle.label, "AI 열기", "AI chat starts closed")
+        XCTAssertLessThan(toggle.frame.minX, 60, "On the skinny rail")
+        XCTAssertLessThan(toggle.frame.minY, app.buttons["native-section-planner"].frame.minY, "Right under 홈")
+        XCTAssertFalse(app.buttons["native-section-help"].exists, "Help moved to the profile menu")
+        toggle.tap()
+        wait(for: toggle) { $0.label == "AI 닫기" }
+        XCTAssertLessThan(toggle.frame.minX, 60, "The button stays on the rail while the panel opens")
         capture("AI chat beside the course rail")
-        app.buttons["native-section-library"].tap()
-        wait(for: handle) { $0.frame.minX < closedX + 150 }
-        capture("AI chat beside the navigation rail")
-        handle.tap()
-        wait(for: handle) { $0.frame.minX < 100 }
-        XCTAssertEqual(handle.label, "AI 열기")
+        toggle.tap()
+        wait(for: toggle) { $0.label == "AI 열기" }
     }
     @MainActor private func wait(for element: XCUIElement, until condition: @escaping (XCUIElement) -> Bool) {
         expectation(for: NSPredicate { _, _ in condition(element) }, evaluatedWith: nil); waitForExpectations(timeout: 5)

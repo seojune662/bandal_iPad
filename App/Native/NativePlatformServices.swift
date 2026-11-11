@@ -27,6 +27,7 @@ final class NativePlatformServices: ObservableObject {
     private var billing: DesktopBillingService?
     private let profile: DesktopProfileService
     private var syncError: Error?
+    private var foreground: NSObjectProtocol?
     private weak var store: NativeWorkspaceStore?
     private var subscription: AnyCancellable?
     private var started = false
@@ -38,27 +39,59 @@ final class NativePlatformServices: ObservableObject {
         settingsService = NativeSettingsPlatformService(store:store,files:files)
         browser = DesktopBrowserHost(root:runtime.root)
         credentials = DesktopCredentialsService(namespace: runtime.root.lastPathComponent, environment: credentialEnvironment)
+        let account = DesktopAccountService(root:runtime.root)
+        self.account = account
         var aiEnvironment = DesktopAIEnvironment()
         aiEnvironment.askConsent = { [weak store] provider in
             let settings = (try? await store?.invoke("settings:get")) as? [String: Any]
             return await AIConsent.ask(provider, english: settings?["locale"] as? String == "en-US")
         }
+        aiEnvironment.endpoint = { [account] in
+            let identity: DesktopSyncIdentity
+            do { identity = try await account.syncIdentity() } catch { throw AIError.server(code: "SIGN_IN_REQUIRED", info: [:]) }
+            return AIEndpoint(userID: identity.userID, projectURL: identity.projectURL, publishableKey: identity.publishableKey, token: { [weak account] in
+                do {
+                    guard let account else { throw CancellationError() }
+                    return try await account.accessToken()
+                } catch is CancellationError where Task.isCancelled { throw CancellationError() }
+                catch { throw AIError.server(code: "SIGN_IN_REQUIRED", info: [:]) }
+            })
+        }
+        store.schools = LiveSchoolDirectory(endpoint: aiEnvironment.endpoint, send: { [session = aiEnvironment.session] in try await session.data(for: $0) })
+        store.referral.service = LiveReferralService(endpoint: aiEnvironment.endpoint, send: { [session = aiEnvironment.session] in try await session.data(for: $0) })
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains(SchoolDirectoryFake.argument) { store.schools = SchoolDirectoryFake() }
+        if arguments.contains(ReferralServiceFake.argument) { store.referral.service = ReferralServiceFake(signedIn: !arguments.contains(ReferralServiceFake.signedOutArgument)) }
+        #endif
+        // Keys and the local AI counter from the BYOK versions (≤ 1.3) are no longer used.
+        if !UserDefaults.standard.bool(forKey: "ai.byokRetired") {
+            for retired in ["ai.openai", "ai.claude", "ai.gemini", "membership.ai-uses"] { try? KeychainStore.write("", account: retired) }
+            UserDefaults.standard.set(true, forKey: "ai.byokRetired")
+        }
+        aiEnvironment.onUsage = { usage in AIUsage.shared.update(usage) }
+        aiEnvironment.onLimit = { code, usage in AIUsage.presentLimit(code, usage: usage) }
         if NativeReleaseFlags.membership {
-            aiEnvironment.checkAllowance = {
-                guard !Membership.unlimited else { return }
-                do { try FreeTier.AIAllowance().check() } catch { MembershipPaywall.present(message: error.localizedDescription); throw error }
-            }
-            aiEnvironment.countUse = { if !Membership.unlimited { FreeTier.AIAllowance().count() } }
             runtime.limits = { channel, request, library in if !Membership.unlimited { try FreeTier.check(channel, request, library: library) } }
         }
         ai = DesktopAIService(environment: aiEnvironment)
         assistant = NativeAssistantService(runtime:runtime,ai:ai)
-        account = DesktopAccountService(root:runtime.root)
         profile = DesktopProfileService(documents:runtime.root.deletingLastPathComponent(),root:runtime.root)
         cloudSync = CloudSyncService(store:store,profile:profile)
         recording = DesktopRecordingService(root:runtime.legacyRoot,invoke:{ channel,request in try await runtime.invokePrivate(channel,request:request) })
         connectAccount()
         Membership.shared.accountToken = { [weak account] in account?.userID.flatMap(UUID.init(uuidString:)) }
+        StoreSync.shared.post = { [weak account] body in
+            guard let account, account.userID != nil else { throw AIError.server(code: "SIGN_IN_REQUIRED", info: [:]) }
+            return try await account.serviceRequest(path: "/functions/v1/ipad-store", body: body)
+        }
+        foreground = NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in if NativeReleaseFlags.membership { await StoreSync.shared.redeemPending() } }
+        }
+        StoreSync.shared.onStatus = { [weak self] status in
+            AIUsage.shared.update(status)
+            self?.ai.invalidate()
+        }
         profile.prepare = { [weak self, weak store] in
             await self?.sync?.suspendForProfileOperation()
             await self?.cloudSync.suspend()
@@ -143,7 +176,11 @@ final class NativePlatformServices: ObservableObject {
         }
         account.emit = { [weak self, weak store] channel,value in
             store?.runtime.onEmit?(channel,value)
-            if let state = value as? [String:Any] { self?.sync?.accountChanged(state); self?.billing?.accountChanged() }
+            if let state = value as? [String:Any] {
+                self?.sync?.accountChanged(state); self?.billing?.accountChanged()
+                if state["phase"] as? String != "signed-in" { AIUsage.shared.reset() }
+                if NativeReleaseFlags.membership { StoreSync.shared.accountChanged(self?.account.userID) }
+            }
         }
     }
     func start() async {

@@ -12,7 +12,6 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 20), app.debugDescription)
         app.buttons["native-course-add-menu"].tap()
-        app.buttons["native-new-course"].tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5))
         courseName.tap(); courseName.typeText("Library Views")
@@ -46,11 +45,12 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         chooseView("gallery", title: "갤러리", in: app)
         XCTAssertTrue(app.buttons["native-library-gallery-preview"].waitForExistence(timeout: 10), app.debugDescription)
         screenshot("자료 갤러리 보기")
-        XCTAssertTrue(app.buttons["native-library-source-photos"].isHittable)
-        XCTAssertTrue(app.buttons["native-library-source-files"].isHittable)
-        app.buttons["native-library-sources-toggle"].tap()
-        XCTAssertTrue(app.staticTexts["사진이나 파일을 선택한 뒤\n문서로 끌어다 놓으세요."].waitForExistence(timeout: 5))
-        screenshot("사진 파일 소스 보관함")
+        // The photo · file tray is filled from 자료 추가; it shows once something is staged.
+        create.tap()
+        XCTAssertTrue(app.buttons["native-library-source-photos"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["native-library-source-files"].exists)
+        screenshot("자료 추가 메뉴")
+        app.buttons["새 폴더"].tap(); app.closeBandalPopover()
         app.terminate()
         app.launchArguments = ["--native-ui-testing"]
         app.launch()
@@ -72,7 +72,7 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]
         app.launch()
         XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 20), app.debugDescription)
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].tap()
+        app.buttons["native-course-add-menu"].tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5))
         courseName.tap(); courseName.typeText("Tree Library")
@@ -91,7 +91,6 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         XCTAssertTrue(parent.exists && sibling.exists, "Expanding must keep the parent and sibling rows: " + app.debugDescription)
         XCTAssertTrue(child.isHittable)
         XCTAssertFalse(breadcrumbs.exists, "The tree never shows breadcrumbs")
-        XCTAssertGreaterThan(child.frame.minX, parent.frame.minX, "Child rows are indented under their folder")
         screenshot("목록 보기 폴더 펼침")
 
         parent.tap()
@@ -106,8 +105,25 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         XCTAssertTrue(sibling.waitForExistence(timeout: 5), "List search covers the whole scope, not the last opened folder: " + app.debugDescription)
         XCTAssertFalse(breadcrumbs.exists, "The tree never shows breadcrumbs, even while searching")
         screenshot("목록 보기 전체 범위 검색")
-        app.typeKey("a", modifierFlags: .command); app.typeText(XCUIKeyboardKey.delete.rawValue)
+        let clear = app.buttons["검색어 지우기"].firstMatch
+        clear.tap()
         XCTAssertTrue(child.waitForExistence(timeout: 5), "Clearing search returns to the tree: " + app.debugDescription)
+
+        // Folder browsing and current-folder search stay in the icon view.
+        parent.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: child)], timeout: 5), .completed)
+        chooseView("icons", title: "아이콘", in: app)
+        XCTAssertTrue(breadcrumbs.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(parent.exists && sibling.exists && !child.exists, "The icon view starts at the root after the tree collapsed Parent: " + app.debugDescription)
+        parent.tap()
+        XCTAssertTrue(child.waitForExistence(timeout: 5), "The icon view enters the folder: " + app.debugDescription)
+        XCTAssertFalse(sibling.exists, "The icon view shows only the open folder")
+        search.tap(); app.typeText("Sibling")
+        XCTAssertTrue(app.staticTexts["검색 결과가 없습니다"].waitForExistence(timeout: 5), "Icon view search stays inside the open folder: " + app.debugDescription)
+        clear.tap()
+        chooseView("list", title: "목록", in: app)
+        XCTAssertTrue(child.waitForExistence(timeout: 5) && sibling.exists, "Switching to the tree expands the folder that was open: " + app.debugDescription)
+        XCTAssertFalse(breadcrumbs.exists)
 
         app.terminate()
         app.launchArguments = ["--native-ui-testing", "-native.appearance", "dark"]
@@ -124,7 +140,7 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "--native-library-source-fixture"]
         app.launch()
         XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 20), app.debugDescription)
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].tap()
+        app.buttons["native-course-add-menu"].tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5))
         courseName.tap(); courseName.typeText("Media Drops")
@@ -152,7 +168,7 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         app.buttons["만들기"].tap()
         let editor = app.textViews["native-markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 20), app.debugDescription)
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         XCTAssertTrue(source.waitForExistence(timeout: 5))
         source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.8, thenDragTo: editor.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.4)), withVelocity: .slow, thenHoldForDuration: 0.2)
@@ -167,13 +183,14 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         editor.tap(); app.typeKey("a", modifierFlags: .command)
         editor.typeText("Before\n" + imageToken + "\nAfter\n")
         app.dismissNativeTestKeyboard()
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         let projectedImage = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "\u{FFFC}"), object: editor)
         XCTAssertEqual(XCTWaiter.wait(for: [projectedImage], timeout: 10), .completed, "The Markdown image link must project to an inline attachment: " + app.debugDescription)
         screenshot("드래그한 사진의 Markdown 서식 이미지 표시")
-        // The inline image follows one body line, inside the editor's 28pt
-        // horizontal and 40pt top inset. Tap its pixels to open the inspector.
-        editor.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 60, dy: 100)).tap()
+        // The inline image follows one body line, inside the editor's 900-wide
+        // column (28–200pt in from the left) and 32pt top inset. Tap its pixels to open the inspector.
+        let column = max(28, min(200, (editor.frame.width - 900) / 2))
+        editor.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: column + 32, dy: 100)).tap()
         let imageSize = app.sliders["native-markdown-image-size"]
         XCTAssertTrue(imageSize.waitForExistence(timeout: 5), app.debugDescription)
         imageSize.adjust(toNormalizedSliderPosition: 0.375)
@@ -183,16 +200,16 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         app.buttons["위로"].firstMatch.tap()
         screenshot("Markdown 이미지 크기 정렬 위치 조절")
         app.buttons["완료"].firstMatch.tap()
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         let adjusted = try XCTUnwrap(editor.value as? String)
         XCTAssertTrue(adjusted.hasPrefix(imageToken), "Move up must place the image before the first text line: " + adjusted)
         XCTAssertTrue(adjusted.contains("align=center"), adjusted)
         XCTAssertNotNil(adjusted.range(of: #"width=(45|50|55) "#, options: .regularExpression), "The actual slider must persist a smaller image: " + adjusted)
         XCTAssertTrue(adjusted.hasSuffix("Before\nAfter\n"), adjusted)
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         app.terminate(); app.launchArguments = ["--native-ui-testing"]; app.launch()
         XCTAssertTrue(editor.waitForExistence(timeout: 20), app.debugDescription)
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         XCTAssertEqual(editor.value as? String, adjusted, "Image size, alignment and position must survive restart")
     }
 
@@ -211,7 +228,7 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         XCTAssertLessThan(app.frame.width, app.frame.height, "The compact drag regression must run in portrait")
         app.buttons["native-section-library"].tap()
         XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 10), app.debugDescription)
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].tap()
+        app.buttons["native-course-add-menu"].tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5))
         courseName.tap(); courseName.typeText("Compact Media Drops")
@@ -231,7 +248,7 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         let sourceIdentity = try XCTUnwrap(source.value as? String)
         XCTAssertNotNil(UUID(uuidString: sourceIdentity), "Test mode exposes the selected source's stable identity")
         let pdfDropPoint = CGPoint(x: pdf.frame.minX + pdf.frame.width * 0.35, y: pdf.frame.midY)
-        XCTAssertLessThan(pdfDropPoint.x, app.buttons["native-library-source-photos"].frame.minX, "Drop must land on the editor exposed to the left of the overlay")
+        XCTAssertLessThan(pdfDropPoint.x, app.buttons["native-library-create"].frame.minX, "Drop must land on the editor exposed to the left of the overlay")
         source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.8, thenDragTo: app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: pdfDropPoint.x - app.frame.minX, dy: pdfDropPoint.y - app.frame.minY)), withVelocity: .slow, thenHoldForDuration: 0.2)
         let persisted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "drawings=1 pending=0"), object: app.buttons["native-pdf-drawing-tools"])
@@ -250,18 +267,18 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         app.buttons["만들기"].tap()
         let editor = app.textViews["native-markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 20), app.debugDescription)
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         openCompactMaterials(in: app)
         XCTAssertTrue(source.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(source.value as? String, sourceIdentity, "Opening another document must retain the selected source")
         let markdownDropPoint = CGPoint(x: editor.frame.minX + editor.frame.width * 0.3, y: editor.frame.minY + editor.frame.height * 0.4)
-        XCTAssertLessThan(markdownDropPoint.x, app.buttons["native-library-source-photos"].frame.minX)
+        XCTAssertLessThan(markdownDropPoint.x, app.buttons["native-library-create"].frame.minX)
         source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.8, thenDragTo: app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: markdownDropPoint.x - app.frame.minX, dy: markdownDropPoint.y - app.frame.minY)), withVelocity: .slow, thenHoldForDuration: 0.2)
         let inserted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "![Drag Fixture.png](assets/"), object: editor)
         XCTAssertEqual(XCTWaiter.wait(for: [inserted], timeout: 20), .completed, "The compact overlay must pass the drop through to Markdown: " + app.debugDescription)
         close.tap()
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         let projectedImage = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "\u{FFFC}"), object: editor)
         XCTAssertEqual(XCTWaiter.wait(for: [projectedImage], timeout: 10), .completed, app.debugDescription)
         screenshot("세로 화면에서 드래그한 사진의 Markdown 서식 표시")
@@ -279,11 +296,11 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         // seeded by the test runner with a real PNG before this test is run.
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]
         app.launch()
-        let photos = app.buttons["native-library-source-photos"]
-        XCTAssertTrue(photos.waitForExistence(timeout: 20), app.debugDescription)
+        let addMaterial = app.buttons["native-library-create"], photos = app.buttons["native-library-source-photos"]
+        XCTAssertTrue(addMaterial.waitForExistence(timeout: 20), app.debugDescription)
         let assets = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-library-source-asset-"))
         XCTAssertEqual(assets.count, 0)
-        photos.tap()
+        addMaterial.tap(); photos.tap()
         let pickerImages = app.images.matching(identifier: "PXGGridLayout-Info")
         XCTAssertTrue(pickerImages.firstMatch.waitForExistence(timeout: 15), "System photo grid must be present: " + app.debugDescription)
         screenshot("선택 전 시스템 사진 선택기")

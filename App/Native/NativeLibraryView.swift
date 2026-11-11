@@ -10,6 +10,8 @@ struct NativeLibraryView: View {
     @StateObject private var projectLibrary = NativeProjectLibrary()
     @State private var loadedScopeID: String?
     var onClose: (() -> Void)? = nil
+    /// Shown between the file list and the 자료 추가 button (the widget dock).
+    var accessory: AnyView? = nil
     var captureOpen: (() -> (NativeDocumentReference) -> Void)? = nil
     var onOpen: (NativeDocumentReference) -> Void
     @State private var importDestination: MaterialDestination?
@@ -24,8 +26,10 @@ struct NativeLibraryView: View {
     @State private var importTypes: [UTType] = [.item]
     @State private var showingMigrationGuide = false
     @State private var creation: CreationRequest?
-    @State private var renaming: NativeMaterial?
+    @State private var renamingID: String?
     @State private var moving: NativeMaterial?
+    /// Read by `NativeLibraryPresentation.sorted`; held here so the lists reorder when it changes.
+    @AppStorage(NativeLibraryPresentation.sortKey) private var sort = NativeLibraryPresentation.Sort.name.rawValue
     @State private var deleting: NativeMaterial?
     @State private var operationError: String?
     @State private var working = false
@@ -73,58 +77,43 @@ struct NativeLibraryView: View {
             (folder.isEmpty || $0.relPath.hasPrefix(folder + "/") || folder == rootPath && $0.learningTarget != nil) &&
                 ($0.name.localizedStandardContains(search) || $0.relPath.localizedStandardContains(search))
         }
-        return source.sorted {
-            if ($0.kind == "dir") != ($1.kind == "dir") { return $0.kind == "dir" }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-        }
+        return NativeLibraryPresentation.sorted(source)
     }
 
     private var configuredContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 Text(scope?.title ?? store.courses.first { $0.id == courseID }?.name ?? "자료")
-                    .font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    .font(.system(size: 14, weight: .semibold)).foregroundStyle(NativeGlass.icon).lineLimit(1)
                     .accessibilityAddTraits(.isButton).accessibilityIdentifier("native-inspector-materials")
                 Spacer(minLength: 4)
                 if working { ProgressView().scaleEffect(0.7).frame(width: 16) }
-                Button { beginImport() } label: { Image(systemName: "tray.and.arrow.down").frame(width: 40, height: 40).contentShape(Rectangle()) }.accessibilityLabel("파일 가져오기")
-                    .disabled(courseID == nil || working).accessibilityIdentifier("native-library-import")
-                Menu {
-                    Button("새 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { beginCreation(.ink) }
-                    Button("새 마크다운", systemImage: "doc.badge.plus") { beginCreation(.markdown) }
-                    Button("새 폴더", systemImage: "folder.badge.plus") { beginCreation(.folder) }
-                    Divider()
-                    Button("GoodNotes·Notability에서 가져오기", systemImage: "arrow.down.doc") { showingMigrationGuide = true }
-                    if let onOpenAI { Divider(); Button("AI로 만들기", systemImage: "sparkles", action: onOpenAI) }
-                } label: { Image(systemName: "plus").font(.system(size: 15)).frame(width: 40, height: 40).contentShape(Rectangle()) }
-                    .disabled(courseID == nil || working).accessibilityLabel("추가").accessibilityIdentifier("native-library-create")
-                Button { Task { await store.refreshMaterials(); await projectLibrary.reload(store: store, scope: scope) } } label: { Image(systemName: "arrow.clockwise").frame(width: 40, height: 40).contentShape(Rectangle()) }
+                Button { Task { await store.refreshMaterials(); await projectLibrary.reload(store: store, scope: scope) } } label: { Image(systemName: "arrow.clockwise").font(.system(size: 16)).foregroundStyle(Self.headerIcon).frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .accessibilityLabel("자료 새로고침").accessibilityIdentifier("native-library-refresh")
-            }.foregroundStyle(NativeDesktopTheme.text).padding(.leading, 16).padding(.trailing, 6).frame(minHeight: 44)
+                    // Anchored up here, not on 자료 추가: the keyboard covers the bottom of the panel.
+                    .bandalPopover(isPresented: Binding(get: { showingMigrationGuide || creation != nil }, set: { if !$0 { showingMigrationGuide = false; creation = nil } }), width: creation?.kind == .ink ? 340 : 300) {
+                        if showingMigrationGuide { migrationGuide } else if let creation { namedCreation(creation) }
+                    }
+            }.padding(.leading, 16).padding(.trailing, 3).frame(height: 44)
             NativeRailSearchField(prompt: "자료 검색", text: $query, identifier: "native-library-search")
-                .padding(.horizontal, 12).padding(.bottom, 2)
-            HStack(spacing: 8) {
+                .padding(.horizontal, 12).padding(.top, 1)
+            HStack(spacing: 0) {
                 Button { if displayMode == .list { filesExpanded.toggle() } } label: {
-                    HStack(spacing: 8) {
-                        if displayMode == .list { Image(systemName: filesExpanded ? "chevron.down" : "chevron.right").font(.system(size: 10)) }
-                        Text("파일").font(.system(size: 12, weight: .medium))
-                    }.foregroundStyle(NativeDesktopTheme.muted).frame(minHeight: 36).contentShape(Rectangle())
+                    HStack(spacing: 3.5) {
+                        if displayMode == .list { Image(systemName: filesExpanded ? "chevron.down" : "chevron.right").font(.system(size: 11)).foregroundStyle(NativeGlass.panelIcon).frame(width: 13) }
+                        Text("파일").font(.system(size: 11)).foregroundStyle(NativeGlass.panelTertiary)
+                    }.frame(height: 36).contentShape(Rectangle())
                 }.accessibilityLabel(filesExpanded ? "파일 목록 접기" : "파일 목록 펼치기")
                 Spacer(minLength: 0)
                 viewPicker
-            }.padding(.horizontal, 12)
+            }.padding(.leading, 11.5).padding(.trailing, 2).padding(.top, 3).padding(.bottom, 1)
             if displayMode != .list { breadcrumbs }
             libraryContent.frame(maxHeight: .infinity)
             NativeLibrarySourceTray(store: store, folderPath: folderPath, model: sourceTrayModel)
+            if let accessory { accessory }
+            addButton
         }
-        .background(NativeDesktopTheme.surface)
         .buttonStyle(.plain)
-        .alert("다른 노트 앱에서 가져오기", isPresented: $showingMigrationGuide) {
-            Button("백업 폴더 선택") { beginImport(types: [.folder]) }
-            Button("취소", role: .cancel) {}
-        } message: {
-            Text("GoodNotes: 설정 › 자동 백업 › 형식 PDF\nNotability: 설정 › 자동 백업 › 형식 PDF\n\n백업이 끝나면 iCloud Drive 등의 백업 폴더를 선택하세요. 폴더 구조 그대로 복사됩니다. 기존 필기는 PDF에 합쳐져 있어 다시 편집할 수는 없지만, 그 위에 이어서 필기할 수 있습니다.")
-        }
         .fileImporter(isPresented: $importing, allowedContentTypes: importTypes, allowsMultipleSelection: true) { result in
             let destination = importDestination
             importDestination = nil
@@ -137,6 +126,31 @@ struct NativeLibraryView: View {
         }
     }
 
+    private static let headerIcon = NativeDesktopTheme.adaptive(0x444444, 0xededed)
+    /// Everything that adds to this subject: new documents, imports, and the photo · file tray.
+    private var addButton: some View {
+        Menu {
+            Button("새 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { beginCreation(.ink) }
+            Button("새 마크다운", systemImage: "doc.badge.plus") { beginCreation(.markdown) }
+            Button("새 폴더", systemImage: "folder.badge.plus") { beginCreation(.folder) }
+            Divider()
+            Button("파일 가져오기", systemImage: "tray.and.arrow.down") { beginImport() }.accessibilityIdentifier("native-library-import")
+            Button("GoodNotes·Notability에서 가져오기", systemImage: "arrow.down.doc") { showingMigrationGuide = true }
+            Divider()
+            // These two fill the tray above this button; its items are dragged into a document.
+            Button("사진 앱에서 선택", systemImage: "photo.on.rectangle") { sourceTrayModel.photosPresented = true }
+                .disabled(sourceTrayModel.working || sourceTrayModel.remainingCapacity == 0).accessibilityIdentifier("native-library-source-photos")
+            Button("파일 앱에서 선택", systemImage: "folder") { sourceTrayModel.filesPresented = true }
+                .disabled(sourceTrayModel.working || sourceTrayModel.remainingCapacity == 0).accessibilityIdentifier("native-library-source-files")
+            if let onOpenAI { Divider(); Button("AI로 만들기", systemImage: "sparkles", action: onOpenAI) }
+        } label: {
+            HStack(spacing: 8) { Image(systemName: "plus").font(.system(size: 16)); Text("자료 추가").font(.system(size: 15, weight: .semibold)) }
+                .foregroundStyle(NativeDesktopTheme.accent).frame(maxWidth: .infinity).frame(height: 43)
+                .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 12)).contentShape(Rectangle())
+        }
+            .menuOrder(.fixed).disabled(courseID == nil || working).accessibilityLabel("자료 추가").accessibilityIdentifier("native-library-create")
+            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 11)
+    }
     private var viewPicker: some View {
 Menu {
                         Picker("보기 방식", selection: $storedDisplayMode) {
@@ -145,7 +159,7 @@ Menu {
                                     .accessibilityIdentifier("native-library-view-" + mode.rawValue)
                             }
                         }
-                    } label: { Image(systemName: displayMode.symbol).font(.system(size: 14)).frame(width: 44, height: 36).contentShape(Rectangle()) }
+                    } label: { Image(systemName: displayMode.symbol).font(.system(size: 14)).foregroundStyle(NativeGlass.panelIcon).frame(width: 44, height: 36).contentShape(Rectangle()) }
                         .accessibilityLabel("자료 보기 방식: " + displayMode.title).accessibilityIdentifier("native-library-view-menu")
     }
     private func beginCreation(_ kind: Creation) {
@@ -162,30 +176,7 @@ Menu {
 
     private var presentedContent: some View {
         configuredContent
-        .sheet(item: $creation) { creationSheet($0) }
-        .sheet(item: $moving) { material in
-            if let scope, scope.kind == .project { NativeScopedMaterialMovePicker(material: material, scope: scope, store: store) }
-            else { NativeMaterialMovePicker(material: material, store: store) }
-        }
-        .sheet(item: $renaming) { material in
-            NativeNameSheet(title: "이름 변경", prompt: "새 이름", initialValue: material.name, actionTitle: "저장") { name in
-                try await store.rename(material, to: name)
-            }
-        }
-        .confirmationDialog("\(deleting?.name ?? "자료") 삭제", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
-            if let material = deleting {
-                Button("삭제", role: .destructive) {
-                    perform { try await store.delete(material) }
-                    deleting = nil
-                }
-            }
-            Button("취소", role: .cancel) { deleting = nil }
-        } message: {
-            Text(deleting?.kind == "dir" ? "폴더 안의 모든 자료도 함께 삭제됩니다." : "이 자료를 삭제할까요?")
-        }
-        .alert("처리하지 못했어요", isPresented: Binding(get: { operationError != nil }, set: { if !$0 { operationError = nil } })) {
-            Button("확인", role: .cancel) { operationError = nil }
-        } message: { Text(operationError ?? "") }
+        .bandalToast($operationError)
     }
 
     var body: some View {
@@ -230,20 +221,30 @@ Menu {
         markdownTitlePrefix = (settings["tabs"] as? [String:Any])?["markdownTitlePrefix"] as? String ?? "새 마크다운"
     }
 
-    @ViewBuilder private func creationSheet(_ request: CreationRequest) -> some View {
+    /// 새 노트 / 새 마크다운 / 새 폴더 under the + button.
+    @ViewBuilder private func namedCreation(_ request: CreationRequest) -> some View {
         let destination = request.destination
-        switch request.kind {
-        case .ink:
-            NativeNewNoteSheet(store: store, courseID: destination.courseID, parentPath: destination.folder, onCreated: request.open)
-        case .markdown:
-            NativeNameSheet(title: "새 마크다운", prompt: request.markdownTitle, defaultValue: request.markdownTitle) { name in
+        if request.kind == .ink {
+            NativeNewNoteSheet(store: store, courseID: destination.courseID, parentPath: destination.folder) { document in creation = nil; request.open(document) }
+        } else if request.kind == .markdown {
+            BandalTextEntry(title: "새 마크다운", prompt: request.markdownTitle, initial: request.markdownTitle, actionTitle: "만들기", identifier: "native-name-input") { name in
                 let document = try await store.createMarkdown(title: name, courseID: destination.courseID, parentPath: destination.folder)
-                request.open(document)
+                creation = nil; request.open(document)
             }
-        case .folder:
-            NativeNameSheet(title: "새 폴더", prompt: "폴더 이름") { name in
+        } else {
+            BandalTextEntry(title: "새 폴더", prompt: "폴더 이름", actionTitle: "만들기", identifier: "native-name-input") { name in
                 try await store.createFolder(name: name, courseID: destination.courseID, parentPath: destination.folder)
+                creation = nil
             }
+        }
+    }
+    private var migrationGuide: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            BandalSectionHeader("다른 노트 앱에서 가져오기")
+            Text("GoodNotes·Notability: 설정 › 자동 백업 › 형식 PDF로 백업한 뒤 그 폴더를 고르세요. 폴더 구조 그대로 복사되고, 기존 필기 위에 이어서 쓸 수 있어요.")
+                .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true)
+            Button("백업 폴더 선택") { showingMigrationGuide = false; beginImport(types: [.folder]) }
+                .font(.system(size: BandalMetrics.bodySize, weight: .semibold)).frame(minHeight: 32)
         }
     }
 
@@ -254,10 +255,7 @@ Menu {
     }
     private var treeRows: [TreeEntry] {
         func descend(_ materials: [NativeMaterial], depth: Int) -> [TreeEntry] {
-            materials.sorted {
-                if $0.isDirectory != $1.isDirectory { return $0.isDirectory }
-                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-            }.flatMap { material in
+            NativeLibraryPresentation.sorted(materials).flatMap { material in
                 [TreeEntry(material: material, depth: depth)] + (expandedFolders.contains(material.relPath) ? descend(material.children ?? [], depth: depth + 1) : [])
             }
         }
@@ -295,30 +293,34 @@ Menu {
                     contentSearchSection
                     if items.isEmpty && contentHits.isEmpty && !searching { Text("검색 결과가 없습니다").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(16) }
                 }
-            }.padding(.horizontal, 4).padding(.bottom, 16)
+            }.padding(.horizontal, 6).padding(.bottom, 16)
     }
+    /// The open document's row: 14 pt icon and 12 pt name on a 38 pt pill. The others: 15 pt icon, 14 pt name.
     private func materialRow(_ material: NativeMaterial, depth: Int) -> some View {
-        Button { open(material) } label: {
-            HStack(spacing: 7) {
-                if material.isDirectory { Image(systemName: expandedFolders.contains(material.relPath) ? "chevron.down" : "chevron.right").font(.system(size: 9)).frame(width: 10) }
+        let selected = selectedDocumentID == material.document(in: courseID ?? "").id || (material.isDirectory && folderPath == material.relPath)
+        return Button { open(material) } label: {
+            HStack(spacing: 4) {
+                if material.isDirectory { Image(systemName: expandedFolders.contains(material.relPath) ? "chevron.down" : "chevron.right").font(.system(size: 9)).foregroundStyle(NativeGlass.panelIcon).frame(width: 10) }
                 else { Color.clear.frame(width: 10, height: 1) }
-                Image(systemName: symbol(material)).font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted).frame(width: 17)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(material.name).font(.system(size: 13)).lineLimit(1).foregroundStyle(NativeDesktopTheme.text)
-                    if !query.isEmpty { Text(material.relPath).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
+                HStack(spacing: selected ? 7 : 10) {
+                    Image(systemName: symbol(material)).font(.system(size: selected ? 14 : 15)).foregroundStyle(selected ? NativeGlass.panelIcon : NativeDesktopTheme.secondary).frame(width: 17)
+                    VStack(alignment: .leading, spacing: 3) {
+                        name(material, font: .system(size: selected ? 12 : 14), lines: 1)
+                        if !query.isEmpty { Text(material.relPath).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
+                    }
                 }
                 Spacer(minLength: 0)
-            }.padding(.horizontal, 8).frame(minHeight: 44).padding(.vertical, query.isEmpty ? 0 : 5)
+            }.padding(.leading, CGFloat(depth) * 14 + 6).padding(.trailing, 8).frame(minHeight: 38).padding(.vertical, query.isEmpty ? 0 : 5)
                 .contentShape(Rectangle())
         }
-        .background(selectedDocumentID == material.document(in: courseID ?? "").id || (material.isDirectory && folderPath == material.relPath) ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .background(selected ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
         .contextMenu { actions(material) }
+        .modifier(deleteConfirm(material))
+        .modifier(movePopover(material))
         .modifier(materialDrag(material))
         .task(id: materialTaskID(material)) { await resolveURL(material) }
         .accessibilityIdentifier("native-material-\(material.relPath)")
         .accessibilityAddTraits(selectedDocumentID == material.document(in: courseID ?? "").id ? .isSelected : [])
-        // Outside the button so the row, its highlight and its frame start at the indent.
-        .padding(.leading, CGFloat(depth) * 14)
     }
 
     @ViewBuilder private var contentSearchSection: some View {
@@ -366,13 +368,15 @@ Menu {
             VStack(alignment: .leading, spacing: 7) {
                 NativeLibraryMaterialThumbnail(store: store, material: material, courseID: courseID, url: materialURL(material), symbol: symbol(material), refresh: isSelected(material) ? "active" : "")
                     .aspectRatio(0.82, contentMode: .fit)
-                Text(material.name).font(.system(size: 12, weight: .medium)).foregroundStyle(NativeDesktopTheme.text).lineLimit(2)
+                name(material, font: .system(size: 12, weight: .medium), lines: 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(material.isDirectory ? "\(material.children?.count ?? 0)개 항목" : materialDate(material))
                     .font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
             }.padding(6).background(isSelected(material) ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 10))
         }
         .contextMenu { actions(material) }
+        .modifier(deleteConfirm(material))
+        .modifier(movePopover(material))
         .modifier(materialDrag(material))
         .task(id: materialTaskID(material)) { await resolveURL(material) }
         .accessibilityIdentifier("native-material-" + material.relPath)
@@ -388,7 +392,7 @@ Menu {
                     VStack(alignment: .leading, spacing: 8) {
                         NativeLibraryMaterialThumbnail(store: store, material: material, courseID: courseID, url: materialURL(material), symbol: symbol(material), refresh: isSelected(material) ? "active" : "")
                             .frame(height: 230)
-                        Text(material.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(NativeDesktopTheme.text).lineLimit(2)
+                        name(material, font: .system(size: 14, weight: .semibold), lines: 2)
                         HStack {
                             Text(materialDate(material)).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
                             Spacer()
@@ -397,6 +401,9 @@ Menu {
                     }
                 }
                 .contextMenu { actions(material) }
+                .modifier(deleteConfirm(material))
+                .modifier(movePopover(material))
+        .modifier(movePopover(material))
                 .modifier(materialDrag(material))
                 .task(id: materialTaskID(material)) { await resolveURL(material) }
                 .accessibilityIdentifier("native-library-gallery-preview")
@@ -475,6 +482,18 @@ Menu {
             materialURLs[key] = url
         } catch { /* Missing/unavailable files retain their type icon. Opening reports the precise error. */ }
     }
+    private func movePopover(_ material: NativeMaterial) -> NativeMovePopover {
+        NativeMovePopover(isPresented: Binding(get: { moving?.id == material.id }, set: { if !$0 && moving?.id == material.id { moving = nil } })) {
+            if let scope, scope.kind == .project { AnyView(NativeScopedMaterialMovePicker(material: material, scope: scope, store: store)) }
+            else { AnyView(NativeMaterialMovePicker(material: material, store: store)) }
+        }
+    }
+    private func deleteConfirm(_ material: NativeMaterial) -> NativeDeleteConfirm {
+        NativeDeleteConfirm(name: material.name, directory: material.isDirectory,
+                            isPresented: Binding(get: { deleting?.id == material.id }, set: { if !$0 { deleting = nil } })) {
+            perform { try await store.delete(material) }
+        }
+    }
     private func materialDate(_ material: NativeMaterial) -> String {
         guard let mtime = material.mtime, mtime > 0 else { return description(material) }
         // Repository mtimes are Unix milliseconds; accept seconds for legacy data.
@@ -482,27 +501,40 @@ Menu {
         return date.formatted(date: .numeric, time: .omitted)
     }
 
-    @ViewBuilder private func actions(_ material: NativeMaterial) -> some View {
-        Button(material.kind == "dir" ? "폴더 열기" : "열기", systemImage: material.kind == "dir" ? "folder" : "doc") { open(material) }
-        if material.learningTarget == nil {
-        Button("이름 변경", systemImage: "pencil") { renaming = material }
-        Button("폴더로 이동", systemImage: "folder") { moving = material }
-        if material.kind != "dir" {
-            Button("공유", systemImage: "square.and.arrow.up") {
-                guard let courseID else { return }
-                perform { _ = try await store.invoke("materials:share", ["courseId": courseID, "relPath": material.relPath]) }
-            }
-            Button("파일로 내보내기", systemImage: "square.and.arrow.down") {
-                guard let courseID else { return }
-                perform { _ = try await store.invoke("materials:export", ["courseId": courseID, "relPath": material.relPath]) }
-            }
+    /// The material's name, or the inline rename field while 이름 변경 is active.
+    @ViewBuilder private func name(_ material: NativeMaterial, font: Font, lines: Int) -> some View {
+        if renamingID == material.id {
+            BandalInlineEditor(text: material.name, isEditing: .editing(material.id, in: $renamingID),
+                               font: font, identifier: "native-material-rename") { name in perform { try await store.rename(material, to: name) } }
+        } else {
+            // No double-tap here: the first tap already opens the item; 이름 변경 is in its menu.
+            // A markdown note reads as a note, without its extension.
+            Text(material.name.hasSuffix(".md") ? String(material.name.dropLast(3)) : material.name).font(font).foregroundStyle(NativeDesktopTheme.text).lineLimit(lines)
         }
-        Divider()
-        Button("삭제", systemImage: "trash", role: .destructive) { deleting = material }
+    }
+
+    @ViewBuilder private func actions(_ material: NativeMaterial) -> some View {
+        let opening = Button(material.kind == "dir" ? "폴더 열기" : "열기", systemImage: material.kind == "dir" ? "folder" : "doc") { open(material) }
+        if material.learningTarget != nil { opening }
+        else {
+            NativeMaterialMenu(rename: { renamingID = material.id },
+                               share: material.kind == "dir" || courseID == nil ? nil : { perform { _ = try await store.invoke("materials:share", ["courseId": courseID ?? "", "relPath": material.relPath]) } },
+                               delete: { deleting = material }, sort: $sort) {
+                Divider()
+                opening
+                Button("폴더로 이동", systemImage: "folder.badge.plus") { moving = material }
+                if material.kind != "dir" {
+                    Button("파일로 내보내기", systemImage: "square.and.arrow.down") {
+                        guard let courseID else { return }
+                        perform { _ = try await store.invoke("materials:export", ["courseId": courseID, "relPath": material.relPath]) }
+                    }
+                }
+            }
         }
     }
 
     private func open(_ material: NativeMaterial) {
+        guard renamingID != material.id else { return }
         if material.kind == "dir" {
             gallerySelection = nil
             if displayMode != .list { folderPath = material.relPath; query = ""; return }
@@ -525,8 +557,12 @@ Menu {
         folderPath = rootPath.isEmpty || parent.hasPrefix(rootPath + "/") ? parent : rootPath
     }
     private func revealFolderInList() {
-        let ancestors = materialColumns.dropFirst().map(\.path)
-        expandedFolders.formUnion(ancestors)
+        // From the path alone: saved state is restored before the materials load.
+        var path = folderPath
+        while !path.isEmpty && path != rootPath {
+            expandedFolders.insert(path)
+            path = (path as NSString).deletingLastPathComponent
+        }
         filesExpanded = true
     }
     private func perform(_ operation: @escaping @MainActor () async throws -> Void) {
@@ -545,9 +581,9 @@ Menu {
         case "learning-cards": return "rectangle.on.rectangle"
         case "learning-summary": return "text.alignleft"
         case "learning-overview": return "text.book.closed"
-        case "dir": return "folder.fill"
-        case "pdf": return "doc.richtext"
-        case "note": return "doc.text"
+        case "dir": return "folder"
+        case "pdf", "note": return "doc"
+        case "audio", "recording": return "mic"
         case "image": return "photo"
         case "video": return "play.rectangle"
         case "whiteboard": return "rectangle.and.pencil.and.ellipsis"
@@ -606,5 +642,27 @@ enum NativeLibraryIndex {
     static func contents(in folder: String, materials: [NativeMaterial]) -> [NativeMaterial] {
         guard !folder.isEmpty else { return materials }
         return flatten(materials).first(where: { $0.kind == "dir" && $0.relPath == folder })?.children ?? []
+    }
+}
+
+/// The anchored "삭제할까요?" for one library item.
+/// The row's "폴더로 이동" popover.
+struct NativeMovePopover: ViewModifier {
+    @Binding var isPresented: Bool
+    let picker: () -> AnyView
+    func body(content: Content) -> some View {
+        content.bandalPopover(isPresented: $isPresented, width: 300) { picker() }
+    }
+}
+
+struct NativeDeleteConfirm: ViewModifier {
+    let name: String
+    let directory: Bool
+    @Binding var isPresented: Bool
+    let perform: () -> Void
+    func body(content: Content) -> some View {
+        content.bandalConfirm("\(name) 삭제", isPresented: $isPresented,
+                              message: directory ? "폴더 안의 자료도 함께 삭제돼요." : nil,
+                              action: "삭제", destructive: true, identifier: "native-material-delete-confirm", perform: perform)
     }
 }

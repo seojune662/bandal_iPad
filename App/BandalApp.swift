@@ -2,14 +2,17 @@ import SwiftUI
 
 @main
 struct BandalApp: App {
-    @State private var profileGeneration = UUID()
+    /// Made once here: SwiftUI re-runs the view's init, and a store made there would be a new one each time.
+    /// A profile switch replaces it, which also rebuilds the view.
+    @State private var store = NativeWorkspaceStore()
     var body: some Scene {
         WindowGroup {
-            NativeWorkspaceView()
-                .id(profileGeneration)
-                .onReceive(NotificationCenter.default.publisher(for: DesktopProfileService.didActivate)) { _ in profileGeneration = UUID() }
+            NativeWorkspaceView(store: store)
+                .id(ObjectIdentifier(store))
+                .onReceive(NotificationCenter.default.publisher(for: DesktopProfileService.didActivate)) { _ in store = NativeWorkspaceStore() }
                 .statusBarHidden(true)
                 .ignoresSafeArea(.container, edges: .top)
+                .bandalLocalized()
         }
     }
 }

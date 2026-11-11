@@ -84,6 +84,7 @@ final class DesktopAccountService {
     var userID: String? { phase == "signed-in" ? session?.user.id : nil }
     private var state: [String: Any] {
         ["phase": phase, "profile": profile ?? NSNull() as Any, "email": session?.user.email ?? NSNull() as Any,
+         "provider": session?.user.app_metadata?.provider ?? NSNull() as Any,
          "avatarUrl": avatarURL ?? NSNull() as Any, "online": online, "errorCode": errorCode ?? NSNull() as Any]
     }
     private func publish() { emit?("auth:changed", state) }
@@ -366,7 +367,7 @@ final class DesktopAccountService {
             if code == "reauthentication_required" { throw DesktopRuntimeError("안전을 위해 로그아웃 후 다시 로그인하고 계정 삭제를 시도해 주세요.", code: "reauthentication_required") }
             if code == "23505" { throw DesktopRuntimeError("이미 쓰고 있는 이름이에요. 다른 이름으로 해볼까요?") }
             if code == "23514" { throw DesktopRuntimeError("닉네임은 한글·영문·숫자·밑줄 2~16자여야 해요.") }
-            let known = Set(["apple_billing_unavailable", "subscription_exists", "purchase_owned_by_another_account", "apple_account_token_required", "sign_in_required", "invalid_apple_signature", "apple_environment_mismatch", "sandbox_tester_required", "account_deletion_unavailable", "active_subscription"])
+            let known = Set(["apple_billing_unavailable", "subscription_exists", "purchase_owned_by_another_account", "apple_account_token_required", "sign_in_required", "invalid_apple_signature", "apple_environment_mismatch", "sandbox_tester_required", "account_deletion_unavailable", "active_subscription", "purchase_revoked", "apple_product_mismatch", "invalid_apple_data", "apple_unavailable", "store_unavailable"])
             throw DesktopRuntimeError("계정 요청을 완료하지 못했습니다 (\(http.statusCode)).", code: code.flatMap { known.contains($0) ? $0 : nil } ?? "ACCOUNT_REQUEST_FAILED")
         }
         return data

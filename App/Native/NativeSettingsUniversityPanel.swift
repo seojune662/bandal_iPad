@@ -10,6 +10,10 @@ struct NativeUniversityService: Identifiable {
     let note: String?
     let custom: Bool
     let hidden: Bool
+    /// The icon of a site kind, in the catalog's names or the directory's (`home`, `calendar`).
+    static func symbol(_ kind: String) -> String {
+        switch kind { case "lms": "graduationcap"; case "portal", "registration": "person.text.rectangle"; case "library": "books.vertical"; case "mail": "envelope"; case "community": "person.2"; case "calendar": "calendar"; default: "globe" }
+    }
 }
 enum NativeUniversityCatalog {
     static let data: [String: Any] = {
@@ -50,50 +54,41 @@ struct NativeSettingsUniversityPanel: View {
     let settings: [String: Any]
     let save: @MainActor ([String: Any]) async throws -> Void
     @Environment(\.openURL) private var openURL
-    @State private var query = ""
-    @State private var customName = ""
     @State private var label = ""
     @State private var url = ""
     @State private var kind = "other"
     @State private var busy = false
     @State private var error: String?
+    @State private var confirmingClear = false
+    @Environment(\.locale) private var locale
     private var university: [String: Any] { settings["university"] as? [String: Any] ?? [:] }
     private var services: [NativeUniversityService] { NativeUniversityCatalog.resolvedServices(settings: settings, includeHidden: true) }
-    private var results: [[String: Any]] {
-        NativeUniversityCatalog.universities.filter { item in
-            query.isEmpty || ([item["nameKo"] as? String ?? "", item["nameEn"] as? String ?? "", item["domain"] as? String ?? ""] + (item["aliases"] as? [String] ?? [])).contains { $0.localizedStandardContains(query) }
-        }
-    }
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 28) {
             if let error { NativeToolError(message: error) }
-            NativeSettingsCard(title: "내 학교", description: "학교를 선택하면 학사·강의실·도서관 바로가기가 표시됩니다.") {
-                if let chosen = NativeUniversityCatalog.university(settings) {
-                    Label(chosen["nameKo"] as? String ?? "내 학교", systemImage: "building.columns").fontWeight(.medium)
-                    Button("선택 해제") { persist(["universityId": NSNull(), "customUniversity": NSNull()]) }
-                }
-                TextField("학교 이름 또는 약칭 검색", text: $query).nativeToolField().accessibilityIdentifier("native-settings-university-search")
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(results.enumerated()), id: \.offset) { _, item in
-                            Button {
-                                persist(["universityId": item["id"] ?? NSNull(), "customUniversity": NSNull()])
-                            } label: {
-                                HStack { Text(item["nameKo"] as? String ?? ""); Spacer(); if item["id"] as? String == university["universityId"] as? String { Image(systemName: "checkmark") } }
-                                    .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                            }.buttonStyle(.plain).accessibilityIdentifier("native-settings-university-" + (item["id"] as? String ?? ""))
-                        }
+            NativeSettingsGroup(title: "내 학교", description: "학교를 선택하면 학사·강의실·도서관 바로가기가 표시됩니다.") {
+                // Search, AI and 직접 입력 all live in the picker; the sites are managed below.
+                let chosen = NativeUniversityCatalog.university(settings)
+                HStack(spacing: 8) {
+                    Image(systemName: "building.columns").foregroundStyle(NativeDesktopTheme.secondary)
+                    if let chosen { Text(verbatim: chosen["nameKo"] as? String ?? "").fontWeight(.medium).accessibilityIdentifier("native-settings-school-name") }
+                    else { Text("아직 고르지 않았어요").foregroundStyle(NativeDesktopTheme.secondary) }
+                    Spacer(minLength: 8)
+                    // Clearing a school takes its links along; sites the user added themselves stay.
+                    if chosen != nil {
+                        let own = NativeUniversityCatalog.ownServices(university), going = (university["customServices"] as? [[String: Any]] ?? []).count - own.count
+                        let clear = { persist(["universityId": NSNull(), "customUniversity": NSNull(), "customServices": own]) }
+                        Button("선택 해제") { if going > 0 { confirmingClear = true } else { clear() } }.accessibilityIdentifier("native-settings-school-clear")
+                            .bandalConfirm(NativeAppLocale.string("학교 선택을 해제할까요?", locale), isPresented: $confirmingClear,
+                                           message: String(format: NativeAppLocale.string("이 학교의 바로가기 %lld개도 함께 지워져요. 직접 추가한 사이트는 남아요.", locale), going),
+                                           action: NativeAppLocale.string("해제", locale), destructive: true, identifier: "native-settings-school-clear-confirm", perform: clear)
                     }
-                }.frame(maxHeight: 200)
-                DisclosureGroup("학교 직접 추가") {
-                    TextField("학교 이름", text: $customName).nativeToolField()
-                    Button("학교 추가") {
-                        let id = "custom:" + UUID().uuidString
-                        persist(["universityId": id, "customUniversity": ["id": id, "nameKo": customName.trimmingCharacters(in: .whitespacesAndNewlines), "nameEn": "", "domain": "", "aliases": [], "services": [], "verifiedAt": ""]])
-                    }.disabled(customName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
+                    // Beside the button: under it the picker would be squeezed against the keyboard.
+                    NativeSchoolPickerButton(store: store, arrowEdge: .trailing) { if chosen == nil { Text("학교 고르기") } else { Text("학교 바꾸기") } }
+                        .accessibilityLabel(chosen == nil ? Text("내 학교 고르기") : Text("내 학교 바꾸기")).accessibilityIdentifier("native-settings-school-choose")
+                }.frame(minHeight: 36)
             }
-            NativeSettingsCard(title: "학교 사이트", description: "표시 순서와 열리는 위치를 선택합니다. 보안 프로그램이 필요한 일부 사이트는 iPad에서 제공되지 않을 수 있습니다.") {
+            NativeSettingsGroup(title: "학교 사이트", description: "표시 순서와 열리는 위치를 선택합니다. 보안 프로그램이 필요한 일부 사이트는 iPad에서 제공되지 않을 수 있습니다.") {
                 ForEach(Array(services.enumerated()), id: \.element.id) { index, service in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { Text(service.label).fontWeight(.medium); Spacer(); Button("열기", systemImage: "arrow.up.right") { open(service) } }
@@ -111,8 +106,7 @@ struct NativeSettingsUniversityPanel: View {
                             Spacer()
                             if service.custom { Button("삭제", role: .destructive) { persist(["customServices": (university["customServices"] as? [[String: Any]] ?? []).filter { $0["id"] as? String != service.id }]) } }
                         }
-                        Divider()
-                    }
+                    }.padding(.vertical, 8)
                 }
                 DisclosureGroup("사이트 직접 추가") {
                     TextField("사이트 이름", text: $label).nativeToolField()

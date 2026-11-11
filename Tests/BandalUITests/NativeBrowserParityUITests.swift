@@ -14,7 +14,7 @@ final class NativeBrowserParityUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]
         app.launch()
         let addCourse = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Live Google browser")
         app.buttons["native-create-course"].tap()
@@ -49,7 +49,7 @@ final class NativeBrowserParityUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "--native-browser-ui-fixture"]
         app.launch()
         let addCourse = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Desktop browser")
         app.buttons["native-create-course"].tap()
@@ -69,7 +69,7 @@ final class NativeBrowserParityUITests: XCTestCase {
         if courseRail.isSelected { courseRail.tap() }
         let materials = app.buttons["native-toggle-materials-rail"]
         if materials.isSelected { materials.tap() }
-        app.buttons["native-open-documents"].tap()
+        app.openNativeDockLayoutMenu()
         app.buttons["native-dock-preset-columns"].tap()
         let split = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             app.textFields.matching(identifier: "native-browser-address").allElementsBoundByIndex.filter { $0.isHittable }.count == 2
@@ -96,7 +96,7 @@ final class NativeBrowserParityUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "--native-browser-ui-fixture", "--native-browser-parity-ui-fixture", "--native-browser-long-title-ui-fixture"]
         app.launch()
         let addCourse = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Browser parity")
         app.buttons["native-create-course"].tap()
@@ -138,10 +138,12 @@ final class NativeBrowserParityUITests: XCTestCase {
         XCTAssertTrue(downloads.staticTexts["browser-fixture.txt"].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertTrue(downloads.buttons["native-browser-download-open"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
         capture("Native browser local download completed")
-        app.buttons["완료"].firstMatch.tap()
+        app.closeBandalPopover()
 
         let profile = app.buttons["native-browser-profile"].firstMatch
-        profile.tap(); app.buttons["native-browser-new-profile"].tap()
+        profile.tap()
+        XCTAssertTrue(app.buttons["native-browser-new-profile"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["native-browser-new-profile"].tap()
         let name = app.textFields["native-name-input"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Local study")
         app.buttons["만들기"].tap()
@@ -151,12 +153,12 @@ final class NativeBrowserParityUITests: XCTestCase {
         let privateMode = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "개인정보 보호"), object: profile)
         XCTAssertEqual(XCTWaiter.wait(for: [privateMode], timeout: 15), .completed, app.debugDescription)
         let privateDownloads = openDownloads(app)
-        XCTAssertTrue(privateDownloads.staticTexts["다운로드가 없습니다"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(privateDownloads.staticTexts["내려받은 파일이 없어요"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
         // The normal download is also an imported material in the sidebar.
         // Assert isolation inside the private download sheet, not the whole app.
         XCTAssertFalse(privateDownloads.staticTexts["browser-fixture.txt"].firstMatch.exists, privateDownloads.debugDescription)
-        app.buttons["완료"].firstMatch.tap()
         capture("Native browser private profile has isolated downloads")
+        app.closeBandalPopover()
         XCTAssertTrue(app.alerts.allElementsBoundByIndex.isEmpty, app.debugDescription)
     }
     @MainActor private func openDownloads(_ app: XCUIApplication) -> XCUIElement {
@@ -177,5 +179,15 @@ final class NativeBrowserParityUITests: XCTestCase {
     }
     @MainActor private func capture(_ name: String) {
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+    }
+}
+
+extension XCUIApplication {
+    /// Popovers close on a tap outside them (top bar area, away from controls).
+    @MainActor func closeBandalPopover() {
+        let region = otherElements["PopoverDismissRegion"].firstMatch
+        if region.exists { region.tap() } else { coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap() }
+        // Wait out the dismissal so the next tap reaches the app, not the closing popover.
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 0"), object: popovers)], timeout: 3)
     }
 }

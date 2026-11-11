@@ -15,7 +15,6 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         app.launch()
         let courseMenu = app.buttons["native-course-add-menu"]
         XCTAssertTrue(courseMenu.waitForExistence(timeout: 20)); courseMenu.tap()
-        app.buttons["native-new-course"].tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("PDF Workflow")
         app.buttons["native-create-course"].tap()
@@ -39,7 +38,9 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         let secondPage = app.buttons["native-pdf-thumbnail-2"]
         XCTAssertTrue(secondPage.waitForExistence(timeout: 10)); secondPage.tap()
         tapControl("native-pdf-pages", app: app)
-        tapControl("native-pdf-zoom-in", app: app)
+        // Zoom steps live in the "100% ∨" menu, which stays open for repeated steps.
+        tapControl("native-pdf-zoom", app: app); tapControl("native-pdf-zoom-in", app: app)
+        app.staticTexts["native-pdf-page-count"].tap() // closes the menu without touching the page
         expectPage(2, app: app)
 
         // Creation changes the active tab through the same document flush
@@ -96,14 +97,14 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = arguments(reset: true); app.launch()
         let courseMenu = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(courseMenu.waitForExistence(timeout: 25)); courseMenu.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(courseMenu.waitForExistence(timeout: 25)); courseMenu.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Duplicate PDF")
         app.buttons["native-create-course"].tap()
         createPDF("Shared lecture", app: app)
         stroke(app, from: .init(dx: 0.35, dy: 0.35), to: .init(dx: 0.6, dy: 0.4)); expectInk(1, app: app)
         let originalTab = tab("Shared lecture", app: app), originalID = originalTab.identifier
-        app.buttons["native-open-documents"].tap()
+        app.openNativeDockLayoutMenu()
         let duplicate = app.buttons["native-duplicate-right"].firstMatch
         XCTAssertTrue(duplicate.waitForExistence(timeout: 5)); duplicate.tap()
         let copyTab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-instance:")).firstMatch
@@ -208,12 +209,13 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         XCTAssertTrue(item.isHittable, app.debugDescription); item.tap()
     }
     @MainActor private func chooseLayout(_ preset: String, app: XCUIApplication) {
-        app.buttons["native-open-documents"].tap()
+        app.openNativeDockLayoutMenu()
         let item = app.buttons["native-dock-preset-" + preset]
         XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
     }
     @MainActor private func chooseColor(_ color: String, app: XCUIApplication) {
-        tapControl("native-pdf-style", app: app)
+        // A second tap on the chosen ink tool opens its settings.
+        (["pen", "highlighter"].map { app.buttons["native-pdf-tool-" + $0] }.first { $0.isSelected } ?? app.buttons["native-pdf-tool-pen"]).tap()
         let item = app.buttons["native-pdf-color-" + color]
         XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap(); app.buttons["native-pdf-style-close"].firstMatch.tap()
     }

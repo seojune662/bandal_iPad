@@ -48,7 +48,6 @@ struct NativeLearningHome: View {
         }.background(NativeDesktopTheme.bgApp).accessibilityElement(children: .contain).accessibilityIdentifier("native-learning-home")
             .task { await model.reload(store, courseID: courseID) }
             .onReceive(store.events) { event in if ["learning:changed", "courses:changed"].contains(event.channel) { Task { await model.reload(store, courseID: courseID) } } }
-            .sheet(item: $creating) { kind in NativeLearningStartSheet(store: store, kind: kind, source: nil, onOpen: onOpen) }
     }
     @ViewBuilder private var startActions: some View {
         ForEach(NativeLearningStartKind.allCases) { kind in
@@ -58,6 +57,9 @@ struct NativeLearningHome: View {
                     VStack(alignment: .leading, spacing: 8) { Text(kind.title).fontWeight(.semibold); Text(kind.detail).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true) }
                     Spacer(minLength: 0); Image(systemName: "chevron.right").font(.system(size: 10))
                 }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .popover(isPresented: Binding(get: { creating == kind }, set: { if !$0 && creating == kind { creating = nil } }), arrowEdge: .top) {
+                        NativeLearningStartSheet(store: store, kind: kind, source: nil, onOpen: onOpen)
+                    }
             }.buttonStyle(.plain).accessibilityIdentifier("native-learning-start-" + kind.id)
         }
     }
@@ -74,13 +76,15 @@ struct NativeLearningSidebar: View {
             HStack { Text("학습 공간").font(NativeDesktopTheme.font(16, weight: .semibold)); Spacer(); NativeChromeButton(title: "학습 공간 새로고침", symbol: "arrow.clockwise") { Task { await model.reload(store) } } }
             HStack { Image(systemName: "magnifyingglass"); TextField("공간 검색", text: $query).textFieldStyle(.plain) }.font(NativeDesktopTheme.font(12)).padding(8).background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 8))
             Menu { ForEach(NativeLearningStartKind.allCases) { kind in Button(kind.title) { creating = kind } } } label: { Label("새 학습", systemImage: "plus").foregroundStyle(NativeDesktopTheme.onAccent).frame(maxWidth: .infinity, minHeight: 36) }.buttonStyle(.borderedProminent).tint(NativeDesktopTheme.accent)
+                .bandalPopover(isPresented: Binding(get: { creating != nil }, set: { if !$0 { creating = nil } }), arrowEdge: .leading, width: nil) {
+                    if let kind = creating { NativeLearningStartSheet(store: store, kind: kind, source: nil, onOpen: onOpen) }
+                }
             if model.loading { ProgressView() }
             if let error = model.error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red) }
             ScrollView { NativeLearningGroups(projects: model.projects.filter { $0.deletedAt == nil && (query.isEmpty || ($0.name + " " + $0.topic).localizedStandardContains(query)) }, store: store, onOpen: onOpen) }
         }.padding(12).background(NativeDesktopTheme.surface).accessibilityIdentifier("native-learning-sidebar")
             .task { await model.reload(store) }
             .onReceive(store.events) { event in if ["learning:changed", "courses:changed"].contains(event.channel) { Task { await model.reload(store) } } }
-            .sheet(item: $creating) { kind in NativeLearningStartSheet(store: store, kind: kind, source: nil, onOpen: onOpen) }
     }
 }
 
@@ -109,23 +113,25 @@ private struct NativeLearningProjectRow: View {
     var store: NativeWorkspaceStore
     let onOpen: (NativeLearningBinding) -> Void
     @State private var renaming = false
-    @State private var name = ""
     @State private var deleting = false
     var body: some View {
-        Button { onOpen(project.binding) } label: {
+        Button { if !renaming { onOpen(project.binding) } } label: {
             VStack(alignment: .leading, spacing: 6) {
-                Text(project.displayName(courses: store.courses)).font(NativeDesktopTheme.font(13, weight: .medium)).lineLimit(2)
+                if renaming {
+                    BandalInlineEditor(text: project.name, isEditing: $renaming, font: NativeDesktopTheme.font(13, weight: .medium), identifier: "native-learning-rename") { mutate("learning:rename", ["name": $0]) }
+                } else {
+                    Text(project.displayName(courses: store.courses)).font(NativeDesktopTheme.font(13, weight: .medium)).lineLimit(2)
+                }
                 Text(project.group == "course-review" ? "퀴즈와 카드, 풀이 기록" : project.topic).font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(2)
                 if project.completedArticleCount > 0 || project.wordCount > 0 || project.dueCardCount > 0 { Text("읽은 글 \(project.completedArticleCount) · 표현 \(project.wordCount) · 복습 \(project.dueCardCount)").font(NativeDesktopTheme.font(10)).foregroundStyle(NativeDesktopTheme.muted) }
                 if let warning = project.warning { Text(warning).font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 8)).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier("native-learning-project-" + project.binding.id)
             .contextMenu {
-                Button("이름 변경", systemImage: "pencil") { name = project.name; renaming = true }
+                Button("이름 변경", systemImage: "pencil") { renaming = true }
                 Button("목록에서 삭제", systemImage: "trash", role: .destructive) { deleting = true }
             }
-            .alert("학습 공간 이름", isPresented: $renaming) { TextField("이름", text: $name); Button("취소", role: .cancel) { }; Button("저장") { mutate("learning:rename", ["name": name]) } }
-            .confirmationDialog("학습 공간을 목록에서 삭제할까요?", isPresented: $deleting, titleVisibility: .visible) { Button("목록에서 삭제", role: .destructive) { mutate("learning:delete", [:]) } } message: { Text("파일과 학습 기록은 보존되며 학습 홈에서 복원할 수 있습니다.") }
+            .bandalConfirm("학습 공간을 목록에서 삭제할까요?", isPresented: $deleting, message: "파일과 학습 기록은 남고 학습 홈에서 복원할 수 있어요.", action: "목록에서 삭제", destructive: true) { mutate("learning:delete", [:]) }
     }
     private func mutate(_ channel: String, _ extra: [String: Any]) {
         Task { do {
@@ -144,7 +150,7 @@ struct NativeProjectSidebar: View {
     @StateObject private var catalog = NativeLearningCatalog()
     @State private var query = ""
     @State private var creating = false
-    @State private var renamed: NativeLearningSummary?
+    @State private var renamingID: String?
     @State private var deleted: NativeLearningSummary?
     @State private var showDeleted = false
     @State private var error: String?
@@ -156,6 +162,7 @@ struct NativeProjectSidebar: View {
             HStack(spacing: 4) {
                 NativeRailSearchField(prompt: "프로젝트 찾기", text: $query, identifier: "native-project-search")
                 Button { creating = true } label: { Image(systemName: "plus").foregroundStyle(NativeDesktopTheme.secondary).frame(width: 40, height: 40).contentShape(Rectangle()) }
+                    .bandalPopover(isPresented: $creating) { BandalTextEntry(title: "새 프로젝트", prompt: "프로젝트 이름", actionTitle: "만들기", identifier: "native-name-input", commit: create) }
                     .accessibilityLabel("새 프로젝트").accessibilityIdentifier("native-project-create")
             }.padding(.leading, 12).padding(.trailing, 6).padding(.bottom, 8)
             if catalog.loading && catalog.projects.isEmpty { ProgressView().frame(maxWidth: .infinity).padding() }
@@ -185,41 +192,48 @@ struct NativeProjectSidebar: View {
             .onReceive(store.events) { event in
                 if ["learning:changed", "courses:changed"].contains(event.channel) { Task { await catalog.reload(store) } }
             }
-            .sheet(isPresented: $creating) {
-                NativeNameSheet(title: "새 프로젝트", prompt: "프로젝트 이름") { name in
-                    let response = try await store.invoke("learning:create", ["name": name]) as? [String: Any] ?? [:]
-                    guard let context = NativeWorkspaceContext.project(snapshot: response) else { throw DesktopRuntimeError("프로젝트를 불러오지 못했습니다.") }
-                    await catalog.reload(store); onOpen(context)
-                }
-            }
-            .sheet(item: $renamed) { project in
-                NativeNameSheet(title: "프로젝트 이름", prompt: "이름", initialValue: project.name, actionTitle: "저장") { name in
-                    _ = try await store.invoke("learning:rename", ["binding": project.binding.request, "name": name])
-                    await catalog.reload(store)
-                    if selectedID == NativeWorkspaceContext.project(project).id {
-                        var context = NativeWorkspaceContext.project(project, courses: store.courses); context.title = name; onOpen(context)
-                    }
-                }
-            }
-            .confirmationDialog("프로젝트를 목록에서 삭제할까요?", isPresented: Binding(get: { deleted != nil }, set: { if !$0 { deleted = nil } }), titleVisibility: .visible) {
-                if let project = deleted { Button("목록에서 삭제", role: .destructive) { mutate("learning:delete", project: project); deleted = nil } }
-            } message: { Text("자료와 학습 기록은 보존되며 삭제한 프로젝트에서 복원할 수 있습니다.") }
     }
     private func projectRow(_ project: NativeLearningSummary) -> some View {
         let context = NativeWorkspaceContext.project(project, courses: store.courses)
-        return Button { onOpen(context) } label: {
+        return Button { if renamingID != project.id { onOpen(context) } } label: {
             HStack(spacing: 10) {
                 Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted)
-                Text(context.title).font(NativeDesktopTheme.font(13)).lineLimit(1)
+                if renamingID == project.id {
+                    BandalInlineEditor(text: project.name, isEditing: .editing(project.id, in: $renamingID),
+                                       font: NativeDesktopTheme.font(13), identifier: "native-project-rename") { rename(project, to: $0) }
+                } else {
+                    Text(context.title).font(NativeDesktopTheme.font(13)).lineLimit(1)
+                }
                 Spacer(minLength: 0)
                 if project.dueCardCount > 0 { Text("\(project.dueCardCount)").font(.caption2).foregroundStyle(NativeDesktopTheme.muted) }
             }.padding(.horizontal, 12).frame(minHeight: 44).contentShape(Rectangle())
         }.background(selectedID == context.id ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 8))
             .accessibilityIdentifier("native-project-" + project.id).accessibilityAddTraits(selectedID == context.id ? .isSelected : [])
+            .bandalConfirm("프로젝트를 목록에서 삭제할까요?", isPresented: Binding(get: { deleted?.id == project.id }, set: { if !$0 { deleted = nil } }),
+                           message: "자료와 학습 기록은 남고 삭제한 프로젝트에서 복원할 수 있어요.", action: "목록에서 삭제", destructive: true) {
+                mutate("learning:delete", project: project)
+            }
             .contextMenu {
-                Button("이름 변경", systemImage: "pencil") { renamed = project }
+                Button("이름 변경", systemImage: "pencil") { renamingID = project.id }
                 Button("목록에서 삭제", systemImage: "trash", role: .destructive) { deleted = project }
             }
+    }
+    private func rename(_ project: NativeLearningSummary, to name: String) {
+        Task {
+            do {
+                _ = try await store.invoke("learning:rename", ["binding": project.binding.request, "name": name])
+                await catalog.reload(store); error = nil
+                if selectedID == NativeWorkspaceContext.project(project).id {
+                    var context = NativeWorkspaceContext.project(project, courses: store.courses); context.title = name; onOpen(context)
+                }
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+    private func create(_ name: String) async throws {
+        let response = try await store.invoke("learning:create", ["name": name]) as? [String: Any] ?? [:]
+        guard let context = NativeWorkspaceContext.project(snapshot: response) else { throw DesktopRuntimeError("프로젝트를 불러오지 못했습니다.") }
+        creating = false
+        await catalog.reload(store); onOpen(context)
     }
     private func mutate(_ channel: String, project: NativeLearningSummary) {
         Task {

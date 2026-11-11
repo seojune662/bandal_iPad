@@ -9,6 +9,7 @@ struct NativeMarkdownWorkspace: View {
     var store: NativeWorkspaceStore
     @StateObject private var session: NativeMarkdownSession
     @State private var registration: UUID?
+    @State private var editing = false
     @State private var confirmReload = false
     @State private var copyMessage: String?
     @State private var copying = false
@@ -102,7 +103,6 @@ struct NativeMarkdownWorkspace: View {
             }
         }
         .padding(.top, chromeMode == .toolsHidden && annotation.request?.documentID != document.id ? (controlInset > 0 ? topInset + 44 : topInset) : 0)
-        .background(NativeDesktopTheme.bgApp)
         .task {
             session.onContentChanged = { [weak store] in store?.markDocumentChanged() }
             if registration == nil {
@@ -167,46 +167,44 @@ struct NativeMarkdownWorkspace: View {
             if let note = NativePDFPageNoteDocument(text), pageIndex >= note.pages.count || pageIndex < 0 { pageIndex = max(0, min(pageIndex, note.pages.count - 1)) }
         }
         .onChange(of: scenePhase) { _, phase in if phase != .active { save() } }
-        .confirmationDialog("파일을 다시 읽을까요?", isPresented: $confirmReload, titleVisibility: .visible) {
-            Button("파일 내용으로 되돌리기", role: .destructive) {
-                Task { do { try await session.reloadDiscardingDraft() } catch { copyMessage = error.localizedDescription } }
-            }
-            Button("취소", role: .cancel) {}
-        } message: { Text("저장하지 않은 편집 내용과 임시 저장본을 지우고 파일을 다시 읽습니다. 먼저 사본으로 보관할 수 있어요.") }
-        .sheet(isPresented: $wikiPicker) {
-            NavigationStack {
-                List(wikiMaterials.filter { wikiQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(wikiQuery) }) { material in
-                    Button {
-                        session.applyFormat?("insert:[[" + (material.relPath as NSString).deletingPathExtension + "]]")
-                        wikiPicker = false
-                    } label: { Label(material.relPath, systemImage: "doc.text") }
-                }.searchable(text: $wikiQuery, prompt: "노트 이름 검색")
-                    .navigationTitle("노트 연결")
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("취소") { wikiPicker = false } } }
-                    .task {
-                        if let value = try? await store.invoke("materials:tree", ["courseId": document.courseID]), let data = try? JSONSerialization.data(withJSONObject: value), let nodes = try? JSONDecoder().decode([NativeMaterial].self, from: data) {
-                            wikiMaterials = NativeLibraryIndex.flatten(nodes).filter { $0.kind == "note" && $0.relPath != document.relativePath }
-                        }
-                    }
-            }.presentationDetents([.medium, .large])
-        }
         .fileImporter(isPresented: $imagePicker, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { importImages(urls) }
             else if case .failure(let error) = result { copyMessage = error.localizedDescription }
         }
-        .alert("수식 편집", isPresented: $formulaPrompt) {
-            TextField("LaTeX", text: $formula).textInputAutocapitalization(.never).autocorrectionDisabled()
-            Button("적용") { session.applyFormat?("replace-math:" + formula) }
-            Button("취소", role: .cancel) {}
+        // Formula, link and note link open over the text being edited, not as alerts or sheets.
+        .popover(isPresented: Binding(get: { formulaPrompt || linkPrompt || wikiPicker }, set: { if !$0 { formulaPrompt = false; linkPrompt = false; wikiPicker = false } }),
+                 attachmentAnchor: .point(UnitPoint(x: 0.5, y: 0.25)), arrowEdge: .top) {
+            Group {
+                if formulaPrompt {
+                    BandalTextEntry(title: "수식 (LaTeX)", prompt: "LaTeX", initial: formula, actionTitle: "적용", keyboard: .asciiCapable, identifier: "native-markdown-formula") { value in
+                        formulaPrompt = false; session.applyFormat?("replace-math:" + value)
+                    }
+                } else if linkPrompt {
+                    BandalTextEntry(title: "링크 주소", prompt: "https://example.com", initial: linkAddress, actionTitle: editingLink ? "적용" : "삽입", keyboard: .URL, identifier: "native-markdown-link") { value in
+                        linkPrompt = false; session.applyFormat?("link:" + value)
+                    }
+                } else if wikiPicker {
+                    VStack(alignment: .leading, spacing: 4) {
+                        BandalSectionHeader("노트 연결")
+                        BandalSearchList(prompt: "노트 이름 검색", query: $wikiQuery, identifier: "native-markdown-wiki-search") {
+                            ForEach(wikiMaterials.filter { wikiQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(wikiQuery) }) { material in
+                                BandalMenuRow(material.relPath, symbol: "doc.text") {
+                                    session.applyFormat?("insert:[[" + (material.relPath as NSString).deletingPathExtension + "]]")
+                                    wikiPicker = false
+                                }
+                            }
+                        }
+                    }.task {
+                        if let value = try? await store.invoke("materials:tree", ["courseId": document.courseID]), let data = try? JSONSerialization.data(withJSONObject: value), let nodes = try? JSONDecoder().decode([NativeMaterial].self, from: data) {
+                            wikiMaterials = NativeLibraryIndex.flatten(nodes).filter { $0.kind == "note" && $0.relPath != document.relativePath }
+                        }
+                    }
+                }
+            }
+            .padding(BandalMetrics.padding).frame(width: 320, alignment: .leading)
+            .presentationCompactAdaptation(.popover)
         }
-        .alert("링크 주소", isPresented: $linkPrompt) {
-            TextField("https://example.com", text: $linkAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
-            Button(editingLink ? "적용" : "삽입") { session.applyFormat?("link:" + linkAddress) }.disabled(linkAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Button("취소", role: .cancel) {}
-        }
-        .alert("텍스트 노트", isPresented: Binding(get: { copyMessage != nil }, set: { if !$0 { copyMessage = nil } })) {
-            Button("확인", role: .cancel) { copyMessage = nil }
-        } message: { Text(copyMessage ?? "") }
+        .bandalToast($copyMessage)
     }
 
     private func attachAnnotatedText() {
@@ -228,76 +226,105 @@ struct NativeMarkdownWorkspace: View {
             .accessibilityIdentifier("native-markdown-reload-after-error")
     }
 
+    /// Figma 129:2615: H1 H2 H3 B I as text, the two lists, then undo · redo · 완료 while typing.
+    /// What the frame does not draw lives under a long press on B and on the lists, the rest under ⋯.
     private var formattingToolbar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 6) {
             if let note = NativePDFPageNoteDocument(session.text) {
-                pageControls(note).fixedSize(horizontal: true, vertical: false).padding(.leading, 8)
-                NativeDesktopTheme.border.frame(width: 1, height: 20).padding(.horizontal, 4)
+                pageControls(note).fixedSize(horizontal: true, vertical: false)
+                NativeGlass.separator.frame(width: 1, height: 20)
             }
-            GeometryReader { geometry in
-              HStack(spacing: 2) {
-                ForEach([("본문", "paragraph"), ("제목 1", "h1"), ("제목 2", "h2"), ("제목 3", "h3"), ("굵게", "bold"), ("기울임", "italic"), ("취소선", "strike"), ("글머리 목록", "bullet"), ("번호 목록", "number"), ("할 일 목록", "task"), ("인용", "quote"), ("링크", "link"), ("이미지", "image"), ("인라인 코드", "code"), ("코드 블록", "codeblock")].prefix(max(0, Int((geometry.size.width - 12) / 42))), id: \.1) { item in
-                    Button { session.applyFormat?(item.1) } label: {
-                        Group {
-                            if item.1.hasPrefix("h") { Text(item.1.uppercased()).font(.system(size: 13, weight: .medium)) }
-                            else { Image(systemName: formatSymbol(item.1)).font(.system(size: 14)) }
-                        }.frame(width: 40, height: 44).contentShape(Rectangle())
-                            .background(activeFormats.contains(item.1) ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 5))
-                    }.buttonStyle(.plain).accessibilityAddTraits(activeFormats.contains(item.1) ? [.isSelected] : []).accessibilityLabel(item.1 == "link" && activeFormats.contains("link") ? "링크 해제" : item.0).accessibilityIdentifier("native-markdown-format-" + item.1)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach([("제목 1", "h1"), ("제목 2", "h2"), ("제목 3", "h3")], id: \.1) { item in
+                        Button { session.applyFormat?(item.1) } label: { formatText(item.1.uppercased(), item.1) }.formatItem(item.0, item.1, activeFormats)
+                    }
+                    Menu {
+                        ForEach([("본문", "paragraph"), ("취소선", "strike"), ("인라인 코드", "code"), ("코드 블록", "codeblock")], id: \.1) { formatChoice($0.0, $0.1) }
+                        Menu("코드 블록 언어") {
+                            ForEach(NativeRichTextCommands.codeLanguages, id: \.id) { language in
+                                Button { session.applyFormat?("code-language:" + language.id) } label: {
+                                    if activeCodeLanguage == language.id { Label(language.title, systemImage: "checkmark") } else { Text(language.title) }
+                                }
+                            }
+                        }.disabled(activeCodeLanguage == nil).accessibilityIdentifier("native-markdown-code-language")
+                    } label: { formatText("B", "bold") } primaryAction: { session.applyFormat?("bold") }.formatItem("굵게", "bold", activeFormats)
+                    Button { session.applyFormat?("italic") } label: { formatText("I", "italic") }.formatItem("기울임", "italic", activeFormats)
+                    Menu {
+                        formatChoice("할 일 목록", "task"); formatChoice("인용", "quote")
+                    } label: { formatSymbol("list.dash", "bullet") } primaryAction: { session.applyFormat?("bullet") }.formatItem("글머리 목록", "bullet", activeFormats)
+                    Menu {
+                        Button("들여쓰기") { session.applyFormat?("indent") }
+                        Button("내어쓰기") { session.applyFormat?("outdent") }
+                    } label: { formatSymbol("list.number", "number") } primaryAction: { session.applyFormat?("number") }.formatItem("번호 목록", "number", activeFormats)
                 }
-              }.padding(.leading, 8).padding(.trailing, 4).frame(maxWidth: .infinity, alignment: .leading)
             }
-                Menu {
-                    Menu("글자 서식") {
-                        ForEach([("본문", "paragraph"), ("굵게", "bold"), ("기울임", "italic"), ("취소선", "strike"), ("인라인 코드", "code")], id: \.1) { item in
-                            Button { session.applyFormat?(item.1) } label: {
-                                if activeFormats.contains(item.1) { Label(item.0, systemImage: "checkmark") } else { Text(item.0) }
-                            }
-                        }
+            Menu {
+                ForEach(NativeRichTextCommands.insertions.filter { !["h1", "h2", "h3", "bullet", "number", "task", "quote", "codeblock"].contains($0.id) }, id: \.id) { item in
+                    Button(item.id == "link" && activeFormats.contains("link") ? "링크 해제" : item.title) { session.applyFormat?(item.id) }.accessibilityIdentifier("native-markdown-format-" + item.id)
+                }
+                if activeFormats.contains("link") { Button("링크 주소 편집") { session.applyFormat?("edit-link") }.accessibilityIdentifier("native-markdown-edit-link") }
+                Menu("표 편집") {
+                    Button("위에 행 추가") { session.applyFormat?("table-row-before") }
+                    Button("아래에 행 추가") { session.applyFormat?("table-row-after") }
+                    Button("행 삭제") { session.applyFormat?("table-row-delete") }
+                    Button("오른쪽에 열 추가") { session.applyFormat?("table-column-after") }
+                    Button("열 삭제") { session.applyFormat?("table-column-delete") }
+                    Button("다음 셀") { session.applyFormat?("table-next") }
+                    Button("이전 셀") { session.applyFormat?("table-previous") }
+                }
+                Divider()
+                Menu("편집기 확대/축소") {
+                    ForEach(NativeNoteFontScale.values, id: \.self) { value in
+                        Button { noteFontScale = value } label: { if abs(noteFontScale - value) < 0.001 { Label("\(Int((value * 100).rounded()))%", systemImage: "checkmark") } else { Text("\(Int((value * 100).rounded()))%") } }
                     }
-                    ForEach(NativeRichTextCommands.insertions, id: \.id) { item in Button(item.id == "link" && activeFormats.contains("link") ? "링크 해제" : item.title) { session.applyFormat?(item.id) } }
-                    if activeFormats.contains("link") { Button("링크 주소 편집") { session.applyFormat?("edit-link") }.accessibilityIdentifier("native-markdown-edit-link") }
-                    Menu("코드 블록 언어") {
-                        ForEach(NativeRichTextCommands.codeLanguages, id: \.id) { language in
-                            Button { session.applyFormat?("code-language:" + language.id) } label: {
-                                if activeCodeLanguage == language.id { Label(language.title, systemImage: "checkmark") } else { Text(language.title) }
-                            }
-                        }
-                    }.disabled(activeCodeLanguage == nil).accessibilityIdentifier("native-markdown-code-language")
-                    Divider()
-                    Menu("표 편집") {
-                        Button("위에 행 추가") { session.applyFormat?("table-row-before") }
-                        Button("아래에 행 추가") { session.applyFormat?("table-row-after") }
-                        Button("행 삭제") { session.applyFormat?("table-row-delete") }
-                        Button("오른쪽에 열 추가") { session.applyFormat?("table-column-after") }
-                        Button("열 삭제") { session.applyFormat?("table-column-delete") }
-                        Button("다음 셀") { session.applyFormat?("table-next") }
-                        Button("이전 셀") { session.applyFormat?("table-previous") }
-                    }
-                    Button("들여쓰기") { session.applyFormat?("indent") }
-                    Button("내어쓰기") { session.applyFormat?("outdent") }
-                    Divider()
-                    Menu("편집기 확대/축소") {
-                        ForEach(NativeNoteFontScale.values, id: \.self) { value in
-                            Button { noteFontScale = value } label: { if abs(noteFontScale - value) < 0.001 { Label("\(Int((value * 100).rounded()))%", systemImage: "checkmark") } else { Text("\(Int((value * 100).rounded()))%") } }
-                        }
-                    }
-                    Divider()
-                    Button("지금 저장", systemImage: "checkmark.circle") { save() }
-                    Button("사본으로 저장", systemImage: "doc.on.doc") { keepCopy() }.disabled(copying)
-                    ShareLink(item: session.text) { Label("텍스트 공유", systemImage: "square.and.arrow.up") }
-                    Button("파일 다시 읽기", systemImage: "arrow.clockwise") { confirmReload = true }
-                    Button(sourceMode ? "서식 편집" : "Markdown 원문") { session.prepareForFlush?(); sourceMode.toggle() }
-                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("서식과 노트 작업").accessibilityIdentifier("native-markdown-more")
-                    .accessibilityValue(session.saving || session.dirty ? "저장 중" : "저장됨")
-                Button { session.prepareForFlush?(); sourceMode.toggle() } label: { Image(systemName: sourceMode ? "textformat" : "chevron.left.forwardslash.chevron.right").frame(width: 44, height: 44) }
-                    .accessibilityLabel(sourceMode ? "서식 편집" : "Markdown 원문").accessibilityIdentifier("native-markdown-source-toggle")
-        }.frame(height: 44).accessibilityElement(children: .contain).accessibilityIdentifier("native-markdown-toolbar").foregroundStyle(NativeDesktopTheme.secondary).background(NativeDesktopTheme.surface)
-            .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
+                }
+                Button(sourceMode ? "서식 편집" : "Markdown 원문", systemImage: sourceMode ? "textformat" : "chevron.left.forwardslash.chevron.right") { session.prepareForFlush?(); sourceMode.toggle() }
+                    .accessibilityIdentifier("native-markdown-source-toggle")
+                Divider()
+                Button("지금 저장", systemImage: "checkmark.circle") { save() }
+                Button("사본으로 저장", systemImage: "doc.on.doc") { keepCopy() }.disabled(copying)
+                ShareLink(item: session.text) { Label("텍스트 공유", systemImage: "square.and.arrow.up") }
+                Button("파일 다시 읽기", systemImage: "arrow.clockwise") { confirmReload = true }
+            } label: { Image(systemName: "ellipsis").font(.system(size: 18)).foregroundStyle(NativeDesktopTheme.muted).frame(width: 31, height: 31).contentShape(Rectangle()) }
+                .accessibilityLabel("서식과 노트 작업").accessibilityIdentifier("native-markdown-more")
+                .bandalConfirm("파일을 다시 읽을까요?", isPresented: $confirmReload, message: "저장하지 않은 편집과 임시 저장본을 지우고 파일을 다시 읽어요.", action: "파일 내용으로 되돌리기", destructive: true) {
+                    Task { do { try await session.reloadDiscardingDraft() } catch { copyMessage = error.localizedDescription } }
+                }
+                .accessibilityValue(session.saving || session.dirty ? "저장 중" : "저장됨")
+            if editing && !sourceMode {
+                Button { session.applyFormat?("undo") } label: { Image(systemName: "arrow.uturn.backward").font(.system(size: 18)).frame(width: 21, height: 31).contentShape(Rectangle().inset(by: -3)) }
+                    .accessibilityLabel("실행 취소").accessibilityIdentifier("native-markdown-undo")
+                Button { session.applyFormat?("redo") } label: { Image(systemName: "arrow.uturn.forward").font(.system(size: 18)).frame(width: 21, height: 31).contentShape(Rectangle().inset(by: -3)) }
+                    .accessibilityLabel("다시 실행").accessibilityIdentifier("native-markdown-redo")
+                Button { session.applyFormat?("done") } label: {
+                    Text("완료").font(.system(size: 15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.onAccent)
+                        .frame(width: 60, height: 32).background(NativeDesktopTheme.accent, in: RoundedRectangle(cornerRadius: 9)).contentShape(Rectangle())
+                }.accessibilityIdentifier("native-markdown-done")
+            }
+        }.buttonStyle(.plain).padding(.horizontal, 12).frame(height: 45).padding(.bottom, 1)
+            .accessibilityElement(children: .contain).accessibilityIdentifier("native-markdown-toolbar").accessibilityValue(sourceMode ? "Markdown 원문" : "서식 편집")
+            .foregroundStyle(NativeDesktopTheme.text).background(NativeDesktopTheme.bgApp)
+            .overlay(alignment: .bottom) { NativeGlass.separator.frame(height: 1) }
             .disabled(!session.canEdit || session.frozen)
+            .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { editing = $0.object as? Bool ?? false }
     }
-    private func formatSymbol(_ format: String) -> String {
-        switch format { case "paragraph": "text.alignleft"; case "bold": "bold"; case "italic": "italic"; case "strike": "strikethrough"; case "bullet": "list.bullet"; case "number": "list.number"; case "task": "checklist"; case "quote": "text.quote"; case "link": "link"; case "image": "photo"; case "codeblock": "curlybraces"; default: "chevron.left.forwardslash.chevron.right" }
+    /// A text item: 16 Semibold, padding 6/12, the active one on #EDEDED r9.
+    private func formatText(_ title: String, _ format: String) -> some View {
+        let active = activeFormats.contains(format)
+        return Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.text)
+            .padding(.horizontal, 12).frame(height: 31)
+            .background(active ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 9)).contentShape(Rectangle())
+    }
+    private func formatSymbol(_ symbol: String, _ format: String) -> some View {
+        let active = activeFormats.contains(format)
+        return Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.text)
+            .frame(width: 23, height: 31).background { if active { RoundedRectangle(cornerRadius: 9).fill(NativeDesktopTheme.raised).padding(.horizontal, -4) } }
+            .contentShape(Rectangle().inset(by: -3))
+    }
+    private func formatChoice(_ title: String, _ format: String) -> some View {
+        Button { session.applyFormat?(format) } label: { if activeFormats.contains(format) { Label(LocalizedStringKey(title), systemImage: "checkmark") } else { Text(LocalizedStringKey(title)) } }
+            .accessibilityIdentifier("native-markdown-format-" + format)
     }
     private func selectPage(_ index: Int) {
         session.prepareForFlush?(); pageIndex = index; showAppendix = false
@@ -451,5 +478,11 @@ struct NativeMarkdownWorkspace: View {
                 copyMessage = "편집 내용을 새 마크다운로 보관했어요. 자료 목록에서 열 수 있습니다."
             } catch { copyMessage = error.localizedDescription }
         }
+    }
+}
+
+private extension View {
+    func formatItem(_ title: String, _ format: String, _ active: Set<String>) -> some View {
+        accessibilityAddTraits(active.contains(format) ? [.isSelected] : []).accessibilityLabel(Text(LocalizedStringKey(title))).accessibilityIdentifier("native-markdown-format-" + format)
     }
 }

@@ -7,21 +7,20 @@ struct NativeToolButtonStyle: ButtonStyle {
   @Environment(\.isEnabled) private var enabled
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.system(size: 13, weight: primary ? .medium : .regular))
-      .padding(.horizontal, compact ? 8 : 12)
-      .frame(minHeight: compact ? 32 : 36)
+      // Figma: the small button inside a row is #F7F7F7, radius 8, 31 high, 14 Semibold, no border.
+      .font(.system(size: 14, weight: .semibold))
+      .padding(.horizontal, compact ? 10 : 14)
+      .frame(minHeight: 31)
       .foregroundStyle(primary ? NativeDesktopTheme.onAccent : NativeDesktopTheme.text)
       .background(
         primary
           ? NativeDesktopTheme.accent
-          : configuration.isPressed ? NativeDesktopTheme.accentMuted : NativeDesktopTheme.raised
+          : configuration.isPressed ? NativeDesktopTheme.raised : NativeDesktopTheme.surface
       )
-      .clipShape(RoundedRectangle(cornerRadius: 6))
-      .overlay(
-        RoundedRectangle(cornerRadius: 6).strokeBorder(
-          primary ? Color.clear : NativeDesktopTheme.border)
-      )
+      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       .opacity(enabled ? 1 : 0.4)
+      // The drawing is 31 high; touch keeps its 36.
+      .frame(minHeight: compact ? 32 : 36).contentShape(Rectangle())
   }
 }
 

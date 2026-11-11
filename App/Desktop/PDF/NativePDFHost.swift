@@ -893,7 +893,12 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         }
         pdfView.delegate = self; pdfView.pageOverlayViewProvider = self
         pdfView.displayMode = .singlePageContinuous; pdfView.displayDirection = .vertical; pdfView.displayBox = .cropBox
-        pdfView.pageShadowsEnabled = false; pdfView.backgroundColor = .secondarySystemBackground
+        pdfView.pageShadowsEnabled = true; pdfView.backgroundColor = .clear
+        // The design shows a 640 pt page in a 718 pt column: 39 pt beside it, in page units so it holds at any size.
+        if let width = document.page(at: 0)?.bounds(for: .cropBox).width, width > 0 {
+            let unit = width / 640
+            pdfView.pageBreakMargins = UIEdgeInsets(top: 10 * unit, left: 39 * unit, bottom: 10 * unit, right: 39 * unit)
+        }
         pdfView.document = document; pdfView.autoScales = true
         pdfView.isFindInteractionEnabled = true
         // Consume measured Pencil events in the recognizer phase. Waiting for
@@ -972,6 +977,12 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                 scroll.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
                 scroll.pinchGestureRecognizer?.isEnabled = true
                 scroll.alwaysBounceVertical = true // pull past the last page to add one
+                // The first page rests below the floating top row and palette (80 pt with the page's own 10 pt margin).
+                if scroll.contentInset.top != 70 {
+                    let atTop = scroll.contentOffset.y <= 0
+                    scroll.contentInset.top = 70
+                    if atTop { scroll.contentOffset.y = -70 }
+                }
                 if nativePinch !== scroll.pinchGestureRecognizer, nativePinch == nil {
                     nativePinch = scroll.pinchGestureRecognizer
                     nativePinch?.addTarget(self, action: #selector(pinchChanged(_:)))
@@ -1139,7 +1150,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             let radius = (value["eraserRadius"] as? NSNumber)?.doubleValue ?? 0.005
             nextTool = .init(name: name, drawAndHold: value["drawAndHold"] as? Bool ?? true, style: style, lassoBox: value["lassoMode"] as? String == "box",
                              eraserRadius: radius.isFinite && radius > 0 && radius <= 0.1 ? radius : 0.005,
-                             partialErase: value["eraserMode"] as? String == "partial")
+                             partialErase: value["eraserMode"] as? String == "partial",
+                             brush: value["brush"] as? Bool == true, straighten: value["straighten"] as? Bool == true)
         }
         let epoch: Int?
         if request["objectSceneEpoch"] != nil {

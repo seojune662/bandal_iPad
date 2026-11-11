@@ -7,7 +7,7 @@ final class NativeRichMarkdownTests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
         let courseMenu = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(courseMenu.waitForExistence(timeout: 20), app.debugDescription); courseMenu.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(courseMenu.waitForExistence(timeout: 20), app.debugDescription); courseMenu.tap()
         let course = app.textFields["native-course-name"]; XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Rich Markdown")
         app.buttons["native-create-course"].tap()
         let create = app.buttons["native-library-create"]
@@ -19,23 +19,23 @@ final class NativeRichMarkdownTests: XCTestCase {
         XCTAssertEqual(app.webViews.count, 0)
         app.buttons["native-markdown-format-h2"].tap()
         XCTAssertFalse((editor.value as? String ?? "").contains("##"))
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         XCTAssertTrue((editor.value as? String ?? "").contains("##"))
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         app.buttons["native-markdown-more"].tap(); app.buttons["표"].tap()
         XCTAssertFalse((editor.value as? String ?? "").contains("---"))
         capture("Native rich Markdown table", app: app)
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         editor.tap(); editor.typeText("\n$\\frac{a}{b}+x^2$\n")
         XCTAssertTrue((editor.value as? String ?? "").contains("$\\frac{a}{b}+x^2$"), app.debugDescription)
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         XCTAssertFalse((editor.value as? String ?? "").contains("$\\frac{a}{b}+x^2$"))
         capture("Native SwiftMath attachment", app: app)
         editor.tap(); app.typeKey("w", modifierFlags: .command)
         let note = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-material-", "Rich note")).firstMatch
         XCTAssertTrue(note.waitForExistence(timeout: 10)); note.tap()
         XCTAssertTrue(editor.waitForExistence(timeout: 10))
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         XCTAssertTrue((editor.value as? String ?? "").contains("$\\frac{a}{b}+x^2$"))
         XCTAssertEqual(app.webViews.count, 0)
     }

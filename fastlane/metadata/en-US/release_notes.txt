@@ -1,5 +1,1 @@
-- Lecture recording: record from the microphone button in the PDF palette while you write, with on-device transcription.
-- New handwriting palette: thickness and colour slots, eraser modes, lasso selection, memorisation tape, laser pointer and comment pins.
-- Text boxes grow as you type and keep every line visible.
-- Browser: links and popups open in new tabs, and passwords can be saved and filled in. Import passwords and bookmarks from another browser (Settings > Browser).
-- Import a GoodNotes or Notability PDF backup folder with its folders intact.
+Added a first-run guide, AI school setup and friend invites.

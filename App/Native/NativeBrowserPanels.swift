@@ -85,31 +85,24 @@ struct NativeBrowserHistoryPanel: View {
     @State private var confirmClear = false
     @State private var loading = false
     var body: some View {
-        NavigationStack {
-            List {
-                if let error { Text(error).foregroundStyle(.red) }
-                if loading { ProgressView() }
-                if rows.isEmpty && !loading { ContentUnavailableView("방문 기록이 없습니다", systemImage: "clock", description: Text("현재 프로필의 방문 기록이 여기에 표시됩니다.")) }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                BandalSectionHeader("방문 기록 · " + session.activeProfileName)
+                Button(confirmClear ? "정말 지우기" : "기록 지우기") { if confirmClear { Task { await clear(); confirmClear = false } } else { confirmClear = true } }
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(.red).buttonStyle(.plain)
+                    .disabled(session.active?.isPrivate == true).accessibilityIdentifier("native-browser-history-clear")
+            }
+            if confirmClear { Text("즐겨찾기와 사이트 로그인은 그대로 남아요.").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted) }
+            if let error { Text(error).font(.system(size: 11)).foregroundStyle(.red) }
+            BandalSearchList(prompt: "주소 또는 제목 검색", query: $query, identifier: "native-browser-history-search") {
+                if loading && rows.isEmpty { ProgressView().frame(maxWidth: .infinity).padding(8) }
+                if rows.isEmpty && !loading { Text("방문 기록이 없어요").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(8) }
                 ForEach(rows) { row in
-                    Button { dismiss(); navigate(row.url) } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(NativeBrowserAddress.title(row.title, url: row.url)).lineLimit(2)
-                            Text(row.url).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
-                    }
+                    BandalMenuRow(NativeBrowserAddress.title(row.title, url: row.url), detail: row.url) { dismiss(); navigate(row.url) }
                 }
-            }.navigationTitle("방문 기록 · " + session.activeProfileName)
-                .searchable(text: $query, prompt: "주소 또는 제목 검색")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("기록 지우기", role: .destructive) { confirmClear = true }.disabled(session.active?.isPrivate == true) }
-                    ToolbarItem(placement: .confirmationAction) { Button("완료") { dismiss() } }
-                }
-                .task(id: query) { await load() }
-                .alert("이 프로필의 방문 기록을 모두 지울까요?", isPresented: $confirmClear) {
-                    Button("취소", role: .cancel) {}
-                    Button("기록 지우기", role: .destructive) { Task { await clear() } }
-                } message: { Text("즐겨찾기와 웹사이트 로그인 상태는 유지됩니다.") }
+            }
         }
+        .task(id: query) { await load() }
     }
     private func load() async {
         loading = true
@@ -130,8 +123,9 @@ struct NativeBrowserDownloadsPanel: View {
     let action: (NativeBrowserDownloadItem, String) -> Void
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        NavigationStack {
-            List {
+        VStack(alignment: .leading, spacing: 6) {
+            BandalSectionHeader("다운로드")
+            ScrollView { VStack(alignment: .leading, spacing: 8) {
                 if let error = session.error {
                     HStack(alignment: .top) {
                         Text(error).foregroundStyle(.red).accessibilityIdentifier("native-browser-download-error")
@@ -139,12 +133,12 @@ struct NativeBrowserDownloadsPanel: View {
                         Button("오류 안내 닫기", systemImage: "xmark") { session.error = nil }.buttonStyle(NativeBrowserIconStyle())
                     }
                 }
-                if session.visibleDownloads.isEmpty { ContentUnavailableView("다운로드가 없습니다", systemImage: "arrow.down.circle", description: Text("현재 프로필에서 내려받은 파일이 여기에 표시됩니다.")) }
+                if session.visibleDownloads.isEmpty { Text("내려받은 파일이 없어요").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(.vertical, 4) }
                 ForEach(session.visibleDownloads) { item in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .top) {
                             Image(systemName: "doc").foregroundStyle(.secondary)
-                            Text(item.fileName).font(.headline).lineLimit(2)
+                            Text(item.fileName).font(.system(size: BandalMetrics.bodySize, weight: .semibold)).lineLimit(2)
                             Spacer(minLength: 0)
                             if item.state != "progressing" { Button("목록에서 지우기", systemImage: "xmark") { action(item, "dismiss") }.buttonStyle(NativeBrowserIconStyle()) }
                         }
@@ -156,10 +150,10 @@ struct NativeBrowserDownloadsPanel: View {
                         actions(item)
                     }.padding(.vertical, 6)
                 }
-            }.navigationTitle("다운로드")
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { dismiss() } } }
-                .task { do { try await session.reloadDownloads() } catch { session.error = error.localizedDescription } }
-        }.accessibilityElement(children: .contain).accessibilityIdentifier("native-browser-downloads")
+            } }.frame(maxHeight: 420).fixedSize(horizontal: false, vertical: true)
+        }
+        .task { do { try await session.reloadDownloads() } catch { session.error = error.localizedDescription } }
+        .accessibilityElement(children: .contain).accessibilityIdentifier("native-browser-downloads")
     }
     private func byteCount(_ item: NativeBrowserDownloadItem) -> String {
         guard item.received > 0 else { return "" }

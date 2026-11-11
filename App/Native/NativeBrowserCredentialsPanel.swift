@@ -21,39 +21,36 @@ struct NativeBrowserCredentialsPanel: View {
     private var target: DesktopCredentialTarget { context.target }
     private var request: [String: Any] { ["guestWebContentsId": target.guestID, "origin": target.origin] }
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Text(target.origin).font(.headline).textSelection(.enabled)
-                    Text("현재 사이트와 프로필에 저장된 로그인만 표시합니다.").font(.caption).foregroundStyle(.secondary)
-                    if let failure { Text(failure).foregroundStyle(.red) }
-                    if let message { Text(message).foregroundStyle(.secondary) }
-                }
-                Section("저장된 로그인 채우기") {
-                    if entries.isEmpty { Text("이 사이트에 저장된 로그인이 없습니다.").foregroundStyle(.secondary) }
-                    ForEach(entries.indices, id: \.self) { index in
-                        if let id = entries[index]["id"] as? String {
-                            HStack {
-                                Button { run { try await fill(id) } } label: { Label(entries[index]["username"] as? String ?? "계정", systemImage: "key") }
-                                Spacer()
-                                Button("로그인 삭제", systemImage: "trash", role: .destructive) { run { try await forget(id) } }.labelStyle(.iconOnly)
-                            }.frame(minHeight: 44)
-                        }
+        VStack(alignment: .leading, spacing: 6) {
+            BandalSectionHeader("로그인 관리")
+            Text(target.origin).font(.system(size: BandalMetrics.bodySize, weight: .semibold)).textSelection(.enabled).lineLimit(1)
+            if let failure { Text(failure).font(.system(size: 11)).foregroundStyle(.red) }
+            if let message { Text(message).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted) }
+            if entries.isEmpty { Text("이 사이트에 저장된 로그인이 없어요").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted) }
+            ForEach(entries.indices, id: \.self) { index in
+                if let id = entries[index]["id"] as? String {
+                    BandalMenuRow(title: entries[index]["username"] as? String ?? "계정", symbol: "key", action: { run { try await fill(id) } }) {
+                        Button("로그인 삭제", systemImage: "trash", role: .destructive) { run { try await forget(id) } }.labelStyle(.iconOnly).buttonStyle(.plain).foregroundStyle(.red)
                     }
                 }
-                Section {
-                    Button("이 페이지의 로그인 저장", systemImage: "key.fill") { run { try await stage() } }
-                        .disabled(!available).accessibilityIdentifier("native-browser-save-login")
-                } footer: { Text("웹사이트에서 직접 입력한 로그인만 확인 후 기기의 키체인에 저장합니다. 채우기를 눌러도 로그인 버튼을 자동으로 누르지 않습니다.") }
-            }.disabled(busy).navigationTitle("로그인 관리").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { run { await discard(); dismiss() } }.disabled(busy) } }
-                .task { run { try await load() } }
-                .interactiveDismissDisabled(busy || staged != nil)
-                .alert("이 로그인을 저장할까요?", isPresented: $confirmation) {
-                    Button("취소", role: .cancel) { run { await discard() } }
-                    Button("저장") { run { try await commit() } }
-                } message: { Text(target.origin + "\n" + (staged?["username"] as? String ?? "")) }
+            }
+            BandalMenuDivider()
+            if let staged {
+                // Saving asks once, here: the username and the two choices.
+                Text("이 로그인을 저장할까요? " + (staged["username"] as? String ?? "")).font(.system(size: 12))
+                HStack {
+                    Button("저장 안 함") { run { await discard() } }.buttonStyle(.plain).font(.system(size: 12))
+                    Spacer()
+                    Button("저장") { run { try await commit() } }.font(.system(size: 12, weight: .semibold)).accessibilityIdentifier("native-browser-save-login-confirm")
+                }
+            } else {
+                BandalMenuRow("이 페이지의 로그인 저장", symbol: "key.fill", detail: "직접 입력한 로그인만 키체인에 저장해요") { run { try await stage() } }
+                    .disabled(!available).accessibilityIdentifier("native-browser-save-login")
+            }
         }
+        .disabled(busy)
+        .task { run { try await load() } }
+        .onDisappear { if staged != nil { run { await discard() } } }
     }
     private func validate() throws {
         guard session.activeID == target.tabID, !session.retired,
