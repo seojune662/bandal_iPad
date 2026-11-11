@@ -6,7 +6,7 @@ enum NativeSettingsSchema {
     static func defaults(dataRoot: String) -> [String: Any] { [
         "theme":"system", "palette":"bandal", "fontScale":1.0, "editorFont":"sans", "density":"comfortable",
         "agentProvider":"claude-code", "dataRoot":dataRoot, "locale":"ko-KR",
-        "openAdjacentTab":false, "restoreLastCourse":true, "browserSearchEngine":"google",
+        "openAdjacentTab":false, "restoreLastCourse":true, "handwritingSearch":true, "browserSearchEngine":"google",
         "lastActiveCourseId":NSNull(), "keybindings":[:], "pluginSources":[], "pluginTheme":NSNull(),
         "tabs":["markdownTitlePrefix":"새 마크다운", "recordingModel":"whisper-large-v3-turbo", "recordingDeviceId":"default",
                 "recordingSidebarOpen":true, "recordingFollowTranscript":true, "recordingPlaybackRate":1.0,
@@ -45,7 +45,7 @@ enum NativeSettingsSchema {
         select("agentProvider",["claude-code","codex","gemini"]); select("locale",["ko-KR","en-US"])
         select("browserSearchEngine",["google","naver","daum","duckduckgo"]); select("shortcutPriority",["bandal","site"])
         if ![0.9,1,1.1,1.2].contains((result["fontScale"] as? NSNumber)?.doubleValue ?? -1) { result["fontScale"] = 1.0 }
-        for key in ["openAdjacentTab","restoreLastCourse"] { if !isBool(result[key]) { result[key] = fallback[key] } }
+        for key in ["openAdjacentTab","restoreLastCourse","handwritingSearch"] { if !isBool(result[key]) { result[key] = fallback[key] } }
         for group in patchGroups {
             guard var value = result[group] as? [String:Any], let base = fallback[group] as? [String:Any] else { result[group] = fallback[group]; continue }
             for (key,defaultValue) in base where isBool(defaultValue) { if !isBool(value[key]) { value[key] = defaultValue } }

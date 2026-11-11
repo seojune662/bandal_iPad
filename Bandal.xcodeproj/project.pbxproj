@@ -67,6 +67,7 @@
 		19EA9718FDE4855575AE5F81 /* NativeSettingsParityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B8EFE2ED689B85B9CCFFCC /* NativeSettingsParityTests.swift */; };
 		1A8519AE29AF7EA1DE32C6EE /* NativePDFTestBinding.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C885CD97E3282ACE25030D /* NativePDFTestBinding.swift */; };
 		1B3EB99054875BD1170C7C92 /* NativePDFRetainedObjectHitTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED07732316A220546D5D62ED /* NativePDFRetainedObjectHitTest.swift */; };
+		1B506F04E85C5A426DDB4811 /* NativeHandwritingRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DA75A4AE37C599C7A111B15 /* NativeHandwritingRepository.swift */; };
 		1B540C68D80F3DB98E7BF72D /* NativeBrowserCredentialsIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB0648417C22CD6AA5F1F42 /* NativeBrowserCredentialsIntegrationTests.swift */; };
 		1C261E847A3F3BC79AF1C80D /* BrowserCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FA5DFC10ECF4EB3E76715BE /* BrowserCredentials.swift */; };
 		1D80782AD4273A5FEF9C59F2 /* DesktopNativeSurfaceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF4223E7842C35A04CC2A2E /* DesktopNativeSurfaceState.swift */; };
@@ -150,6 +151,7 @@
 		41BD81ED255088644BAA82FC /* NativePDFScenePatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EFFF0BF44F2EAA641740B2A /* NativePDFScenePatch.swift */; };
 		41C9CC9E32C3747E1B7130AC /* DesktopAccountTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B2ABD135E9B6543B6E9108 /* DesktopAccountTests.swift */; };
 		425A09554B94F28C78078284 /* NativePDFRetainedPaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43B924EE0DB295AA30FEC1AF /* NativePDFRetainedPaper.swift */; };
+		427414950FE555AFF3A8C374 /* NativeHandwritingIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B35BB19204EFCB274DA2C0AC /* NativeHandwritingIndexTests.swift */; };
 		4296724FFEF8BBB7270AF7F8 /* NativePDFApertureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F05EFA1FB9D41C2271244A57 /* NativePDFApertureTests.swift */; };
 		4316E46F993A63D7CBE99378 /* FigmaHomeChromeScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F356907DDC8170ECA8C19306 /* FigmaHomeChromeScreenshotTests.swift */; };
 		43C06F396260514D002E9C34 /* NativePDFRetainedObjectTexturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 944E7A4B4C56A2470CEA9D12 /* NativePDFRetainedObjectTexturesTests.swift */; };
@@ -308,6 +310,7 @@
 		8DE3D02BB2774487DDA68911 /* NativeValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D8A0072D97055C91851B940 /* NativeValue.swift */; };
 		8DE6E4D3C929C6A4E204874A /* MembershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2971CE02B8ECC213E5265CC /* MembershipTests.swift */; };
 		8E35A4C1B3484CA91584AAAE /* BrowserPageActionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 149E2BD2747A8AA72CF2DB74 /* BrowserPageActionsTests.swift */; };
+		8E4B1059E66F7BC915A8E3C1 /* NativeHandwritingRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 023E2B12EC1EBC790B943209 /* NativeHandwritingRecognizer.swift */; };
 		8F1691FBB86C82618589521B /* NativeWorkspaceDeviceSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6532ABC47789E39F30531126 /* NativeWorkspaceDeviceSmokeUITests.swift */; };
 		8FCE1828A3B97BECE0DDCBDF /* NativePDFCommittedSceneCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106F9C8EE5E42F028091DC51 /* NativePDFCommittedSceneCache.swift */; };
 		90C59F4A4B3DA836B96EA9E4 /* SyncJSON.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3200D65958ADB8F034D6A4A9 /* SyncJSON.swift */; };
@@ -439,6 +442,7 @@
 		C18036850F9B66440E4F780B /* BrowserEngineImprovementsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F405F17DB0AFA34F1706C71B /* BrowserEngineImprovementsTests.swift */; };
 		C1F64794270ED572E8CA79B4 /* NativePDFShapeRecognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 949329528F555AE002A52040 /* NativePDFShapeRecognition.swift */; };
 		C24D402944D29507C5848489 /* NativePDFPageEditingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0A360CBB0ED8301FC334B65 /* NativePDFPageEditingTests.swift */; };
+		C2BEAB40F0C6B527CEB80A29 /* NativeHandwritingFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D00F84059F6D25857A6A5DC /* NativeHandwritingFixture.swift */; };
 		C2F96120CD733299C5A25BA5 /* NativePDFTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96E9AADA13D564BDF31AE0E5 /* NativePDFTypes.swift */; };
 		C31C68362CD450CDC010DC55 /* NativeOnboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E32EB7F3F50C0818E52F7ED /* NativeOnboarding.swift */; };
 		C38A45FA9FBE834394FA3047 /* NativeAssistantSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C5CBDAA2C1C1D0254354CF /* NativeAssistantSession.swift */; };
@@ -602,6 +606,7 @@
 		00BDA3207A7EBC02A2DE0761 /* NativeNotificationPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNotificationPlan.swift; sourceTree = "<group>"; };
 		00E6AA1A99FFA8AAB564F5EA /* NativePDFDocumentFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFDocumentFlowTests.swift; sourceTree = "<group>"; };
 		022D8D1BB7E631638C206EAB /* DesktopLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopLog.swift; sourceTree = "<group>"; };
+		023E2B12EC1EBC790B943209 /* NativeHandwritingRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHandwritingRecognizer.swift; sourceTree = "<group>"; };
 		025A7F9A57569AA44268F384 /* BrowserPrivacy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPrivacy.swift; sourceTree = "<group>"; };
 		028979C5EFB4D3E35AB830B6 /* NativePDFMetalTextureRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFMetalTextureRecoveryTests.swift; sourceTree = "<group>"; };
 		033D44E19032ECF43A49CD24 /* NativeAnnotationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAnnotationUITests.swift; sourceTree = "<group>"; };
@@ -771,6 +776,7 @@
 		4B5AD9866DB0F5E454C6184E /* DesktopNativeSurfaceMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNativeSurfaceMask.swift; sourceTree = "<group>"; };
 		4C284F3B0E56A2393AC9187C /* FreeTierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeTierTests.swift; sourceTree = "<group>"; };
 		4CA765580833E43851772D17 /* NativePDFPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPersistenceTests.swift; sourceTree = "<group>"; };
+		4D00F84059F6D25857A6A5DC /* NativeHandwritingFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHandwritingFixture.swift; sourceTree = "<group>"; };
 		4D8B6B05941B73CA7D07B41A /* NativeSettingsPlatformService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsPlatformService.swift; sourceTree = "<group>"; };
 		4D8F2BE7B9F583AAC9D7D65F /* NativePDFNavigationSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFNavigationSnapshotTests.swift; sourceTree = "<group>"; };
 		4DDA4965BF37EE6A9D9B6A99 /* NativeFeatureLauncherPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeFeatureLauncherPanel.swift; sourceTree = "<group>"; };
@@ -803,6 +809,7 @@
 		5B79A3DBEA793C4BFA580339 /* BrowserPrint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPrint.swift; sourceTree = "<group>"; };
 		5B8F64EDF8B0ED207BEE58D1 /* NativeSidebarModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSidebarModels.swift; sourceTree = "<group>"; };
 		5B91F2E8B5349C2C0E4595CE /* NativeGlassChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassChrome.swift; sourceTree = "<group>"; };
+		5DA75A4AE37C599C7A111B15 /* NativeHandwritingRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHandwritingRepository.swift; sourceTree = "<group>"; };
 		5DBD8447D07DC5514FFC04F6 /* NativeLegacyMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLegacyMigrationTests.swift; sourceTree = "<group>"; };
 		5DC7D28594A2E83DE1FF0253 /* NativeWhiteboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWhiteboardTests.swift; sourceTree = "<group>"; };
 		5E6126448642609BA0E723BE /* DesktopFileServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopFileServices.swift; sourceTree = "<group>"; };
@@ -990,6 +997,7 @@
 		B176746CCA1CD3C0E2A69DB1 /* SchoolDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchoolDirectory.swift; sourceTree = "<group>"; };
 		B2A873C6508242736EE7E51C /* NativeDockTabList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDockTabList.swift; sourceTree = "<group>"; };
 		B2F273F041BE71F692BBE3E6 /* NativeSearchRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSearchRepository.swift; sourceTree = "<group>"; };
+		B35BB19204EFCB274DA2C0AC /* NativeHandwritingIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHandwritingIndexTests.swift; sourceTree = "<group>"; };
 		B3CC986C5B25E8DF87343922 /* NativeSettingsSystemPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsSystemPanels.swift; sourceTree = "<group>"; };
 		B40FA943AF0F202EABB7E11A /* DesktopMCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopMCPService.swift; sourceTree = "<group>"; };
 		B44B9690801DC7F3EF6B042E /* PCMRecordingWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PCMRecordingWriter.swift; sourceTree = "<group>"; };
@@ -1360,6 +1368,8 @@
 				282E03A0E57A29D61C0A13E2 /* NativeFavoritesSection.swift */,
 				4DDA4965BF37EE6A9D9B6A99 /* NativeFeatureLauncherPanel.swift */,
 				5B91F2E8B5349C2C0E4595CE /* NativeGlassChrome.swift */,
+				4D00F84059F6D25857A6A5DC /* NativeHandwritingFixture.swift */,
+				023E2B12EC1EBC790B943209 /* NativeHandwritingRecognizer.swift */,
 				808D9C8B3C66B0F718279391 /* NativeHomeTab.swift */,
 				795893665494E85C79B46E11 /* NativeLearningArticleView.swift */,
 				B6D53CCF5A108E72972AFE09 /* NativeLearningArtifactView.swift */,
@@ -1578,6 +1588,7 @@
 				EE85B3B4BF3B07613FD2CAA1 /* NativeDockTabSizingTests.swift */,
 				F59473FCE6B0D9531BB05569 /* NativeDuplicateDocumentTests.swift */,
 				B5ACBF13F82769C5039FE5CA /* NativeEditorMediaImportTests.swift */,
+				B35BB19204EFCB274DA2C0AC /* NativeHandwritingIndexTests.swift */,
 				7496C098BFEC24611E5294EA /* NativeLearningActionTests.swift */,
 				A5582483C525025857FD56C9 /* NativeLearningRepositoryTests.swift */,
 				C52A9A2C0416A56C7EB0624D /* NativeLearningWorkspaceTests.swift */,
@@ -1862,6 +1873,7 @@
 			children = (
 				1201D6A1E014E42CB4C03692 /* NativeChatRepository.swift */,
 				27D33677860011AFB9A73565 /* NativeDatabaseMigrations.swift */,
+				5DA75A4AE37C599C7A111B15 /* NativeHandwritingRepository.swift */,
 				7002DB5BDC1FA5BE7A47CBA5 /* NativeLearningRepository.swift */,
 				20AC57F900216E848F88AF12 /* NativeLegacyAudio.swift */,
 				CB81661EF8912C63F02C7802 /* NativeLegacyMigration.swift */,
@@ -2121,6 +2133,7 @@
 				13572D4E9C159ED98887FF04 /* NativeDockingTests.swift in Sources */,
 				7882656E8AB244D3367A60F2 /* NativeDuplicateDocumentTests.swift in Sources */,
 				C4C0209128B395D326ADDA0C /* NativeEditorMediaImportTests.swift in Sources */,
+				427414950FE555AFF3A8C374 /* NativeHandwritingIndexTests.swift in Sources */,
 				0CDAD2ACC515FF22BDBB3620 /* NativeLearningActionTests.swift in Sources */,
 				151C11A2D1472EEA8E9BDAD7 /* NativeLearningRepositoryTests.swift in Sources */,
 				A3893BBA6939A952B70051F6 /* NativeLearningWorkspaceTests.swift in Sources */,
@@ -2437,6 +2450,9 @@
 				206305151C34D6567BBA3A53 /* NativeFavoritesSection.swift in Sources */,
 				BF6BFC1140611B1A88888FC0 /* NativeFeatureLauncherPanel.swift in Sources */,
 				01939119CE5B3B69AD059A54 /* NativeGlassChrome.swift in Sources */,
+				C2BEAB40F0C6B527CEB80A29 /* NativeHandwritingFixture.swift in Sources */,
+				8E4B1059E66F7BC915A8E3C1 /* NativeHandwritingRecognizer.swift in Sources */,
+				1B506F04E85C5A426DDB4811 /* NativeHandwritingRepository.swift in Sources */,
 				EC44F32250014C8EA6DE50B6 /* NativeHomeTab.swift in Sources */,
 				60CE26C31446FB5FFC3E8B66 /* NativeLearningArticleView.swift in Sources */,
 				D09953305BC385C778F9EB28 /* NativeLearningArtifactView.swift in Sources */,

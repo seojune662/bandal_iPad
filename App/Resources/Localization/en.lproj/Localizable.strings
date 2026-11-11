@@ -131,6 +131,11 @@
 "첫 화면" = "Home";
 "할 일 목록" = "Task list";
 
+/* ===== BEGIN handwriting search (seojune662/handwriting-index) ===== */
+"손글씨 검색" = "Handwriting search";
+"손글씨 색인 중 %lld / %lld 페이지" = "Indexing handwriting: %lld of %lld pages";
+/* ===== END handwriting search ===== */
+
 /* ===== App strings (extracted) ===== */
 "%@ 개인정보 처리방침" = "%@ privacy policy";
 "%@ 전송에 동의함" = "Consent to send to %@ given";
