@@ -93,16 +93,20 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         XCTAssertFalse(breadcrumbs.exists, "The tree never shows breadcrumbs")
         screenshot("목록 보기 폴더 펼침")
 
+        let disappears = { (element: XCUIElement) in
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)], timeout: 5) == .completed
+        }
         parent.tap()
-        let collapsed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: child)
-        XCTAssertEqual(XCTWaiter.wait(for: [collapsed], timeout: 5), .completed, "A second tap collapses the folder: " + app.debugDescription)
+        XCTAssertTrue(disappears(child), "A second tap collapses the folder: " + app.debugDescription)
         XCTAssertTrue(parent.exists && sibling.exists)
 
         parent.tap()
         XCTAssertTrue(child.waitForExistence(timeout: 5))
         let search = app.descendants(matching: .any).matching(identifier: "native-library-search").firstMatch
         search.tap(); app.typeText("Sibling")
-        XCTAssertTrue(sibling.waitForExistence(timeout: 5), "List search covers the whole scope, not the last opened folder: " + app.debugDescription)
+        // Child does not match, so its row going away means the flat results replaced the tree.
+        XCTAssertTrue(disappears(child), "Search replaces the tree with flat results: " + app.debugDescription)
+        XCTAssertTrue(sibling.exists, "List search covers the whole scope, not the last opened folder: " + app.debugDescription)
         XCTAssertFalse(breadcrumbs.exists, "The tree never shows breadcrumbs, even while searching")
         screenshot("목록 보기 전체 범위 검색")
         let clear = app.buttons["검색어 지우기"].firstMatch
@@ -111,7 +115,7 @@ final class NativeLibraryPresentationUITests: XCTestCase {
 
         // Folder browsing and current-folder search stay in the icon view.
         parent.tap()
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: child)], timeout: 5), .completed)
+        XCTAssertTrue(disappears(child))
         chooseView("icons", title: "아이콘", in: app)
         XCTAssertTrue(breadcrumbs.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(parent.exists && sibling.exists && !child.exists, "The icon view starts at the root after the tree collapsed Parent: " + app.debugDescription)
