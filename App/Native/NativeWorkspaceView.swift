@@ -377,6 +377,8 @@ struct NativeWorkspaceView: View {
         .environment(\.nativeWorkspacePreviewController, previews)
         .disabled(store.isApplyingExternalChanges)
         .modifier(NativeOnboardingCover(stage: onboarding, store: store, finish: closeOnboarding))
+        .onReceive(NotificationCenter.default.publisher(for: NativeAccountRailButton.restartOnboarding)) { _ in onboarding = .showing }
+        .overlay { NativeLongPressDimLayer() }
         .background(NativeWorkspaceKeyboardBridge(store: store))
         .background(NativePresentationAnchor(services: services).allowsHitTesting(false))
         .bandalToast(Binding(get: { store.errorMessage }, set: { store.errorMessage = $0 }))
@@ -938,11 +940,11 @@ struct NativeWorkspaceView: View {
                     onOpen: open, onSelectCourse: changeCourse,
                     onNewNote: { openNewTab(UserDefaults.standard.string(forKey: NativeLocalPreferences.newDocumentKind) == "markdown" ? .markdown(title: nil) : .note, navigation.focusedGroupID ?? "") },
                     onNewCourse: { setCourseRail(true, width: windowWidth); NotificationCenter.default.post(name: NativeHomeTab.newCourse, object: nil) })
-                    .popover(isPresented: $showingNewTabMenu, arrowEdge: .top) {
-                        NativeNewTabMenu(store: store, courseID: store.selectedCourseID ?? "", onAction: { action in
+                    .bandalPopover(isPresented: $showingNewTabMenu, width: 300, radius: 18, padding: 0) {
+                        NativeNewTabMenu(onAction: { action in
                             showingNewTabMenu = false
                             openNewTab(action, navigation.focusedGroupID ?? "")
-                        }, onClose: { showingNewTabMenu = false }).presentationCompactAdaptation(.popover)
+                        }, onClose: { showingNewTabMenu = false })
                     }
             }
             Spacer()

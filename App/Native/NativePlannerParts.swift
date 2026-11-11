@@ -12,7 +12,7 @@ enum NativePlannerPalette {
 extension NativeCourse {
     /// The colour picked when the course was made.
     var tint: Color {
-        switch color { case "red": .red; case "orange": .orange; case "yellow", "gold": .yellow; case "green": .green; case "purple": .purple; case "pink": .pink; default: .blue }
+        switch color { case "red": .red; case "orange": .orange; case "yellow", "gold": .yellow; case "green": .green; case "purple": .purple; case "pink": .pink; case "gray": .gray; default: .blue }
     }
 }
 

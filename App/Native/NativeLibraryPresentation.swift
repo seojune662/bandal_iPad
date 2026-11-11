@@ -23,12 +23,16 @@ struct NativeLibraryColumn: Identifiable, Equatable {
 }
 
 enum NativeLibraryPresentation {
-    static func sorted(_ items: [NativeMaterial]) -> [NativeMaterial] {
-        items.sorted {
-            if $0.isDirectory != $1.isDirectory { return $0.isDirectory }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-        }
+    /// 정렬 기준, chosen in a file's long-press menu and kept on this iPad.
+    enum Sort: String { case name, recent }
+    static let sortKey = "native.library.sort"
+    /// Folders first; then by name, or the most recently changed first.
+    static func precedes(_ a: NativeMaterial, _ b: NativeMaterial, defaults: UserDefaults = .standard) -> Bool {
+        if a.isDirectory != b.isDirectory { return a.isDirectory }
+        if defaults.string(forKey: sortKey) == Sort.recent.rawValue, (a.mtime ?? 0) != (b.mtime ?? 0) { return (a.mtime ?? 0) > (b.mtime ?? 0) }
+        return a.name.localizedStandardCompare(b.name) == .orderedAscending
     }
+    static func sorted(_ items: [NativeMaterial]) -> [NativeMaterial] { items.sorted { precedes($0, $1) } }
     /// Only valid ancestors are included. A deleted folder cannot leave an empty
     /// inaccessible column selected after the library refreshes.
     static func columns(folder: String, materials: [NativeMaterial]) -> [NativeLibraryColumn] {

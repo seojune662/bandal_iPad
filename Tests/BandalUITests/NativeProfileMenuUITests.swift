@@ -1,7 +1,8 @@
 import XCTest
 
 /// 1.4.0: the rail's profile button. Signed out it offers sign-in in place; signed in it shows
-/// email, name · plan and 설정 / 사용량 / 도움말 (화면 도우미 · 문서 · 문의하기) / 플랜 보기 / 로그아웃.
+/// email, name · plan and 설정 / 사용량 / 도움말 › / 플랜 보기 / 로그아웃; 도움말 opens its own card beside the row
+/// (처음 사용 안내 · 펜슬·손가락 사용법 · 단축키 · 문의하기), and 문서 is on the help page.
 final class NativeProfileMenuUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
@@ -30,9 +31,11 @@ final class NativeProfileMenuUITests: XCTestCase {
         }
         app.buttons["native-account-help"].tap()
         XCTAssertTrue(app.buttons["native-help-guide"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["native-help-docs"].exists && app.buttons["native-help-contact"].exists)
+        for id in ["native-help-onboarding", "native-help-shortcuts", "native-help-contact"] { XCTAssertTrue(app.buttons[id].exists, id) }
+        XCTAssertEqual(app.buttons["native-help-guide"].label, "펜슬·손가락 사용법")
         app.buttons["native-help-guide"].tap()
-        XCTAssertTrue(app.staticTexts["도움말"].waitForExistence(timeout: 5), "화면 도우미 opens the help page")
+        XCTAssertTrue(app.staticTexts["도움말"].waitForExistence(timeout: 5), "펜슬·손가락 사용법 opens the help page")
+        XCTAssertTrue(app.descendants(matching: .any)["native-help-docs"].firstMatch.exists, "문서 is on the help page")
 
         account.tap()
         XCTAssertTrue(app.buttons["native-account-usage"].waitForExistence(timeout: 5)); app.buttons["native-account-usage"].tap()

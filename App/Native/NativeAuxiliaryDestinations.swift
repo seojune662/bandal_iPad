@@ -42,7 +42,7 @@ struct NativeHelpView: View {
                                     } } }.frame(maxHeight: 420)
                                 }
                             }
-                        Link(destination: URL(string: "https://bandal.io/ko/docs")!) { Label("사용 안내", systemImage: "book") }
+                        Link(destination: NativeAccountRailButton.docsURL) { Label("사용 안내", systemImage: "book") }.accessibilityIdentifier("native-help-docs")
                         Link(destination: URL(string: "https://bandal.io/ko/changelog")!) { Label("업데이트 내역", systemImage: "clock.arrow.circlepath") }
                         Link(destination: NativeAccountRailButton.contactURL) { Label("문의하기", systemImage: "envelope") }
                     }.buttonStyle(.plain)

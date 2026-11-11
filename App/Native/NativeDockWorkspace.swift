@@ -314,11 +314,10 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         .buttonStyle(.plain)
         .contextMenu { layoutMenu(group) }
         .accessibilityLabel("새 탭 열기").accessibilityHint("길게 누르면 화면 나누기 메뉴가 열립니다").accessibilityIdentifier("native-dock-add-" + group.id)
-        .popover(isPresented: Binding(get: { newTabGroupID == group.id }, set: { if !$0 { newTabGroupID = nil } }), arrowEdge: .top) {
-            if let courseID = navigation.activeCourseID {
-                NativeNewTabMenu(store: store, courseID: courseID, onAction: { openNewTab($0, group.id) }, onClose: { newTabGroupID = nil })
-                    .presentationCompactAdaptation(.popover)
-            }
+        // Figma 129:2809: the card's left edge 32 left of the ＋, its top 23 below the ＋'s middle.
+        .bandalPopover(isPresented: Binding(get: { newTabGroupID == group.id && navigation.activeCourseID != nil }, set: { if !$0 { newTabGroupID = nil } }),
+                       at: .center, offset: CGSize(width: 118, height: 17), width: 300, radius: 18, padding: 0) {
+            NativeNewTabMenu(onAction: { openNewTab($0, group.id) }, onClose: { newTabGroupID = nil })
         }
     }
     private func tab(_ document: NativeDocumentReference, group: NativeDockGroup, index: Int, sizing: NativeDockTabSizing, metrics: NativeDockStripMetrics) -> some View {

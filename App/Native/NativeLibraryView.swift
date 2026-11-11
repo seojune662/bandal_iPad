@@ -28,6 +28,8 @@ struct NativeLibraryView: View {
     @State private var creation: CreationRequest?
     @State private var renamingID: String?
     @State private var moving: NativeMaterial?
+    /// Read by `NativeLibraryPresentation.sorted`; held here so the lists reorder when it changes.
+    @AppStorage(NativeLibraryPresentation.sortKey) private var sort = NativeLibraryPresentation.Sort.name.rawValue
     @State private var deleting: NativeMaterial?
     @State private var operationError: String?
     @State private var working = false
@@ -71,10 +73,7 @@ struct NativeLibraryView: View {
             (folderPath.isEmpty || $0.relPath.hasPrefix(folderPath + "/") || folderPath == rootPath && $0.learningTarget != nil) &&
                 ($0.name.localizedStandardContains(search) || $0.relPath.localizedStandardContains(search))
         }
-        return source.sorted {
-            if ($0.kind == "dir") != ($1.kind == "dir") { return $0.kind == "dir" }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-        }
+        return NativeLibraryPresentation.sorted(source)
     }
 
     private var configuredContent: some View {
@@ -250,10 +249,7 @@ Menu {
     }
     private var treeRows: [TreeEntry] {
         func descend(_ materials: [NativeMaterial], depth: Int) -> [TreeEntry] {
-            materials.sorted {
-                if $0.isDirectory != $1.isDirectory { return $0.isDirectory }
-                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-            }.flatMap { material in
+            NativeLibraryPresentation.sorted(materials).flatMap { material in
                 [TreeEntry(material: material, depth: depth)] + (expandedFolders.contains(material.relPath) ? descend(material.children ?? [], depth: depth + 1) : [])
             }
         }
@@ -512,22 +508,22 @@ Menu {
     }
 
     @ViewBuilder private func actions(_ material: NativeMaterial) -> some View {
-        Button(material.kind == "dir" ? "폴더 열기" : "열기", systemImage: material.kind == "dir" ? "folder" : "doc") { open(material) }
-        if material.learningTarget == nil {
-        Button("이름 변경", systemImage: "pencil") { renamingID = material.id }
-        Button("폴더로 이동", systemImage: "folder") { moving = material }
-        if material.kind != "dir" {
-            Button("공유", systemImage: "square.and.arrow.up") {
-                guard let courseID else { return }
-                perform { _ = try await store.invoke("materials:share", ["courseId": courseID, "relPath": material.relPath]) }
+        let opening = Button(material.kind == "dir" ? "폴더 열기" : "열기", systemImage: material.kind == "dir" ? "folder" : "doc") { open(material) }
+        if material.learningTarget != nil { opening }
+        else {
+            NativeMaterialMenu(rename: { renamingID = material.id },
+                               share: material.kind == "dir" || courseID == nil ? nil : { perform { _ = try await store.invoke("materials:share", ["courseId": courseID ?? "", "relPath": material.relPath]) } },
+                               delete: { deleting = material }, sort: $sort) {
+                Divider()
+                opening
+                Button("폴더로 이동", systemImage: "folder.badge.plus") { moving = material }
+                if material.kind != "dir" {
+                    Button("파일로 내보내기", systemImage: "square.and.arrow.down") {
+                        guard let courseID else { return }
+                        perform { _ = try await store.invoke("materials:export", ["courseId": courseID, "relPath": material.relPath]) }
+                    }
+                }
             }
-            Button("파일로 내보내기", systemImage: "square.and.arrow.down") {
-                guard let courseID else { return }
-                perform { _ = try await store.invoke("materials:export", ["courseId": courseID, "relPath": material.relPath]) }
-            }
-        }
-        Divider()
-        Button("삭제", systemImage: "trash", role: .destructive) { deleting = material }
         }
     }
 
