@@ -30,9 +30,15 @@ final class NativeSettingsParityTests: XCTestCase {
         XCTAssertEqual(NativeSettingsCatalog.matching("iCloud").map(\.id), ["sync"])
         XCTAssertEqual(NativeSettingsCatalog.matching("calendar browser", locale: "en-US").map(\.id), ["integrations"])
         XCTAssertEqual(NativeSettingsCatalog.resolve("plugins"), "integrations")
-        XCTAssertEqual(NativeSettingsCatalog.resolve("university"), NativeReleaseFlags.showsAccount ? "account" : "general")
+        // The school page opens from 일반 and 통합; pages the design leaves out are a section's 더 보기.
+        XCTAssertEqual(NativeSettingsCatalog.resolve("university"), "integrations")
+        XCTAssertEqual(NativeSettingsCatalog.subpage("university"), "university")
         XCTAssertEqual(NativeSettingsCatalog.resolve("notifications"), "general")
+        XCTAssertEqual(NativeSettingsCatalog.subpage("notifications"), "more")
         XCTAssertEqual(NativeSettingsCatalog.resolve("tabs"), "appearance")
+        XCTAssertEqual(NativeSettingsCatalog.subpage("tabs"), "more")
+        XCTAssertEqual(NativeSettingsCatalog.resolve("referral"), NativeReleaseFlags.showsAccount ? "account" : "general")
+        XCTAssertNil(NativeSettingsCatalog.subpage("sync"))
         XCTAssertEqual(NativeSettingsCatalog.resolve("nonsense"), "general")
         XCTAssertEqual(NativeSettingsCatalog.localized("en-US").first { $0.id == "appearance" }?.title, "Appearance")
     }
