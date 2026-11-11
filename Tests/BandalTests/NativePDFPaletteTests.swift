@@ -28,8 +28,8 @@ final class NativePDFPaletteTests: XCTestCase {
         XCTAssertFalse(old.drawAndHold)
         NativePDFPalettePreferences.update(root: root, defaults: defaults) { $0.favorites[1] = .init(color: "orange", width: 0.0067, opacity: 0.7) }
         let latest = NativePDFPalettePreferences.update(root: root, defaults: defaults) { $0.favorites[2] = .init(color: "green", width: 0.004, opacity: 0.5) }
-        XCTAssertEqual(latest.favorites[0], old.favorites[0]); XCTAssertEqual(latest.favorites[1].color, "orange")
-        XCTAssertEqual(latest.favorites[2].color, "green"); XCTAssertFalse(latest.drawAndHold)
+        XCTAssertEqual(latest.favorites[0], old.favorites[0]); XCTAssertEqual(latest.favorites[1]?.color, "orange")
+        XCTAssertEqual(latest.favorites[2]?.color, "green"); XCTAssertFalse(latest.drawAndHold)
     }
 
     func testTwelveStepsHoldEveryEarlierDefaultAndLabelTheNearestStep() {
@@ -144,12 +144,12 @@ final class NativePDFPaletteTests: XCTestCase {
         model.chooseColor("blue"); model.setWidth(0.002)
         model.chooseTool("pen"); XCTAssertEqual(model.currentPreset, .init(color: "red", width: 0.012, opacity: 0.95))
         model.chooseTool("ballpoint"); XCTAssertEqual(model.currentPreset, .init(color: "blue", width: 0.002, opacity: 1))
-        model.chooseFavorite(1); XCTAssertEqual(model.tool, "ballpoint", "A favourite applies to the current pen-like tool")
+        model.chooseFavorite(1); XCTAssertEqual(model.tool, "pen", "A favourite is a whole pen: an older one without a type is 만년필")
         XCTAssertEqual(model.currentPreset, model.favorites[1])
         let reopened = NativePDFWorkspaceModel(document: doc, store: store, defaults: defaults)
-        XCTAssertEqual(reopened.tool, "ballpoint"); XCTAssertEqual(reopened.currentPreset, model.favorites[1])
+        XCTAssertEqual(reopened.tool, "pen"); XCTAssertEqual(reopened.currentPreset, model.favorites[1])
         let other = NativePDFWorkspaceModel(document: .init(courseID: "c", relativePath: "b.pdf", title: "B", kind: "pdf"), store: store, defaults: defaults)
-        other.chooseTool("ballpoint"); XCTAssertEqual(other.currentPreset, model.favorites[1], "recentBallpoint seeds new documents")
+        other.chooseTool("ballpoint"); XCTAssertEqual(other.currentPreset, .init(color: "blue", width: 0.002, opacity: 1), "recentBallpoint seeds new documents")
 
         var preferences = NativePDFWorkspacePreferences(); preferences.tool = "ballpoint"
         XCTAssertEqual(preferences.drawingStyle["fixedWidth"] as? Bool, true)
@@ -169,7 +169,7 @@ final class NativePDFPaletteTests: XCTestCase {
     }
 
     @MainActor
-    func testOnlyInkToolRetapOpensStyleAndDoesNotMutateStyle() {
+    func testRetapOpensTheToolsOptionsAndDoesNotMutateStyle() {
         let suite = "NativePDFPaletteRetap.\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = NativeWorkspaceStore(storageRoot: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
@@ -181,10 +181,65 @@ final class NativePDFPaletteTests: XCTestCase {
         model.showStyle = false; model.chooseWidthSlot(1); XCTAssertEqual(model.editingWidthSlot, 1); XCTAssertFalse(model.showStyle)
         model.chooseTool("highlighter"); model.setOpacity(0.9)
         XCTAssertEqual(model.opacity, 0.34)
-        for tool in ["eraser", "lasso", "select", "text"] {
+        for tool in ["eraser", "lasso", "tape"] {
+            model.chooseTool(tool); XCTAssertFalse(model.showStyle, tool); model.chooseTool(tool); XCTAssertTrue(model.showStyle, tool)
+        }
+        for tool in ["select", "laser", "comment", "text"] {
             model.chooseTool(tool); model.chooseTool(tool); XCTAssertFalse(model.showStyle, tool)
         }
         model.chooseTool("rect"); XCTAssertEqual(model.tool, "text")
+    }
+
+    @MainActor
+    func testBrushIsAPenTypeAndFavoritesKeepTheTypeWhileTheStarFillsAndEmptiesCells() throws {
+        let suite = "NativePDFPaletteBrush.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = NativeWorkspaceStore(storageRoot: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let model = NativePDFWorkspaceModel(document: .init(courseID: "c", relativePath: "a.pdf", title: "A", kind: "pdf"), store: store, defaults: defaults)
+        XCTAssertEqual(model.favoriteIndex, 0, "The default pen is the first favourite")
+        model.chooseTool("brush"); XCTAssertTrue(model.isPenLike); XCTAssertEqual(model.currentPreset, .brush); XCTAssertEqual(model.penKind, "brush")
+        XCTAssertNil(model.favoriteIndex); XCTAssertFalse(model.hasEmptyFavorite)
+        model.toggleFavorite(); XCTAssertEqual(model.paletteNotice, "한 칸을 먼저 지워 주세요"); XCTAssertEqual(model.tool, "brush")
+        model.showStyle = true; model.chooseFavorite(2)
+        XCTAssertEqual(model.tool, "pen"); XCTAssertEqual(model.favoriteIndex, 2); XCTAssertTrue(model.showStyle, "A favourite picked in the pen settings leaves them open")
+        model.toggleFavorite(); XCTAssertNil(model.favorites[2]); XCTAssertTrue(model.hasEmptyFavorite)
+        model.choosePenKind("brush"); XCTAssertTrue(model.showStyle); model.chooseColor("green"); model.toggleFavorite()
+        XCTAssertEqual(model.favorites[2], .init(color: "green", width: 0.005, opacity: 1, kind: "brush")); XCTAssertEqual(model.favoriteIndex, 2)
+        model.chooseTool("eraser"); model.chooseFavorite(2); XCTAssertEqual(model.tool, "brush"); XCTAssertEqual(model.color, "green")
+        model.clearFavorite(0)
+        let stored = NativePDFPalettePreferences.load(root: store.root, defaults: defaults)
+        XCTAssertNil(stored.favorites[0]); XCTAssertEqual(stored.favorites[2]?.kind, "brush"); XCTAssertEqual(stored.recentBrush.color, "green")
+        XCTAssertEqual(try JSONDecoder().decode(NativePDFPalettePreferences.self, from: JSONEncoder().encode(stored)), stored)
+        let old = try JSONDecoder().decode(NativePDFPalettePreferences.self, from: Data(#"{"version":2,"favorites":[{"color":"red","width":0.004,"opacity":0.9},null,{"color":"blue","width":0.002,"opacity":1,"kind":"ballpoint"}]}"#.utf8))
+        XCTAssertEqual(old.favorites[0], .init(color: "red", width: 0.004, opacity: 0.9, kind: "pen")); XCTAssertNil(old.favorites[1]); XCTAssertEqual(old.favorites[2]?.kind, "ballpoint")
+        XCTAssertEqual(old.tapePageOnly, true); XCTAssertFalse(old.lassoInkOnly); XCTAssertFalse(old.eraserHighlighterOnly); XCTAssertFalse(old.highlighterStraight)
+
+        // 붓 is ordinary ink: a wider stroke and its own pressure curve, no new stored field.
+        var preferences = NativePDFWorkspacePreferences(); preferences.tool = "brush"; preferences.width = 0.005
+        XCTAssertEqual(preferences.drawingStyle["width"] as? Double ?? 0, 0.008, accuracy: 1e-12); XCTAssertNil(preferences.drawingStyle["fixedWidth"])
+        XCTAssertEqual(Set(preferences.drawingStyle.keys), ["color", "width", "opacity"])
+        XCTAssertEqual(preferences.validated().tool, "brush")
+        XCTAssertEqual(NativePDFInkSurface.brushPressure(0), 0); XCTAssertEqual(NativePDFInkSurface.brushPressure(0.4), 1)
+        XCTAssertEqual(NativePDFInkSurface.brushPressure(0.2), pow(0.5, 1.8), accuracy: 1e-9)
+        XCTAssertLessThan(NativePDFInkSurface.brushPressure(0.04), 0.03, "A light touch draws a hairline")
+    }
+
+    @MainActor
+    func testToolOptionsAreSharedAndTheMemoStampReadsTodayAndYesterday() {
+        let suite = "NativePDFPaletteOptions.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = NativeWorkspaceStore(storageRoot: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let a = NativePDFWorkspaceModel(document: .init(courseID: "c", relativePath: "a.pdf", title: "A", kind: "pdf"), store: store, defaults: defaults)
+        let b = NativePDFWorkspaceModel(document: .init(courseID: "c", relativePath: "b.pdf", title: "B", kind: "pdf"), store: store, defaults: defaults)
+        a.setEraserHighlighterOnly(true); a.setLassoInkOnly(true); a.setTapePageOnly(false); a.setHighlighterStraight(true)
+        XCTAssertTrue(b.palette.eraserHighlighterOnly); XCTAssertTrue(b.palette.lassoInkOnly); XCTAssertFalse(b.palette.tapePageOnly); XCTAssertTrue(b.palette.highlighterStraight)
+        XCTAssertEqual(a.palette.tapeColor, "yellow", "New tape is the design's amber")
+
+        let calendar = Calendar.current, now = calendar.date(from: DateComponents(year: 2026, month: 11, day: 11, hour: 15))!
+        let ko = Locale(identifier: "ko-KR")
+        XCTAssertEqual(NativePDFCommentPopover.stamp(calendar.date(from: DateComponents(year: 2026, month: 11, day: 11, hour: 9, minute: 10)), ko, now: now), "오늘 09:10")
+        XCTAssertEqual(NativePDFCommentPopover.stamp(calendar.date(from: DateComponents(year: 2026, month: 11, day: 10, hour: 14, minute: 20)), ko, now: now), "어제 14:20")
+        XCTAssertTrue(NativePDFCommentPopover.stamp(calendar.date(from: DateComponents(year: 2026, month: 10, day: 3, hour: 8, minute: 5)), ko, now: now).hasSuffix(" 08:05"))
     }
 
     @MainActor

@@ -114,52 +114,109 @@ struct NativePDFToolbar: View {
     }
 }
 
-/// Floats above the lasso/select box like a notebook app's selection menu.
+/// The selection menu (Figma 260:8643): a glass bar above the lasso/select box (below it when there is no room)
+/// with 잘라내기 · 복사 · 삭제 · 복제 | 스타일 ›. What the design does not show (텍스트 편집, 이미지로 복사, 붙여넣기,
+/// 불투명도, 선택 해제) is behind ⋯. With nothing selected the bar is the paste menu of a long press, or the
+/// image copy of an empty lasso.
 struct NativePDFSelectionBar: View {
     var model: NativePDFWorkspaceModel
     let frame: CGRect
+    @State private var width: CGFloat = 331
+    @State private var showStyle = false
+    @State private var showMore = false
     var body: some View {
         GeometryReader { geometry in
-            let width = min(geometry.size.width - 16, model.selectionCount > 0 ? (model.selectedText ? 650.0 : 580.0) : (model.selectedRegion != nil ? 250.0 : 150.0))
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 0) {
-                    // Notability order: cut · copy · delete · duplicate, then style and the rest.
-                    if model.selectionCount > 0 {
-                        Button { model.cutSelection() } label: { action("잘라내기") }.disabled(model.isCopyingSelection).accessibilityIdentifier("native-pdf-cut-selection")
-                        Button { model.copySelection() } label: { action(model.isCopyingSelection ? "복사 중…" : "복사") }.disabled(model.isCopyingSelection).accessibilityIdentifier("native-pdf-copy-selection")
-                        Button(role: .destructive) { model.deleteSelection() } label: { action("삭제").foregroundStyle(.red) }.accessibilityIdentifier("native-pdf-delete-selection")
-                        Button { model.duplicateSelection() } label: { action("복제") }.accessibilityIdentifier("native-pdf-duplicate-selection")
-                        Menu {
-                            Menu("색") { ForEach(NativePDFWorkspaceModel.colors, id: \.name) { item in Button(item.label) { model.restyleSelection(color: item.name) } } }
-                            Menu("굵기") { ForEach(model.palette.widths(for: "pen"), id: \.self) { step in Button("굵기 " + NativePDFPaletteStyle.stepLabel(step)) { model.restyleSelection(width: NativePDFPaletteStyle.penSteps[step]) } } }
-                            Menu("불투명도") { ForEach([1.0, 0.6, 0.3], id: \.self) { value in Button("\(Int(value * 100))%") { model.restyleSelection(opacity: value) } } }
-                        } label: { action("스타일") }.accessibilityIdentifier("native-pdf-selection-style")
-                        if model.selectedText { Button { model.editSelectedText() } label: { action("텍스트 편집") }.accessibilityIdentifier("native-pdf-edit-text") }
-                    }
-                    if model.selectedRegion != nil || model.selectionCount > 0 {
-                        Button { model.copyPDFRegion() } label: {
-                            if model.isCopyingRegion { ProgressView().frame(width: 92, height: 40) }
-                            else { action("이미지로 복사") }
-                        }.disabled(model.isCopyingRegion).accessibilityIdentifier("native-pdf-copy-region")
-                    }
+            HStack(spacing: 4) {
+                if model.selectionCount > 0 {
+                    Button { model.cutSelection() } label: { action("잘라내기") }.disabled(model.isCopyingSelection).accessibilityIdentifier("native-pdf-cut-selection")
+                    Button { model.copySelection() } label: { action(model.isCopyingSelection ? "복사 중…" : "복사") }.disabled(model.isCopyingSelection).accessibilityIdentifier("native-pdf-copy-selection")
+                    Button { model.deleteSelection() } label: { action("삭제") }.accessibilityIdentifier("native-pdf-delete-selection")
+                    Button { model.duplicateSelection() } label: { action("복제") }.accessibilityIdentifier("native-pdf-duplicate-selection")
+                    Rectangle().fill(NativeGlass.separator).frame(width: 1, height: 20)
+                    Button { showStyle = true } label: {
+                        HStack(spacing: 4) { Text("스타일").font(.system(size: 14, weight: .medium)); Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.secondary) }
+                            .padding(.horizontal, 10).frame(height: 36).contentShape(Rectangle())
+                    }.accessibilityLabel("스타일").accessibilityIdentifier("native-pdf-selection-style")
+                        .bandalPopover(isPresented: $showStyle, arrowEdge: nil, width: 252, radius: 22, padding: 18) { NativePDFSelectionStyle(model: model) }
+                    Button { showMore = true } label: { Image(systemName: "ellipsis").font(.system(size: 14, weight: .medium)).frame(width: 36, height: 36).contentShape(Rectangle()) }
+                        .accessibilityLabel("선택 더 보기").accessibilityIdentifier("native-pdf-selection-more")
+                        .bandalPopover(isPresented: $showMore, arrowEdge: nil, width: 240, radius: 14, padding: 8) { more }
+                } else {
+                    if model.selectedRegion != nil { copyRegion }
                     Button { model.pasteObjects() } label: { action("붙여넣기") }
                         .disabled(!model.canPaste).opacity(model.canPaste ? 1 : 0.4).accessibilityIdentifier("native-pdf-paste")
                     Button { model.clearSelection() } label: {
-                        Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 36, height: 40).contentShape(Rectangle())
+                        Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 36, height: 36).contentShape(Rectangle())
                     }.accessibilityLabel("선택 해제")
-                }.padding(.horizontal, 6)
+                }
             }
-            .buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.text)
-            .frame(width: max(1, width), height: 40)
-            .background(.regularMaterial, in: Capsule()).overlay(Capsule().stroke(NativeDesktopTheme.border, lineWidth: 1))
-            .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+            .padding(.horizontal, 8).padding(.vertical, 6).fixedSize()
+            .buttonStyle(BandalRowStyle()).foregroundStyle(NativeDesktopTheme.text)
+            .bandalGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .position(x: min(max(frame.midX, width / 2 + 8), max(width / 2 + 8, geometry.size.width - width / 2 - 8)),
-                      y: frame.minY - 28 > 40 ? frame.minY - 28 : min(frame.maxY + 28, geometry.size.height - 28))
+                      y: frame.minY - 40 > 40 ? frame.minY - 40 : min(frame.maxY + 40, geometry.size.height - 32))
         }.disabled(model.isBusy || model.errorMessage != nil)
             .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-selection-bar")
     }
+    private var copyRegion: some View {
+        Button { model.copyPDFRegion() } label: {
+            if model.isCopyingRegion { ProgressView().frame(width: 92, height: 36) } else { action("이미지로 복사") }
+        }.disabled(model.isCopyingRegion).accessibilityIdentifier("native-pdf-copy-region")
+    }
+    private var more: some View {
+        BandalMenu {
+            if model.selectedText { BandalMenuRow("텍스트 편집", symbol: "character.cursor.ibeam") { showMore = false; model.editSelectedText() }.accessibilityIdentifier("native-pdf-edit-text") }
+            BandalMenuRow("이미지로 복사", symbol: "photo.on.rectangle") { showMore = false; model.copyPDFRegion() }.disabled(model.isCopyingRegion).accessibilityIdentifier("native-pdf-copy-region")
+            BandalMenuRow("붙여넣기", symbol: "square.and.pencil") { showMore = false; model.pasteObjects() }.disabled(!model.canPaste).accessibilityIdentifier("native-pdf-paste")
+            BandalMenuDivider()
+            ForEach([1.0, 0.6, 0.3], id: \.self) { value in
+                BandalMenuRow("불투명도 \(Int(value * 100))%", symbol: "circle.lefthalf.filled") { showMore = false; model.restyleSelection(opacity: value) }
+            }
+            BandalMenuDivider()
+            BandalMenuRow("선택 해제", symbol: "xmark") { showMore = false; model.clearSelection() }.accessibilityIdentifier("native-pdf-clear-selection")
+        }
+    }
     private func action(_ title: String) -> some View {
-        Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1).padding(.horizontal, 10).frame(height: 40).contentShape(Rectangle())
+        Text(LocalizedStringKey(title)).font(.system(size: 14, weight: .medium)).lineLimit(1).padding(.horizontal, 10).frame(height: 36).contentShape(Rectangle())
+    }
+}
+
+/// 스타일 (Figma 260:8678): the pen's colours and three thicknesses for what is selected.
+/// 글자로 바꾸기 needs handwriting recognition, which the app does not have: it is drawn and says 준비 중.
+struct NativePDFSelectionStyle: View {
+    var model: NativePDFWorkspaceModel
+    private static let weights: [CGFloat] = [2, 4, 7]
+    var body: some View {
+        let style = model.selectionStyle, steps = model.palette.widths(for: "pen")
+        VStack(alignment: .leading, spacing: 14) {
+            NativePDFPopoverTitle("스타일")
+            NativePDFPopoverCaption("색")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(model.palette.colors(for: "pen"), id: \.self) { name in
+                        NativePDFColorCell(color: NativePDFPaletteLook.swatch(name), chosen: style.color == name, rimmed: name == "ink") { model.restyleSelection(color: name) }
+                            .accessibilityLabel(NativePDFPaletteLook.colorName(name) + " 색상").accessibilityIdentifier("native-pdf-selection-color-" + name)
+                    }
+                }
+            }.frame(height: 36)
+            NativePDFPopoverCaption("굵기")
+            HStack(spacing: 6) {
+                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                    let value = NativePDFPaletteStyle.penSteps[step], chosen = style.width.map { abs($0 - value) < 0.0000001 } == true
+                    Button { model.restyleSelection(width: value) } label: {
+                        NativePDFSquiggle.weight.stroke(NativeDesktopTheme.text, style: StrokeStyle(lineWidth: Self.weights[min(index, 2)], lineCap: .round, lineJoin: .round))
+                            .frame(width: 44, height: 16).frame(maxWidth: .infinity).frame(height: 38)
+                            .background(chosen ? NativeGlass.tool : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous)).contentShape(Rectangle())
+                    }.accessibilityLabel("굵기 " + NativePDFPaletteStyle.stepLabel(step)).accessibilityIdentifier("native-pdf-selection-width-\(index)")
+                        .accessibilityAddTraits(chosen ? .isSelected : [])
+                }
+            }
+            Button { model.paletteNotice = "글자로 바꾸기는 준비 중이에요" } label: {
+                Text("글자로 바꾸기").font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity).frame(height: 43)
+                    .background(NativeGlass.tool, in: RoundedRectangle(cornerRadius: 12, style: .continuous)).contentShape(Rectangle())
+            }.accessibilityLabel("글자로 바꾸기 (준비 중)").accessibilityIdentifier("native-pdf-selection-to-text")
+        }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.text).disabled(model.isBusy || model.errorMessage != nil)
     }
 }
 

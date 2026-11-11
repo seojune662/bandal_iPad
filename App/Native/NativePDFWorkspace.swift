@@ -77,12 +77,12 @@ struct NativePDFWorkspace: View {
                                 NativeAnnotationRegionOverlay(selected: model.captureAssistantViewport)
                             }
                         }
-                        .overlay { if model.showStyle { NativePDFPaletteOverlay(model: model) } }
                         .overlay(alignment: .top) {
                             if showsPalette, paletteHost?.floats(tabID) != true { NativePDFFloatingPalette(model: model).padding(.horizontal, 8).padding(.top, NativePDFFloatingPalette.top) }
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bodyFrame = $0; registerPalette() }
-                        .overlay(alignment: .bottom) { if visible, let started = model.recordingStartedAt { NativePDFRecordingBar(model: model, started: started) } }
+                        .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model) } }
+                        .overlay { if visible { NativePDFCommentAnchor(model: model) } }
                         .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame) } }
                     if model.showAnnotations && visible {
                         Divider()
@@ -130,23 +130,6 @@ struct NativePDFWorkspace: View {
             .padding(BandalMetrics.padding).frame(width: 340).presentationCompactAdaptation(.popover)
         }
         .onChange(of: model.showAnnotationEditor) { _, shown in if !shown { model.dismissAnnotation() } }
-        .popover(isPresented: Binding(get: { model.commentDraft != nil }, set: { if !$0, model.commentDraft != nil { model.saveComment() } }),
-                 attachmentAnchor: .point(UnitPoint(x: 0.5, y: 0.3)), arrowEdge: .top) {
-            VStack(alignment: .leading, spacing: 8) {
-                BandalSectionHeader("댓글")
-                TextEditor(text: Binding(get: { model.commentDraft?.text ?? "" }, set: { model.commentDraft?.text = $0 }))
-                    .font(.system(size: BandalMetrics.bodySize)).frame(minHeight: 96)
-                    .scrollContentBackground(.hidden).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: BandalMetrics.radiusSmall))
-                    .accessibilityIdentifier("native-pdf-comment-editor")
-                HStack {
-                    if model.commentDraft?.id != nil { Button("댓글 삭제", role: .destructive) { model.deleteComment() }.font(.system(size: 12)).accessibilityIdentifier("native-pdf-delete-comment") }
-                    Spacer()
-                    Button("완료") { model.saveComment() }.font(.system(size: BandalMetrics.bodySize, weight: .semibold)).accessibilityIdentifier("native-pdf-save-comment")
-                }
-            }
-            .background { BandalEscapeKey { model.commentDraft = nil } }
-            .padding(BandalMetrics.padding).frame(width: 340).presentationCompactAdaptation(.popover)
-        }
         .popover(isPresented: Binding(get: { model.pageDeleteConfirmation != nil }, set: { if !$0 { model.pageDeleteConfirmation = nil } }),
                  attachmentAnchor: .point(.top), arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 8) {
@@ -160,6 +143,7 @@ struct NativePDFWorkspace: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in model.saveInBackground() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in model.recordingPausedForBackground() }
         .bandalToast(Binding(get: { model.recordingNotice }, set: { model.recordingNotice = $0 }))
+        .bandalToast(Binding(get: { model.paletteNotice.map { NativeAppLocale.string($0, Locale(identifier: NativeAppLocale.current)) } }, set: { model.paletteNotice = $0 }))
         .bandalToast(Binding(get: { model.aiNoteNotice }, set: { model.aiNoteNotice = $0 }), symbol: "checkmark.circle.fill", actionTitle: "되돌리기") { model.undo() }
     }
 
@@ -251,19 +235,28 @@ final class NativePDFWorkspaceModel {
     /// The slot whose twelve-step thickness bar is open.
     var editingWidthSlot: Int?
     private(set) var shapeRecognitionEnabled = true
-    var isInkTool: Bool { ["pen", "ballpoint", "highlighter"].contains(tool) }
-    /// Ballpoint shares the pen favourites; only its width model differs.
-    var isPenLike: Bool { tool == "pen" || tool == "ballpoint" }
-    /// The pen type the palette's one 펜 button returns to (만년필 "pen" or 볼펜 "ballpoint").
+    var isInkTool: Bool { isPenLike || tool == "highlighter" }
+    /// 만년필, 볼펜 and 붓 share the palette's 펜 button and the favourites; they differ in how width follows the hand.
+    var isPenLike: Bool { NativePDFPenPreset.kinds.contains(tool) }
+    /// Tools whose button opens a popover on a second tap.
+    var hasToolOptions: Bool { isInkTool || ["eraser", "lasso", "tape"].contains(tool) }
+    /// The pen type the palette's one 펜 button returns to (만년필 "pen", 볼펜 "ballpoint" or 붓 "brush").
     private(set) var penKind = "pen"
     /// The palette's 펜 button: picks the last pen type, or opens its settings when already chosen.
     func choosePen() { chooseTool(isPenLike ? tool : penKind) }
     /// Pen settings: switches the pen type and keeps the settings open.
     func choosePenKind(_ kind: String) {
-        guard ["pen", "ballpoint"].contains(kind), kind != tool else { return }
-        chooseTool(kind); if tool == kind { showStyle = true }
+        guard NativePDFPenPreset.kinds.contains(kind), kind != tool else { return }
+        chooseTool(kind, keepingStyle: true)
     }
     var currentPreset: NativePDFPenPreset { .init(color: color, width: width, opacity: opacity) }
+    /// The current pen as a favourite: its style and its type.
+    var currentFavorite: NativePDFPenPreset { var value = currentPreset.validated(); value.kind = isPenLike ? tool : penKind; return value }
+    /// The favourite cell holding exactly the current pen.
+    var favoriteIndex: Int? { isPenLike ? favorites.firstIndex { $0 == currentFavorite } : nil }
+    var hasEmptyFavorite: Bool { favorites.contains { $0 == nil } }
+    /// "한 칸을 먼저 지워 주세요" and other one-line palette messages.
+    var paletteNotice: String?
     /// The straight line draws with the pen's colours and widths.
     private var slotTool: String { tool == "line" ? "pen" : tool }
     var colorSlots: [String] { palette.colors(for: slotTool) }
@@ -285,9 +278,8 @@ final class NativePDFWorkspaceModel {
     }
     var styleAccessibilityValue: String { "\(tool) \(color) \(widthLabel(for: width)) \(Int((opacity * 100).rounded()))%" }
     func favoriteAccessibilityValue(_ index: Int) -> String {
-        guard favorites.indices.contains(index) else { return "" }
-        let value = favorites[index]
-        return "pen \(value.color) \(widthLabel(for: value.width, tool: "pen")) \(Int((value.opacity * 100).rounded()))%"
+        guard favorites.indices.contains(index), let value = favorites[index] else { return "" }
+        return "\(value.kind) \(value.color) \(widthLabel(for: value.width, tool: "pen")) \(Int((value.opacity * 100).rounded()))%"
     }
     var page = 1 { didSet { NativeDockShareControls.visiblePage[document.id] = page } }
     var pageCount = 1
@@ -302,16 +294,22 @@ final class NativePDFWorkspaceModel {
     /// Memorisation tape on this document, and whether every piece is peeled back.
     private(set) var hasTapes = false
     private(set) var allTapesRevealed = false
+    /// For assistive technology and UI tests: whether the tape on this document covers its text.
+    var tapeAccessibilityValue: String { !hasTapes ? "" : allTapesRevealed ? "revealed" : "covered" }
     /// The comment pin being written or read: a new pin has no id until saved.
-    struct CommentDraft { var page: Int; var box: CGRect; var id: String?; var text: String; var color: String }
+    struct CommentDraft { var page: Int; var box: CGRect; var id: String?; var text: String; var color: String; var written: Date? = nil; var reply = "" }
     var commentDraft: CommentDraft?
     /// Lecture recording started from this document's palette, and when it began.
     private(set) var recordingID: String?
     private(set) var recordingStartedAt: Date?
+    /// When the recording bar's pause was pressed; the clock stands still until it resumes.
+    private(set) var recordingPausedAt: Date?
     var recordingNotice: String?
     /// "노트에 넣었어요" after an AI answer landed on the page; its toast offers 되돌리기.
     var aiNoteNotice: String?
     private(set) var summarizingRecording = false
+    /// How long the recording being summarized ran, for the "요약하는 중이에요" card.
+    private(set) var recordingSummaryMinutes = 0
     private(set) var selectionCount = 0
     private(set) var selectedText = false
     /// Selection box in the PDF body's coordinates, for the floating action bar.
@@ -387,6 +385,7 @@ final class NativePDFWorkspaceModel {
     private var savedPenStyle = NativePDFPenPreset.pen
     private var savedHighlighterStyle = NativePDFPenPreset.highlighter
     private var savedBallpointStyle = NativePDFPenPreset.ballpoint
+    private var savedBrushStyle = NativePDFPenPreset.brush
     private var paletteEvents: AnyCancellable?
     private var snapshotTask: Task<Void, Error>?
     private var snapshotRequested = false
@@ -434,7 +433,7 @@ final class NativePDFWorkspaceModel {
         var saved = NativePDFWorkspacePreferences.load(root: store.root, documentID: preferenceID, defaults: defaults)
         let palette = NativePDFPalettePreferences.load(root: store.root, defaults: defaults)
         if !NativePDFWorkspacePreferences.hasStored(root: store.root, documentID: preferenceID, defaults: defaults) {
-            saved.penStyle = palette.recentPen; saved.highlighterStyle = palette.recentHighlighter; saved.ballpointStyle = palette.recentBallpoint
+            saved.penStyle = palette.recentPen; saved.highlighterStyle = palette.recentHighlighter; saved.ballpointStyle = palette.recentBallpoint; saved.brushStyle = palette.recentBrush
             saved.color = palette.recentPen.color; saved.width = palette.recentPen.width; saved.opacity = palette.recentPen.opacity
         }
         saved.shapeRecognitionEnabled = palette.drawAndHold
@@ -442,9 +441,9 @@ final class NativePDFWorkspaceModel {
         if preferenceID != document.id { saved.pendingPage = nil; saved.save(root: store.root, documentID: document.id, defaults: defaults) }
         preferences = saved
         tool = saved.tool; color = saved.color; width = saved.width; opacity = saved.opacity
-        previousTool = saved.previousTool; savedPenStyle = saved.penStyle; savedHighlighterStyle = saved.highlighterStyle; savedBallpointStyle = saved.ballpointStyle
+        previousTool = saved.previousTool; savedPenStyle = saved.penStyle; savedHighlighterStyle = saved.highlighterStyle; savedBallpointStyle = saved.ballpointStyle; savedBrushStyle = saved.brushStyle
         toolsExpanded = saved.toolsExpanded; showPages = saved.showPages; showAnnotations = saved.showAnnotations
-        penKind = [tool, previousTool].first { $0 == "pen" || $0 == "ballpoint" } ?? "pen"
+        penKind = [tool, previousTool].first(where: NativePDFPenPreset.kinds.contains) ?? "pen"
         lassoMode = saved.lassoMode; canPaste = Self.clipboardHasContent
         clipboardEvents = NotificationCenter.default.publisher(for: UIPasteboard.changedNotification).sink { [weak self] _ in
             self?.canPaste = Self.clipboardHasContent
@@ -459,9 +458,10 @@ final class NativePDFWorkspaceModel {
             let shared = NativePDFPalettePreferences.load(root: self.store.root, defaults: self.defaults)
             self.favorites = shared.favorites
             if shared != self.palette {
-                let eraserChanged = shared.eraserRadius != self.palette.eraserRadius || shared.eraserMode != self.palette.eraserMode
+                let toolChanged = shared.eraserRadius != self.palette.eraserRadius || shared.eraserMode != self.palette.eraserMode
+                    || shared.eraserHighlighterOnly != self.palette.eraserHighlighterOnly || shared.highlighterStraight != self.palette.highlighterStraight
                 self.palette = shared
-                if eraserChanged { self.updateStyle() }
+                if toolChanged { self.updateStyle() }
             }
             if self.shapeRecognitionEnabled != shared.drawAndHold {
                 self.shapeRecognitionEnabled = shared.drawAndHold; self.updateStyle()
@@ -667,8 +667,10 @@ final class NativePDFWorkspaceModel {
                 let style = self.currentPreferences.drawingStyle
                 let epoch = self.sceneEpoch
                 payload.merge(["nativeInkErase": true, "loading": false, "active": true,
-                    "annotations": self.annotations, "tool": ["name": self.tool == "ballpoint" ? "pen" : self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled, "lassoMode": self.lassoMode,
-                        "eraserRadius": self.palette.eraserRadius, "eraserMode": self.palette.eraserMode], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
+                    "annotations": self.annotations, "tool": ["name": self.isPenLike ? "pen" : self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled, "lassoMode": self.lassoMode,
+                        "brush": self.tool == "brush", "straighten": self.tool == "highlighter" && self.palette.highlighterStraight,
+                        // 형광펜만 지우기 is a filter the editor applies, so the editor's eraser handles the contact (as it does for 부분).
+                        "eraserRadius": self.palette.eraserRadius, "eraserMode": self.palette.eraserHighlighterOnly ? "partial" : self.palette.eraserMode], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
                 do { _ = try await self.call("snapshot", payload) }
                 catch where drawingPrints != nil && self.drawingFingerprints != nil {
                     // The host lost the patch chain; resend the whole document once.
@@ -802,10 +804,11 @@ final class NativePDFWorkspaceModel {
         default: break
         }
     }
-    func chooseTool(_ next: String) {
+    /// `keepingStyle`: a pen type or favourite picked inside the pen settings leaves them open.
+    func chooseTool(_ next: String, keepingStyle: Bool = false) {
         guard assistantAnnotation == nil, NativePDFWorkspacePreferences.tools.contains(next), !isBusy else { return }
         editingWidthSlot = nil
-        if next == tool { if isInkTool { showStyle.toggle() }; return }
+        if next == tool { if hasToolOptions { showStyle.toggle() }; return }
         host?.flush()
         guard !isBusy, errorMessage == nil else { return }
         if textEditorDraft != nil { finishText() }
@@ -818,8 +821,9 @@ final class NativePDFWorkspaceModel {
         if next == "pen" { applyStyle(savedPenStyle) }
         if next == "highlighter" { applyStyle(savedHighlighterStyle) }
         if next == "ballpoint" { applyStyle(savedBallpointStyle) }
+        if next == "brush" { applyStyle(savedBrushStyle) }
         if next == "line" { applyStyle(savedPenStyle) }
-        showStyle = false
+        if !keepingStyle { showStyle = false }
         updateStyle()
     }
     func chooseColor(_ next: String) {
@@ -887,16 +891,37 @@ final class NativePDFWorkspaceModel {
         opacity = min(tool == "highlighter" ? 0.34 : 1, max(0.05, value)); rememberActiveStyle(); updateStyle()
     }
     func chooseFavorite(_ index: Int) {
-        guard favorites.indices.contains(index), !isBusy, errorMessage == nil else { return }
-        let favorite = favorites[index]
-        if !isPenLike { chooseTool("pen") }
-        guard isPenLike else { return }
+        guard favorites.indices.contains(index), let favorite = favorites[index], !isBusy, errorMessage == nil else { return }
+        // A favourite is a whole pen: its type comes back with its colour and width.
+        if tool != favorite.kind { chooseTool(favorite.kind, keepingStyle: true) }
+        guard tool == favorite.kind else { return }
         applyStyle(favorite); rememberActiveStyle(); updateStyle()
     }
     func saveFavorite(_ index: Int) {
         guard favorites.indices.contains(index), isPenLike else { return }
-        let value = currentPreset.validated()
+        let value = currentFavorite
         favorites = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.favorites[index] = value }.favorites
+    }
+    func clearFavorite(_ index: Int) {
+        guard favorites.indices.contains(index) else { return }
+        favorites = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.favorites[index] = nil }.favorites
+    }
+    /// The star in the pen settings (Figma 264:1440): removes the current pen from the favourites,
+    /// or puts it in the first empty cell; with no empty cell it says so.
+    func toggleFavorite() {
+        guard isPenLike else { return }
+        if let index = favoriteIndex { clearFavorite(index) } else if let empty = favorites.firstIndex(where: { $0 == nil }) { saveFavorite(empty) }
+        else { paletteNotice = "한 칸을 먼저 지워 주세요" }
+    }
+    func setEraserHighlighterOnly(_ value: Bool) {
+        palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.eraserHighlighterOnly = value }; updateStyle()
+    }
+    func setLassoInkOnly(_ value: Bool) {
+        palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.lassoInkOnly = value }; clearSelection()
+    }
+    func setTapePageOnly(_ value: Bool) { palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.tapePageOnly = value } }
+    func setHighlighterStraight(_ value: Bool) {
+        palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.highlighterStraight = value }; updateStyle()
     }
     func setLassoMode(_ mode: String) {
         guard NativePDFWorkspacePreferences.lassoModes.contains(mode), mode != lassoMode else { return }
@@ -918,6 +943,9 @@ final class NativePDFWorkspaceModel {
         } else if tool == "ballpoint" {
             savedBallpointStyle = currentPreset.validated()
             NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.recentBallpoint = savedBallpointStyle }
+        } else if tool == "brush" {
+            savedBrushStyle = currentPreset.validated()
+            NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.recentBrush = savedBrushStyle }
         }
     }
     private var currentPreferences: NativePDFWorkspacePreferences {
@@ -927,6 +955,7 @@ final class NativePDFWorkspaceModel {
         value.penStyle = tool == "pen" ? currentPreset : savedPenStyle
         value.highlighterStyle = tool == "highlighter" ? currentPreset : savedHighlighterStyle
         value.ballpointStyle = tool == "ballpoint" ? currentPreset : savedBallpointStyle
+        value.brushStyle = tool == "brush" ? currentPreset : savedBrushStyle
         value.penColor = value.penStyle.color; value.highlighterColor = value.highlighterStyle.color
         value.shapeRecognitionEnabled = shapeRecognitionEnabled; value.lassoMode = lassoMode
         value.toolsExpanded = toolsExpanded; value.showPages = showPages; value.showAnnotations = showAnnotations
@@ -1165,7 +1194,9 @@ final class NativePDFWorkspaceModel {
                 let polygon = lassoMode == "box"
                     ? [contact.start, CGPoint(x: last.x, y: contact.start.y), last, CGPoint(x: contact.start.x, y: last.y)]
                     : contact.points
-                let ids = NativePDFEditingGeometry.lasso(polygon, rows: rows(on: number), aspect: aspect(number))
+                // 필기만 고르기: photos, text boxes and other objects stay where they are.
+                let candidates = palette.lassoInkOnly ? rows(on: number).filter { ["ink", "highlighter"].contains($0["kind"] as? String ?? "") } : rows(on: number)
+                let ids = NativePDFEditingGeometry.lasso(polygon, rows: candidates, aspect: aspect(number))
                 let region = NativePDFEditingGeometry.regionBounds(polygon)
                 if !ids.isEmpty || region != nil {
                     setSelection(ids, page: number); selectedRegion = region
@@ -1228,8 +1259,10 @@ final class NativePDFWorkspaceModel {
         }
     }
     static let tapePeekSeconds: Double = 3
+    /// 모두 보이기 / 모두 가리기; with 이 페이지만 only the tape on the page in view.
     func setAllTapes(revealed: Bool) {
-        setTapes((persistence?.rows ?? []).filter { $0["kind"] as? String == "tape" }, revealed: revealed)
+        let scope = palette.tapePageOnly ? page : nil
+        setTapes((persistence?.rows ?? []).filter { $0["kind"] as? String == "tape" && (scope == nil || ($0["page"] as? NSNumber)?.intValue == scope) }, revealed: revealed)
     }
     private func setTapes(_ rows: [[String: Any]], revealed: Bool) {
         let values = rows.compactMap { row -> [String: Any]? in
@@ -1257,10 +1290,19 @@ final class NativePDFWorkspaceModel {
     private func openComment(_ row: [String: Any], page: Int) {
         guard let box = NativePDFEditingGeometry.bounds(row) else { return }
         let data = row["data"] as? [String: Any], style = row["style"] as? [String: Any]
-        commentDraft = CommentDraft(page: page, box: box, id: row["id"] as? String, text: data?["text"] as? String ?? "", color: style?["color"] as? String ?? "yellow")
+        commentDraft = CommentDraft(page: page, box: box, id: row["id"] as? String, text: data?["text"] as? String ?? "", color: style?["color"] as? String ?? "yellow",
+                                    written: (row["createdAt"] as? String).flatMap(NativeValue.date))
+    }
+    /// 이어서 메모하기: a pin holds one text (the format shared with the desktop has no replies), so a further note is a new line of it.
+    func appendComment(_ text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let draft = commentDraft else { return }
+        commentDraft?.text = draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? text : draft.text + "\n" + text
     }
     /// 완료: an empty note removes the pin; otherwise the pin is created or updated.
     func saveComment() {
+        // A line typed under an existing memo and not sent yet is part of what is kept.
+        if let reply = commentDraft?.reply, !reply.isEmpty { appendComment(reply) }
         guard let draft = commentDraft, !isBusy else { return }
         commentDraft = nil
         let text = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1290,7 +1332,7 @@ final class NativePDFWorkspaceModel {
     /// recordings tab.
     func toggleRecording() {
         if let id = recordingID {
-            recordingID = nil; recordingStartedAt = nil
+            recordingID = nil; recordingStartedAt = nil; recordingPausedAt = nil
             Task { @MainActor in
                 do { _ = try await store.invoke("recordings:control", ["id": id, "action": "stop"]) }
                 catch { recordingNotice = error.localizedDescription }
@@ -1315,12 +1357,24 @@ final class NativePDFWorkspaceModel {
             }
         }
     }
+    /// The recording bar's pause: the recording stops listening and resumes into the same recording.
+    func toggleRecordingPause() {
+        guard let id = recordingID, let started = recordingStartedAt else { return }
+        let paused = recordingPausedAt
+        if let paused { recordingStartedAt = started.addingTimeInterval(Date().timeIntervalSince(paused)); recordingPausedAt = nil }
+        else { recordingPausedAt = Date() }
+        Task { @MainActor in
+            do { _ = try await store.invoke("recordings:control", ["id": id, "action": paused == nil ? "pause" : "start"]) }
+            catch { recordingNotice = error.localizedDescription }
+        }
+    }
     /// 끝내고 요약: stops the recording, then hands what it heard to the AI panel with a summary request.
     /// With nothing transcribed (no speech model yet, or silence) there is nothing to summarize: say so.
     func finishRecordingAndSummarize() {
         guard let id = recordingID, !summarizingRecording else { return }
         summarizingRecording = true
-        recordingID = nil; recordingStartedAt = nil
+        recordingSummaryMinutes = recordingStartedAt.map { Int(((recordingPausedAt ?? Date()).timeIntervalSince($0) / 60).rounded()) } ?? 0
+        recordingID = nil; recordingStartedAt = nil; recordingPausedAt = nil
         let course = document.courseID, title = (document.title as NSString).deletingPathExtension
         Task { @MainActor in
             defer { summarizingRecording = false }
@@ -1354,7 +1408,7 @@ final class NativePDFWorkspaceModel {
     /// Leaving the app pauses the recording (no background audio); say so on return.
     func recordingPausedForBackground() {
         guard recordingID != nil else { return }
-        recordingID = nil; recordingStartedAt = nil
+        recordingID = nil; recordingStartedAt = nil; recordingPausedAt = nil
         recordingNotice = "앱을 나가서 녹음을 일시 정지했습니다. 녹음 탭에서 이어서 녹음할 수 있어요."
     }
     /// Applies one eraser path segment. Partial mode cuts ink and highlighter
@@ -1365,6 +1419,7 @@ final class NativePDFWorkspaceModel {
         let rows = rows(on: number)
         for row in rows {
             guard let id = row["id"] as? String else { continue }
+            if palette.eraserHighlighterOnly, row["kind"] as? String != "highlighter" { continue }
             if partial {
                 guard NativePDFEraseSplit.cuttableKinds.contains(row["kind"] as? String ?? ""),
                       let points = (row["data"] as? [String: Any])?["points"] as? [[String: Any]] else { continue }
@@ -1790,6 +1845,12 @@ final class NativePDFWorkspaceModel {
             do { try await task.value; self.isBusy = self.materialMutating; self.restoreInput() }
             catch { self.isBusy = self.materialMutating; self.fail(error) }
         }
+    }
+    /// The colour and width every selected object shares, for the marks in the 스타일 popover.
+    var selectionStyle: (color: String?, width: Double?) {
+        let styles = selectedRows.compactMap { $0["style"] as? [String: Any] }
+        let colors = Set(styles.compactMap { $0["color"] as? String }), widths = Set(styles.compactMap { ($0["width"] as? NSNumber)?.doubleValue })
+        return (colors.count == 1 ? colors.first : nil, widths.count == 1 ? widths.first : nil)
     }
     func restyleSelection(color: String? = nil, width: Double? = nil, opacity: Double? = nil) {
         guard !isBusy, !selectedRows.isEmpty else { return }

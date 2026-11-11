@@ -90,8 +90,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         selectObjectTool("lasso", in: app)
         // A lasso selects a stroke when most of it is inside (Notability-style).
         // XCTest drags are straight, so the box lasso draws the enclosing shape.
-        let boxLasso = app.buttons["박스형"].firstMatch
-        XCTAssertTrue(boxLasso.waitForExistence(timeout: 5), app.debugDescription); boxLasso.tap()
+        lassoOption("native-pdf-lasso-mode-box", in: app)
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.32, dy: 0.56))
             .press(forDuration: 0.05, thenDragTo: pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.64, dy: 0.28)), withVelocity: .slow, thenHoldForDuration: 0.05)
         let remove = app.buttons["native-pdf-delete-selection"]
@@ -103,7 +102,8 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         expectInkCount(1, in: app)
         let moveCommitted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: remove)
         XCTAssertEqual(XCTWaiter.wait(for: [moveCommitted], timeout: 15), .completed, "Selection survives a move" + app.debugDescription)
-        app.buttons["선택 해제"].tap()
+        // 선택 해제 is behind the selection menu's ⋯.
+        app.buttons["native-pdf-selection-more"].tap(); app.buttons["native-pdf-clear-selection"].tap()
         let released = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: remove)
         XCTAssertEqual(XCTWaiter.wait(for: [released], timeout: 10), .completed, app.debugDescription)
         // This box holds most of the moved line but only the tip of the original
@@ -114,17 +114,16 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["native-pdf-selection-style"].exists, "Floating bar offers restyle")
         tapPDFControl("native-pdf-copy-selection", in: app)
         remove.tap(); expectInkCount(0, in: app)
-        // Paste lives in the lasso row so a copy can land on any page without a selection.
-        tapPDFControl("native-pdf-paste", in: app); expectInkCount(1, in: app)
+        // Paste lives in the lasso options so a copy can land on any page without a selection.
+        lassoOption("native-pdf-paste", in: app, closes: false); expectInkCount(1, in: app)
         attachScreenshot(app, name: "Pasted stroke from the clipboard")
-        let boxMode = app.buttons["박스형"].firstMatch
-        XCTAssertTrue(boxMode.waitForExistence(timeout: 5), app.debugDescription); boxMode.tap()
+        lassoOption("native-pdf-lasso-mode-box", in: app)
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.30, dy: 0.25))
             .press(forDuration: 0.05, thenDragTo: pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.72)), withVelocity: .slow, thenHoldForDuration: 0.05)
         XCTAssertTrue(remove.waitForExistence(timeout: 10), "Box lasso selects the pasted stroke" + app.debugDescription)
         attachScreenshot(app, name: "Box lasso selection with floating action bar")
         remove.tap(); expectInkCount(0, in: app)
-        app.buttons["자유형"].firstMatch.tap()
+        lassoOption("native-pdf-lasso-mode-freeform", in: app)
         tapPDFControl("native-pdf-undo", in: app); expectInkCount(1, in: app)
         selectObjectTool("text", in: app)
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.42, dy: 0.72)).tap()
@@ -148,6 +147,13 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         tapPDFControl("native-pdf-tool-" + name, in: app)
     }
 
+    /// The lasso's options open on a second tap of the chosen tool; 붙여넣기 closes them itself.
+    @MainActor private func lassoOption(_ identifier: String, in app: XCUIApplication, closes: Bool = true) {
+        app.buttons["native-pdf-tool-lasso"].tap()
+        let option = app.buttons[identifier]
+        XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription); option.tap()
+        if closes { app.buttons["native-pdf-style-close"].tap() }
+    }
     @MainActor private func tapPDFControl(_ identifier: String, in app: XCUIApplication) {
         let item = app.buttons[identifier]
         XCTAssertTrue(item.waitForExistence(timeout: 15), app.debugDescription)
