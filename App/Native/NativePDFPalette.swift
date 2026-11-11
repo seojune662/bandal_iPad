@@ -64,6 +64,8 @@ struct NativePDFFloatingPalette: View {
     @AppStorage("native.pdf.paletteCollapsed") private var collapsed = false
     /// Gap below the PDF top row.
     static let top: CGFloat = 4
+    /// The open pill, with the room it needs before the next thing below it.
+    static let height: CGFloat = 56 + 8
     var body: some View {
         Group {
             if collapsed { mini } else {

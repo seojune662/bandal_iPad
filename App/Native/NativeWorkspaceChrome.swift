@@ -90,15 +90,15 @@ struct NativeRailSearchField: View {
     let identifier: String
     /// Esc empties the field while it has focus.
     var escapeClears = false
-    @FocusState private var focused: Bool
+    @Environment(\.locale) private var locale
     var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(NativeGlass.fieldGlyph).frame(width: 16)
-            TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(NativeGlass.fieldPrompt)).textFieldStyle(.plain).foregroundStyle(NativeDesktopTheme.text).accessibilityIdentifier(identifier)
-                .focused($focused).autocorrectionDisabled().textInputAutocapitalization(.never)
-                // Either route may deliver Esc while the field has focus: the key press, or the cancel shortcut.
-                .onKeyPress(.escape) { guard escapeClears, !text.isEmpty else { return .ignored }; text = ""; return .handled }
-                .background { if escapeClears, focused, !text.isEmpty { BandalEscapeKey { text = "" } } }
+            if escapeClears {
+                NativeSearchTextField(text: $text, placeholder: NativeAppLocale.string(prompt, locale), identifier: identifier, fontSize: 12, onEscape: { text = "" })
+            } else {
+                TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(NativeGlass.fieldPrompt)).textFieldStyle(.plain).foregroundStyle(NativeDesktopTheme.text).accessibilityIdentifier(identifier)
+            }
             if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(NativeGlass.fieldGlyph) }.buttonStyle(.plain).accessibilityLabel("검색어 지우기") }
         }.font(NativeDesktopTheme.font(12))
             .padding(.leading, 9).padding(.trailing, 8).frame(height: 34)

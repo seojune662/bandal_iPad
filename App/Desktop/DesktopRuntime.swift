@@ -157,6 +157,12 @@ final class DesktopRuntime: @unchecked Sendable {
             result["handwritingIndexing"] = handwritingState.running
             refreshSearchIndexes(course)
             return result
+        case "search:document":
+            let course = try NativeValue.string(request["courseId"],"과목")
+            let result = try unifiedSearch?.document(courseID:course,relativePath:try NativeValue.string(request["relPath"],"자료"),text:request["query"] as? String ?? "")
+            // A PDF opened before its text was extracted gets it now; `search:changed` repeats the search.
+            refreshSearchIndexes(course)
+            return result
         case "nativeRuntime:active": active = request["active"] as? Bool == true; if active { poll() }; return NativeValue.ok
         case "pdf:openPageNote":
             guard let context, let pdf else { throw DesktopRuntimeError("PDF 저장소가 준비되지 않았습니다.") }

@@ -134,6 +134,40 @@ final class NativeUnifiedSearchTests: XCTestCase {
         XCTAssertEqual(material.reduce(0) { $0 + hits($1).count }, NativeUnifiedSearchRepository.cappedSectionSize)
     }
 
+    func testDocumentSearchCountsTextPerPageAndListsHandwrittenLines() async throws {
+        let path = try await handwritten("풀이", lines: [(1, "라플라스 변환 정의"), (2, "역변환"), (2, "라플라스 변환 표")], course: courseID)
+        try await runtime.withSyncStorage { context, _ in
+            for (page, body) in [(1, "라플라스 변환. 라플라스 변환의 성질"), (2, "푸리에 급수"), (4, "Laplace 라플라스 변환")] {
+                try context.run("INSERT INTO native_search_documents(course_id,rel_path,kind,page,body,search_key) VALUES(?,?,?,?,?,?)", [self.courseID, path, "pdf", page, body, body.lowercased()])
+            }
+        }
+        let result = try await runtime.invoke("search:document", request: ["courseId": courseID, "relPath": path, "query": " 라플라스 변환 "]) as! [String: Any]
+        let text = result["text"] as! [[String: Any]], ink = result["handwriting"] as! [[String: Any]]
+        XCTAssertEqual(text.map { $0["page"] as? Int }, [1, 4]); XCTAssertEqual(text.map { $0["count"] as? Int }, [2, 1])
+        XCTAssertEqual(ink.map { $0["page"] as? Int }, [1, 2]); XCTAssertEqual(ink.first?["box"] as? [Double], [0.1, 0.2, 0.5, 0.04])
+        // One character is enough inside a document, and another document's lines never appear.
+        let other = try await handwritten("다른 노트", lines: [(1, "라플라스")], course: courseID)
+        let single = try await runtime.invoke("search:document", request: ["courseId": courseID, "relPath": other, "query": "라"]) as! [String: Any]
+        XCTAssertEqual((single["handwriting"] as! [[String: Any]]).count, 1); XCTAssertTrue((single["text"] as! [[String: Any]]).isEmpty)
+        let empty = try await runtime.invoke("search:document", request: ["courseId": courseID, "relPath": path, "query": "  "]) as! [String: Any]
+        XCTAssertTrue((empty["handwriting"] as! [[String: Any]]).isEmpty)
+    }
+
+    /// ⇧Return and Esc are key commands of the field itself, so they only act while it has focus.
+    @MainActor func testSearchFieldOffersShiftReturnAndEscapeKeyCommands() throws {
+        let field = NativeSearchTextField.Field()
+        var events: [String] = []
+        field.escape = { events.append("escape") }
+        XCTAssertFalse((field.keyCommands ?? []).contains { $0.input == "\r" && $0.modifierFlags == .shift }, "Only a field that steps backwards takes ⇧Return")
+        field.shiftSubmit = { events.append("back") }
+        let commands = field.keyCommands ?? []
+        let back = try XCTUnwrap(commands.first { $0.input == "\r" && $0.modifierFlags == .shift })
+        let escape = try XCTUnwrap(commands.first { $0.input == UIKeyCommand.inputEscape && $0.modifierFlags.isEmpty })
+        XCTAssertTrue(back.wantsPriorityOverSystemBehavior && escape.wantsPriorityOverSystemBehavior)
+        field.perform(try XCTUnwrap(back.action)); field.perform(try XCTUnwrap(escape.action))
+        XCTAssertEqual(events, ["back", "escape"])
+    }
+
     func testSnippetIsOneLineAroundTheMatch() {
         let text = String(repeating: "앞부분 ", count: 40) + "여기 핵심어 등장\n다음 줄 " + String(repeating: "뒷부분 ", count: 40)
         let snippet = NativeUnifiedSearchRepository.snippet(text, needle: "핵심어")

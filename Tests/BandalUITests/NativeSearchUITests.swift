@@ -17,6 +17,8 @@ final class NativeSearchUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["native-search-section-material"].exists, "PDF and Markdown text")
         XCTAssertTrue(app.staticTexts["native-search-section-chat"].exists, "conversations")
         XCTAssertTrue(app.buttons["native-search-scope"].isSelected, "이 과목만 is on while a course is open")
+        // The last page of the note is read a little after the first.
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-search-handwriting-", "2곳")).firstMatch.waitForExistence(timeout: 300), app.debugDescription)
         sleep(1); attach(app, "sidebar search \(appearance)")
 
         // The lecture PDF matches on several pages: one row with a count that opens to its pages.
@@ -37,16 +39,68 @@ final class NativeSearchUITests: XCTestCase {
         let note = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-search-handwriting-")).firstMatch
         XCTAssertTrue(note.waitForExistence(timeout: 5), app.debugDescription); note.tap()
         let line = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "native-search-hit-handwriting-", "필기 노트.pdf-2")).firstMatch
-        XCTAssertTrue(line.waitForExistence(timeout: 5), app.debugDescription); line.tap()
+        // The second page's lines arrive when its recognition ends.
+        XCTAssertTrue(line.waitForExistence(timeout: 300), app.debugDescription); line.tap()
         expect(app.otherElements["bandal-native-pdf-body"], "searchMarks=1 handwritingMarks=1", "The handwritten line's box is marked")
         attach(app, "handwriting match flash \(appearance)")
 
-        // Esc empties the field and the file list returns.
-        field.tap(); app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        // An empty field brings the file list back. (Esc does the same; the simulator cannot send that key to a field.)
+        app.buttons["검색어 지우기"].firstMatch.tap(); field.tap()
         XCTAssertTrue(app.buttons["native-material-2주차 정리.md"].waitForExistence(timeout: 5), "The file list comes back")
         // A word nobody wrote.
         field.typeText("zzqq")
         XCTAssertTrue(app.staticTexts["native-search-empty"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+
+    @MainActor func testDocumentSearchLight() throws { document("light") }
+    @MainActor func testDocumentSearchDark() throws { document("dark") }
+
+    /// ⌘F in the viewer: matches are counted and stepped through, and the thumbnails keep only the pages that have one.
+    @MainActor private func document(_ appearance: String) {
+        let app = launch(appearance)
+        app.buttons["native-material-열역학 강의자료.pdf"].tap()
+        // The fixture is still writing its note and conversations when the first rows appear.
+        XCTAssertTrue(app.buttons["native-pdf-search"].waitForExistence(timeout: 30), app.debugDescription); sleep(4)
+        app.typeKey("f", modifierFlags: .command)
+        let field = app.textFields["native-pdf-search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "⌘F shows the field"); field.typeText("엔트로피")
+        // Page 1 has it once and page 3 twice; the PDF's text is extracted in the background first.
+        let count = app.staticTexts["native-pdf-search-count"]
+        expect(count, label: "1 / 3", timeout: 120)
+        let body = app.otherElements["bandal-native-pdf-body"]
+        expect(body, "searchMarks=3 handwritingMarks=0 currentMarks=1", "Every match is marked and one is current")
+        field.typeText("\n"); expect(count, label: "2 / 3", timeout: 10)
+        XCTAssertEqual(app.textFields["native-pdf-page"].value as? String, "3", "Return moves to the next match")
+        app.buttons["native-pdf-search-previous"].tap(); expect(count, label: "1 / 3", timeout: 10)
+        app.buttons["native-pdf-search-next"].tap(); app.buttons["native-pdf-search-next"].tap(); expect(count, label: "3 / 3", timeout: 10)
+
+        app.buttons["native-pdf-pages"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["native-pdf-thumbnail-3"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["native-pdf-thumbnail-1"].exists)
+        XCTAssertFalse(app.buttons["native-pdf-thumbnail-2"].exists, "A page without a match leaves the thumbnails")
+        XCTAssertEqual(app.buttons["native-pdf-thumbnail-3"].value as? String, "일치 2곳")
+        hideKeyboard(app); sleep(1); attach(app, "document search \(appearance)")
+        app.buttons["native-pdf-pages-search-clear"].tap()
+        XCTAssertTrue(app.buttons["native-pdf-thumbnail-2"].waitForExistence(timeout: 10), "An empty field brings every page back")
+        XCTAssertFalse(count.exists)
+
+        // A note: the recognised lines are the matches, drawn dashed.
+        app.buttons["native-material-노트"].tap()
+        let note = app.buttons["native-material-노트/필기 노트.pdf"]
+        XCTAssertTrue(note.waitForExistence(timeout: 10), app.debugDescription); note.tap(); sleep(2)
+        app.typeKey("f", modifierFlags: .command)
+        let noteField = app.textFields["native-pdf-search-field"]
+        XCTAssertTrue(noteField.waitForExistence(timeout: 10), app.debugDescription); noteField.typeText("엔트로피")
+        expect(app.staticTexts["native-pdf-search-count"], label: "1 / 2", timeout: 600)
+        expect(app.otherElements["bandal-native-pdf-body"], "searchMarks=2 handwritingMarks=2 currentMarks=1", "Handwritten matches are marked as such")
+        hideKeyboard(app); sleep(1); attach(app, "handwriting search \(appearance)")
+        app.buttons["native-pdf-search-close"].tap()
+        XCTAssertTrue(app.buttons["native-pdf-search"].waitForExistence(timeout: 5), "Closing brings the zoom and view controls back")
+    }
+
+    @MainActor private func expect(_ element: XCUIElement, label: String, timeout: TimeInterval) {
+        let found = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: element)
+        XCTAssertEqual(XCTWaiter.wait(for: [found], timeout: timeout), .completed, "expected " + label + ", saw " + (element.exists ? element.label : "nothing"))
     }
 
     @MainActor func testConversationResultOpensItsMessage() throws {
@@ -80,6 +134,12 @@ final class NativeSearchUITests: XCTestCase {
     @MainActor private func expect(_ element: XCUIElement, _ value: String, _ message: String) {
         let found = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", value), object: element)
         XCTAssertEqual(XCTWaiter.wait(for: [found], timeout: 20), .completed, message + ": " + (element.value as? String ?? ""))
+    }
+
+    /// Screenshots show the whole window; the on-screen keyboard covers half of it.
+    @MainActor private func hideKeyboard(_ app: XCUIApplication) {
+        let hide = app.keyboards.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "hide", "dismiss")).firstMatch
+        if hide.exists { hide.tap() }
     }
 
     @MainActor private func attach(_ app: XCUIApplication, _ name: String) {

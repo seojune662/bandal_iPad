@@ -35,13 +35,16 @@ struct NativePDFToolbar: View {
                     .disabled(model.page >= model.pageCount)
             }
             Spacer(minLength: 0)
-            zoom(compact: compact)
-            separator
-            icon("PDF에서 찾기", id: "native-pdf-search") { Image(systemName: "magnifyingglass").font(.system(size: 17)) } action: { model.find() }
-            if !compact {
-                pill("원본 주석", "PDFIconAnnotations", id: "native-pdf-annotations", active: model.showAnnotations) { model.toggleAnnotations() }
-                    .accessibilityValue(String(model.annotationCount))
-                if model.hasPageNoteAction { pill("페이지 필기", "PDFIconPageNote", id: "native-pdf-page-note") { model.openPageNote() } }
+            if model.search.isPresented { NativePDFSearchBar(search: model.search) }
+            else {
+                zoom(compact: compact)
+                separator
+                icon("PDF에서 찾기", id: "native-pdf-search") { Image(systemName: "magnifyingglass").font(.system(size: 17)) } action: { model.find() }
+                if !compact {
+                    pill("원본 주석", "PDFIconAnnotations", id: "native-pdf-annotations", active: model.showAnnotations) { model.toggleAnnotations() }
+                        .accessibilityValue(String(model.annotationCount))
+                    if model.hasPageNoteAction { pill("페이지 필기", "PDFIconPageNote", id: "native-pdf-page-note") { model.openPageNote() } }
+                }
             }
             separator
             icon("미리보기", id: "native-pdf-pages", active: model.showPages) { Image("PDFIconGrid") } action: { model.togglePages() }
@@ -225,7 +228,11 @@ struct NativePDFPagesPanel: View {
     /// Every thumbnail shares one fixed aspect ratio, so one measured height
     /// serves all rows; per-row writes re-rendered the whole panel per page.
     @State private var thumbnailHeight: CGFloat?
+    @Environment(\.locale) private var locale
     var body: some View {
+        // While the document is searched only the pages with a match stay, each with its count.
+        let counts = model.search.counts
+        let pages = (1...max(1, model.pageCount)).filter { counts == nil || counts?[$0] != nil }
         VStack(spacing: 0) {
             HStack {
                 Text("페이지").font(.system(size: 12, weight: .semibold)); Spacer(); Text("\(model.pageCount)쪽").font(.system(size: 10))
@@ -233,6 +240,7 @@ struct NativePDFPagesPanel: View {
                     .disabled(!model.pageCanAppend).accessibilityLabel("페이지 추가").accessibilityIdentifier("native-pdf-page-add")
             }
                 .foregroundStyle(NativeDesktopTheme.muted).padding(.leading, 12).padding(.trailing, 4).frame(height: 40)
+            NativePDFPagesSearchField(search: model.search).padding(.horizontal, 12).padding(.bottom, 8)
             if !model.pageCanRestructure, model.pageCanAppend, let reason = model.pageHistoryReason {
                 Text(reason).font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 12).padding(.bottom, 6)
                     .frame(maxWidth: .infinity, alignment: .leading).accessibilityIdentifier("native-pdf-pages-sync-note")
@@ -240,13 +248,16 @@ struct NativePDFPagesPanel: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 4) {
-                        ForEach(1...max(1, model.pageCount), id: \.self) { number in
+                        ForEach(pages, id: \.self) { number in
                             VStack(spacing: 0) {
-                                insertionMarker(number)
-                                thumbnail(number)
+                                if counts == nil { insertionMarker(number) }
+                                thumbnail(number, matches: counts?[number])
                             }.id(number)
                         }
-                        insertionMarker(model.pageCount + 1).frame(height: 20)
+                        if counts == nil { insertionMarker(model.pageCount + 1).frame(height: 20) }
+                        else if pages.isEmpty {
+                            Text("결과 없음").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(.top, 16).accessibilityIdentifier("native-pdf-pages-empty")
+                        }
                     }.padding(.horizontal, 12).padding(.bottom, 12)
                 }
                 .onChange(of: model.page) { _, page in withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(page, anchor: .center) } }
@@ -273,12 +284,19 @@ struct NativePDFPagesPanel: View {
         Rectangle().fill(model.pageDropSlot == slot ? NativeDesktopTheme.accent : .clear).frame(height: 4)
             .onDrop(of: [UTType.text], delegate: NativePDFPageDropDelegate(model: model, slot: slot))
     }
-    private func thumbnail(_ number: Int) -> some View {
+    private func thumbnail(_ number: Int, matches: Int? = nil) -> some View {
         VStack(spacing: 0) {
             Button { model.go(to: number) } label: {
                 NativePDFPageThumbnail(source: model.thumbnailSource, page: number, rows: model.thumbnailRows(number), inkRevision: model.thumbnailRevisions[number] ?? 0)
                     .padding(3).overlay(RoundedRectangle(cornerRadius: 5).stroke(model.page == number ? NativeDesktopTheme.accent : .clear, lineWidth: 2))
-            }.accessibilityLabel("\(number)페이지").accessibilityIdentifier("native-pdf-thumbnail-\(number)")
+                    .overlay(alignment: .topTrailing) {
+                        if let matches {
+                            Text(verbatim: String(matches)).font(.system(size: 11, weight: .semibold).monospacedDigit()).foregroundStyle(.black)
+                                .padding(.horizontal, 6).frame(minWidth: 20, minHeight: 20).background(Color(uiColor: NativePDFSearchMarksView.match), in: Capsule())
+                                .padding(6)
+                        }
+                    }
+            }.accessibilityValue(matches.map { String(format: NativeAppLocale.string("일치 %lld곳", locale), $0) } ?? "").accessibilityLabel("\(number)페이지").accessibilityIdentifier("native-pdf-thumbnail-\(number)")
                 .accessibilityAddTraits(model.page == number ? .isSelected : [])
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                     if thumbnailHeight != height { thumbnailHeight = height }
@@ -305,7 +323,8 @@ private struct NativePDFPageDropDelegate: DropDelegate {
     let slot: Int
     var midpoint: CGFloat? = nil
     private func target(_ info: DropInfo) -> Int { slot + (midpoint.map { info.location.y > $0 } == true ? 1 : 0) }
-    func validateDrop(info: DropInfo) -> Bool { model.draggedPage != nil && !model.isBusy && model.pageCanRestructure }
+    // A filtered list hides the pages a drop would land between.
+    func validateDrop(info: DropInfo) -> Bool { model.draggedPage != nil && !model.isBusy && model.pageCanRestructure && model.search.counts == nil }
     func dropEntered(info: DropInfo) { if validateDrop(info: info) { model.pageDropSlot = target(info) } }
     func dropExited(info: DropInfo) { if model.pageDropSlot == slot || midpoint != nil && model.pageDropSlot == slot + 1 { model.pageDropSlot = nil } }
     func dropUpdated(info: DropInfo) -> DropProposal? {

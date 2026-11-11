@@ -345,10 +345,6 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             return try item.objectScene(request)
         case "pdfNative:navigate":
             try item.navigate(request); return item.state
-        case "pdfNative:find":
-            try item.flush()
-            item.pdfView.findInteraction.presentFindNavigator(showingReplace: false)
-            return [:]
         case "pdfNative:textMatches":
             guard let page = request["page"] as? Int, let query = request["query"] as? String else { throw NativePDFError.invalid("찾을 페이지를 확인해 주세요.") }
             return ["matches": item.textMatches(query, page: page)]
@@ -931,7 +927,6 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             pdfView.pageBreakMargins = UIEdgeInsets(top: 10 * unit, left: 39 * unit, bottom: 10 * unit, right: 39 * unit)
         }
         pdfView.document = document; pdfView.autoScales = true
-        pdfView.isFindInteractionEnabled = true
         // Consume measured Pencil events in the recognizer phase. Waiting for
         // UIView.touchesBegan lets PDFKit's ancestors delay or absorb the stream.
         pencilGesture.targetAtLocation = { [weak self] point in
@@ -965,7 +960,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         pageActions.showsMenuAsPrimaryAction = true
         pageActions.menu = UIMenu(children: [
             UIAction(title: "페이지 이미지 복사", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in self?.sendPageAction("imageMenu") },
-            UIAction(title: "PDF에서 찾기", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.pdfView.findInteraction.presentFindNavigator(showingReplace: false) }
+            UIAction(title: "PDF에서 찾기", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.onEvent("find", [:]) }
         ])
         pdfView.addSubview(pageActions)
         for name in [Notification.Name.PDFViewPageChanged, .PDFViewScaleChanged] {

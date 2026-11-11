@@ -37,7 +37,7 @@ final class NativeUnifiedSearchRepository {
         // The trigram index answers three characters or more. Two characters scan the same tables.
         let indexed = needle.unicodeScalars.count >= 3
         let phrase = "\"" + needle.replacingOccurrences(of: "\"", with: "\"\"") + "\""
-        let like = "%" + needle.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_") + "%"
+        let like = Self.like(needle)
         let limit = Self.hitLimit + 1, window = Self.snippetWindow
         let material = indexed ? (from: "native_search_fts JOIN native_search_documents d ON d.rowid=native_search_fts.rowid", match: "native_search_fts MATCH ?1", order: " ORDER BY native_search_fts.rank")
                                : (from: "native_search_documents d", match: "instr(d.search_key,?2)>0", order: "")
@@ -104,6 +104,30 @@ final class NativeUnifiedSearchRepository {
             ["id": "handwriting", "groups": files(kept(bySection[1] ?? []), handwriting: true)],
             ["id": "chat", "groups": conversations.map { id in var value = sessions[id]!; value["hits"] = messages[id] ?? []; return value }]
         ]]
+    }
+
+    /// Matches inside one document, for its viewer: how often each page's text has the query, and the
+    /// handwritten lines that have it, top to bottom. Pages are 1-based.
+    func document(courseID: String, relativePath: String, text: String) throws -> [String: Any] {
+        let needle = NativeRepositoryContext.key(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard !needle.isEmpty else { return ["text": [[String: Any]](), "handwriting": [[String: Any]]()] }
+        let pages = try context.query("SELECT page,search_key FROM native_search_documents WHERE course_id=? AND rel_path=? AND page>0 AND instr(search_key,?)>0 ORDER BY page", [courseID, relativePath, needle]).map { row -> [String: Any] in
+            let key = row["search_key"] as? String ?? ""
+            var count = 0, cursor = key.startIndex
+            while let found = key.range(of: needle, options: .literal, range: cursor..<key.endIndex) { count += 1; cursor = found.upperBound }
+            return ["page": row["page"] ?? 0, "count": count]
+        }
+        // Three characters or more go through the trigram index; shorter ones scan the recognised lines.
+        let indexed = needle.unicodeScalars.count >= 3
+        let lines = try context.query("SELECT handwriting_text.page_index,handwriting_text.text,handwriting_text.bbox FROM handwriting_text JOIN pdf_document_aliases a ON a.material_id=handwriting_text.document_id WHERE a.course_id=? AND a.rel_path=? AND \(indexed ? "handwriting_text MATCH ?" : "handwriting_text.text LIKE ? ESCAPE '\\'") ORDER BY handwriting_text.page_index,handwriting_text.line_index",
+                                      [courseID, relativePath, indexed ? "\"" + needle.replacingOccurrences(of: "\"", with: "\"\"") + "\"" : Self.like(needle)]).compactMap { row -> [String: Any]? in
+            guard let index = row["page_index"] as? Int, let box = (row["bbox"] as? String).flatMap({ try? NativeRepositoryContext.jsonObject($0) }) else { return nil }
+            return ["page": index + 1, "box": box, "text": row["text"] ?? ""]
+        }
+        return ["text": pages, "handwriting": lines]
+    }
+    private static func like(_ needle: String) -> String {
+        "%" + needle.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_") + "%"
     }
 
     /// One line around the first match, with an ellipsis where text was cut.
