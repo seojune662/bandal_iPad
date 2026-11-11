@@ -25,6 +25,7 @@ extension NativeCourse {
         case "green": Color(red: 0x34 / 255, green: 0xa8 / 255, blue: 0x53 / 255)
         case "purple": .purple
         case "pink": .pink
+        case "gray": Color(red: 0x6b / 255, green: 0x6b / 255, blue: 0x6b / 255)
         default: Color(red: 0x3b / 255, green: 0x6f / 255, blue: 0xe0 / 255)
         }
     }

@@ -28,6 +28,23 @@ extension View {
         })
     }
 
+    /// The same popover placed by a point instead of this view's frame: the card's near edge sits 6 pt from
+    /// `anchor` (a unit point of this view) moved by `offset`, centred on it. `bare` leaves the card to the content,
+    /// which then draws its own (`bandalPopoverSurface`): a menu with a second card beside it.
+    func bandalPopover<Content: View>(isPresented: Binding<Bool>, at anchor: UnitPoint, offset: CGSize = .zero, arrowEdge: Edge? = .top, width: CGFloat? = 280,
+                                      radius: CGFloat = 22, padding: CGFloat = BandalMetrics.padding, bare: Bool = false,
+                                      @ViewBuilder content: @escaping () -> Content) -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.frame(width: 1, height: 1)
+                    .modifier(BandalDeferredPopover(isPresented: isPresented, arrowEdge: arrowEdge) {
+                        BandalPopoverBody(width: width, radius: radius, padding: padding, arrowEdge: arrowEdge, bare: bare, close: { isPresented.wrappedValue = false }, content: content)
+                    })
+                    .position(x: proxy.size.width * anchor.x + offset.width, y: proxy.size.height * anchor.y + offset.height)
+            }.allowsHitTesting(false)
+        }
+    }
+
     /// The anchored one-line confirmation that replaces `confirmationDialog`: title, optional one-line
     /// message and a single action; cancel is an outside tap or Esc.
     func bandalConfirm(_ title: String, isPresented: Binding<Bool>, message: String? = nil, action actionTitle: String,
@@ -104,16 +121,16 @@ private struct BandalPopoverBody<Content: View>: View {
     /// The tint over the glass; a popover over a dimmed sheet passes a denser one.
     var fill = NativeGlass.popup
     var arrowEdge: Edge? = .top
+    var bare = false
     let close: () -> Void
     @ViewBuilder let content: () -> Content
     var body: some View {
-        content()
-            .padding(padding)
-            .frame(width: width, alignment: .leading)
-            .foregroundStyle(NativeDesktopTheme.text)
-            .bandalPopoverSurface(radius: radius, arrowEdge: arrowEdge, fill: fill)
-            .presentationCompactAdaptation(.popover)
+        card.presentationCompactAdaptation(.popover)
             .background { BandalEscapeKey(action: close) }
+    }
+    @ViewBuilder private var card: some View {
+        let inner = content().padding(padding).frame(width: width, alignment: .leading).foregroundStyle(NativeDesktopTheme.text)
+        if bare { inner } else { inner.bandalPopoverSurface(radius: radius, arrowEdge: arrowEdge, fill: fill) }
     }
 }
 
@@ -157,6 +174,8 @@ struct BandalSectionHeader: View {
 struct BandalMenuRow<Trailing: View>: View {
     let title: String
     var symbol: String?
+    /// A drawn icon from the asset catalog (template, 20 pt), where the design has its own instead of an SF Symbol.
+    var asset: String?
     var detail: String?
     var checked = false
     var destructive = false
@@ -165,7 +184,8 @@ struct BandalMenuRow<Trailing: View>: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                if let symbol { Image(systemName: symbol).font(.system(size: 17)).frame(width: 20, height: 20).foregroundStyle(destructive ? Color.red : NativeGlass.icon) }
+                if let asset { Image(asset).frame(width: 20, height: 20).foregroundStyle(destructive ? Color.red : NativeGlass.icon) }
+                else if let symbol { Image(systemName: symbol).font(.system(size: 17)).frame(width: 20, height: 20).foregroundStyle(destructive ? Color.red : NativeGlass.icon) }
                 VStack(alignment: .leading, spacing: 2) {
                     BandalText(title).font(.system(size: 16, weight: .medium)).foregroundStyle(destructive ? Color.red : NativeDesktopTheme.text).lineLimit(1)
                     if let detail { BandalText(detail).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1) }
@@ -180,8 +200,8 @@ struct BandalMenuRow<Trailing: View>: View {
 }
 
 extension BandalMenuRow where Trailing == EmptyView {
-    init(_ title: String, symbol: String? = nil, detail: String? = nil, checked: Bool = false, destructive: Bool = false, action: @escaping () -> Void) {
-        self.init(title: title, symbol: symbol, detail: detail, checked: checked, destructive: destructive, action: action) { EmptyView() }
+    init(_ title: String, symbol: String? = nil, asset: String? = nil, detail: String? = nil, checked: Bool = false, destructive: Bool = false, action: @escaping () -> Void) {
+        self.init(title: title, symbol: symbol, asset: asset, detail: detail, checked: checked, destructive: destructive, action: action) { EmptyView() }
     }
 }
 
@@ -197,8 +217,9 @@ struct BandalMenuDivider: View {
 }
 
 struct BandalRowStyle: ButtonStyle {
+    var radius: CGFloat = 12
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.background(configuration.isPressed ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        configuration.label.background(configuration.isPressed ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
     }
 }
 
@@ -630,6 +651,9 @@ private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
         override var arrowDirection: UIPopoverArrowDirection { get { direction } set { direction = newValue } }
         override var arrowOffset: CGFloat { get { offset } set { offset = newValue } }
         override init(frame: CGRect) { super.init(frame: frame); backgroundColor = .clear; layer.shadowOpacity = 0 }
+        /// UIKit gives this view's layer the popover's shadow after it is made: solid black under the whole popover,
+        /// which greys a translucent card and shows where the content leaves the popover clear.
+        override func layoutSubviews() { super.layoutSubviews(); layer.shadowOpacity = 0 }
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     }
     final class Coordinator: NSObject, UIPopoverPresentationControllerDelegate {
@@ -667,7 +691,11 @@ private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
                 popover.delegate = self
             }
             self.host = host
-            presenter.present(host, animated: true)
+            // The system rounds and clips a popover's content (about 26 pt); the card draws its own corners (14–34).
+            presenter.present(host, animated: true) { [weak host] in
+                var view = host?.view.superview
+                while let current = view, !(current is UIWindow) { current.layer.cornerRadius = 0; current.layer.masksToBounds = false; view = current.superview }
+            }
             // UIKit's dimming view stays (it takes the outside tap); only its tint goes.
             if !dims { host.presentationController?.containerView?.subviews.first { String(describing: type(of: $0)).contains("Dimming") }?.alpha = 0.011 }
         }

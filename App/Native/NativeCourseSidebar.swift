@@ -30,6 +30,14 @@ struct NativeCourseSidebar: View {
         VStack(spacing: 0) {
             HStack(spacing: 3) {
                 NativeRailSearchField(prompt: "과목 찾기", text: $query, identifier: "native-course-search")
+                    // 새 과목 (Figma 129:3309): under the search field, 16 in from its left edge.
+                    .bandalPopover(isPresented: Binding(get: { adding == .course }, set: { if !$0, adding == .course { adding = nil } }),
+                                   at: .bottomLeading, offset: CGSize(width: 196, height: -11), width: 360, radius: 24, padding: 0) {
+                        NativeNewCourseForm(cancel: { adding = nil }) { name, color in
+                            try await onCreate(name); adding = nil
+                            if color != "blue", let id = store.selectedCourseID { mutate("courses:setColor", ["courseId": id, "color": color]) }
+                        }
+                    }
                 // ＋ makes a course; the rarer actions are on its long-press and in each course's ⋯ menu.
                 Button { adding = .course } label: { Image(systemName: "plus").font(.system(size: 16)).foregroundStyle(NativeGlass.panelIcon).frame(width: 44, height: 34).contentShape(Rectangle()) }
                     .buttonStyle(.plain).accessibilityLabel("과목 추가").accessibilityIdentifier("native-course-add-menu")
@@ -38,7 +46,7 @@ struct NativeCourseSidebar: View {
                         Button("과목 그룹 만들기", systemImage: "folder") { adding = .group }
                         Button("보관된 과목 관리", systemImage: "archivebox") { adding = .manage }
                     }
-                    .bandalPopover(isPresented: Binding(get: { adding != nil }, set: { if !$0 { adding = nil } }), width: adding == .manage ? 340 : 280) { addingContent }
+                    .bandalPopover(isPresented: Binding(get: { adding == .group || adding == .manage }, set: { if !$0, adding != .course { adding = nil } }), width: adding == .manage ? 340 : 280) { addingContent }
             }.padding(.leading, 12).padding(.trailing, 9).padding(.bottom, 6)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -122,12 +130,18 @@ struct NativeCourseSidebar: View {
         }
     }
     @ViewBuilder private func courseMenu(_ course: NativeCourse) -> some View {
-        Button("이름 변경", systemImage: "pencil") { renamingID = course.id }
-        Menu("색상", systemImage: "circle.fill") { ForEach([("blue", "파랑"), ("green", "초록"), ("purple", "보라"), ("orange", "주황"), ("red", "빨강"), ("pink", "분홍"), ("yellow", "노랑")], id: \.0) { value, name in Button(name) { mutate("courses:setColor", ["courseId": course.id, "color": value]) } } }
+        // The long-press menu as Figma 129:3094 draws it: tiles on top, the move and the pending row, then what the design does not show.
+        ControlGroup {
+            Button("이름 변경", systemImage: "pencil") { renamingID = course.id }
+            Button("과목 보관", systemImage: "archivebox", role: .destructive) { archiveCourse = course }
+        }
         Menu("그룹으로 이동", systemImage: "folder") {
             Button("그룹 없음") { mutate("courses:organize", ["courseId": course.id, "groupId": NSNull()]) }
             ForEach(groups) { group in Button(group.name) { mutate("courses:organize", ["courseId": course.id, "groupId": group.id]) } }
         }
+        NativeMenuPending(title: "오프라인 저장", symbol: "icloud")
+        Divider()
+        Menu("색상", systemImage: "circle.fill") { ForEach([("blue", "파랑"), ("green", "초록"), ("purple", "보라"), ("orange", "주황"), ("red", "빨강"), ("pink", "분홍"), ("yellow", "노랑"), ("gray", "회색")], id: \.0) { value, name in Button(name) { mutate("courses:setColor", ["courseId": course.id, "color": value]) } } }
         if store.selectedCourseID == course.id {
             Menu("즐겨찾기", systemImage: "star") {
                 Button("링크 추가", systemImage: "link.badge.plus") { NotificationCenter.default.post(name: NativeFavoritesSection.request, object: course.id) }.accessibilityIdentifier("native-favorite-add-link")
@@ -136,7 +150,6 @@ struct NativeCourseSidebar: View {
                 }
             }
         }
-        Button("과목 보관", systemImage: "archivebox") { archiveCourse = course }
         Button("과목 그룹 만들기", systemImage: "folder") { adding = .group }
         Button("폴더 연결 및 보관 관리", systemImage: "folder.badge.gearshape") { adding = .manage }
     }
@@ -162,17 +175,12 @@ struct NativeCourseSidebar: View {
     }
     @ViewBuilder private var addingContent: some View {
         switch adding {
-        case .course:
-            NativeNewCourseForm(cancel: { adding = nil }) { name, color in
-                try await onCreate(name); adding = nil
-                if color != "blue", let id = store.selectedCourseID { mutate("courses:setColor", ["courseId": id, "color": color]) }
-            }
         case .group:
             BandalTextEntry(title: "새 그룹", prompt: "그룹 이름", actionTitle: "만들기", identifier: "native-group-name") { name in
                 adding = nil; mutate("courseGroups:create", ["name": name])
             }
         case .manage: NativeCourseManager(store: store)
-        case nil: EmptyView()
+        case .course, nil: EmptyView()
         }
     }
     private func renaming(_ id: String) -> Binding<Bool> {
@@ -198,7 +206,7 @@ struct NativeCourseSidebar: View {
     }
 }
 
-/// 새 과목: 취소 · 만들기 on top, the name, a colour, and where linked folders live.
+/// 새 과목 (Figma 129:3309): 취소 · 만들기 on top, the name, a colour, and where linked folders live.
 private struct NativeNewCourseForm: View {
     let cancel: () -> Void
     let create: @MainActor (String, String) async throws -> Void
@@ -207,33 +215,39 @@ private struct NativeNewCourseForm: View {
     @State private var error: String?
     @State private var busy = false
     @FocusState private var focused: Bool
-    private static let colors: [(String, Color)] = [("blue", .blue), ("red", .red), ("orange", .orange), ("green", .green), ("yellow", .yellow), ("purple", .purple)]
+    private static let colors: [(String, Color)] = [("blue", NativeDesktopTheme.adaptive(0x3b6fe0, 0x3b6fe0)), ("red", .red), ("orange", .orange), ("green", .green),
+                                                    ("yellow", NativeDesktopTheme.adaptive(0xf5b83d, 0xe6a93a)), ("gray", NativeDesktopTheme.secondary)]
     private var ready: Bool { !busy && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Button("취소", action: cancel).accessibilityIdentifier("native-course-cancel")
-                Spacer(); Text("새 과목").fontWeight(.semibold); Spacer()
-                Button("만들기", action: submit).fontWeight(.semibold).disabled(!ready).opacity(ready ? 1 : 0.35).accessibilityIdentifier("native-create-course")
-            }.font(.system(size: 15)).buttonStyle(.plain)
-            TextField("과목 이름", text: $name).font(.system(size: 15)).textFieldStyle(.plain).focused($focused).onSubmit(submit).disabled(busy)
-                .padding(.horizontal, 12).frame(minHeight: 40)
-                .background(NativeDesktopTheme.text.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
-                .accessibilityIdentifier("native-course-name")
-            Text("색").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
-            HStack(spacing: 14) {
-                ForEach(Self.colors, id: \.0) { value, tint in
-                    Button { color = value } label: {
-                        Circle().fill(tint).frame(width: 20, height: 20)
-                            .overlay(Circle().stroke(NativeDesktopTheme.text, lineWidth: 2).padding(-4).opacity(color == value ? 1 : 0))
-                            .frame(width: 30, height: 36).contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityLabel(value).accessibilityAddTraits(color == value ? .isSelected : [])
-                        .accessibilityIdentifier("native-course-color-" + value)
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                BandalText("새 과목").fontWeight(.semibold).foregroundStyle(NativeDesktopTheme.text)
+                HStack {
+                    Button(action: cancel) { BandalText("취소") }.accessibilityIdentifier("native-course-cancel")
+                    Spacer()
+                    Button(action: submit) { BandalText("만들기").fontWeight(.semibold) }.disabled(!ready).opacity(ready ? 1 : 0.35).accessibilityIdentifier("native-create-course")
+                }.foregroundStyle(NativeDesktopTheme.accent)
+            }.font(.system(size: 17)).buttonStyle(.plain).padding(.horizontal, 20).frame(height: 52)
+            VStack(alignment: .leading, spacing: 14) {
+                TextField("과목 이름", text: $name).font(.system(size: 17)).textFieldStyle(.plain).focused($focused).onSubmit(submit).disabled(busy)
+                    .padding(.horizontal, 14).frame(height: 46)
+                    .background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .accessibilityIdentifier("native-course-name")
+                BandalText("색").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary).frame(height: 16)
+                HStack(spacing: 10) {
+                    ForEach(Self.colors, id: \.0) { value, tint in
+                        Button { color = value } label: {
+                            Circle().fill(tint).frame(width: 20, height: 20).frame(width: 30, height: 30)
+                                .overlay { if color == value { Circle().strokeBorder(NativeDesktopTheme.accent, lineWidth: 2) } }
+                                .contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityLabel(value).accessibilityAddTraits(color == value ? .isSelected : [])
+                            .accessibilityIdentifier("native-course-color-" + value)
+                    }
                 }
-            }
-            if let error { Text(error).font(.system(size: 11)).foregroundStyle(.red).lineLimit(2) }
-            Text("나중에 ‘폴더 연결 및 보관 관리’로 파일 앱 폴더를 붙일 수 있어요.").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
-                .fixedSize(horizontal: false, vertical: true)
+                if let error { Text(error).font(.system(size: 13)).foregroundStyle(.red).lineLimit(2) }
+            }.padding(.horizontal, 20).padding(.vertical, 8)
+            BandalText("나중에 ‘기존 폴더 연결’로 파일 앱 폴더를 붙일 수 있어요.").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
+                .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 20).padding(.vertical, 16)
         }.onAppear { focused = true }
     }
     private func submit() {
