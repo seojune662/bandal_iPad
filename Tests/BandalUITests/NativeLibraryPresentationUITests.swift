@@ -91,7 +91,7 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         XCTAssertTrue(parent.exists && sibling.exists, "Expanding must keep the parent and sibling rows: " + app.debugDescription)
         XCTAssertTrue(child.isHittable)
         XCTAssertFalse(breadcrumbs.exists, "The tree never shows breadcrumbs")
-        screenshot("목록 보기 폴더 펼침")
+        XCTAssertEqual(child.frame.height, 52, accuracy: 1, "List rows are 52 pt high")
 
         let disappears = { (element: XCUIElement) in
             XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)], timeout: 5) == .completed
@@ -129,11 +129,24 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         XCTAssertTrue(child.waitForExistence(timeout: 5) && sibling.exists, "Switching to the tree expands the folder that was open: " + app.debugDescription)
         XCTAssertFalse(breadcrumbs.exists)
 
+        app.buttons["native-library-create"].tap(); app.buttons["새 노트"].tap()
+        let title = app.textFields["native-new-note-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Tree Note")
+        app.buttons["native-new-note-create"].tap()
+        XCTAssertTrue(app.otherElements["native-pdf-workspace"].waitForExistence(timeout: 20), app.debugDescription)
+        app.buttons["native-close-document"].tap()
+        let note = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-material-Parent/", "Tree Note")).firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 10), "A new note lands in the folder the tree last opened: " + app.debugDescription)
+        XCTAssertEqual(note.frame.height, 52, accuracy: 1)
+        sleep(3) // Not an assertion: lets the thumbnail render for the screenshot.
+        screenshot("목록 보기 폴더 펼침")
+
         app.terminate()
         app.launchArguments = ["--native-ui-testing", "-native.appearance", "dark"]
         app.launch()
         XCTAssertTrue(child.waitForExistence(timeout: 20), "The restored tree keeps Parent expanded: " + app.debugDescription)
-        XCTAssertTrue(sibling.exists)
+        XCTAssertTrue(sibling.exists && note.exists)
+        sleep(3)
         screenshot("목록 보기 폴더 펼침 다크")
     }
 

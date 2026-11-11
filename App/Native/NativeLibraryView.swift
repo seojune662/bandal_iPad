@@ -272,14 +272,17 @@ Menu {
         }
     }
     private var listContent: some View {
-            LazyVStack(alignment: .leading, spacing: 2) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if let error = store.errorMessage {
                     Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(.red).padding(12)
                 }
                 if store.isLoading && scopedMaterials.isEmpty { ProgressView().frame(maxWidth: .infinity).padding(24) }
                 if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     if filesExpanded {
-                        ForEach(treeRows) { entry in materialRow(entry.material, depth: entry.depth) }
+                        ForEach(treeRows) { entry in thumbnailRow(entry.material, depth: entry.depth) }
+                        if !scopedMaterials.isEmpty {
+                            Text("\(scopedMaterials.count)개 항목").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).frame(maxWidth: .infinity).padding(.top, 8)
+                        }
                     }
                     if scopedMaterials.isEmpty && !store.isLoading {
                         VStack(spacing: 12) {
@@ -289,13 +292,61 @@ Menu {
                         }.foregroundStyle(NativeDesktopTheme.muted).frame(maxWidth: .infinity).padding(24)
                     }
                 } else {
-                    ForEach(items) { material in materialRow(material, depth: 0) }
+                    ForEach(items) { material in thumbnailRow(material, depth: 0) }
                     contentSearchSection
                     if items.isEmpty && contentHits.isEmpty && !searching { Text("검색 결과가 없습니다").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(16) }
                 }
             }.padding(.horizontal, 6).padding(.bottom, 16)
     }
-    /// The open document's row: 14 pt icon and 12 pt name on a 38 pt pill. The others: 15 pt icon, 14 pt name.
+    /// 목록 and search rows follow the desktop list (v0.95.0), not the Figma file: 52 pt high,
+    /// a 30×40 thumbnail, a one-line name, then date · size and the kind on one line.
+    private func thumbnailRow(_ material: NativeMaterial, depth: Int) -> some View {
+        let selected = isSelected(material), indent = CGFloat(depth) * 16
+        let details = material.isDirectory ? "\(material.children?.count ?? 0)개 항목"
+            : [(material.mtime ?? 0) > 0 ? materialDate(material) : nil, material.size.map { Int64($0).formatted(.byteCount(style: .file)) }].compactMap { $0 }.joined(separator: " · ")
+        let folder = (material.relPath as NSString).deletingLastPathComponent
+        return Button { open(material) } label: {
+            HStack(spacing: 10) {
+                Group {
+                    if material.isDirectory { Image(systemName: "folder").font(.system(size: 18)).foregroundStyle(NativeDesktopTheme.text) }
+                    else {
+                        // Drawn at 60×80 and halved: the shared thumbnail's corner, inset and
+                        // fallback symbol are sized for cards and would be clipped at 30×40.
+                        NativeLibraryMaterialThumbnail(store: store, material: material, courseID: courseID, url: materialURL(material), symbol: symbol(material), refresh: selected ? "active" : "")
+                            .frame(width: 60, height: 80).scaleEffect(0.5).frame(width: 30, height: 40)
+                            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(NativeGlass.separator, lineWidth: 0.5))
+                    }
+                }.frame(width: 30, height: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    name(material, font: .system(size: 13, weight: .medium), lines: 1)
+                    HStack(spacing: 6) {
+                        if !details.isEmpty { Text(details).lineLimit(1) }
+                        Text(material.isDirectory ? "폴더" : description(material).replacingOccurrences(of: " 파일", with: ""))
+                            .font(.system(size: 9)).padding(.horizontal, 4).frame(height: 14)
+                            .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 4)).fixedSize()
+                        if isSearching && !folder.isEmpty { Text(folder).lineLimit(1).truncationMode(.middle) }
+                    }.font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                if material.isDirectory {
+                    Image(systemName: expandedFolders.contains(material.relPath) && !isSearching ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .medium)).foregroundStyle(NativeDesktopTheme.muted).frame(width: 12)
+                }
+            }.padding(.leading, 8 + indent).padding(.trailing, 8).frame(height: 52).contentShape(Rectangle())
+        }
+        .background(selected ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(alignment: .bottom) {
+            if !selected { NativeGlass.separator.opacity(0.65).frame(height: 1).padding(.leading, 48 + indent).padding(.trailing, 8) }
+        }
+        .contextMenu { actions(material) }
+        .modifier(deleteConfirm(material))
+        .modifier(movePopover(material))
+        .modifier(materialDrag(material))
+        .task(id: materialTaskID(material)) { await resolveURL(material) }
+        .accessibilityIdentifier("native-material-\(material.relPath)")
+        .accessibilityAddTraits(selectedDocumentID == material.document(in: courseID ?? "").id ? .isSelected : [])
+    }
+    /// Columns and gallery folders keep the Figma row. The open document's row: 14 pt icon
+    /// and 12 pt name on a 38 pt pill. The others: 15 pt icon, 14 pt name.
     private func materialRow(_ material: NativeMaterial, depth: Int) -> some View {
         let selected = selectedDocumentID == material.document(in: courseID ?? "").id || (material.isDirectory && folderPath == material.relPath)
         return Button { open(material) } label: {
