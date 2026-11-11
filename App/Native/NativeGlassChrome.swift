@@ -10,6 +10,16 @@ enum NativeGlass {
     static let paper = fill(0xffffff, 0.95, 0x18181a, 0.97)
     /// `Surface/Separator`: the hairline under the tab strip and between panels.
     static let separator = NativeDesktopTheme.adaptive(0xe5e5e5, 0x2e2e2e)
+    /// A hairline drawn on a glass panel (between rail, panels and paper).
+    static let hairline = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0x2e / 255, green: 0x2e / 255, blue: 0x2e / 255, alpha: 1) : UIColor.black.withAlphaComponent(0.06) })
+    /// A chosen row or a pressed control on a glass panel.
+    static let selection = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.07) : UIColor.black.withAlphaComponent(0.05) })
+    /// `Glass/팝업`: the tint over the glass of anything that floats (palette, popover, menu, toast).
+    static let popup = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0x1c / 255, green: 0x1c / 255, blue: 0x1e / 255, alpha: 0.84) : UIColor.white.withAlphaComponent(0.7) })
+    /// `Glass/시트`: settings, the study board and its editor.
+    static let sheet = fill(0xfafafb, 0.93, 0x1c1c1e, 0.93)
+    /// The rim of a floating surface.
+    static let rim = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.14) : UIColor(white: 0xdb / 255, alpha: 1) })
     /// Rail and panel-header icons (`Brand/Accent`).
     static let icon = NativeDesktopTheme.adaptive(0x1a1a1a, 0xededed)
     /// `Surface/Tool`: the chosen tab's pill.
