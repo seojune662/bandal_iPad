@@ -58,6 +58,9 @@ final class NativeLibrarySourceTrayModel: ObservableObject {
     @Published private(set) var assets: [NativeLibrarySourceAsset] = []
     @Published private(set) var working = false
     @Published var error: String?
+    /// Raised from the panel's 자료 추가 menu; the tray presents the pickers.
+    @Published var photosPresented = false
+    @Published var filesPresented = false
     private let maximumAssets = 30
     var remainingCapacity: Int { max(0, maximumAssets - assets.count) }
 
@@ -123,90 +126,51 @@ struct NativeLibrarySourceTray: View {
     var store: NativeWorkspaceStore
     let folderPath: String
     @ObservedObject var model: NativeLibrarySourceTrayModel
-    @State private var expanded = false
-    @State private var photosPresented = false
-    @State private var filesPresented = false
     @State private var saving = false
     @State private var savedAssetID: UUID?
 
+    /// Nothing shows until something is staged; the pickers open from the panel's 자료 추가 menu.
     var body: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Button { expanded.toggle() } label: {
-                    Label("사진 · 파일", systemImage: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 12, weight: .medium)).frame(minHeight: 30).contentShape(Rectangle())
-                }.accessibilityIdentifier("native-library-sources-toggle")
-                Spacer(minLength: 0)
-                if model.working || saving { ProgressView().controlSize(.mini) }
-            }
-            HStack(spacing: 8) {
-                sourceButton("사진", symbol: "photo.on.rectangle", identifier: "native-library-source-photos") {
-                    expanded = true; photosPresented = true
+            if !model.assets.isEmpty {
+                HStack(spacing: 8) {
+                    Text("사진 · 파일").font(.system(size: 12, weight: .medium)).foregroundStyle(NativeGlass.panelTertiary)
+                    Spacer(minLength: 0)
+                    if model.working || saving { ProgressView().controlSize(.mini) }
                 }
-                .accessibilityLabel("사진 앱에서 선택")
-                sourceButton("파일", symbol: "folder", identifier: "native-library-source-files") {
-                    expanded = true; filesPresented = true
-                }
-                .accessibilityLabel("파일 앱에서 선택")
-            }
-            Text("사진·파일에서 골라 문서로 드래그")
-                .font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if expanded {
-                if model.assets.isEmpty {
-                    Text("사진이나 파일을 선택한 뒤\n문서로 끌어다 놓으세요.")
-                        .font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
-                        .multilineTextAlignment(.center).frame(maxWidth: .infinity).frame(height: 56)
-                } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(alignment: .top, spacing: 10) {
-                            ForEach(model.assets) { asset in sourceCard(asset) }
-                        }.padding(.vertical, 2)
-                    }.frame(height: 118)
-                    HStack {
-                        Text("문서로 드래그 · \(model.assets.count)개").font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted)
-                        Spacer()
-                        Button("비우기") { model.clear() }.font(.system(size: 10)).disabled(saving)
-                            .accessibilityLabel("사진 파일 보관함 비우기")
-                    }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 10) {
+                        ForEach(model.assets) { asset in sourceCard(asset) }
+                    }.padding(.vertical, 2)
+                }.frame(height: 118)
+                HStack {
+                    Text("문서로 드래그 · \(model.assets.count)개").font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted)
+                    Spacer()
+                    Button("비우기") { model.clear() }.font(.system(size: 10)).disabled(saving)
+                        .accessibilityLabel("사진 파일 보관함 비우기")
                 }
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
+        .padding(.horizontal, 12).padding(.vertical, model.assets.isEmpty ? 0 : 8)
         .task {
             #if DEBUG
             model.loadFixtureIfRequested()
             #endif
-            if !model.assets.isEmpty { expanded = true }
         }
-        .onChange(of: model.assets.isEmpty) { _, isEmpty in
-            if !isEmpty { expanded = true }
-        }
-        .overlay(alignment: .top) { NativeDesktopTheme.border.frame(height: 1) }
-        .sheet(isPresented: $photosPresented) {
+        .overlay(alignment: .top) { if !model.assets.isEmpty { NativeGlass.hairline.frame(height: 1) } }
+        .sheet(isPresented: $model.photosPresented) {
             NativeLibraryPhotoPicker(limit: max(1, model.remainingCapacity)) { providers in
-                photosPresented = false
+                model.photosPresented = false
                 model.add(photos: providers)
             }
         }
-        .fileImporter(isPresented: $filesPresented, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $model.filesPresented, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): model.add(files: urls)
             case .failure(let error): model.error = error.localizedDescription
             }
         }
         .bandalToast(Binding(get: { model.error }, set: { model.error = $0 }))
-    }
-    private func sourceButton(_ title: String, symbol: String, identifier: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: symbol)
-                .font(.system(size: 12, weight: .medium))
-                .frame(maxWidth: .infinity, minHeight: 38)
-                .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 8))
-                .contentShape(Rectangle())
-        }
-        .accessibilityIdentifier(identifier)
-        .disabled(model.working || model.remainingCapacity == 0)
     }
     private func sourceCard(_ asset: NativeLibrarySourceAsset) -> some View {
         VStack(alignment: .leading, spacing: 4) {

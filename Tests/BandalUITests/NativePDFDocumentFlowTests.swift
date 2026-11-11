@@ -15,7 +15,6 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         app.launch()
         let courseMenu = app.buttons["native-course-add-menu"]
         XCTAssertTrue(courseMenu.waitForExistence(timeout: 20)); courseMenu.tap()
-        app.buttons["native-new-course"].tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("PDF Workflow")
         app.buttons["native-create-course"].tap()
@@ -96,7 +95,7 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = arguments(reset: true); app.launch()
         let courseMenu = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(courseMenu.waitForExistence(timeout: 25)); courseMenu.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(courseMenu.waitForExistence(timeout: 25)); courseMenu.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Duplicate PDF")
         app.buttons["native-create-course"].tap()

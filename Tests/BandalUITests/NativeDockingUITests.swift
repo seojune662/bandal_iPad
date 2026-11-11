@@ -12,7 +12,7 @@ final class NativeDockingUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]
         app.launch()
         let addCourse = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(addCourse.waitForExistence(timeout: 20)); addCourse.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(addCourse.waitForExistence(timeout: 20)); addCourse.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Docking Course")
         app.buttons["native-create-course"].tap()

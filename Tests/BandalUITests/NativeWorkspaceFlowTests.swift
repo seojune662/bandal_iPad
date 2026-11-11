@@ -300,7 +300,6 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let app = launch(reset: true, pencil: false, extra: ["--native-free-tier"])
         createCourse(in: app)
         app.buttons["native-course-add-menu"].tap()
-        app.buttons["native-new-course"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap(); name.typeText("Physics")
@@ -340,7 +339,6 @@ final class NativeWorkspaceFlowTests: XCTestCase {
 
     @MainActor private func createCourse(in app: XCUIApplication) {
         app.buttons["native-course-add-menu"].tap()
-        app.buttons["native-new-course"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap(); name.typeText("Mathematics")

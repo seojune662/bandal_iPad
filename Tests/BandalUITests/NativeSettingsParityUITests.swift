@@ -87,7 +87,7 @@ final class NativeSettingsParityUITests: XCTestCase {
     @MainActor
     func testTwoDockedBrowsersKeepLocalWebsiteInputsIndependent() {
         let app = launch(extra: ["--native-browser-ui-fixture"])
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].tap()
+        app.buttons["native-course-add-menu"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Browser Docking")
         app.buttons["native-create-course"].tap()

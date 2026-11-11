@@ -12,7 +12,7 @@ final class AppStoreScreenshotTests: XCTestCase {
         app.launch()
         let addCourse = app.buttons["native-course-add-menu"]
         XCTAssertTrue(addCourse.waitForExistence(timeout: 25), app.debugDescription)
-        addCourse.tap(); app.buttons["native-new-course"].tap()
+        addCourse.tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5)); paste("선형대수학", into: courseName, app: app)
         app.buttons["native-create-course"].tap()

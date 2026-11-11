@@ -559,8 +559,8 @@ struct NativeWorkspaceView: View {
             .id(store.reloadIdentity(for:document))
     }
 
-    /// Opaque: a translucent hairline between two glass panels would show the raw backdrop.
-    private var railDivider: some View { NativeGlass.separator.frame(width: 1) }
+    /// The line sits on the panel's glass; alone it would show the raw backdrop.
+    private var railDivider: some View { NativeGlass.hairline.frame(width: 1).background(NativeGlass.panel) }
     private static let railAnimation = Animation.spring(response: 0.32, dampingFraction: 0.88)
     private enum Rail { case course, ai, materials }
     private func chromeLayout(width: CGFloat) -> NativeWorkspaceChromeLayout {
@@ -638,49 +638,57 @@ struct NativeWorkspaceView: View {
     private func globalNavigation(width: CGFloat) -> some View {
         VStack(spacing: Self.railSpacing) {
             NativeChromeButton(title: "홈", symbol: "house", selected: showsWorkspace && railVisible(.course, width: width),
-                               joinsPanel: chromeLayout(width: width).leftPinned) {
+                               selectedFill: Self.railSelected, selectedInset: 3, selectedRadius: 11, joinsPanel: chromeLayout(width: width).leftPinned) {
                 if showsWorkspace { if NativeLocalPreferences.bool(NativeLocalPreferences.homeTogglesSidebar) || !railVisible(.course, width: width) { toggleCourseRail(width: width) } } else {
                     transition {
                         section = .library; auxiliary = nil; learningHome = false
                         setCourseRail(true, width: width)
                     }
                 }
-            }.accessibilityIdentifier("native-section-library")
+            }.accessibilityIdentifier("native-section-library").padding(.bottom, 3)
             NativeChromeButton(title: railVisible(.ai, width: width) ? "AI 닫기" : "AI 열기", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width),
-                               joinsPanel: chromeLayout(width: width).aiPinned && !(chromeLayout(width: width).leftPinned && railVisible(.course, width: width))) {
+                               selectedFill: Self.railSelected, selectedInset: 3, selectedRadius: 11, joinsPanel: chromeLayout(width: width).aiPinned && !(chromeLayout(width: width).leftPinned && railVisible(.course, width: width))) {
                 if showsWorkspace { toggleAIRail(width: width) } else { transition { openAIRail() } }
             }.accessibilityIdentifier("native-ai-rail-toggle")
-            NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
+            NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen, selectedFill: Self.railSelected, selectedInset: 3, selectedRadius: 11) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
             if NativeReleaseFlags.showsMarketplace {
-                NativeChromeButton(title: "마켓플레이스", symbol: "storefront", selected: auxiliary == .marketplace) { transition { section = .library; auxiliary = .marketplace; learningHome = false } }.accessibilityIdentifier("native-section-marketplace")
+                NativeChromeButton(title: "마켓플레이스", symbol: "storefront", selected: auxiliary == .marketplace, selectedFill: Self.railSelected, selectedInset: 3, selectedRadius: 11) { transition { section = .library; auxiliary = .marketplace; learningHome = false } }.accessibilityIdentifier("native-section-marketplace")
             }
             Spacer(minLength: 8)
             if NativeReleaseFlags.showsAccount {
                 NativeAccountRailButton(store: store, openSettings: openSettings,
-                    openHelp: { transition { section = .library; auxiliary = .help; learningHome = false } })
+                    openHelp: { transition { section = .library; auxiliary = .help; learningHome = false } }).padding(.bottom, 1)
             }
-            NativeChromeButton(title: "설정", symbol: "gearshape", selected: section == .settings) { openSettings("general") }.accessibilityIdentifier("native-section-settings")
-        }.padding(.top, Self.railTop).padding(.bottom, 12).frame(width: NativeDesktopTheme.navigationWidth)
+            NativeChromeButton(title: "설정", symbol: "gearshape", selected: section == .settings, selectedFill: Self.railSelected, selectedInset: 3, selectedRadius: 11) { openSettings("general") }.accessibilityIdentifier("native-section-settings")
+        }.padding(.top, Self.railTop).padding(.bottom, 10).frame(width: NativeDesktopTheme.navigationWidth)
             // The open panel's button is a tab of that panel: the rail's glass is cut away behind it.
             .background {
                 let layout = chromeLayout(width: width)
                 let home = showsWorkspace && layout.leftPinned && railVisible(.course, width: width)
                 let ai = showsWorkspace && layout.aiPinned && railVisible(.ai, width: width) && !home
-                NativeRailSurface(tabCenter: home ? Self.railTop + 22 : ai ? Self.railTop + 44 + Self.railSpacing + 22 : nil, reachesTop: home)
+                NativeRailSurface(tabCenter: home ? Self.railTop + 22 : ai ? Self.railTop + 44 + 3 + Self.railSpacing + 22 : nil, reachesTop: home)
             }
     }
-    /// Rail buttons are 44 pt on a 48 pt pitch, so neighbouring 52 pt panel tabs meet without a gap.
-    private static let railSpacing: CGFloat = 4, railTop: CGFloat = 6
+    /// Icon centres at 29 / 80 / 128 below the status bar: 44 pt buttons, the home button 3 pt further from the next.
+    private static let railSpacing: CGFloat = 4, railTop: CGFloat = 7
+    /// A lit rail button with no panel beside it.
+    private static let railSelected = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.12) : UIColor.white.withAlphaComponent(0.85) })
+    @AppStorage("native.desktop.shortcutsHeight") private var shortcutsLimit = 0.0
     private var courseSidebar: some View {
-        VStack(spacing: 0) {
+        // 0 is the automatic height; the handle on the line below stores another.
+        let shortcutsHeight = min(shortcutContentHeight, shortcutsLimit > 0 ? max(NativeSidebarSectionHandle.minimum, shortcutsLimit) : windowWidth < 900 ? 200 : 300)
+        return VStack(spacing: 0) {
             ScrollView {
                 // The invite reminder shares this area's height limit, so the course list keeps its room on a small iPad.
                 VStack(spacing: 0) {
                     NativeReferralBanner(store: store)
                     NativeSidebarShortcuts(store: store, settings: workspaceSettings, onOpenSettings: openSettings, onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb)
                 }.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shortcutContentHeight = $0 }
-            }.frame(height: min(shortcutContentHeight, windowWidth < 900 ? 200 : 260))
-            NativeDesktopTheme.border.frame(height: 1)
+            }.frame(height: shortcutsHeight)
+            NativeGlass.hairline.frame(height: 1)
+                .overlay(alignment: .trailing) {
+                    NativeSidebarSectionHandle(limit: $shortcutsLimit, current: shortcutsHeight, content: shortcutContentHeight).padding(.trailing, 10)
+                }.zIndex(1)
             NativeHomeSectionPicker(selection: $leftPanel)
             switch leftPanel {
             case .courses:
@@ -878,13 +886,13 @@ struct NativeWorkspaceView: View {
             if let context = workspaceContext {
                 NativeLibraryView(store: store, sourceTrayModel: librarySources, scope: context,
                     onOpenAI: openAIRail, selectedDocumentID: navigation.active?.storageID,
+                    accessory: AnyView(NativeSettingsWidgetDock(store: store, services: services, availableHeight: 600)),
                     captureOpen: {
                         let target = navigation.captureTarget()
                         return { document in openCapturedDocument(document, target: target) }
                     }) { document in
                     compactMaterialsRail = false; open(document)
                 }.id(context.id).frame(maxHeight: .infinity)
-                NativeSettingsWidgetDock(store: store, services: services, availableHeight: 600)
             } else { noWorkspacePlaceholder }
         }
     }

@@ -1098,3 +1098,12 @@
 "환불 완료" = "Refunded";
 "환불 처리 중" = "Refund in progress";
 "획 전체" = "Whole Stroke";
+"외부 AI 사이트 ↗" = "External AI Sites ↗";
+"외부 AI 사이트 펼치기" = "Show External AI Sites";
+"외부 AI 사이트 접기" = "Hide External AI Sites";
+"자료 추가" = "Add Material";
+"바로가기 영역 높이 조절" = "Resize Shortcuts";
+"기본 높이로" = "Default Height";
+"아직 바로가기가 없어요" = "No shortcuts yet";
+"학교 홈 · 포털 · 도서관 링크를 AI가 찾아 드려요" = "AI can find your school’s home, portal and library links";
+"직접 추가" = "Add Manually";

@@ -147,6 +147,7 @@
 		41C9CC9E32C3747E1B7130AC /* DesktopAccountTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B2ABD135E9B6543B6E9108 /* DesktopAccountTests.swift */; };
 		425A09554B94F28C78078284 /* NativePDFRetainedPaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43B924EE0DB295AA30FEC1AF /* NativePDFRetainedPaper.swift */; };
 		4296724FFEF8BBB7270AF7F8 /* NativePDFApertureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F05EFA1FB9D41C2271244A57 /* NativePDFApertureTests.swift */; };
+		4316E46F993A63D7CBE99378 /* FigmaHomeChromeScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F356907DDC8170ECA8C19306 /* FigmaHomeChromeScreenshotTests.swift */; };
 		43C06F396260514D002E9C34 /* NativePDFRetainedObjectTexturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 944E7A4B4C56A2470CEA9D12 /* NativePDFRetainedObjectTexturesTests.swift */; };
 		4412AA8317BB3656247003BE /* PDFExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEE1C0DA0344077A63AAC615 /* PDFExportTests.swift */; };
 		443F9AE9ABC19AC1935CFEA7 /* SyncOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F12C65EAA3C240F74656189 /* SyncOutbox.swift */; };
@@ -1098,6 +1099,7 @@
 		F1A92C59758443179D13CF96 /* CloudSyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncEngine.swift; sourceTree = "<group>"; };
 		F1C07BF543A988BB246A6D4B /* NativePDFNavigationHighlighterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFNavigationHighlighterTests.swift; sourceTree = "<group>"; };
 		F2C33E3525B582CB5F27DDBC /* OAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthSession.swift; sourceTree = "<group>"; };
+		F356907DDC8170ECA8C19306 /* FigmaHomeChromeScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FigmaHomeChromeScreenshotTests.swift; sourceTree = "<group>"; };
 		F39745639D8C421E16D5B165 /* NativePDFInkV3Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkV3Tests.swift; sourceTree = "<group>"; };
 		F405F17DB0AFA34F1706C71B /* BrowserEngineImprovementsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserEngineImprovementsTests.swift; sourceTree = "<group>"; };
 		F43D025E309B0AF80C5DC25A /* NativePDFEditorSceneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFEditorSceneTests.swift; sourceTree = "<group>"; };
@@ -1747,6 +1749,7 @@
 			children = (
 				0E44669BA478AFAE36158A0C /* AppStoreScreenshotTests.swift */,
 				97EE3439035BD5A758666224 /* BandalUITests-Bridging-Header.h */,
+				F356907DDC8170ECA8C19306 /* FigmaHomeChromeScreenshotTests.swift */,
 				DEE90787A9EB52F9E38987C7 /* NativeAIModelPickerUITests.swift */,
 				033D44E19032ECF43A49CD24 /* NativeAnnotationUITests.swift */,
 				CA395AF2FC56908E85AC9803 /* NativeAssistantSourcesUITests.swift */,
@@ -2216,6 +2219,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				2EEB19162846FDABA7B4DA00 /* AppStoreScreenshotTests.swift in Sources */,
+				4316E46F993A63D7CBE99378 /* FigmaHomeChromeScreenshotTests.swift in Sources */,
 				AE9AAB69F4CC2EC89D6E0B76 /* NativeAIModelPickerUITests.swift in Sources */,
 				A85DC63DF09E5B2BCA7B9736 /* NativeAnnotationUITests.swift in Sources */,
 				3F0FA5FF017DB42858871973 /* NativeAssistantSourcesUITests.swift in Sources */,

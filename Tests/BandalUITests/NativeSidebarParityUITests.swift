@@ -12,7 +12,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["native-home-courses"].exists)
         XCTAssertTrue(app.buttons["native-home-projects"].exists)
         for removed in ["learning", "assistant", "tools"] { XCTAssertFalse(app.buttons["native-section-" + removed].exists) }
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        app.buttons["native-course-add-menu"].tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5)); courseName.tap(); courseName.typeText("Physics")
         app.buttons["native-create-course"].tap()
@@ -23,7 +23,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         app.buttons["만들기"].tap()
         openInspector(app)
         app.buttons["native-inspector-materials"].tap()
-        for action in ["native-library-view-menu", "native-library-import", "native-library-create"] {
+        for action in ["native-library-view-menu", "native-library-refresh", "native-library-create"] {
             XCTAssertTrue(app.buttons[action].waitForExistence(timeout: 15), app.debugDescription)
         }
         app.buttons["native-library-create"].tap(); app.buttons["새 마크다운"].tap()
@@ -120,7 +120,7 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
         openHome(app)
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        app.buttons["native-course-add-menu"].tap()
         let courseName = app.textFields["native-course-name"]
         XCTAssertTrue(courseName.waitForExistence(timeout: 5)); courseName.tap(); courseName.typeText("Physics")
         app.buttons["native-create-course"].tap()

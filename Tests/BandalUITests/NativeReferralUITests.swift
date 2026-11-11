@@ -194,7 +194,7 @@ final class NativeReferralUITests: XCTestCase {
             capture("사이드바 배너 (\(name))")
 
             let add = app.buttons["native-course-add-menu"]
-            add.tap(); app.buttons["native-new-course"].firstMatch.tap()
+            add.tap()
             let course = app.textFields["native-course-name"]
             XCTAssertTrue(course.waitForExistence(timeout: 5), app.debugDescription); course.tap(); course.typeText("물리\n")
             let toast = app.staticTexts["bandal-toast"]
@@ -329,7 +329,7 @@ final class NativeReferralUITests: XCTestCase {
         let banner = app.staticTexts["native-referral-banner"]
         XCTAssertTrue(banner.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(banner.label, "Create your first course to get 100 AI uses")
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].firstMatch.tap()
+        app.buttons["native-course-add-menu"].tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5), app.debugDescription); course.tap(); course.typeText("Physics\n")
         XCTAssertTrue(app.staticTexts["100 AI uses added"].waitForExistence(timeout: 20), app.debugDescription)

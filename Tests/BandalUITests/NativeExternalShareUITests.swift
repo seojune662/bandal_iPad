@@ -16,7 +16,7 @@ final class NativeExternalShareUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]
         app.launch()
         XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 20), app.debugDescription)
-        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].tap()
+        app.buttons["native-course-add-menu"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Share Destination")
         app.buttons["native-create-course"].tap()

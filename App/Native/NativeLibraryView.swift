@@ -10,6 +10,8 @@ struct NativeLibraryView: View {
     @StateObject private var projectLibrary = NativeProjectLibrary()
     @State private var loadedScopeID: String?
     var onClose: (() -> Void)? = nil
+    /// Shown between the file list and the 자료 추가 button (the widget dock).
+    var accessory: AnyView? = nil
     var captureOpen: (() -> (NativeDocumentReference) -> Void)? = nil
     var onOpen: (NativeDocumentReference) -> Void
     @State private var importDestination: MaterialDestination?
@@ -79,42 +81,34 @@ struct NativeLibraryView: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 Text(scope?.title ?? store.courses.first { $0.id == courseID }?.name ?? "자료")
-                    .font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    .font(.system(size: 14, weight: .semibold)).foregroundStyle(NativeGlass.icon).lineLimit(1)
                     .accessibilityAddTraits(.isButton).accessibilityIdentifier("native-inspector-materials")
                 Spacer(minLength: 4)
                 if working { ProgressView().scaleEffect(0.7).frame(width: 16) }
-                Button { beginImport() } label: { Image(systemName: "tray.and.arrow.down").frame(width: 40, height: 40).contentShape(Rectangle()) }.accessibilityLabel("파일 가져오기")
-                    .disabled(courseID == nil || working).accessibilityIdentifier("native-library-import")
-                Menu {
-                    Button("새 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { beginCreation(.ink) }
-                    Button("새 마크다운", systemImage: "doc.badge.plus") { beginCreation(.markdown) }
-                    Button("새 폴더", systemImage: "folder.badge.plus") { beginCreation(.folder) }
-                    Divider()
-                    Button("GoodNotes·Notability에서 가져오기", systemImage: "arrow.down.doc") { showingMigrationGuide = true }
-                    if let onOpenAI { Divider(); Button("AI로 만들기", systemImage: "sparkles", action: onOpenAI) }
-                } label: { Image(systemName: "plus").font(.system(size: 15)).frame(width: 40, height: 40).contentShape(Rectangle()) }
-                    .disabled(courseID == nil || working).accessibilityLabel("추가").accessibilityIdentifier("native-library-create")
+                Button { Task { await store.refreshMaterials(); await projectLibrary.reload(store: store, scope: scope) } } label: { Image(systemName: "arrow.clockwise").font(.system(size: 16)).foregroundStyle(Self.headerIcon).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                    .accessibilityLabel("자료 새로고침").accessibilityIdentifier("native-library-refresh")
+                    // Anchored up here, not on 자료 추가: the keyboard covers the bottom of the panel.
                     .bandalPopover(isPresented: Binding(get: { showingMigrationGuide || creation != nil }, set: { if !$0 { showingMigrationGuide = false; creation = nil } }), width: creation?.kind == .ink ? 340 : 300) {
                         if showingMigrationGuide { migrationGuide } else if let creation { namedCreation(creation) }
                     }
-                Button { Task { await store.refreshMaterials(); await projectLibrary.reload(store: store, scope: scope) } } label: { Image(systemName: "arrow.clockwise").frame(width: 40, height: 40).contentShape(Rectangle()) }
-                    .accessibilityLabel("자료 새로고침").accessibilityIdentifier("native-library-refresh")
-            }.foregroundStyle(NativeDesktopTheme.text).padding(.leading, 16).padding(.trailing, 6).frame(minHeight: 44)
+            }.padding(.leading, 16).padding(.trailing, 3).frame(height: 44)
             NativeRailSearchField(prompt: "자료 검색", text: $query, identifier: "native-library-search")
-                .padding(.horizontal, 12).padding(.bottom, 2)
-            HStack(spacing: 8) {
+                .padding(.horizontal, 12).padding(.top, 1)
+            HStack(spacing: 0) {
                 Button { if displayMode == .list { filesExpanded.toggle() } } label: {
-                    HStack(spacing: 8) {
-                        if displayMode == .list { Image(systemName: filesExpanded ? "chevron.down" : "chevron.right").font(.system(size: 10)) }
-                        Text("파일").font(.system(size: 12, weight: .medium))
-                    }.foregroundStyle(NativeDesktopTheme.muted).frame(minHeight: 36).contentShape(Rectangle())
+                    HStack(spacing: 3.5) {
+                        if displayMode == .list { Image(systemName: filesExpanded ? "chevron.down" : "chevron.right").font(.system(size: 11)).foregroundStyle(NativeGlass.panelIcon).frame(width: 13) }
+                        Text("파일").font(.system(size: 11)).foregroundStyle(NativeGlass.panelTertiary)
+                    }.frame(height: 36).contentShape(Rectangle())
                 }.accessibilityLabel(filesExpanded ? "파일 목록 접기" : "파일 목록 펼치기")
                 Spacer(minLength: 0)
                 viewPicker
-            }.padding(.horizontal, 12)
+            }.padding(.leading, 11.5).padding(.trailing, 2).padding(.top, 3).padding(.bottom, 1)
             if displayMode != .list || isSearching { breadcrumbs }
             libraryContent.frame(maxHeight: .infinity)
             NativeLibrarySourceTray(store: store, folderPath: folderPath, model: sourceTrayModel)
+            if let accessory { accessory }
+            addButton
         }
         .buttonStyle(.plain)
         .fileImporter(isPresented: $importing, allowedContentTypes: importTypes, allowsMultipleSelection: true) { result in
@@ -129,6 +123,31 @@ struct NativeLibraryView: View {
         }
     }
 
+    private static let headerIcon = NativeDesktopTheme.adaptive(0x444444, 0xededed)
+    /// Everything that adds to this subject: new documents, imports, and the photo · file tray.
+    private var addButton: some View {
+        Menu {
+            Button("새 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { beginCreation(.ink) }
+            Button("새 마크다운", systemImage: "doc.badge.plus") { beginCreation(.markdown) }
+            Button("새 폴더", systemImage: "folder.badge.plus") { beginCreation(.folder) }
+            Divider()
+            Button("파일 가져오기", systemImage: "tray.and.arrow.down") { beginImport() }.accessibilityIdentifier("native-library-import")
+            Button("GoodNotes·Notability에서 가져오기", systemImage: "arrow.down.doc") { showingMigrationGuide = true }
+            Divider()
+            // These two fill the tray above this button; its items are dragged into a document.
+            Button("사진 앱에서 선택", systemImage: "photo.on.rectangle") { sourceTrayModel.photosPresented = true }
+                .disabled(sourceTrayModel.working || sourceTrayModel.remainingCapacity == 0).accessibilityIdentifier("native-library-source-photos")
+            Button("파일 앱에서 선택", systemImage: "folder") { sourceTrayModel.filesPresented = true }
+                .disabled(sourceTrayModel.working || sourceTrayModel.remainingCapacity == 0).accessibilityIdentifier("native-library-source-files")
+            if let onOpenAI { Divider(); Button("AI로 만들기", systemImage: "sparkles", action: onOpenAI) }
+        } label: {
+            HStack(spacing: 8) { Image(systemName: "plus").font(.system(size: 16)); Text("자료 추가").font(.system(size: 15, weight: .semibold)) }
+                .foregroundStyle(NativeDesktopTheme.accent).frame(maxWidth: .infinity).frame(height: 43)
+                .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 12)).contentShape(Rectangle())
+        }
+            .menuOrder(.fixed).disabled(courseID == nil || working).accessibilityLabel("자료 추가").accessibilityIdentifier("native-library-create")
+            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 11)
+    }
     private var viewPicker: some View {
 Menu {
                         Picker("보기 방식", selection: $storedDisplayMode) {
@@ -137,7 +156,7 @@ Menu {
                                     .accessibilityIdentifier("native-library-view-" + mode.rawValue)
                             }
                         }
-                    } label: { Image(systemName: displayMode.symbol).font(.system(size: 14)).frame(width: 44, height: 36).contentShape(Rectangle()) }
+                    } label: { Image(systemName: displayMode.symbol).font(.system(size: 14)).foregroundStyle(NativeGlass.panelIcon).frame(width: 44, height: 36).contentShape(Rectangle()) }
                         .accessibilityLabel("자료 보기 방식: " + displayMode.title).accessibilityIdentifier("native-library-view-menu")
     }
     private func beginCreation(_ kind: Creation) {
@@ -272,23 +291,27 @@ Menu {
                     contentSearchSection
                     if items.isEmpty && contentHits.isEmpty && !searching { Text("검색 결과가 없습니다").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(16) }
                 }
-            }.padding(.horizontal, 4).padding(.bottom, 16)
+            }.padding(.horizontal, 6).padding(.bottom, 16)
     }
+    /// The open document's row: 14 pt icon and 12 pt name on a 38 pt pill. The others: 15 pt icon, 14 pt name.
     private func materialRow(_ material: NativeMaterial, depth: Int) -> some View {
-        Button { open(material) } label: {
-            HStack(spacing: 7) {
-                if material.isDirectory { Image(systemName: expandedFolders.contains(material.relPath) ? "chevron.down" : "chevron.right").font(.system(size: 9)).frame(width: 10) }
+        let selected = selectedDocumentID == material.document(in: courseID ?? "").id || (material.isDirectory && folderPath == material.relPath)
+        return Button { open(material) } label: {
+            HStack(spacing: 4) {
+                if material.isDirectory { Image(systemName: expandedFolders.contains(material.relPath) ? "chevron.down" : "chevron.right").font(.system(size: 9)).foregroundStyle(NativeGlass.panelIcon).frame(width: 10) }
                 else { Color.clear.frame(width: 10, height: 1) }
-                Image(systemName: symbol(material)).font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted).frame(width: 17)
-                VStack(alignment: .leading, spacing: 3) {
-                    name(material, font: .system(size: 13), lines: 1)
-                    if !query.isEmpty { Text(material.relPath).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
+                HStack(spacing: selected ? 7 : 10) {
+                    Image(systemName: symbol(material)).font(.system(size: selected ? 14 : 15)).foregroundStyle(selected ? NativeGlass.panelIcon : NativeDesktopTheme.secondary).frame(width: 17)
+                    VStack(alignment: .leading, spacing: 3) {
+                        name(material, font: .system(size: selected ? 12 : 14), lines: 1)
+                        if !query.isEmpty { Text(material.relPath).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
+                    }
                 }
                 Spacer(minLength: 0)
-            }.padding(.leading, CGFloat(depth) * 14 + 8).padding(.trailing, 8).frame(minHeight: 44).padding(.vertical, query.isEmpty ? 0 : 5)
+            }.padding(.leading, CGFloat(depth) * 14 + 6).padding(.trailing, 8).frame(minHeight: 38).padding(.vertical, query.isEmpty ? 0 : 5)
                 .contentShape(Rectangle())
         }
-        .background(selectedDocumentID == material.document(in: courseID ?? "").id || (material.isDirectory && folderPath == material.relPath) ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .background(selected ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
         .contextMenu { actions(material) }
         .modifier(deleteConfirm(material))
         .modifier(movePopover(material))
@@ -483,7 +506,8 @@ Menu {
                                font: font, identifier: "native-material-rename") { name in perform { try await store.rename(material, to: name) } }
         } else {
             // No double-tap here: the first tap already opens the item; 이름 변경 is in its menu.
-            Text(material.name).font(font).foregroundStyle(NativeDesktopTheme.text).lineLimit(lines)
+            // A markdown note reads as a note, without its extension.
+            Text(material.name.hasSuffix(".md") ? String(material.name.dropLast(3)) : material.name).font(font).foregroundStyle(NativeDesktopTheme.text).lineLimit(lines)
         }
     }
 
@@ -543,9 +567,9 @@ Menu {
         case "learning-cards": return "rectangle.on.rectangle"
         case "learning-summary": return "text.alignleft"
         case "learning-overview": return "text.book.closed"
-        case "dir": return "folder.fill"
-        case "pdf": return "doc.richtext"
-        case "note": return "doc.text"
+        case "dir": return "folder"
+        case "pdf", "note": return "doc"
+        case "audio", "recording": return "mic"
         case "image": return "photo"
         case "video": return "play.rectangle"
         case "whiteboard": return "rectangle.and.pencil.and.ellipsis"

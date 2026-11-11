@@ -14,7 +14,7 @@ final class NativeBrowserParityUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]
         app.launch()
         let addCourse = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Live Google browser")
         app.buttons["native-create-course"].tap()
@@ -49,7 +49,7 @@ final class NativeBrowserParityUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "--native-browser-ui-fixture"]
         app.launch()
         let addCourse = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Desktop browser")
         app.buttons["native-create-course"].tap()
@@ -96,7 +96,7 @@ final class NativeBrowserParityUITests: XCTestCase {
         app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "--native-browser-ui-fixture", "--native-browser-parity-ui-fixture", "--native-browser-long-title-ui-fixture"]
         app.launch()
         let addCourse = app.buttons["native-course-add-menu"]
-        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap(); app.buttons["native-new-course"].tap()
+        XCTAssertTrue(addCourse.waitForExistence(timeout: 25)); addCourse.tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Browser parity")
         app.buttons["native-create-course"].tap()
