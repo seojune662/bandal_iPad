@@ -119,9 +119,10 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         let projectedImage = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "\u{FFFC}"), object: editor)
         XCTAssertEqual(XCTWaiter.wait(for: [projectedImage], timeout: 10), .completed, "The Markdown image link must project to an inline attachment: " + app.debugDescription)
         screenshot("드래그한 사진의 Markdown 서식 이미지 표시")
-        // The inline image follows one body line, inside the editor's 28pt
-        // horizontal and 40pt top inset. Tap its pixels to open the inspector.
-        editor.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 60, dy: 100)).tap()
+        // The inline image follows one body line, inside the editor's 900-wide
+        // column (28–200pt in from the left) and 32pt top inset. Tap its pixels to open the inspector.
+        let column = max(28, min(200, (editor.frame.width - 900) / 2))
+        editor.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: column + 32, dy: 100)).tap()
         let imageSize = app.sliders["native-markdown-image-size"]
         XCTAssertTrue(imageSize.waitForExistence(timeout: 5), app.debugDescription)
         imageSize.adjust(toNormalizedSliderPosition: 0.375)
