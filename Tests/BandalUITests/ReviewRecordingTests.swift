@@ -95,7 +95,7 @@ final class ReviewRecordingTests: XCTestCase {
         let done = app.buttons["완료"].firstMatch
         if done.exists && done.isHittable { done.tap() }
         pause(1.5)
-        tap(app.buttons["native-open-documents"])
+        app.openNativeDockLayoutMenu()
         // iPadOS 27 drops SwiftUI identifiers on menu items; match the title too.
         tap(app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "native-dock-preset-columns", "좌우 2분할")).firstMatch)
         pause(2.5)

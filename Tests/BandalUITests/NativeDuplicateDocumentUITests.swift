@@ -16,7 +16,7 @@ final class NativeDuplicateDocumentUITests: XCTestCase {
         dismissKeyboard(app)
         let originalTab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-")).firstMatch
         let originalID = originalTab.identifier
-        app.buttons["native-open-documents"].tap()
+        app.openNativeDockLayoutMenu()
         let duplicate = app.buttons["native-duplicate-right"].firstMatch
         XCTAssertTrue(duplicate.waitForExistence(timeout: 5), app.debugDescription); duplicate.tap()
         expectEditors(2, app: app)
