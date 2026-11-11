@@ -186,7 +186,8 @@ extension XCUIApplication {
     /// Popovers close on a tap outside them (top bar area, away from controls).
     @MainActor func closeBandalPopover() {
         let region = otherElements["PopoverDismissRegion"].firstMatch
-        if region.exists { region.tap() } else { coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap() }
+        // With no dismiss region the tap lands on the rail's empty middle, where nothing reacts.
+        if region.exists { region.tap() } else { coordinate(withNormalizedOffset: CGVector(dx: 0.017, dy: 0.5)).tap() }
         // Wait out the dismissal so the next tap reaches the app, not the closing popover.
         _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 0"), object: popovers)], timeout: 3)
     }

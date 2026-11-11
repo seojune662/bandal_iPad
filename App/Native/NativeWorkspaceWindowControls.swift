@@ -20,14 +20,20 @@ struct NativeWorkspaceWindowControls: View {
     let changeMode: (NativeWorkspaceChromeMode) -> Void
     let toggleOverview: () -> Void
     let toggleInspector: () -> Void
+    let store: NativeWorkspaceStore
+    /// The active tab, which 공유 hands on: a web page's link or a file.
+    let shareDocument: NativeDocumentReference?
 
-    static let width: CGFloat = 128
+    /// Figma's three cells (128) and 공유 before them, which the owner moved here from the tab strip.
+    static let width: CGFloat = 169
     static let trailing: CGFloat = 10
     static let top: CGFloat = 12
     static let inspectorTop: CGFloat = 61
 
     var body: some View {
         HStack(spacing: 0) {
+            if let shareDocument { NativeDockShareControls(document: shareDocument, store: store, hidden: overview).padding(.leading, 5).disabled(!enabled || overview) }
+            else { icon("square.and.arrow.up").padding(.leading, 5).opacity(0.35).accessibilityHidden(true) }
             Menu {
                 Button { changeMode(.all) } label: { label("모두 표시", mode: .all) }
                 Button { changeMode(.tabsHidden) } label: { label("탭만 숨김", mode: .tabsHidden) }
@@ -52,7 +58,7 @@ struct NativeWorkspaceWindowControls: View {
         .accessibilityElement(children: .contain).accessibilityIdentifier("native-workspace-controls")
     }
 
-    /// Three cells of 36 · 36 · 34 in a 128 × 40 group; the chosen one carries a 34 × 30 pill.
+    /// Cells of 36 · 36 · 36 · 34 in a 169 × 40 group; the chosen one carries a 34 × 30 pill.
     /// The windows overview draws no group (Figma 132:2517): the cells stay, unseen, so the window button still closes it.
     private func icon(_ name: String, selected: Bool = false, width: CGFloat = 36) -> some View {
         Image(systemName: name).font(.system(size: 16))

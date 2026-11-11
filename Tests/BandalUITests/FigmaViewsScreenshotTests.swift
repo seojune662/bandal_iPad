@@ -18,7 +18,7 @@ final class FigmaViewsScreenshotTests: XCTestCase {
         app.buttons["native-pdf-pages"].firstMatch.tap()
         let addPage = app.buttons["native-pdf-page-add"]
         XCTAssertTrue(addPage.waitForExistence(timeout: 5), app.debugDescription); addPage.tap(); sleep(1); addPage.tap(); sleep(1)
-        app.buttons["native-dock-preview"].firstMatch.tap()
+        app.buttons["native-dock-share"].firstMatch.tap(); app.buttons["native-dock-share-preview"].firstMatch.tap()
         let count = app.staticTexts["native-document-preview-count"]
         XCTAssertTrue(count.waitForExistence(timeout: 20), app.debugDescription); sleep(1)
         attach(app, "preview \(appearance)")

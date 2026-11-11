@@ -3,20 +3,23 @@ import UIKit
 @testable import Bandal
 
 final class NativeDockTabSizingTests: XCTestCase {
-    func testOnlyWindowTopHeadersMoveControlsBelowSystemDragRegion() {
+    func testOnlyWindowTopHeadersOfAWindowedSceneMoveControlsBelowSystemDragRegion() {
         let upper = CGRect(x: 0, y: 0, width: 500, height: 400)
         let lower = CGRect(x: 0, y: 408, width: 500, height: 400)
         let belowSelector = CGRect(x: 0, y: 44, width: 500, height: 700)
-        XCTAssertEqual(NativeDockHeaderMetrics.height(for: upper), 68)
-        XCTAssertEqual(NativeDockHeaderMetrics.topPadding(for: upper), 16)
-        XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower), 52)
-        XCTAssertEqual(NativeDockHeaderMetrics.height(for: belowSelector), 52)
-        XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, controlsHeight: NativeDockStripMetrics.stacked.total), 49)
-        for pane in [upper, lower, belowSelector] {
-            let content = NativeDockHeaderMetrics.contentFrame(for: pane)
-            XCTAssertEqual(content.minY, pane.minY + NativeDockHeaderMetrics.height(for: pane))
-            XCTAssertEqual(content.maxY, pane.maxY)
-            XCTAssertEqual(content.width, pane.width)
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: upper, windowed: true), 68)
+        XCTAssertEqual(NativeDockHeaderMetrics.topPadding(for: upper, windowed: true), 16)
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: upper, windowed: false), 52, "Full screen, the strip starts at the top as in Figma")
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, windowed: true), 52)
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: belowSelector, windowed: true), 52)
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, controlsHeight: NativeDockStripMetrics.stacked.total, windowed: true), 49)
+        for windowed in [true, false] {
+            for pane in [upper, lower, belowSelector] {
+                let content = NativeDockHeaderMetrics.contentFrame(for: pane, windowed: windowed)
+                XCTAssertEqual(content.minY, pane.minY + NativeDockHeaderMetrics.height(for: pane, windowed: windowed))
+                XCTAssertEqual(content.maxY, pane.maxY)
+                XCTAssertEqual(content.width, pane.width)
+            }
         }
     }
 

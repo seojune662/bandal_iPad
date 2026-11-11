@@ -27,16 +27,19 @@ final class BrowserIdentityTests: XCTestCase {
             XCTFail("The first probe must fail")
         } catch { }
         XCTAssertNil(preparation.applicationName)
-        try await preparation.prepare { attempts += 1; return "Safari/999.1 Bandal" }
+        try await preparation.prepare { attempts += 1; return "Version/26.0 Safari/999.1" }
         try await preparation.prepare { attempts += 1; return "Unexpected repeated probe" }
         XCTAssertEqual(attempts, 2)
-        XCTAssertEqual(preparation.applicationName, "Safari/999.1 Bandal")
+        XCTAssertEqual(preparation.applicationName, "Version/26.0 Safari/999.1")
     }
-    func testCompatibilityTokenComesFromEngineInsteadOfAHardcodedVersion() {
-        XCTAssertEqual(DesktopBrowserIdentity.applicationName(from: "Mozilla/5.0 (iPad) AppleWebKit/999.42.7 (KHTML, like Gecko) Mobile/test"), "Safari/999.42.7 Bandal")
-        XCTAssertEqual(DesktopBrowserIdentity.applicationName(from: "Mozilla/5.0 (Macintosh) AppleWebKit/612.1.2"), "Safari/612.1.2 Bandal")
-        XCTAssertNil(DesktopBrowserIdentity.applicationName(from: "Mozilla/5.0 Chrome/123.0"))
-        XCTAssertNil(DesktopBrowserIdentity.applicationName(from: "AppleWebKit/612.inject"))
+    func testSafariTokensComeFromTheEngineAndTheSystemVersion() {
+        XCTAssertEqual(DesktopBrowserIdentity.applicationName(from: "Mozilla/5.0 (iPad) AppleWebKit/999.42.7 (KHTML, like Gecko) Mobile/test", systemVersion: "26.0"), "Version/26.0 Safari/999.42.7")
+        XCTAssertEqual(DesktopBrowserIdentity.applicationName(from: "Mozilla/5.0 (Macintosh) AppleWebKit/612.1.2", systemVersion: "27.1.2"), "Version/27.1 Safari/612.1.2")
+        XCTAssertEqual(DesktopBrowserIdentity.applicationName(from: "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15", systemVersion: "26"), "Version/26.0 Safari/605.1.15")
+        XCTAssertNil(DesktopBrowserIdentity.applicationName(from: "Mozilla/5.0 Chrome/123.0", systemVersion: "26.0"))
+        XCTAssertNil(DesktopBrowserIdentity.applicationName(from: "AppleWebKit/612.inject", systemVersion: "26.0"))
+        XCTAssertNil(DesktopBrowserIdentity.applicationName(from: "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15", systemVersion: "26.x"))
+        XCTAssertNil(DesktopBrowserIdentity.applicationName(from: "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15", systemVersion: ""))
     }
     func testOriginalPageRouteAndRealPopupKeepDynamicIdentityAndPrivateSession() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("browser-identity-\(UUID())")
@@ -45,7 +48,7 @@ final class BrowserIdentityTests: XCTestCase {
         _ = try await host.handle(channel: "browser:createPage", request: ["tabId": "opener", "isPrivate": true])
         defer { for tab in Array(host.pages.keys) { host.destroy(tab) } }
         let opener = try XCTUnwrap(host.pages["opener"]), expected = try XCTUnwrap(DesktopBrowserIdentity.applicationName)
-        XCTAssertTrue(expected.hasPrefix("Safari/")); XCTAssertTrue(expected.hasSuffix(" Bandal"))
+        XCTAssertNotNil(expected.range(of: #"^Version/[0-9]+\.[0-9]+ Safari/[0-9.]+$"#, options: .regularExpression), expected)
         XCTAssertEqual(opener.webView.configuration.applicationNameForUserAgent, expected)
         XCTAssertTrue(opener.webView.customUserAgent?.isEmpty ?? true)
         XCTAssertEqual(opener.webView.configuration.defaultWebpagePreferences.preferredContentMode, .recommended)
@@ -56,6 +59,9 @@ final class BrowserIdentityTests: XCTestCase {
         }
         opener.webView.loadHTMLString("<!doctype html><title>Private opener</title>", baseURL: URL(string: "about:blank"))
         await fulfillment(of: [loaded], timeout: 15)
+        // What a site reads: WebKit's own identity ending in Safari's two tokens, nothing after them.
+        let agent = try await opener.webView.evaluateJavaScript("navigator.userAgent") as? String ?? ""
+        XCTAssertNotNil(agent.range(of: #"AppleWebKit/[0-9.]+ \(KHTML, like Gecko\) Version/[0-9]+\.[0-9]+ Safari/[0-9.]+$"#, options: .regularExpression), agent)
         let opened = expectation(description: "WebKit supplied real popup configuration")
         var popupID: String?
         host.emit = { channel, payload in

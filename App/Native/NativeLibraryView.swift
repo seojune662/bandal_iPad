@@ -502,8 +502,7 @@ Menu {
                                font: font, identifier: "native-material-rename") { name in perform { try await store.rename(material, to: name) } }
         } else {
             // No double-tap here: the first tap already opens the item; 이름 변경 is in its menu.
-            // A markdown note reads as a note, without its extension.
-            Text(material.name.hasSuffix(".md") ? String(material.name.dropLast(3)) : material.name).font(font).foregroundStyle(NativeDesktopTheme.text).lineLimit(lines)
+            Text(material.name).font(font).foregroundStyle(NativeDesktopTheme.text).lineLimit(lines)
         }
     }
 

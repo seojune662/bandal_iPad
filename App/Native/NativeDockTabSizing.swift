@@ -19,17 +19,17 @@ struct NativeDockStripMetrics: Equatable {
     var closeZone: CGFloat { 6 + close + 1 + tabPadding }
 }
 
-/// iPadOS reserves the window's top edge for window movement. A pane at the
-/// window top keeps its strip below it; the strip itself is the Figma height.
+/// iPadOS moves a window by its top edge. A pane at the top of a window that is not
+/// full screen keeps its strip below that edge; full screen, the strip starts at the top (Figma 129:1596).
 enum NativeDockHeaderMetrics {
-    static func topPadding(for paneFrame: CGRect) -> CGFloat {
-        abs(paneFrame.minY) < 0.5 ? 16 : 0
+    static func topPadding(for paneFrame: CGRect, windowed: Bool) -> CGFloat {
+        windowed && abs(paneFrame.minY) < 0.5 ? 16 : 0
     }
-    static func height(for paneFrame: CGRect, controlsHeight: CGFloat = NativeDockStripMetrics.single.total) -> CGFloat {
-        controlsHeight + topPadding(for: paneFrame)
+    static func height(for paneFrame: CGRect, controlsHeight: CGFloat = NativeDockStripMetrics.single.total, windowed: Bool) -> CGFloat {
+        controlsHeight + topPadding(for: paneFrame, windowed: windowed)
     }
-    static func contentFrame(for paneFrame: CGRect, controlsHeight: CGFloat = NativeDockStripMetrics.single.total) -> CGRect {
-        let header = height(for: paneFrame, controlsHeight: controlsHeight)
+    static func contentFrame(for paneFrame: CGRect, controlsHeight: CGFloat = NativeDockStripMetrics.single.total, windowed: Bool) -> CGRect {
+        let header = height(for: paneFrame, controlsHeight: controlsHeight, windowed: windowed)
         return CGRect(x: paneFrame.minX, y: paneFrame.minY + header,
                       width: paneFrame.width, height: max(0, paneFrame.height - header))
     }

@@ -63,8 +63,16 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
 
     /// Figma 129:1460: the home screen (one pane, nothing open) has no tab strip.
     private func isHome(_ group: NativeDockGroup) -> Bool { navigation.groups.count == 1 && group.tabs.isEmpty }
+    /// Read while laying out: entering or leaving full screen resizes the window, which lays the dock out again.
+    private static var windowed: Bool {
+        UIApplication.shared.connectedScenes.contains { scene in
+            guard let scene = scene as? UIWindowScene, scene.activationState == .foregroundActive else { return false }
+            let window = scene.coordinateSpace.bounds.size, screen = scene.screen.bounds.size
+            return abs(window.width - screen.width) > 1 || abs(window.height - screen.height) > 1
+        }
+    }
     private func contentFrame(_ pane: NativeDockPaneFrame, _ metrics: NativeDockStripMetrics) -> CGRect {
-        isHome(pane.group) ? pane.frame : NativeDockHeaderMetrics.contentFrame(for: pane.frame, controlsHeight: chromeMode.showsTabs ? metrics.total : 0)
+        isHome(pane.group) ? pane.frame : NativeDockHeaderMetrics.contentFrame(for: pane.frame, controlsHeight: chromeMode.showsTabs ? metrics.total : 0, windowed: Self.windowed)
     }
     var body: some View {
         dockBody.onReceive(store.events) { event in
@@ -118,7 +126,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     }
                     ForEach(geometry.dividers) { divider in
                         NativeDockDivider(divider: divider, wide: metrics == .columns,
-                            topInset: metrics == .columns && chromeMode.showsTabs ? NativeDockHeaderMetrics.height(for: divider.frame, controlsHeight: metrics.total) : 0,
+                            topInset: metrics == .columns && chromeMode.showsTabs ? NativeDockHeaderMetrics.height(for: divider.frame, controlsHeight: metrics.total, windowed: Self.windowed) : 0,
                             grip: Self.gripCenter(divider, in: geometry), change: { navigation.resize(divider.id, fraction: $0) }, persist: persist)
                             .frame(width: divider.hitFrame.width, height: divider.hitFrame.height)
                             .position(x: divider.frame.midX, y: divider.frame.midY)
@@ -196,7 +204,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             guard let document = documents.first(where: { $0.id == original.group.activeID }) else { return nil }
             let visible = geometry.panes.first { $0.id == original.id }
             let frame = visible?.frame ?? CGRect(x: -10000, y: -10000, width: max(280, original.frame.width), height: max(220, original.frame.height))
-            let inset = NativeDockHeaderMetrics.height(for: visible?.frame ?? original.frame, controlsHeight: headerHeight)
+            let inset = NativeDockHeaderMetrics.height(for: visible?.frame ?? original.frame, controlsHeight: headerHeight, windowed: Self.windowed)
             return VisibleDocument(document: document, groupID: original.id,
                 frame: CGRect(x: frame.minX, y: frame.minY + inset, width: frame.width, height: max(0, frame.height - inset)), visible: visible != nil)
         }
@@ -206,7 +214,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         // receive UIKit input. PDF retains its existing checkpoint path.
         for document in documents where retainsEditor(document) && !activeIDs.contains(document.id) {
             let original = projected.panes.first { $0.group.tabs.contains(document.id) }
-            let inset = NativeDockHeaderMetrics.height(for: original?.frame ?? bounds, controlsHeight: headerHeight)
+            let inset = NativeDockHeaderMetrics.height(for: original?.frame ?? bounds, controlsHeight: headerHeight, windowed: Self.windowed)
             result.append(VisibleDocument(document: document, groupID: original?.id ?? "",
                 frame: CGRect(x: -10000, y: -10000, width: max(280, original?.frame.width ?? bounds.width),
                               height: max(220, (original?.frame.height ?? bounds.height) - inset)), visible: false))
@@ -220,8 +228,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             if chromeMode.showsTabs {
                 // Out of sight on the home screen, yet still the anchor of the new-tab menu for VoiceOver, keyboards and tests.
-                if isHome(pane.group) { addButton(pane.group, metrics: metrics, visible: false).padding(.top, NativeDockHeaderMetrics.topPadding(for: pane.frame)) }
-                else { tabs(pane.group, metrics: metrics, topPadding: NativeDockHeaderMetrics.topPadding(for: pane.frame), corner: corner) }
+                if isHome(pane.group) { addButton(pane.group, metrics: metrics, visible: false).padding(.top, NativeDockHeaderMetrics.topPadding(for: pane.frame, windowed: Self.windowed)) }
+                else { tabs(pane.group, metrics: metrics, topPadding: NativeDockHeaderMetrics.topPadding(for: pane.frame, windowed: Self.windowed), corner: corner) }
             }
             Spacer(minLength: 0)
         }
@@ -253,10 +261,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     private func tabs(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, topPadding: CGFloat, corner: Bool) -> some View {
         GeometryReader { geometry in
             let split = navigation.groups.count > 1
-            // A split pane's strip is tabs, ＋ and its × only (Figma 130:5986); sharing moves to the tab's long-press menu.
-            let shareable = !split && (navigation.document(group.activeID).map(NativeDockShareControls.supports) ?? false)
             let inset = corner ? controlInset : 0
-            let room = geometry.size.width - metrics.padding - Self.addWidth(metrics) - 8 - (split ? 44 : 0) - (shareable ? NativeDockShareControls.width + 14 : 0) - inset
+            let room = geometry.size.width - metrics.padding - Self.addWidth(metrics) - 8 - (split ? 44 : 0) - inset
             let roomy = sizing(group, metrics: metrics, available: room - (split ? 0 : Self.listWidth))
             // The list of open tabs stays in a split pane only while some of its tabs do not fit.
             let showsList = !split || roomy.visibleIndices.count < group.tabs.count
@@ -286,7 +292,6 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 Color.clear.frame(maxWidth: .infinity).frame(height: metrics.height)
                     .contentShape(Rectangle())
                     .onDrop(of: [NativeDockDragPayload.contentType], delegate: drop(group.id, index: group.tabs.count))
-                if shareable, let document = navigation.document(group.activeID) { NativeDockShareControls(document: document, store: store).padding(.trailing, 14) }
                 // Closes this pane only: its tabs move to the neighbouring pane.
                 if split, let other = navigation.groups.first(where: { $0.id != group.id }) {
                     Button { perform { if group.tabs.isEmpty { navigation.removeEmptyGroup(group.id) } else { navigation.merge(group.id, into: other.id) }; maximizedGroupID = nil } } label: {
@@ -297,8 +302,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 if inset > 0 { Color.clear.frame(width: inset, height: metrics.height) }
             }.frame(height: metrics.height).padding(.leading, metrics.padding).padding(.top, topPadding)
                 .foregroundStyle(NativeDesktopTheme.secondary)
-        // No fill of its own: the strip is part of the paper glass behind the pane.
-        }.frame(height: metrics.total + topPadding).clipped()
+        // The strip carries the paper's fill once more over the pane's paper (Figma 155:7541), which is what sets the chosen tab's pill off.
+        }.frame(height: metrics.total + topPadding).clipped().background(NativeGlass.paper)
             .background { NativeDockTabStripBounds(groupID: group.id) }
             .overlay(alignment: .bottom) { NativeGlass.separator.frame(height: 1) }
             .onDrop(of: [NativeDockDragPayload.contentType], delegate: drop(group.id))

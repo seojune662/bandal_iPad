@@ -77,7 +77,7 @@ final class NativeDockTabSizingUITests: XCTestCase {
         XCTAssertFalse(values.isEmpty)
         guard let first = values.first else { return }
         let strip = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-tab-strip-")).firstMatch
-        XCTAssertTrue(strip.exists); XCTAssertEqual(strip.frame.height, strip.frame.minY <= 1 ? 68 : 52, accuracy: 1)
+        XCTAssertTrue(strip.exists); XCTAssertEqual(strip.frame.height, 52, accuracy: 1, "Full screen, a strip at the window top has no clearance above it")
         let add = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
         for tab in values {
             if uniform { XCTAssertEqual(tab.frame.width, first.frame.width, accuracy: 1) }
