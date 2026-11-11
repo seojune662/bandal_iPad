@@ -5,6 +5,8 @@ import SwiftUI
 struct NativeDockShareControls: View {
     let document: NativeDocumentReference
     var store: NativeWorkspaceStore
+    /// Off inside the preview itself, whose 공유 lists the same actions.
+    var includesPreview = true
     /// Two 34-point buttons and the 6 between them (Figma 155:7551, 155:7553).
     static let width: CGFloat = 74
     /// The page each open PDF tab is showing, so "이미지로 내보내기" exports the one on screen.
@@ -25,7 +27,7 @@ struct NativeDockShareControls: View {
     }
     /// Also reachable from a tab's long-press menu, where a split pane's strip has no room for the buttons.
     @ViewBuilder var menuItems: some View {
-        Button { preview() } label: { Label("미리보기", systemImage: "doc"); Text("페이지 넘겨 보기 · 인쇄") }
+        if includesPreview { Button { preview() } label: { Label("미리보기", systemImage: "doc"); Text("페이지 넘겨 보기 · 인쇄") } }
         if isPDF {
             Button { run { _ = try await store.invoke("pdf:exportAnnotated", request) } } label: { Label("PDF로 내보내기", systemImage: "square.and.arrow.up"); Text("필기 그대로 PDF 파일") }
                 .accessibilityIdentifier("native-dock-export-pdf")
@@ -36,7 +38,13 @@ struct NativeDockShareControls: View {
             .accessibilityIdentifier("native-dock-share-apps")
     }
 
-    private func preview() { run { _ = try await store.invoke("materials:preview", request.merging(["annotated": true]) { $1 }) } }
+    /// A PDF (handwritten notes are PDFs) opens the in-app preview; Markdown has no paged export, so it stays with Quick Look.
+    private func preview() {
+        run {
+            if isPDF { try await NativeDocumentPreviewCenter.shared.open(document, page: Self.visiblePage[document.id] ?? 1, store: store) }
+            else { _ = try await store.invoke("materials:preview", request.merging(["annotated": true]) { $1 }) }
+        }
+    }
     private func run(_ action: @escaping @MainActor () async throws -> Void) {
         Task { do { try await store.flushDocuments(); try await action() } catch { store.errorMessage = error.localizedDescription } }
     }
