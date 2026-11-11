@@ -256,8 +256,7 @@ struct NativePlannerWorkspace: View {
             }
             .frame(maxWidth: 540, maxHeight: max(200, size.height - keyboardInset - 32)).fixedSize(horizontal: false, vertical: true)
             // Glass does not show through glass: the sheet gets a body of its own, and a shape so that a tap on it stays on it.
-            .background { shape.fill(NativePlannerPalette.sheet.opacity(0.93)).shadow(color: .black.opacity(0.25), radius: 24, y: 8) }
-            .overlay { shape.strokeBorder(NativeDesktopTheme.border) }.contentShape(shape).bandalGlass(in: shape)
+            .contentShape(shape).bandalGlass(in: shape, fill: NativeGlass.sheet)
             .padding(16).padding(.bottom, keyboardInset)
             .accessibilityElement(children: .contain).accessibilityAddTraits(.isModal).accessibilityIdentifier("native-task-editor")
             .id(item.id)

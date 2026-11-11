@@ -4,20 +4,24 @@ import UIKit
 /// Semantic colors and metrics shared with the desktop design system.
 /// Native controls render this chrome; no HTML or renderer is embedded.
 enum NativeDesktopTheme {
-    static let bgApp = adaptive(0xffffff, 0x212121)
-    static let surface = adaptive(0xf9f9f9, 0x181818)
-    static let raised = adaptive(0xeeeeee, 0x303030)
+    // Figma variables: Surface/Paper, Surface/Tool, Brand/Accent Soft. Window regions use `NativeGlass` instead.
+    static let bgApp = adaptive(0xffffff, 0x181818)
+    static let surface = adaptive(0xf7f7f7, 0x1f1f1f)
+    static let raised = adaptive(0xededed, 0x2c2c2c)
     static let overlay = adaptive(0xffffff, 0x292929)
     /// The chosen segment of `BandalSegmented`: white in light, a lighter pill on the track in dark (whatever the track sits on).
-    static let segmentSelected = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.16) : .white })
+    static let segmentSelected = adaptive(0xffffff, 0x181818)
     /// Figma `Text/Primary` and `Text/Secondary`.
     static let text = adaptive(0x141414, 0xededed)
     static let secondary = adaptive(0x6b6b6b, 0xa1a1a1)
-    static let muted = adaptive(0x686868, 0x9b9b9b)
-    static let accent = adaptive(0x171717, 0xececec)
-    static let onAccent = adaptive(0xffffff, 0x171717)
-    static let border = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.09) : UIColor.black.withAlphaComponent(0.075) })
-    static let accentMuted = adaptive(0xe9e9e9, 0x333333)
+    /// Figma `Text/Tertiary`: counts, hints, chevrons, footnotes.
+    static let muted = adaptive(0x8f8f8f, 0x6e6e6e)
+    /// Figma `Brand/Accent`: filled buttons, chosen marks, the user's bubble.
+    static let accent = adaptive(0x1a1a1a, 0xc4c4c4)
+    static let onAccent = adaptive(0xffffff, 0x181818)
+    /// Figma `Surface/Separator`: strokes of cards, chips and fields, and lines inside them.
+    static let border = adaptive(0xe5e5e5, 0x2e2e2e)
+    static let accentMuted = adaptive(0xededed, 0x2c2c2c)
     /// The skinny rail sits one tone behind the panels, so the open panel's button reads as its tab.
     static let rail = adaptive(0xe8e8ea, 0x101010)
     /// The AI panel: one tone darker than the home sidebar, so the two never look like the same place.

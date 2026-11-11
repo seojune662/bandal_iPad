@@ -369,6 +369,7 @@ struct NativeWorkspaceView: View {
         .background(NativeWorkspaceBackdrop())
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         .tint(NativeDesktopTheme.accent)
+        .toggleStyle(BandalToggleStyle())
         .environment(\.nativeWorkspacePreviewController, previews)
         .disabled(store.isApplyingExternalChanges)
         .modifier(NativeOnboardingCover(stage: onboarding, store: store, finish: closeOnboarding))
@@ -709,7 +710,7 @@ struct NativeWorkspaceView: View {
             NativePlannerWorkspace(store: store, keyboardInset: max(0, keyboard - (size.height - height) / 2 + drop), onClose: { transition { boardOverlayOpen = false } })
                 .frame(width: min(max(1, size.width - 84), 1200), height: height)
                 // The sheet is drawn 93% opaque: most of that is a fill, and the glass shows through the rest.
-                .background(NativePlannerPalette.sheet.opacity(0.7), in: shape).clipShape(shape).bandalGlass(in: shape)
+                .clipShape(shape).bandalGlass(in: shape, fill: NativeGlass.sheet)
                 .accessibilityElement(children: .contain).accessibilityAddTraits(.isModal).accessibilityIdentifier("native-board-overlay")
                 .padding(.top, 2 * drop)
         }.frame(width: size.width, height: size.height)

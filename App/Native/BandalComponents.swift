@@ -4,7 +4,8 @@ import SwiftUI
 /// control that opened it, compact menu rows, inline rename, a search list, a one-line confirm and a toast.
 /// Sheets stay only where the system requires one (StoreKit, sign-in, file import, AI consent).
 enum BandalMetrics {
-    static let rowHeight: CGFloat = 36
+    /// A menu row in a glass popover (Figma: 42, or 62 with a detail line).
+    static let rowHeight: CGFloat = 42
     static let bodySize: CGFloat = 13
     static let headerSize: CGFloat = 11
     static let padding: CGFloat = 12
@@ -12,15 +13,19 @@ enum BandalMetrics {
     static let radius: CGFloat = 8
     static let radiusLarge: CGFloat = 12
     static let shadow = Color.black.opacity(0.14)
+    /// Room around a popover's card for its shadow; the system popover itself is drawn clear.
+    static let popoverShadowInset: CGFloat = 0
 }
 
 extension View {
     /// A popover anchored to this view: arrow, closes on an outside tap or Esc, stays a popover in compact width.
     /// `arrowEdge: nil` lets the system pick the side with room (a prompt that may open next to the keyboard).
+    /// `radius` and `padding` follow the Figma frame of that popover (menus 8, forms 18).
     func bandalPopover<Content: View>(isPresented: Binding<Bool>, arrowEdge: Edge? = .top, width: CGFloat? = 280,
+                                      radius: CGFloat = 22, padding: CGFloat = BandalMetrics.padding,
                                       @ViewBuilder content: @escaping () -> Content) -> some View {
         modifier(BandalDeferredPopover(isPresented: isPresented, arrowEdge: arrowEdge) {
-            BandalPopoverBody(width: width, close: { isPresented.wrappedValue = false }, content: content)
+            BandalPopoverBody(width: width, radius: radius, padding: padding, arrowEdge: arrowEdge, close: { isPresented.wrappedValue = false }, content: content)
         })
     }
 
@@ -45,20 +50,24 @@ extension View {
         }
     }
 
-    /// Popover background: the system's Liquid Glass on iOS 26, the solid overlay colour before it.
-    @ViewBuilder func bandalPopoverSurface() -> some View {
-        if #available(iOS 26, *) { self } else { background(NativeDesktopTheme.overlay).presentationBackground(NativeDesktopTheme.overlay) }
+    /// A popover's surface: the design's own glass card with no arrow and no system chrome.
+    /// `arrowEdge` is the one given to `.popover`: the card sits on the opposite side of the anchor.
+    func bandalPopoverSurface(radius: CGFloat = 22, arrowEdge: Edge? = .top) -> some View {
+        bandalGlass(in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .padding(BandalMetrics.popoverShadowInset)
+            .presentationBackground(.clear)
+            .background { BandalPopoverArrowless(edge: arrowEdge).frame(width: 0, height: 0).accessibilityHidden(true) }
     }
 
-    /// Floating chrome (palette, bars): Liquid Glass on iOS 26, material with a hairline and shadow before it.
-    @ViewBuilder func bandalGlass<S: Shape>(in shape: S) -> some View {
-        if #available(iOS 26, *) { glassEffect(.regular, in: shape) }
-        else { background(.regularMaterial, in: shape).overlay(shape.stroke(NativeDesktopTheme.border, lineWidth: 1)).shadow(color: .black.opacity(0.18), radius: 16, y: 6) }
+    /// Anything that floats (palette, bars, popovers, menus, toasts): Figma `Glass/팝업`. A tint over glass,
+    /// a 0.5 pt rim and one soft shadow (0, 8, blur 48).
+    func bandalGlass<S: InsettableShape>(in shape: S, fill: Color = NativeGlass.popup) -> some View {
+        modifier(BandalGlassSurface(shape: shape, fill: fill))
     }
 
     /// A transient message at the bottom of this view; the binding clears itself after a few seconds.
-    func bandalToast(_ message: Binding<String?>) -> some View {
-        overlay(alignment: .bottom) { BandalToast(message: message) }
+    func bandalToast(_ message: Binding<String?>, symbol: String? = nil, actionTitle: String? = nil, action: (() -> Void)? = nil) -> some View {
+        overlay(alignment: .bottom) { BandalToast(message: message, symbol: symbol, actionTitle: actionTitle, action: action) }
     }
 }
 
@@ -91,16 +100,34 @@ private struct BandalDeferredPopover<Body: View>: ViewModifier {
 
 private struct BandalPopoverBody<Content: View>: View {
     let width: CGFloat?
+    var radius: CGFloat = 22
+    var padding = BandalMetrics.padding
+    var arrowEdge: Edge? = .top
     let close: () -> Void
     @ViewBuilder let content: () -> Content
     var body: some View {
         content()
-            .padding(BandalMetrics.padding)
+            .padding(padding)
             .frame(width: width, alignment: .leading)
             .foregroundStyle(NativeDesktopTheme.text)
-            .bandalPopoverSurface()
+            .bandalPopoverSurface(radius: radius, arrowEdge: arrowEdge)
             .presentationCompactAdaptation(.popover)
             .background { BandalEscapeKey(action: close) }
+    }
+}
+
+private struct BandalGlassSurface<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let fill: Color
+    @Environment(\.colorScheme) private var scheme
+    func body(content: Content) -> some View {
+        glass(content.background(fill, in: shape))
+            .overlay { shape.strokeBorder(NativeGlass.rim, lineWidth: 0.5).allowsHitTesting(false) }
+            .shadow(color: .black.opacity(scheme == .dark ? 0.5 : 0.25), radius: 24, y: 8)
+    }
+    @ViewBuilder private func glass(_ view: some View) -> some View {
+        if #available(iOS 26, *) { view.glassEffect(.regular, in: shape) }
+        else { view.background(.ultraThinMaterial, in: shape) }
     }
 }
 
@@ -135,17 +162,17 @@ struct BandalMenuRow<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                if let symbol { Image(systemName: symbol).font(.system(size: 13)).frame(width: 18).foregroundStyle(destructive ? Color.red : NativeDesktopTheme.secondary) }
-                VStack(alignment: .leading, spacing: 1) {
-                    BandalText(title).font(.system(size: BandalMetrics.bodySize)).foregroundStyle(destructive ? Color.red : NativeDesktopTheme.text).lineLimit(1)
-                    if let detail { BandalText(detail).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
+            HStack(spacing: 12) {
+                if let symbol { Image(systemName: symbol).font(.system(size: 17)).frame(width: 20, height: 20).foregroundStyle(destructive ? Color.red : NativeGlass.icon) }
+                VStack(alignment: .leading, spacing: 2) {
+                    BandalText(title).font(.system(size: 16, weight: .medium)).foregroundStyle(destructive ? Color.red : NativeDesktopTheme.text).lineLimit(1)
+                    if let detail { BandalText(detail).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1) }
                 }
                 Spacer(minLength: 8)
                 trailing()
-                if checked { Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(NativeDesktopTheme.accent) }
+                if checked { Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(NativeDesktopTheme.accent) }
             }
-            .padding(.horizontal, 8).frame(minHeight: BandalMetrics.rowHeight).contentShape(Rectangle())
+            .padding(.horizontal, 12).padding(.vertical, 10).frame(minHeight: BandalMetrics.rowHeight).contentShape(Rectangle())
         }.buttonStyle(BandalRowStyle())
     }
 }
@@ -163,12 +190,13 @@ struct BandalMenu<Content: View>: View {
 }
 
 struct BandalMenuDivider: View {
-    var body: some View { NativeDesktopTheme.border.frame(height: 1).padding(.vertical, 4) }
+    var body: some View { BandalMenuDivider.line.frame(height: 1).padding(.horizontal, 8).padding(.vertical, 6) }
+    private static let line = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.11) : UIColor.black.withAlphaComponent(0.08) })
 }
 
 struct BandalRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.background(configuration.isPressed ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: BandalMetrics.radiusSmall))
+        configuration.label.background(configuration.isPressed ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -334,14 +362,25 @@ extension BandalSearchList where Accessory == EmptyView {
 
 struct BandalToast: View {
     @Binding var message: String?
+    /// A status mark before the text (Figma: `checkmark.circle.fill` in green).
+    var symbol: String?
+    var actionTitle: String?
+    var action: (() -> Void)?
     var body: some View {
         ZStack {
             if let message {
-                Text(message).font(.system(size: BandalMetrics.bodySize)).foregroundStyle(NativeDesktopTheme.onAccent)
-                    .multilineTextAlignment(.center).lineLimit(3)
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(NativeDesktopTheme.accent.opacity(0.92), in: Capsule())
-                    .shadow(color: BandalMetrics.shadow, radius: 10, y: 4)
+                HStack(spacing: 10) {
+                    if let symbol { Image(systemName: symbol).font(.system(size: 15)).foregroundStyle(Color(uiColor: .systemGreen)) }
+                    Text(message).font(.system(size: 14, weight: .medium)).foregroundStyle(NativeDesktopTheme.text)
+                        .multilineTextAlignment(.center).lineLimit(3)
+                    if let actionTitle, let action {
+                        NativeDesktopTheme.border.frame(width: 1, height: 16)
+                        Button { self.message = nil; action() } label: { BandalText(actionTitle).font(.system(size: 14, weight: .semibold)) }
+                            .buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.text).accessibilityIdentifier("bandal-toast-action")
+                    }
+                }
+                    .padding(.horizontal, 16).frame(minHeight: 40)
+                    .bandalGlass(in: Capsule())
                     .padding(.bottom, 24).padding(.horizontal, 16)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .onTapGesture { self.message = nil }
@@ -386,24 +425,26 @@ struct BandalSegmented: View {
     var fills = false
     /// Read before each title ("상태 완료") where the bare word is another button's label.
     var spoken: String?
+    /// The board header's track: black 6% on the sheet glass (dark: `Surface/Tool`).
+    private static let largeTrack = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0x1f / 255, alpha: 1) : UIColor.black.withAlphaComponent(0.06) })
     var body: some View {
         HStack(spacing: 2) {
             ForEach(options, id: \.value) { option in
                 let on = selection == option.value
                 Button { selection = option.value } label: {
                     HStack(spacing: 6) {
-                        if let symbol = symbols[option.value] { Image(systemName: symbol).font(.system(size: large ? 14 : 12)) }
+                        if let symbol = symbols[option.value] { Image(systemName: symbol).font(.system(size: 13)) }
                         BandalText(option.title).lineLimit(1)
                     }
-                        .font(.system(size: large ? 14 : 12, weight: on ? .semibold : .regular)).padding(.horizontal, large ? 14 : 12)
-                        .frame(maxWidth: fills ? .infinity : nil).frame(height: large ? 34 : 28)
+                        .font(.system(size: 14, weight: on ? .semibold : .regular)).padding(.horizontal, 14)
+                        .frame(maxWidth: fills ? .infinity : nil).frame(height: large ? 34 : 29)
                         .foregroundStyle(on || !large ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
                         .background(on ? NativeDesktopTheme.segmentSelected : .clear, in: RoundedRectangle(cornerRadius: large ? 8 : 7))
-                        .shadow(color: .black.opacity(on ? 0.08 : 0), radius: 2, y: 1).contentShape(Rectangle())
+                        .shadow(color: .black.opacity(on ? (large ? 0.08 : 0.1) : 0), radius: 1.5, y: 1).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(spoken.map { $0 + " " + option.title } ?? option.title)
                     .accessibilityIdentifier(identifierPrefix + option.value).accessibilityAddTraits(on ? .isSelected : [])
             }
-        }.padding(large ? 3 : 2).background(NativeDesktopTheme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: large ? 11 : 9))
+        }.padding(large ? 3 : 2).background(large ? BandalSegmented.largeTrack : NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: large ? 11 : 9))
     }
 }
 
@@ -411,13 +452,13 @@ struct BandalSegmented: View {
 struct BandalSettingRow<Control: View>: View {
     let title: String
     var note: String?
-    var size = BandalMetrics.bodySize
+    var size: CGFloat = 16
     @ViewBuilder var control: () -> Control
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 BandalText(title).font(.system(size: size))
-                if let note { BandalText(note).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).fixedSize(horizontal: false, vertical: true) }
+                if let note { BandalText(note).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 8)
             control()
@@ -431,4 +472,147 @@ enum NativeLocalPreferences {
     static let homeTogglesSidebar = "native.homeTogglesSidebar"
     static let keyboardFoldsPanels = "native.keyboardFoldsPanels"
     static func bool(_ key: String, default value: Bool = true) -> Bool { UserDefaults.standard.object(forKey: key) as? Bool ?? value }
+}
+
+/// The design's switch, drawn rather than the system one: 51 × 31 in settings, 44 × 26 (`compact`) on the board.
+struct BandalToggleStyle: ToggleStyle {
+    var compact = false
+    private static let off = NativeDesktopTheme.border
+    private static let knob = NativeDesktopTheme.adaptive(0xffffff, 0x181818)
+    func makeBody(configuration: Configuration) -> some View {
+        let size = compact ? CGSize(width: 44, height: 26) : CGSize(width: 51, height: 31)
+        return HStack(spacing: 12) {
+            configuration.label
+            Spacer(minLength: 8)
+            Capsule().fill(configuration.isOn ? NativeDesktopTheme.accent : Self.off)
+                .frame(width: size.width, height: size.height)
+                .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+                    Circle().fill(Self.knob).padding(2).shadow(color: .black.opacity(0.15), radius: compact ? 1.5 : 2, y: compact ? 1 : 2)
+                }
+                .animation(.easeOut(duration: 0.15), value: configuration.isOn)
+                // 44 pt of touch around the smaller drawing.
+                .frame(minHeight: 44).contentShape(Rectangle())
+                .onTapGesture { configuration.isOn.toggle() }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton).accessibilityValue(configuration.isOn ? "1" : "0")
+        .accessibilityAction { configuration.isOn.toggle() }
+    }
+}
+
+/// Buttons as the design draws them. `.filled`: #1A1A1A, radius 12, 43 high (the main action of a card or popover).
+/// `.outline`: paper with a hairline, radius 12, 45 high. `.soft`: #F7F7F7, radius 8, 31 high (inside settings rows).
+struct BandalButtonStyle: ButtonStyle {
+    enum Kind { case filled, outline, soft }
+    var kind = Kind.filled
+    /// Takes the width it is offered (stacked buttons in a popover).
+    var fills = false
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        let radius: CGFloat = kind == .soft ? 8 : 12
+        return configuration.label
+            .font(.system(size: kind == .soft ? 14 : 15, weight: .semibold)).lineLimit(1)
+            .padding(.horizontal, kind == .soft ? 14 : 16)
+            .frame(maxWidth: fills ? .infinity : nil).frame(height: kind == .soft ? 31 : kind == .outline ? 45 : 43)
+            .foregroundStyle(kind == .filled ? NativeDesktopTheme.onAccent : NativeDesktopTheme.text)
+            .background(kind == .filled ? NativeDesktopTheme.accent : kind == .outline ? NativeDesktopTheme.bgApp : NativeDesktopTheme.surface,
+                        in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay { if kind == .outline { RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(NativeDesktopTheme.border) } }
+            .opacity(!enabled ? 0.4 : configuration.isPressed ? 0.75 : 1)
+            .frame(minHeight: 44).contentShape(Rectangle())
+    }
+}
+
+/// A search or text field as the design draws it: paper, hairline, radius 12, 45 high (50 with `large`),
+/// a magnifier when `search`, and a clear button while there is text.
+struct BandalField: View {
+    let prompt: String
+    @Binding var text: String
+    var search = false
+    var large = false
+    var identifier = "bandal-field"
+    var onSubmit: () -> Void = {}
+    @Environment(\.locale) private var locale
+    var body: some View {
+        HStack(spacing: 8) {
+            if search { Image(systemName: "magnifyingglass").font(.system(size: large ? 16 : 15)).foregroundStyle(NativeDesktopTheme.secondary) }
+            TextField(NativeAppLocale.string(prompt, locale), text: $text).font(.system(size: large ? 16 : 15)).textFieldStyle(.plain)
+                .autocorrectionDisabled(search).textInputAutocapitalization(search ? .never : .sentences)
+                .onSubmit(onSubmit).accessibilityIdentifier(identifier)
+            if !text.isEmpty {
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: large ? 15 : 14)).frame(width: 28, height: 44).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.muted).accessibilityLabel("지우기")
+            }
+        }
+        .padding(.horizontal, large ? 16 : 14).frame(height: large ? 50 : 45)
+        .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: large ? 14 : 12, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: large ? 14 : 12, style: .continuous).strokeBorder(NativeDesktopTheme.border) }
+    }
+}
+
+/// A card of choices (school, language, links): paper with a hairline, rows divided by an inset line.
+struct BandalChoiceCard<Content: View>: View {
+    var radius: CGFloat = 16
+    @ViewBuilder let content: () -> Content
+    var body: some View {
+        VStack(spacing: 0) { content() }
+            .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(NativeDesktopTheme.border) }
+    }
+}
+
+/// One row of a `BandalChoiceCard`: title over a detail, a check on the chosen one, 68 high (62 with `compact`).
+struct BandalChoiceRow: View {
+    let title: String
+    var detail: String?
+    var chosen = false
+    var compact = false
+    var showsDivider = true
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: title).font(.system(size: compact ? 15 : 16, weight: .medium)).foregroundStyle(NativeDesktopTheme.text).lineLimit(1)
+                    if let detail { Text(verbatim: detail).font(.system(size: compact ? 12 : 13)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1) }
+                }
+                Spacer(minLength: 8)
+                if chosen { Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.accent) }
+            }
+            .padding(.horizontal, compact ? 14 : 16).frame(minHeight: compact ? 62 : 68)
+            .background(chosen ? NativeDesktopTheme.surface : .clear).contentShape(Rectangle())
+            .overlay(alignment: .bottom) { if showsDivider { NativeDesktopTheme.border.frame(height: 1).padding(.leading, compact ? 14 : 16) } }
+        }.buttonStyle(.plain).accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+}
+
+/// Takes the system chrome off the popover this sits in: a background with no arrow and no drawing,
+/// so UIKit still places the card beside its anchor and the card's own glass is all that shows.
+private struct BandalPopoverArrowless: UIViewControllerRepresentable {
+    final class ClearBackground: UIPopoverBackgroundView {
+        override static func arrowHeight() -> CGFloat { 6 }
+        override static func arrowBase() -> CGFloat { 0 }
+        override static func contentViewInsets() -> UIEdgeInsets { .zero }
+        override static var wantsDefaultContentAppearance: Bool { false }
+        private var direction = UIPopoverArrowDirection.any
+        private var offset: CGFloat = 0
+        override var arrowDirection: UIPopoverArrowDirection { get { direction } set { direction = newValue } }
+        override var arrowOffset: CGFloat { get { offset } set { offset = newValue } }
+        override init(frame: CGRect) { super.init(frame: frame); layer.shadowOpacity = 0; backgroundColor = .clear }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    }
+    final class Controller: UIViewController {
+        override func willMove(toParent parent: UIViewController?) {
+            super.willMove(toParent: parent)
+            parent?.popoverPresentationController?.popoverBackgroundViewClass = ClearBackground.self
+        }
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            popoverPresentationController?.popoverBackgroundViewClass = ClearBackground.self
+        }
+    }
+    var edge: Edge?
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {}
 }
