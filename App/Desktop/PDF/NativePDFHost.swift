@@ -1150,7 +1150,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             let radius = (value["eraserRadius"] as? NSNumber)?.doubleValue ?? 0.005
             nextTool = .init(name: name, drawAndHold: value["drawAndHold"] as? Bool ?? true, style: style, lassoBox: value["lassoMode"] as? String == "box",
                              eraserRadius: radius.isFinite && radius > 0 && radius <= 0.1 ? radius : 0.005,
-                             partialErase: value["eraserMode"] as? String == "partial")
+                             partialErase: value["eraserMode"] as? String == "partial",
+                             brush: value["brush"] as? Bool == true, straighten: value["straighten"] as? Bool == true)
         }
         let epoch: Int?
         if request["objectSceneEpoch"] != nil {

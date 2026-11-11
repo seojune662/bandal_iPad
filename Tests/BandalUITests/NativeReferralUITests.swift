@@ -75,6 +75,8 @@ final class NativeReferralUITests: XCTestCase {
             let app = launch(["--native-account-fixture", "--native-referral-fixture", "-native.appearance", name])
             let account = app.buttons["native-section-account"]
             XCTAssertTrue(account.waitForExistence(timeout: 25), app.debugDescription); account.tap()
+            // Signed in, 친구 초대 is a long press on 플랜 보기: the design's menu has no row for it.
+            XCTAssertTrue(app.buttons["native-account-plans"].waitForExistence(timeout: 10), app.debugDescription); app.buttons["native-account-plans"].press(forDuration: 1)
             let row = app.buttons["native-referral-menu"]
             XCTAssertTrue(row.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertEqual(row.label, "친구 초대"); row.tap()
@@ -300,6 +302,7 @@ final class NativeReferralUITests: XCTestCase {
         app = launch(["--native-account-fixture", "--native-referral-fixture"] + english)
         let account = app.buttons["native-section-account"]
         XCTAssertTrue(account.waitForExistence(timeout: 25), app.debugDescription); account.tap()
+        XCTAssertTrue(app.buttons["native-account-plans"].waitForExistence(timeout: 10), app.debugDescription); app.buttons["native-account-plans"].press(forDuration: 1)
         let row = app.buttons["native-referral-menu"]
         XCTAssertTrue(row.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(row.label, "Invite a friend"); row.tap()

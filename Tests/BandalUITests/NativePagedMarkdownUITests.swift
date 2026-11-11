@@ -42,7 +42,8 @@ final class NativePagedMarkdownUITests: XCTestCase {
         let topTab = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-tab-strip-")).firstMatch
         XCTAssertLessThanOrEqual(topTab.frame.minY, 1, "The workspace starts at the top after hiding the system status bar")
         let toolbar = app.descendants(matching: .any)["native-markdown-toolbar"]
-        XCTAssertEqual(toolbar.frame.height, 44, accuracy: 1)
+        // The element reports the union of its controls: 44 with the page controls, 46 for the bar and its hairline (Figma 129:2615).
+        XCTAssertEqual(toolbar.frame.height, 45, accuracy: 1.5, "One formatting row")
         XCTAssertEqual(toolbar.frame.minY, topTab.frame.maxY, accuracy: 1, "No duplicate filename/save row above the formatting controls")
         capture("Continuous paper notes beside their source PDF")
         app.terminate(); app.launchArguments = ["--native-ui-testing", "--native-pages-fixture"]; app.launch()

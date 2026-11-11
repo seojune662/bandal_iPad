@@ -66,6 +66,10 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         var eraserRadius = 0.005
         /// The partial eraser cuts strokes in the editor (pointer events), not natively.
         var partialErase = false
+        /// 붓: the pen with `brushPressure` instead of the writing calibration.
+        var brush = false
+        /// 형광펜 곧게 긋기: every sample keeps the height of the first one.
+        var straighten = false
     }
     var tool = Tool() { didSet { if tool != oldValue { finishMeasuredStroke(); reviewBackdropDependency() } } }
     var retainedInkEnabled = false { didSet { if oldValue != retainedInkEnabled { retainedModelDirty = true; schedulePreview() } } }
@@ -865,10 +869,26 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         guard raw.isFinite, raw > 0 else { return 0 }
         return min(1, max(pressureFloor, raw * pressureGain))
     }
+    // ponytail: calibration knobs for 붓. The same stored-point approach as the writing calibration, so a brush
+    // stroke is ordinary inkVersion 5 ink on every device: no floor and a steeper curve spread a stroke over the
+    // whole V5 width range (hairline to full), where 만년필 stays in its upper half. A finger has no force and
+    // draws an even stroke; derive pressure from speed here if a finger brush should taper too.
+    static var brushGain = 2.5, brushCurve = 1.8, brushFloor = 0.02
+    static func brushPressure(_ raw: Double) -> Double {
+        guard raw.isFinite, raw > 0 else { return 0 }
+        return min(1, max(brushFloor, pow(raw * brushGain, brushCurve)))
+    }
+    private func pressure(_ touch: UITouch) -> Double {
+        guard touch.maximumPossibleForce > 0 else { return 0.5 }
+        let raw = Double(touch.force / touch.maximumPossibleForce)
+        return strokeTool.brush && strokeTool.name == "pen" ? Self.brushPressure(raw) : Self.calibratedPressure(raw)
+    }
+    private var straightens: Bool { strokeTool.straighten && strokeTool.name == "highlighter" }
     private func sample(_ touch: UITouch, mapper override: InkCoordinateMapper? = nil, location: CGPoint? = nil) -> NativePDFPoint? {
         guard let mapper = override ?? mapper else { return nil }
-        let force = touch.maximumPossibleForce > 0 ? Self.calibratedPressure(Double(touch.force / touch.maximumPossibleForce)) : 0.5
-        let normalized = mapper.normalized(location ?? touch.preciseLocation(in: self), pressure: min(1, max(0, force)))
+        let force = pressure(touch)
+        var normalized = mapper.normalized(location ?? touch.preciseLocation(in: self), pressure: min(1, max(0, force)))
+        if straightens, let first = measured.first { normalized.y = first.y }
         let altitude = max(Double(touch.altitudeAngle), 0.001), azimuth = Double(touch.azimuthAngle(in: self))
         let movingObject = ["select", "lasso"].contains(strokeTool.name)
         return NativePDFPoint(x: movingObject ? normalized.x : min(1, max(0, normalized.x)), y: movingObject ? normalized.y : min(1, max(0, normalized.y)), p: normalized.p,
@@ -899,7 +919,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         var point = original
         let properties = estimate.properties
         if properties.contains(.force) {
-            let force = touch.maximumPossibleForce > 0 ? Self.calibratedPressure(Double(touch.force / touch.maximumPossibleForce)) : 0.5
+            let force = pressure(touch)
             guard force.isFinite else { return nil }
             point.p = min(1, max(0, force))
         }
@@ -912,7 +932,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
                 let location = touch.preciseLocation(in: estimate.referenceWindow).applying(transform)
                 guard location.x.isFinite, location.y.isFinite else { return nil }
                 let normalized = estimate.mapper.normalized(location, pressure: point.p)
-                point.x = min(1, max(0, normalized.x)); point.y = min(1, max(0, normalized.y))
+                point.x = min(1, max(0, normalized.x)); if !straightens { point.y = min(1, max(0, normalized.y)) }
             }
             if properties.contains(.azimuth) {
                 let direction = touch.azimuthUnitVector(in: estimate.referenceWindow)

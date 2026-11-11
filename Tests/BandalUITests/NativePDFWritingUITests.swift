@@ -10,31 +10,37 @@ final class NativePDFWritingUITests: XCTestCase {
         let app = createDocument("Palette Notes")
         chooseTool("pen", in: app)
         openPalette(in: app)
-        for color in ["ink", "red", "orange", "yellow", "green", "blue", "violet"] {
+        // The pen settings show the palette's colours (the rest are behind +) on the design's 36 pt cells.
+        for color in ["ink", "blue", "red", "green"] {
             let button = app.buttons["native-pdf-color-" + color].firstMatch
-            XCTAssertTrue(button.exists)
-            XCTAssertGreaterThanOrEqual(button.frame.width, 44)
-            XCTAssertGreaterThanOrEqual(button.frame.height, 44)
+            XCTAssertTrue(button.exists, color)
+            XCTAssertGreaterThanOrEqual(button.frame.width, 36)
+            XCTAssertGreaterThanOrEqual(button.frame.height, 36)
         }
+        // The star: the three cells are taken, so the pen in the third cell is removed first to make room.
+        let star = app.buttons["native-pdf-favorite-star"]
+        XCTAssertTrue(star.isSelected, "The default pen is the first favourite")
+        app.buttons["native-pdf-palette-favorite-2"].tap()
+        XCTAssertTrue(star.isSelected); star.tap()
+        XCTAssertTrue(app.buttons["native-pdf-save-favorite-2"].waitForExistence(timeout: 5), "The star empties the cell of the pen in use")
         app.buttons["native-pdf-color-blue"].firstMatch.tap()
-        // Thickness is one of three slots, each one of twelve steps (no millimetre slider).
-        tap("native-pdf-width-slot-2", in: app)
-        XCTAssertTrue(app.buttons["native-pdf-width-slot-2"].firstMatch.isSelected)
-        app.sliders["native-pdf-opacity-slider"].adjust(toNormalizedSliderPosition: 0.8)
-        let saveFavorite = app.buttons["native-pdf-save-favorite-0"]
-        let settingsScroll = app.scrollViews["native-pdf-palette-scroll"]
-        // Drag from the stroke preview: a swipe across the step bar would set the thickness.
-        for _ in 0..<3 where !saveFavorite.isHittable { settingsScroll.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2)).press(forDuration: 0.05, thenDragTo: settingsScroll.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: -0.4))) }
-        saveFavorite.tap()
-        capture("Swift pen palette and saved blue favorite")
+        // Thickness is one of twelve steps on a slider (no millimetre value).
+        setSlider("native-pdf-width-slider", to: 8.0 / 11, in: app)
+        XCTAssertEqual(app.descendants(matching: .any)["native-pdf-width-slider"].firstMatch.value as? String, "9단계")
+        setSlider("native-pdf-opacity-slider", to: 0.8, in: app)
+        star.tap()
+        let saved = app.buttons["native-pdf-palette-favorite-2"]
+        XCTAssertTrue(saved.waitForExistence(timeout: 5), "The star puts the current pen in the empty cell")
+        XCTAssertTrue((saved.value as? String ?? "").hasPrefix("pen blue 9단계"), String(describing: saved.value))
+        capture("Swift pen settings and saved blue favorite")
         closePalette(in: app)
         let penStyle = style(in: app)
         XCTAssertNotNil(penStyle)
         chooseTool("highlighter", in: app)
         openPalette(in: app)
         app.buttons["native-pdf-color-green"].firstMatch.tap()
-        tap("native-pdf-width-slot-0", in: app)
-        app.sliders["native-pdf-opacity-slider"].adjust(toNormalizedSliderPosition: 0.5)
+        setSlider("native-pdf-width-slider", to: 0, in: app)
+        setSlider("native-pdf-opacity-slider", to: 0.5, in: app)
         capture("Swift highlighter physical width and effective opacity")
         closePalette(in: app)
         let markerStyle = style(in: app)
@@ -44,15 +50,11 @@ final class NativePDFWritingUITests: XCTestCase {
         chooseTool("highlighter", in: app)
         XCTAssertEqual(style(in: app), markerStyle)
         chooseTool("ballpoint", in: app)
-        // The pen settings hold the three thickness slots and the chosen slot's twelve steps; pick step 10.
+        // Each pen type keeps its own thickness; pick step 10 for 볼펜.
         openPalette(in: app)
-        tap("native-pdf-width-slot-2", in: app)
-        XCTAssertTrue(app.buttons["native-pdf-width-slot-2"].firstMatch.isSelected)
-        let steps = app.descendants(matching: .any)["native-pdf-sheet-width-steps"].firstMatch
-        XCTAssertTrue(steps.waitForExistence(timeout: 5), app.debugDescription)
-        steps.coordinate(withNormalizedOffset: CGVector(dx: 9.5 / 12, dy: 0.5)).tap()
-        XCTAssertEqual(steps.value as? String, "10단계")
-        capture("Twelve-step thickness bar for a ballpoint slot")
+        setSlider("native-pdf-width-slider", to: 9.0 / 11, in: app)
+        XCTAssertEqual(app.descendants(matching: .any)["native-pdf-width-slider"].firstMatch.value as? String, "10단계")
+        capture("Twelve-step thickness slider for 볼펜")
         closePalette(in: app)
         let ballpointStyle = style(in: app)
         XCTAssertNotEqual(ballpointStyle, penStyle, "볼펜 keeps its own width")
@@ -61,7 +63,11 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTAssertEqual(style(in: app), penStyle)
         chooseTool("ballpoint", in: app)
         XCTAssertEqual(style(in: app), ballpointStyle)
-        chooseTool("pen", in: app)
+        chooseTool("brush", in: app)
+        XCTAssertEqual(style(in: app)?.hasPrefix("brush ink "), true, "붓 is a third pen type with its own style")
+        // A favourite is a whole pen: the saved blue one brings 만년필 back from 붓.
+        tap("native-pdf-quick-favorite-2", in: app)
+        XCTAssertEqual(style(in: app), penStyle)
         app.terminate(); app.launchArguments = arguments(reset: false); app.launch()
         XCTAssertTrue(app.buttons["native-pdf-tool-pen"].waitForExistence(timeout: 25), app.debugDescription)
         XCTAssertEqual(style(in: app), penStyle)
@@ -94,14 +100,17 @@ final class NativePDFWritingUITests: XCTestCase {
             XCTAssertTrue(pane.buttons["native-pdf-palette-collapse"].isHittable, app.debugDescription)
             for _ in 0..<5 where !pane.buttons["native-pdf-tool-pen"].isHittable { tools.swipeRight() }
         }
+        // The pen settings open under the pane's own 펜 button; a favourite changes that pane only.
         right.buttons["native-pdf-tool-pen"].tap()
-        let rightSettings = right.scrollViews["native-pdf-palette-scroll"]
-        let savedPreset = right.buttons["native-pdf-palette-favorite-2"]
-        for _ in 0..<3 where !savedPreset.isHittable { rightSettings.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2)).press(forDuration: 0.05, thenDragTo: rightSettings.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: -0.4))) }
-        savedPreset.tap()
+        let other = app.buttons["native-pdf-palette-favorite-1"]
+        XCTAssertTrue(other.waitForExistence(timeout: 5), app.debugDescription); other.tap()
+        closePalette(in: app)
+        XCTAssertNotEqual(right.buttons["native-pdf-tool-pen"].value as? String, penStyle)
         XCTAssertEqual(left.buttons["native-pdf-tool-pen"].value as? String, penStyle)
-        right.buttons["native-pdf-palette-favorite-0"].tap()
-        right.buttons["native-pdf-style-close"].tap()
+        right.buttons["native-pdf-tool-pen"].tap()
+        XCTAssertTrue(app.buttons["native-pdf-palette-favorite-2"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["native-pdf-palette-favorite-2"].tap()
+        closePalette(in: app)
         XCTAssertEqual(right.buttons["native-pdf-tool-pen"].value as? String, penStyle)
         capture("PDF tools use full width with numbered shortcuts removed")
         XCTAssertEqual(app.webViews.count, 0)
@@ -114,8 +123,7 @@ final class NativePDFWritingUITests: XCTestCase {
         openPalette(in: app)
         let correction = app.switches["native-pdf-shape-recognition"]
         XCTAssertTrue(correction.exists)
-        for _ in 0..<3 where !correction.isHittable { app.scrollViews["native-pdf-palette-scroll"].swipeUp() }
-        if correction.value as? String == "0" { correction.tap() }
+        if correction.value as? String == "0" { correction.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap() }
         closePalette(in: app)
         let body = app.otherElements["native-pdf-workspace"]
         body.coordinate(withNormalizedOffset: .init(dx: 0.32, dy: 0.28)).press(forDuration: 0.05,
@@ -145,9 +153,11 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTAssertGreaterThan(editor.frame.height, oneLine * 1.6, "The live box grows with the second line instead of clipping it")
         capture("Native Korean text editor with formatting and width preview")
         app.buttons["native-pdf-save-text"].tap(); expectInk(2, in: app)
-        let edit = app.buttons["native-pdf-edit-text"]
-        XCTAssertTrue(edit.waitForExistence(timeout: 10), "Saved text stays selected for movement, resize and editing")
+        // 텍스트 편집 is behind the selection menu's ⋯.
+        let more = app.buttons["native-pdf-selection-more"], edit = app.buttons["native-pdf-edit-text"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10), "Saved text stays selected for movement, resize and editing")
         capture("Native corrected line and formatted Korean text on paper")
+        more.tap(); XCTAssertTrue(edit.waitForExistence(timeout: 5), app.debugDescription)
         edit.tap(); XCTAssertTrue(editor.waitForExistence(timeout: 10))
         XCTAssertTrue((editor.value as? String ?? "").contains("한글 필기와 Swift"))
         XCTAssertEqual(size.value as? String, "24")
@@ -192,8 +202,7 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTExpectFailure("Known failure since 1.1.0: after relaunch the lasso region menu lacks 영역 이미지 복사.", strict: false)
         let app = createDocument("Lasso Region")
         chooseTool("lasso", in: app)
-        let box = app.buttons["박스형"].firstMatch
-        XCTAssertTrue(box.waitForExistence(timeout: 5)); box.tap()
+        chooseOption("native-pdf-lasso-mode-box", of: "lasso", in: app)
         let body = app.otherElements["native-pdf-workspace"]
         body.coordinate(withNormalizedOffset: .init(dx: 0.35, dy: 0.3)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.65, dy: 0.55)),
@@ -248,7 +257,7 @@ final class NativePDFWritingUITests: XCTestCase {
         }
         expectPages("savedObjectPages=1:1,2:0,3:0")
         chooseTool("lasso", in: app)
-        app.buttons["박스형"].firstMatch.tap()
+        chooseOption("native-pdf-lasso-mode-box", of: "lasso", in: app)
         body.coordinate(withNormalizedOffset: .init(dx: 0.30, dy: 0.27)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.68, dy: 0.53)),
             withVelocity: .slow, thenHoldForDuration: 0.05)
@@ -276,19 +285,43 @@ final class NativePDFWritingUITests: XCTestCase {
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.75, dy: 0.42)))
         expectInk(1, in: app)
         chooseTool("eraser", in: app)
-        let partial = app.buttons["부분"].firstMatch
+        // The eraser's options open on a second tap: 부분, the smallest of the three sizes.
+        tap("native-pdf-tool-eraser", in: app)
+        let partial = app.buttons["native-pdf-eraser-mode-partial"]
         XCTAssertTrue(partial.waitForExistence(timeout: 5), app.debugDescription); partial.tap()
-        tap("native-pdf-width-slot-0", in: app)
+        // A tap on the size already chosen would open its twelve steps (the palette is shared across documents).
+        let smallest = app.buttons["native-pdf-width-slot-0"]
+        if !smallest.isSelected { smallest.tap() }
+        closePalette(in: app)
         body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.32)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.52)))
         expectInk(2, in: app)
         capture("Partial eraser leaves the two ends of the stroke")
         tap("native-pdf-undo", in: app); expectInk(1, in: app)
         tap("native-pdf-redo", in: app); expectInk(2, in: app)
-        app.buttons["획 전체"].firstMatch.tap()
+        chooseOption("native-pdf-eraser-mode-stroke", of: "eraser", in: app)
         body.coordinate(withNormalizedOffset: .init(dx: 0.32, dy: 0.32)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.32, dy: 0.52)))
         expectInk(1, in: app)
+        // 형광펜만 지우기: the eraser crosses the pen stroke's other half and a highlighter line, and takes only the line.
+        chooseTool("highlighter", in: app)
+        body.coordinate(withNormalizedOffset: .init(dx: 0.55, dy: 0.47)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.72, dy: 0.47)))
+        expectInk(2, in: app)
+        chooseTool("eraser", in: app)
+        tap("native-pdf-tool-eraser", in: app)
+        let highlighterOnly = app.switches["native-pdf-eraser-highlighter-only"]
+        XCTAssertTrue(highlighterOnly.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(highlighterOnly.value as? String, "0")
+        highlighterOnly.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.5)).tap() // the switch itself, not its label
+        XCTAssertEqual(highlighterOnly.value as? String, "1")
+        capture("Eraser options with 형광펜만 지우기")
+        closePalette(in: app)
+        body.coordinate(withNormalizedOffset: .init(dx: 0.63, dy: 0.34)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.63, dy: 0.54)))
+        sleep(2); capture("Only the highlighter line is erased")
+        expectInk(1, in: app)
+        tap("native-pdf-undo", in: app); expectInk(2, in: app)
     }
     @MainActor
     func testTapeHidesUntilTappedCommentPinKeepsANoteAndLaserSavesNothing() {
@@ -305,20 +338,26 @@ final class NativePDFWritingUITests: XCTestCase {
         body.coordinate(withNormalizedOffset: .init(dx: 0.25, dy: 0.5)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.7, dy: 0.5)))
         expectInk(1, in: app)
-        let all = app.buttons["native-pdf-tape-all"]
-        XCTAssertTrue(all.waitForExistence(timeout: 10)); XCTAssertEqual(all.label, "모두 보기")
+        // The 테이프 button says whether the tape covers its text.
+        let tape = app.buttons["native-pdf-tool-tape"]
+        func expectTape(_ state: String, _ message: String) {
+            let expected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", state), object: tape)
+            XCTAssertEqual(XCTWaiter.wait(for: [expected], timeout: 10), .completed, message + app.debugDescription)
+        }
+        expectTape("covered", "New tape covers the line")
         capture("Memorisation tape covers the line")
         body.coordinate(withNormalizedOffset: .init(dx: 0.45, dy: 0.5)).tap()
-        let peeled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "모두 가리기"), object: all)
-        XCTAssertEqual(XCTWaiter.wait(for: [peeled], timeout: 10), .completed, "A tap peels the tape back" + app.debugDescription)
+        expectTape("revealed", "A tap peels the tape back")
         capture("Peeled-back tape")
         // The tape covers the line again on its own after a moment.
-        let covered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "모두 보기"), object: all)
-        XCTAssertEqual(XCTWaiter.wait(for: [covered], timeout: 10), .completed)
+        expectTape("covered", "The tape returns")
+        // 모두 보이기 / 모두 가리기 are in the tape's options.
+        chooseOption("native-pdf-tape-reveal-all", of: "tape", in: app); expectTape("revealed", "모두 보이기")
+        chooseOption("native-pdf-tape-cover-all", of: "tape", in: app); expectTape("covered", "모두 가리기")
 
         chooseTool("comment", in: app)
         body.coordinate(withNormalizedOffset: .init(dx: 0.8, dy: 0.25)).tap()
-        let note = app.textViews["native-pdf-comment-editor"]
+        let note = app.descendants(matching: .any)["native-pdf-comment-editor"].firstMatch
         XCTAssertTrue(note.waitForExistence(timeout: 10), app.debugDescription)
         note.tap(); note.typeText("시험 범위")
         app.buttons["native-pdf-save-comment"].tap(); expectInk(2, in: app)
@@ -328,6 +367,11 @@ final class NativePDFWritingUITests: XCTestCase {
         body.coordinate(withNormalizedOffset: .init(dx: 0.8, dy: 0.25)).tap()
         XCTAssertTrue(note.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(note.value as? String, "시험 범위")
+        // 이어서 메모하기 adds a line to the same memo.
+        let more = app.descendants(matching: .any)["native-pdf-comment-input"].firstMatch
+        more.tap(); more.typeText("2장 참고"); app.buttons["native-pdf-comment-send"].tap()
+        XCTAssertEqual(note.value as? String, "시험 범위\n2장 참고")
+        capture("Memo popover with a second line")
         app.buttons["native-pdf-delete-comment"].tap(); expectInk(1, in: app)
         tap("native-pdf-undo", in: app); expectInk(2, in: app) // the deleted pin comes back
     }
@@ -335,8 +379,8 @@ final class NativePDFWritingUITests: XCTestCase {
         ["--native-ui-testing", "--native-pencil-dispatch-fixture"] + (reset ? ["--reset-native-ui-testing"] : [])
     }
     @MainActor private func chooseTool(_ tool: String, in app: XCUIApplication) {
-        // 만년필 ("pen") and 볼펜 share the palette's 펜 button; the type is picked in the pen settings.
-        let name = tool == "ballpoint" ? "pen" : tool, item = app.buttons["native-pdf-tool-" + name]
+        // 만년필 ("pen"), 볼펜 and 붓 share the palette's 펜 button; the type is picked in the pen settings.
+        let name = ["ballpoint", "brush"].contains(tool) ? "pen" : tool, item = app.buttons["native-pdf-tool-" + name]
         if !item.isSelected { tap("native-pdf-tool-" + name, in: app) }
         guard name == "pen", style(in: app)?.hasPrefix(tool + " ") != true else { return }
         openPalette(in: app); tap("native-pdf-pen-kind-" + tool, in: app); closePalette(in: app)
@@ -351,6 +395,20 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["native-pdf-style-close"].waitForExistence(timeout: 5), app.debugDescription)
     }
     @MainActor private func closePalette(in app: XCUIApplication) { app.buttons["native-pdf-style-close"].tap() }
+    /// A second tap on the chosen tool opens its options; picks one and closes them.
+    @MainActor private func chooseOption(_ identifier: String, of tool: String, in app: XCUIApplication) {
+        tap("native-pdf-tool-" + tool, in: app)
+        let option = app.buttons[identifier]
+        XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription); option.tap()
+        closePalette(in: app)
+    }
+    /// Taps the design's slider at a fraction of its track (the thumb travels 11 pt inside each end).
+    @MainActor private func setSlider(_ identifier: String, to fraction: CGFloat, in app: XCUIApplication) {
+        let slider = app.descendants(matching: .any)[identifier].firstMatch
+        XCTAssertTrue(slider.waitForExistence(timeout: 5), app.debugDescription)
+        let inset = 11 / max(1, slider.frame.width)
+        slider.coordinate(withNormalizedOffset: CGVector(dx: inset + (1 - 2 * inset) * fraction, dy: 0.5)).tap()
+    }
     @MainActor private func tap(_ identifier: String, in app: XCUIApplication) {
         let item = app.buttons[identifier]
         XCTAssertTrue(item.waitForExistence(timeout: 15), app.debugDescription)

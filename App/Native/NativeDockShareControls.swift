@@ -5,6 +5,8 @@ import SwiftUI
 struct NativeDockShareControls: View {
     let document: NativeDocumentReference
     var store: NativeWorkspaceStore
+    /// Off inside the preview itself, whose 공유 lists the same actions.
+    var includesPreview = true
     /// Two 34-point buttons and the 6 between them (Figma 155:7551, 155:7553).
     static let width: CGFloat = 74
     /// The page each open PDF tab is showing, so "이미지로 내보내기" exports the one on screen.
@@ -13,30 +15,53 @@ struct NativeDockShareControls: View {
     private var isPDF: Bool { document.kind == "pdf" }
     private var request: [String: Any] { ["courseId": document.courseID, "relPath": document.relativePath] }
 
+    @State private var sharing = false
+    private struct Item: Identifiable { let id: String, title: String, detail: String, symbol: String, action: () -> Void }
+    /// 미리보기 · PDF · 이미지 · 다른 앱 (Figma 130:4009). The two exports are for PDFs, which handwritten notes are.
+    private var items: [Item] {
+        (includesPreview ? [Item(id: "native-dock-share-preview", title: "미리보기", detail: "페이지 넘겨 보기 · 인쇄", symbol: "doc") { preview() }] : [])
+        + (isPDF ? [Item(id: "native-dock-export-pdf", title: "PDF로 내보내기", detail: "필기 그대로 PDF 파일", symbol: "square.and.arrow.up") { run { _ = try await store.invoke("pdf:exportAnnotated", request) } },
+                    Item(id: "native-dock-export-image", title: "이미지로 내보내기", detail: "지금 보는 페이지를 PNG로", symbol: "photo") { run { try await exportImage() } }] : [])
+        + [Item(id: "native-dock-share-apps", title: "다른 앱으로 보내기", detail: "메시지 · 메일 · 파일 앱", symbol: "envelope") { run { _ = try await store.invoke("materials:share", request) } }]
+    }
+
     var body: some View {
         HStack(spacing: 6) {
             Button { preview() } label: { Image(systemName: "doc").font(.system(size: 17)).foregroundStyle(NativeDesktopTheme.text) }
                 .buttonStyle(NativeDockIconButtonStyle()).accessibilityLabel("미리보기").accessibilityIdentifier("native-dock-preview")
-            Menu { menuItems } label: {
-                Image(systemName: "square.and.arrow.up").font(.system(size: 17)).foregroundStyle(NativeDesktopTheme.accent)
-                    .frame(width: 34, height: 34).contentShape(Rectangle())
-            }.accessibilityLabel("공유").accessibilityIdentifier("native-dock-share")
+            Button { sharing.toggle() } label: { Image(systemName: "square.and.arrow.up").font(.system(size: 17)).foregroundStyle(NativeDesktopTheme.accent) }
+                .buttonStyle(NativeDockIconButtonStyle()).accessibilityLabel("공유").accessibilityIdentifier("native-dock-share")
+                // The card's right edge on the button's, its top 9 below it: the bottom of the tab strip.
+                .bandalPopover(isPresented: $sharing, at: .bottomTrailing, offset: CGSize(width: -140, height: 3), width: 280, radius: 14, padding: 8) {
+                    VStack(spacing: 2) {
+                        ForEach(items) { item in
+                            Button { sharing = false; item.action() } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: item.symbol).font(.system(size: 17)).foregroundStyle(NativeDesktopTheme.accent).frame(width: 24, height: 24)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        BandalText(item.title).font(.system(size: 16, weight: .semibold)).foregroundStyle(NativeDesktopTheme.text)
+                                        BandalText(item.detail).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
+                                    }.lineLimit(1)
+                                    Spacer(minLength: 0)
+                                }.padding(.horizontal, 12).frame(height: 57).contentShape(Rectangle())
+                            }.buttonStyle(BandalRowStyle(radius: 10)).accessibilityIdentifier(item.id)
+                        }
+                    }
+                }
         }
     }
     /// Also reachable from a tab's long-press menu, where a split pane's strip has no room for the buttons.
     @ViewBuilder var menuItems: some View {
-        Button { preview() } label: { Label("미리보기", systemImage: "doc"); Text("페이지 넘겨 보기 · 인쇄") }
-        if isPDF {
-            Button { run { _ = try await store.invoke("pdf:exportAnnotated", request) } } label: { Label("PDF로 내보내기", systemImage: "square.and.arrow.up"); Text("필기 그대로 PDF 파일") }
-                .accessibilityIdentifier("native-dock-export-pdf")
-            Button { run { try await exportImage() } } label: { Label("이미지로 내보내기", systemImage: "photo"); Text("지금 보는 페이지를 PNG로") }
-                .accessibilityIdentifier("native-dock-export-image")
-        }
-        Button { run { _ = try await store.invoke("materials:share", request) } } label: { Label("다른 앱으로 보내기", systemImage: "envelope"); Text("메시지 · 메일 · 파일 앱") }
-            .accessibilityIdentifier("native-dock-share-apps")
+        ForEach(items) { item in Button(action: item.action) { Label(item.title, systemImage: item.symbol); Text(item.detail) }.accessibilityIdentifier(item.id) }
     }
 
-    private func preview() { run { _ = try await store.invoke("materials:preview", request.merging(["annotated": true]) { $1 }) } }
+    /// A PDF (handwritten notes are PDFs) opens the in-app preview; Markdown has no paged export, so it stays with Quick Look.
+    private func preview() {
+        run {
+            if isPDF { try await NativeDocumentPreviewCenter.shared.open(document, page: Self.visiblePage[document.id] ?? 1, store: store) }
+            else { _ = try await store.invoke("materials:preview", request.merging(["annotated": true]) { $1 }) }
+        }
+    }
     private func run(_ action: @escaping @MainActor () async throws -> Void) {
         Task { do { try await store.flushDocuments(); try await action() } catch { store.errorMessage = error.localizedDescription } }
     }

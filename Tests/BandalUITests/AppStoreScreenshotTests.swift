@@ -68,9 +68,9 @@ final class AppStoreScreenshotTests: XCTestCase {
         app.buttons["만들기"].tap()
         let editor = app.textViews["native-markdown-editor"].firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 15), app.debugDescription)
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         paste(Self.markdown, into: editor, app: app)
-        app.buttons["native-markdown-source-toggle"].tap()
+        app.toggleNativeMarkdownSource()
         app.dismissNativeTestKeyboard()
         let done = app.buttons["완료"].firstMatch
         if done.exists && done.isHittable { done.tap() }

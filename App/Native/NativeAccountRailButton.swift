@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The profile button at the bottom of the rail. Signed out it offers sign-in in place; signed in
-/// it opens the account menu: email, name · plan, then 설정 / 사용량 / 친구 초대 / 도움말 / 플랜 보기 /
-/// 로그아웃. 친구 초대 takes the menu's place in the same popover.
+/// it opens the account menu (Figma 130:5623): email, name · plan, then 설정 / 사용량 / 도움말 › / 플랜 보기 /
+/// 로그아웃. 도움말 opens its own card beside the row. 친구 초대 is not in the design: it is a long press on
+/// 플랜 보기 (and in 설정 › 계정), and takes the menu's place in the same popover.
 struct NativeAccountRailButton: View {
     var store: NativeWorkspaceStore
     let openSettings: (String) -> Void
@@ -18,6 +19,8 @@ struct NativeAccountRailButton: View {
     @State private var error: String?
 
     static let docsURL = URL(string: "https://bandal.io/ko/docs")!
+    /// Posted by 처음 사용 안내 다시 보기; the workspace shows onboarding again.
+    static let restartOnboarding = Notification.Name("native.onboarding.restart")
     static let contactURL = URL(string: "mailto:hi@bandal.io")!
 
     private var signedIn: Bool { account["phase"] as? String == "signed-in" }
@@ -47,8 +50,21 @@ struct NativeAccountRailButton: View {
         }.buttonStyle(.plain)
             .accessibilityLabel(signedIn ? "계정: " + displayName : "로그인").accessibilityIdentifier("native-section-account")
             .help(signedIn ? displayName : "로그인")
-            .bandalPopover(isPresented: $showingMenu, arrowEdge: .leading, width: 264) {
-                inviting ? AnyView(NativeReferralInvite(store: store)) : signedIn ? AnyView(menu) : AnyView(signInMenu)
+            // The card's left edge 34 right of the avatar's middle, its bottom 18 below it. The popover is wider and
+            // taller than the card by the room the 도움말 card takes beside it; a tap there closes like one outside.
+            .bandalPopover(isPresented: $showingMenu, at: .center, offset: CGSize(width: 34 + (Self.width + Self.helpRoom.width) / 2, height: 24 + Self.helpRoom.height),
+                           arrowEdge: .bottom, width: nil, padding: 0, bare: true) {
+                (inviting ? AnyView(NativeReferralInvite(store: store)) : signedIn ? AnyView(menu) : AnyView(signInMenu))
+                    .padding(signedIn && !inviting ? 8 : BandalMetrics.padding).frame(width: Self.width, alignment: .leading).bandalPopoverSurface()
+                    .padding(.trailing, Self.helpRoom.width).padding(.bottom, Self.helpRoom.height)
+                    .background { Color.clear.contentShape(Rectangle()).onTapGesture { close() } }
+                    .overlayPreferenceValue(HelpRowKey.self) { anchor in
+                        GeometryReader { proxy in
+                            if showingHelp, let anchor {
+                                helpCard.offset(x: Self.width + 10, y: proxy[anchor].minY - 7)
+                            }
+                        }
+                    }
             }
             .task(id: store.isReady) { await loadAccount() }
             .onReceive(store.events) { event in
@@ -61,6 +77,14 @@ struct NativeAccountRailButton: View {
             }
     }
 
+    private struct HelpRowKey: PreferenceKey {
+        static let defaultValue: Anchor<CGRect>? = nil
+        static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = value ?? nextValue() }
+    }
+    private static let width: CGFloat = 276
+    /// The 도움말 card: 236 wide, 10 from the menu, and 26 lower than the menu's bottom edge.
+    private static let helpRoom = CGSize(width: 246, height: 26)
+
     private var signInMenu: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("반달 계정").font(.system(size: BandalMetrics.bodySize, weight: .semibold))
@@ -68,29 +92,33 @@ struct NativeAccountRailButton: View {
             NativeSignInButtons(store: store, error: $error, identifierPrefix: "native-account")
             errorLine
             BandalMenuDivider()
-            BandalMenu { inviteRow; helpRows }
+            VStack(spacing: 2) {
+                BandalMenuRow(NativeAppLocale.string("친구 초대", locale), symbol: "gift") { inviting = true }.accessibilityIdentifier("native-referral-menu")
+                helpRow
+            }.padding(-4)
         }.accessibilityElement(children: .contain).accessibilityIdentifier("native-account-menu")
     }
 
     private var menu: some View {
-        BandalMenu {
+        let invite = NativeAppLocale.string("친구 초대", locale)
+        return VStack(alignment: .leading, spacing: 2) {
             VStack(alignment: .leading, spacing: 2) {
-                if !email.isEmpty { Text(email).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1).truncationMode(.middle) }
-                Text(displayName + " · " + planName).font(.system(size: BandalMetrics.bodySize, weight: .semibold)).lineLimit(1)
+                if !email.isEmpty { Text(email).font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1).truncationMode(.middle).frame(height: 20) }
+                Text(displayName + " · " + planName).font(.system(size: 17, weight: .semibold)).foregroundStyle(NativeGlass.icon).lineLimit(1).frame(height: 24)
                     .accessibilityIdentifier("native-account-plan")
-            }.padding(.horizontal, 8).padding(.vertical, 6)
+            }.padding(.horizontal, 12).padding(.vertical, 10)
             BandalMenuDivider()
-            BandalMenuRow("설정", symbol: "gearshape") { close(); openSettings("general") }.accessibilityIdentifier("native-account-app-settings")
+            BandalMenuRow("설정", asset: "MenuIconGear") { close(); openSettings("general") }.accessibilityIdentifier("native-account-app-settings")
             if NativeReleaseFlags.membership {
-                BandalMenuRow("사용량", symbol: "chart.bar", detail: usage.percent.map { "이번 달 AI \($0)%" }) { close(); openSettings("subscription") }
+                BandalMenuRow("사용량", asset: "MenuIconBars", detail: usage.percent.map { "이번 달 AI \($0)%" }) { close(); openSettings("subscription") }
                     .accessibilityIdentifier("native-account-usage")
             }
-            inviteRow
-            helpRows
-            BandalMenuRow("플랜 보기", symbol: "sparkles") { close(); MembershipPaywall.present() }
+            helpRow
+            BandalMenuRow("플랜 보기", asset: "MenuIconSpark") { close(); MembershipPaywall.present() }
+                .contextMenu { Button(invite, systemImage: "gift") { inviting = true }.accessibilityIdentifier("native-referral-menu") }
                 .accessibilityIdentifier("native-account-plans")
             BandalMenuDivider()
-            BandalMenuRow(busy ? "로그아웃 중…" : "로그아웃", symbol: "rectangle.portrait.and.arrow.right") { signOut() }
+            BandalMenuRow(busy ? "로그아웃 중…" : "로그아웃", asset: "MenuIconLogout") { signOut() }
                 .disabled(busy).accessibilityIdentifier("native-account-sign-out")
             errorLine
         }
@@ -98,22 +126,28 @@ struct NativeAccountRailButton: View {
         .accessibilityElement(children: .contain).accessibilityIdentifier("native-account-menu")
     }
 
-    private var inviteRow: some View {
-        BandalMenuRow(NativeAppLocale.string("친구 초대", locale), symbol: "gift") { inviting = true }.accessibilityIdentifier("native-referral-menu")
-    }
-
-    /// 도움말 opens in place: 화면 도우미 / 문서 / 문의하기.
-    @ViewBuilder private var helpRows: some View {
-        BandalMenuRow(title: "도움말", symbol: "questionmark.circle", action: { showingHelp.toggle() }) {
-            Image(systemName: showingHelp ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(NativeDesktopTheme.muted)
-        }.accessibilityIdentifier("native-account-help")
-        if showingHelp {
-            Group {
-                BandalMenuRow("화면 도우미", symbol: "rectangle.and.hand.point.up.left") { close(); openHelp() }.accessibilityIdentifier("native-help-guide")
-                BandalMenuRow("문서", symbol: "book") { close(); UIApplication.shared.open(Self.docsURL) }.accessibilityIdentifier("native-help-docs")
-                BandalMenuRow("문의하기 · 버그 신고", symbol: "bubble.left") { close(); UIApplication.shared.open(Self.contactURL) }.accessibilityIdentifier("native-help-contact")
-            }.padding(.leading, 16)
+    /// 도움말 ›: its four lines open in a card of their own beside the row (10 right of the menu, the first line level with the row).
+    private var helpRow: some View {
+        BandalMenuRow(title: "도움말", asset: "MenuIconHelp", action: { showingHelp.toggle() }) {
+            Image("MenuIconChevron").foregroundStyle(NativeDesktopTheme.secondary).frame(width: 16, height: 16)
         }
+        .background(showingHelp ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityIdentifier("native-account-help")
+        .anchorPreference(key: HelpRowKey.self, value: .bounds) { $0 }
+    }
+    private var helpCard: some View {
+        VStack(spacing: 2) {
+            helpLine("처음 사용 안내 다시 보기", "native-help-onboarding") { NotificationCenter.default.post(name: Self.restartOnboarding, object: nil) }
+            helpLine("펜슬·손가락 사용법", "native-help-guide", action: openHelp)
+            helpLine("단축키", "native-help-shortcuts") { openSettings("shortcuts") }
+            helpLine("문의하기 · 버그 신고", "native-help-contact") { UIApplication.shared.open(Self.contactURL) }
+        }.padding(8).frame(width: 236).foregroundStyle(NativeDesktopTheme.text).bandalPopoverSurface(radius: 18)
+    }
+    private func helpLine(_ title: String, _ identifier: String, action: @escaping () -> Void) -> some View {
+        Button { close(); action() } label: {
+            BandalText(title).font(.system(size: 15)).foregroundStyle(NativeGlass.icon).lineLimit(1)
+                .padding(.horizontal, 12).frame(maxWidth: .infinity, minHeight: 41, alignment: .leading).contentShape(Rectangle())
+        }.buttonStyle(BandalRowStyle(radius: 10)).accessibilityIdentifier(identifier)
     }
 
     @ViewBuilder private var errorLine: some View {
@@ -136,23 +170,6 @@ struct NativeAccountRailButton: View {
     private var railAvatar: some View {
         Circle().fill(Color(red: 0x3e / 255, green: 0x8e / 255, blue: 0x9a / 255)).frame(width: 26, height: 26)
             .overlay { if signedIn, let avatarURL { AsyncImage(url: avatarURL) { $0.image?.resizable().scaledToFill() }.frame(width: 26, height: 26).clipShape(Circle()) } }
-    }
-    @ViewBuilder private func avatar(size: CGFloat) -> some View {
-        if signedIn, let avatarURL {
-            AsyncImage(url: avatarURL) { phase in
-                if let image = phase.image { image.resizable().scaledToFill() } else { emoji(size) }
-            }.frame(width: size, height: size).clipShape(Circle()).overlay(Circle().stroke(NativeDesktopTheme.border, lineWidth: 1))
-        } else if signedIn {
-            emoji(size)
-        } else {
-            Image(systemName: "person.crop.circle").font(.system(size: 16, weight: .regular)).foregroundStyle(NativeDesktopTheme.muted)
-        }
-    }
-    /// The profile's emoji avatar (default 🌙) marks a signed-in session without a photo.
-    private func emoji(_ size: CGFloat) -> some View {
-        Text(profile["avatarEmoji"] as? String ?? "🌙").font(.system(size: size * 0.55))
-            .frame(width: size, height: size).background(NativeDesktopTheme.raised, in: Circle())
-            .overlay(Circle().stroke(NativeDesktopTheme.border, lineWidth: 1))
     }
     private func signOut() {
         busy = true; error = nil

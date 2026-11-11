@@ -137,6 +137,13 @@ extension XCUIApplication {
         let add = buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 10), debugDescription); add.press(forDuration: 1)
     }
+    /// 원문 보기 is not in the design's Markdown bar: it lives in the bar's ⋯ menu.
+    @MainActor func toggleNativeMarkdownSource() {
+        let more = buttons["native-markdown-more"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 10), debugDescription); more.tap()
+        let toggle = buttons["native-markdown-source-toggle"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), debugDescription); toggle.tap()
+    }
     /// The device's AssistiveTouch button can overlap the accessory Done action.
     /// Prefer the system keyboard's visible dismiss key and verify dismissal.
     @MainActor func dismissNativeTestKeyboard() {
