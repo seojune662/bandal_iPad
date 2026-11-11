@@ -14,7 +14,7 @@ struct NativeDockShareControls: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button { preview() } label: { Image(systemName: "doc").font(.system(size: 14)).frame(width: 40, height: 44).contentShape(Rectangle()) }
+            Button { preview() } label: { Image(systemName: "doc").font(.system(size: 16)).frame(width: 40, height: 44).contentShape(Rectangle()) }
                 .buttonStyle(.plain).accessibilityLabel("미리보기").accessibilityIdentifier("native-dock-preview")
             Menu {
                 Button { preview() } label: { Label("미리보기", systemImage: "doc"); Text("페이지 넘겨 보기 · 인쇄") }
@@ -26,7 +26,7 @@ struct NativeDockShareControls: View {
                 }
                 Button { run { _ = try await store.invoke("materials:share", request) } } label: { Label("다른 앱으로 보내기", systemImage: "envelope"); Text("메시지 · 메일 · 파일 앱") }
                     .accessibilityIdentifier("native-dock-share-apps")
-            } label: { Image(systemName: "square.and.arrow.up").font(.system(size: 14)).frame(width: 40, height: 44).contentShape(Rectangle()) }
+            } label: { Image(systemName: "square.and.arrow.up").font(.system(size: 16)).frame(width: 40, height: 44).contentShape(Rectangle()) }
                 .accessibilityLabel("공유").accessibilityIdentifier("native-dock-share")
         }.foregroundStyle(NativeDesktopTheme.text)
     }

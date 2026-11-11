@@ -10,8 +10,9 @@ enum NativeDesktopTheme {
     static let overlay = adaptive(0xffffff, 0x292929)
     /// The chosen segment of `BandalSegmented`: white in light, a lighter pill on the track in dark (whatever the track sits on).
     static let segmentSelected = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.16) : .white })
-    static let text = adaptive(0x0d0d0d, 0xececec)
-    static let secondary = adaptive(0x565656, 0xb4b4b4)
+    /// Figma `Text/Primary` and `Text/Secondary`.
+    static let text = adaptive(0x141414, 0xededed)
+    static let secondary = adaptive(0x6b6b6b, 0xa1a1a1)
     static let muted = adaptive(0x686868, 0x9b9b9b)
     static let accent = adaptive(0x171717, 0xececec)
     static let onAccent = adaptive(0xffffff, 0x171717)
@@ -54,20 +55,16 @@ struct NativeChromeButton: View {
     var selected = false
     /// The highlight behind a selected button.
     var selectedFill = NativeDesktopTheme.raised
-    /// A rail button whose panel is open beside it: the highlight runs to the rail's edge in the
-    /// panel's colour, so button and panel are one surface.
+    /// A rail button whose panel is open beside it: `NativeRailSurface` draws the panel's tab behind it,
+    /// so the button itself draws no highlight.
     var joinsPanel = false
     var action: () -> Void
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 16, weight: .regular))
-                .foregroundStyle(selected ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
+            Image(systemName: symbol).font(.system(size: 18, weight: .regular))
+                .foregroundStyle(NativeGlass.icon)
                 .frame(width: 44, height: 44)
-                .background(alignment: .leading) {
-                    if selected, joinsPanel {
-                        UnevenRoundedRectangle(topLeadingRadius: 10, bottomLeadingRadius: 10).fill(selectedFill).frame(width: 46)
-                    } else if selected { RoundedRectangle(cornerRadius: 6).fill(selectedFill) }
-                }
+                .background { if selected, !joinsPanel { RoundedRectangle(cornerRadius: 8).fill(selectedFill).padding(5) } }
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel(title).help(title)
     }

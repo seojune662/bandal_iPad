@@ -19,13 +19,13 @@ final class NativeDockTabButton: UIButton {
         configuration.title = density == .icon ? nil : title
         configuration.image = UIImage(systemName: symbol)
         configuration.imagePadding = density == .icon ? 0 : 6
-        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 12)
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: density == .icon ? 4 : 8, bottom: 0, trailing: density == .regular ? 2 : 8)
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 13)
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: density == .icon ? 4 : 12, bottom: 0, trailing: density == .regular ? 2 : 8)
         configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
-            var next = attributes; next.font = UIFont.systemFont(ofSize: 13 * fontScale, weight: selected ? .medium : .regular); return next
+            var next = attributes; next.font = UIFont.systemFont(ofSize: 14 * fontScale, weight: selected ? .semibold : .regular); return next
         }
         configuration.titleLineBreakMode = .byTruncatingTail
-        configuration.baseForegroundColor = UIColor(selected ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
+        configuration.baseForegroundColor = UIColor(selected ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
         self.configuration = configuration
         contentHorizontalAlignment = density == .icon ? .center : .leading
         titleLabel?.numberOfLines = 1
