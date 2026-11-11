@@ -233,7 +233,7 @@ struct NativeReferralHost: ViewModifier {
             .bandalToast(Binding(get: { referral.notice?.text(locale) }, set: { if $0 == nil { referral.notice = nil } }))
             // A universal link arrives through the root's `onOpenURL`; a handed-off page arrives here.
             .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in if let url = activity.webpageURL { referral.open(url) } }
-            .onChange(of: ready ? referral.linkedCode : nil, initial: true) { _, code in if code != nil { openSettings("account") } }
+            .onChange(of: ready ? referral.linkedCode : nil, initial: true) { _, code in if code != nil { openSettings("referral") } }
             #if DEBUG
             .task { if let link = Referral.fixtureLink { referral.open(link) } }
             #endif
@@ -274,12 +274,11 @@ struct NativeReferralSettingsCard: View {
     @Environment(\.locale) private var locale
     @State private var inviting = false
     var body: some View {
-        NativeSettingsCard(title: NativeAppLocale.string("친구 초대", locale)) {
+        NativeSettingsGroup(title: NativeAppLocale.string("친구 초대", locale)) {
             BandalSettingRow(title: NativeAppLocale.string("친구 초대", locale), note: NativeAppLocale.string("친구가 로그인하고 첫 과목을 만들면 둘 다 AI 100회", locale)) {
                 Button { inviting = true } label: { Text("초대하기").frame(minHeight: 44) }.accessibilityIdentifier("native-referral-settings-open")
                     .bandalPopover(isPresented: $inviting, width: 280) { NativeReferralInvite(store: store) }
             }
-            Divider()
             VStack(alignment: .leading, spacing: 6) {
                 Text("초대 코드 입력")
                 NativeReferralCodeEntry(referral: store.referral)

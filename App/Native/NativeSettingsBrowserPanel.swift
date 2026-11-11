@@ -25,7 +25,7 @@ struct NativeSettingsBrowserPanel: View {
     }
     private var browser: [String: Any] { settings["browser"] as? [String: Any] ?? [:] }
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 28) {
             if let error { NativeToolError(message: error) }
             if let notice { Text(notice).foregroundStyle(.green).font(NativeDesktopTheme.font(12)) }
             navigation
@@ -43,7 +43,7 @@ struct NativeSettingsBrowserPanel: View {
         run { _ = try await store.invoke(choice.channel, choice.request); await loadProfiles(); await loadData(); notice = "삭제했어요." }
     }
     private var navigation: some View {
-        NativeSettingsCard(title: "홈페이지·검색·확대/축소", description: "새 브라우저 페이지에서 사용할 기본값입니다.") {
+        NativeSettingsGroup(title: "홈페이지·검색·확대/축소", description: "새 브라우저 페이지에서 사용할 기본값입니다.") {
             TextField("홈페이지 · 비워두면 기본 검색 엔진", text: $homePage).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().nativeToolField().accessibilityIdentifier("native-settings-browser-home")
             Button("홈페이지 저장") { run { let value = homePage.trimmingCharacters(in: .whitespacesAndNewlines); if !value.isEmpty { _ = try NativeSettingsValidation.webURL(value) }; try await save(["browser": ["homePage": value]]) } }
             Picker("검색 엔진", selection: Binding(get: { settings["browserSearchEngine"] as? String ?? "google" }, set: { value in persist(["browserSearchEngine": value]) })) { Text("Google").tag("google"); Text("네이버").tag("naver"); Text(verbatim: locale.language.languageCode?.identifier == "en" ? "Daum" : "다음").tag("daum"); Text("DuckDuckGo").tag("duckduckgo") }.accessibilityIdentifier("native-settings-search-engine")
@@ -55,7 +55,7 @@ struct NativeSettingsBrowserPanel: View {
         }
     }
     private var protection: some View {
-        NativeSettingsCard(title: "웹 탐색과 보호") {
+        NativeSettingsGroup(title: "웹 탐색과 보호") {
             Toggle("AI의 브라우저 접근 허용", isOn: boolean("agentUse", fallback: true))
             Toggle("추적 거부 요청", isOn: boolean("doNotTrack", fallback: true))
             Picker("추적 방지", selection: string("trackingProtection", fallback: "balanced")) { Text("사용 안 함").tag("off"); Text("균형").tag("balanced"); Text("엄격").tag("strict") }
@@ -64,7 +64,7 @@ struct NativeSettingsBrowserPanel: View {
         }
     }
     private var profilePanel: some View {
-        NativeSettingsCard(title: "브라우저 프로필", description: "로그인·방문 기록·사이트 권한을 프로필별로 구분합니다.") {
+        NativeSettingsGroup(title: "브라우저 프로필", description: "로그인·방문 기록·사이트 권한을 프로필별로 구분합니다.") {
             Picker("프로필", selection: $profile) { ForEach(profiles, id: \.profileID) { Text($0["name"] ?? "프로필").tag($0["id"] ?? "default") } }.accessibilityIdentifier("native-settings-browser-profile")
             TextField("새 프로필 이름", text: $profileName).nativeToolField()
             HStack {
@@ -77,7 +77,7 @@ struct NativeSettingsBrowserPanel: View {
     /// iPad apps cannot read another browser's data, so import goes through the
     /// files every major browser exports: passwords CSV and bookmarks HTML.
     private var importPanel: some View {
-        NativeSettingsCard(title: "다른 브라우저에서 가져오기", description: "Chrome·Safari·Edge·Firefox에서 내보낸 파일을 선택한 프로필로 가져옵니다.") {
+        NativeSettingsGroup(title: "다른 브라우저에서 가져오기", description: "Chrome·Safari·Edge·Firefox에서 내보낸 파일을 선택한 프로필로 가져옵니다.") {
             Button("비밀번호 가져오기 (CSV)", systemImage: "key") {
                 run {
                     let result = try await store.invoke("credentials:importCsv", ["profileId": profile]) as? [String: Any] ?? [:]
@@ -114,7 +114,7 @@ struct NativeSettingsBrowserPanel: View {
         return imported
     }
     private var siteData: some View {
-        NativeSettingsCard(title: "브라우징 데이터", description: "선택한 프로필의 방문 기록과 사이트 로그인을 관리합니다.") {
+        NativeSettingsGroup(title: "브라우징 데이터", description: "선택한 프로필의 방문 기록과 사이트 로그인을 관리합니다.") {
             DisclosureGroup("사이트 로그인 · \(sites.count)개") {
                 if sites.isEmpty { Text("저장된 사이트 쿠키가 없습니다.").foregroundStyle(NativeDesktopTheme.muted) }
                 ForEach(Array(sites.enumerated()), id: \.offset) { _, site in
@@ -135,7 +135,7 @@ struct NativeSettingsBrowserPanel: View {
         }
     }
     private var permissionPanel: some View {
-        NativeSettingsCard(title: "사이트 권한") {
+        NativeSettingsGroup(title: "사이트 권한") {
             if permissions.isEmpty { Text("저장된 사이트 권한이 없습니다.").foregroundStyle(NativeDesktopTheme.muted) }
             ForEach(Array(permissions.enumerated()), id: \.offset) { _, permission in
                 HStack {
