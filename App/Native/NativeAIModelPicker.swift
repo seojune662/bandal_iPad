@@ -27,13 +27,16 @@ enum NativeAIPreferences {
     static let usageAlertKey = "native.ai.usageAlert"
 }
 
-/// Colour and one-line use per model family, shared by the pill and the picker.
+/// Colour and one-line use per model family, shared by the pill and the picker (Figma 194:10932).
 enum NativeAIModelLook {
-    static func color(provider: String) -> Color {
-        switch provider {
-        case "anthropic": Color(red: 0.85, green: 0.47, blue: 0.34)
-        case "openai": Color(red: 0.06, green: 0.64, blue: 0.5)
-        case "google": Color(red: 0.26, green: 0.52, blue: 0.96)
+    private static let claude = NativeDesktopTheme.adaptive(0xd97757, 0xd97757), opus = NativeDesktopTheme.adaptive(0xa8502f, 0xa8502f)
+    private static let gpt = NativeDesktopTheme.adaptive(0x10a37f, 0x10a37f), gemini = NativeDesktopTheme.adaptive(0x4c8df6, 0x4c8df6)
+    static let premiumTag = NativeDesktopTheme.adaptive(0xfff5de, 0x3a2f1a)
+    static func color(_ model: NativeAIModelCatalog.Model) -> Color {
+        switch model.provider {
+        case "anthropic": model.id.lowercased().contains("opus") ? opus : claude
+        case "openai": gpt
+        case "google": gemini
         default: NativeDesktopTheme.muted
         }
     }
@@ -45,22 +48,28 @@ enum NativeAIModelLook {
         if model.provider == "google" { return "이미지 · PDF 읽기" }
         return model.badge > 4 ? "가장 깊은 추론" : model.badge > 1 ? "복잡한 풀이 · 코드" : "빠른 답변 · 퀴즈 만들기"
     }
-    /// Auto's dot: the three providers side by side.
-    static var autoDot: some View {
-        Circle().fill(AngularGradient(colors: [color(provider: "anthropic"), color(provider: "openai"), color(provider: "google"), color(provider: "anthropic")], center: .center))
-    }
+    /// Auto's dot: the three providers left to right.
+    static var autoDot: some View { Circle().fill(LinearGradient(colors: [claude, gpt, gemini], startPoint: .leading, endPoint: .trailing)) }
 }
 
-/// "● Auto ▾" / "● Sonnet 5.5 ▾": the composer's pill. Opens `NativeAIModelPicker` in a popover.
+/// "● Auto ⌄" / "● Sonnet 5.5 ⌄": the pill in the panel header, a capsule in the full tab.
+/// Opens `NativeAIModelPicker` right under itself, leading edges 8 pt apart as in Figma.
 struct NativeAIModelPill: View {
     let catalog: NativeAIModelCatalog
     let model: String
     let effort: String?
     var disabled = false
+    /// The full tab's 39 pt capsule (F1) instead of the header's 22 pt pill (A1).
+    var capsule = false
     let onSelect: (String, String?) -> Void
     let onOpenUsage: () -> Void
     var onAppear: () async -> Void = {}
+    /// Composer actions the design has no button for; they sit at the foot of the popover.
+    var onAttachDocument: (() -> Void)?
+    var onAnnotate: (() -> Void)?
+    var canAnnotate = false
     @State private var open = false
+    private static let popoverWidth: CGFloat = 300
 
     static func label(_ catalog: NativeAIModelCatalog, model: String, effort: String?) -> String {
         guard model != "default", catalog.contains(model) else { return "Auto" }
@@ -69,30 +78,40 @@ struct NativeAIModelPill: View {
 
     var body: some View {
         let chosen = catalog.models.first { $0.id == model }
+        let shape = RoundedRectangle(cornerRadius: capsule ? 19.5 : 6, style: .continuous)
         Button { open.toggle() } label: {
-            HStack(spacing: 5) {
-                Group { if let chosen { Circle().fill(NativeAIModelLook.color(provider: chosen.provider)) } else { NativeAIModelLook.autoDot } }.frame(width: 7, height: 7)
-                Text(chosen?.label ?? "Auto").lineLimit(1).fixedSize()
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+            HStack(spacing: 9) {
+                Group { if let chosen { Circle().fill(NativeAIModelLook.color(chosen)) } else { NativeAIModelLook.autoDot } }.frame(width: capsule ? 8 : 7, height: capsule ? 8 : 7)
+                Text(verbatim: chosen?.label ?? "Auto").font(.system(size: capsule ? 14 : 13, weight: .medium))
+                    .foregroundStyle(capsule ? NativeDesktopTheme.text : NativeDesktopTheme.secondary).lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.secondary)
             }
-            .font(.system(size: 11, weight: .medium)).foregroundStyle(NativeDesktopTheme.secondary)
-            .padding(.horizontal, 9).frame(height: 24)
-            .background(NativeDesktopTheme.raised.opacity(open ? 1 : 0.6), in: Capsule())
-            .frame(minHeight: 44).contentShape(Rectangle())
+            .padding(.horizontal, capsule ? 14 : 8).frame(height: capsule ? 39 : 22)
+            .background(open ? NativeDesktopTheme.raised : NativeDesktopTheme.bgApp, in: shape)
+            .overlay { if capsule { shape.strokeBorder(NativeDesktopTheme.border, lineWidth: 1) } }
+            .assistantHitArea(capsule ? 3 : 11)
         }
-        .buttonStyle(.plain).disabled(disabled)
+        .buttonStyle(NativeAssistantButtonStyle()).disabled(disabled)
         .accessibilityLabel("AI 모델: " + Self.label(catalog, model: model, effort: effort)).accessibilityIdentifier("native-ai-model-pill")
-        .bandalPopover(isPresented: $open, arrowEdge: .bottom, width: 320) {
-            NativeAIModelPicker(catalog: catalog, model: model, effort: effort,
-                                onSelect: { selected, chosenEffort, closes in onSelect(selected, chosenEffort); if closes { open = false } },
-                                onOpenUsage: { open = false; onOpenUsage() })
-                .task { await onAppear() }
+        // The popover centres on its anchor: this one sits where the card's middle belongs.
+        .background(alignment: .bottomLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
+                .bandalPopover(isPresented: $open, arrowEdge: .top, width: Self.popoverWidth, radius: 14, padding: 8) {
+                    NativeAIModelPicker(catalog: catalog, model: model, effort: effort,
+                                        onSelect: { selected, chosenEffort, closes in onSelect(selected, chosenEffort); if closes { open = false } },
+                                        onOpenUsage: { open = false; onOpenUsage() },
+                                        onAttachDocument: onAttachDocument.map { action in { open = false; action() } },
+                                        onAnnotate: onAnnotate.map { action in { open = false; action() } }, canAnnotate: canAnnotate)
+                        .task { await onAppear() }
+                }
+                .padding(.leading, Self.popoverWidth / 2 - 8)
         }
     }
 }
 
-/// The model list: Auto first, then every model with its colour, use and cost; under it 생각 깊이,
-/// this month's usage and 충전. Every choice applies at once; a model pick closes the popover.
+/// The model list (Figma 154:10047, colours 194:10943): Auto first, then every model the server lists
+/// with its colour, use and cost; under it 생각 깊이, this month's usage and 충전.
+/// Every choice applies at once; a model pick closes the popover.
 struct NativeAIModelPicker: View {
     let catalog: NativeAIModelCatalog
     let model: String
@@ -100,95 +119,131 @@ struct NativeAIModelPicker: View {
     /// (model, effort, closes the popover)
     let onSelect: (String, String?, Bool) -> Void
     var onOpenUsage: (() -> Void)?
+    var onAttachDocument: (() -> Void)?
+    var onAnnotate: (() -> Void)?
+    var canAnnotate = false
     /// The popover carries the 모델 heading; Settings has its own card title.
     var titled = true
     @ObservedObject private var usage = AIUsage.shared
+    private static let rowHeight: CGFloat = 54, rowGap: CGFloat = 4, visibleRows: CGFloat = 6
 
     private var selected: String { model == "default" || !catalog.contains(model) ? "default" : model }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Self.rowGap) {
             if titled {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("모델").font(.system(size: 14, weight: .semibold))
-                    Text("반달이 제공 · 키 입력 필요 없음").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
-                }.padding(.horizontal, 8).padding(.bottom, 2)
+                    Text("모델").font(.system(size: 15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.text)
+                    Text("반달이 제공 · 키 입력 필요 없음").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
+                }.padding(.horizontal, 12).padding(.vertical, 8)
             }
-            ScrollView { VStack(spacing: 2) { rows } }.frame(maxHeight: 300).scrollBounceBehavior(.basedOnSize)
-            BandalMenuDivider()
+            ScrollView { VStack(spacing: Self.rowGap) { rows } }
+                .frame(maxHeight: Self.visibleRows * Self.rowHeight + (Self.visibleRows - 1) * Self.rowGap).scrollBounceBehavior(.basedOnSize)
+            divider
             effortRow
-            if let percent = usage.percent {
-                BandalMenuDivider()
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack { Text("이번 달 사용량").foregroundStyle(NativeDesktopTheme.secondary); Spacer(); Text("\(percent)%").fontWeight(.semibold).monospacedDigit() }.font(.system(size: 12))
-                    ProgressView(value: Double(min(100, max(0, percent))), total: 100).tint(percent >= 90 ? .orange : NativeDesktopTheme.accent)
-                    HStack {
-                        if let onOpenUsage {
-                            Button("구독·사용량에서 자세히 보기 ›", action: onOpenUsage).font(.system(size: 12, weight: .medium)).buttonStyle(.plain)
-                                .foregroundStyle(NativeDesktopTheme.text).accessibilityIdentifier("native-ai-usage-details")
-                        }
-                        Spacer()
-                        AICreditButton().font(.system(size: 12, weight: .medium)).buttonStyle(.plain).padding(.horizontal, 10).frame(height: 26)
-                            .background(NativeDesktopTheme.text.opacity(0.07), in: Capsule())
-                    }
-                }.padding(.horizontal, 8).padding(.top, 2)
+            if let percent = usage.percent { divider; usageBlock(percent) }
+            if onAttachDocument != nil || onAnnotate != nil {
+                divider
+                if let onAttachDocument { extra("현재 문서 첨부", "doc.text", action: onAttachDocument).accessibilityIdentifier("native-ai-attach-document") }
+                if let onAnnotate { extra("지목해서 질문", "scope", action: onAnnotate).disabled(!canAnnotate).accessibilityIdentifier("native-ai-annotate") }
             }
         }
     }
 
+    private var divider: some View { NativeDesktopTheme.border.frame(height: 1) }
+
     @ViewBuilder private var rows: some View {
-        row(id: "default", title: "자동", hint: "질문에 맞춰 알아서 고름", dot: AnyView(NativeAIModelLook.autoDot), badge: "추천", accent: false) { onSelect("default", nil, true) }
+        row(id: "default", title: Text("자동"), hint: "질문에 맞춰 알아서 고름", dot: AnyView(NativeAIModelLook.autoDot), badge: "추천", premium: false) { onSelect("default", nil, true) }
             .accessibilityIdentifier("native-ai-model-default")
         ForEach(catalog.models) { item in
-            row(id: item.id, title: item.label, hint: NativeAIModelLook.hint(item), dot: AnyView(Circle().fill(NativeAIModelLook.color(provider: item.provider))),
-                badge: "×\(item.badge)", accent: item.badge > 4) { onSelect(item.id, effort ?? NativeAIPreferences.effort, true) }
+            row(id: item.id, title: Text(verbatim: item.label), hint: NativeAIModelLook.hint(item), dot: AnyView(Circle().fill(NativeAIModelLook.color(item))),
+                badge: "×\(item.badge)", premium: item.badge > 4) { onSelect(item.id, effort ?? NativeAIPreferences.effort, true) }
                 .accessibilityIdentifier("native-ai-model-" + item.id)
         }
         if catalog.models.isEmpty {
-            Text("로그인하면 다른 모델도 고를 수 있어요").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).padding(.vertical, 4)
+            Text("로그인하면 다른 모델도 고를 수 있어요").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 6)
         }
     }
 
-    private func row(id: String, title: String, hint: String, dot: AnyView, badge: String, accent: Bool, action: @escaping () -> Void) -> some View {
+    private func row(id: String, title: Text, hint: String, dot: AnyView, badge: String, premium: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 14)).opacity(selected == id ? 1 : 0).frame(width: 16)
-                dot.frame(width: 12, height: 12)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                    Text(hint).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 16)).foregroundStyle(NativeDesktopTheme.accent).opacity(selected == id ? 1 : 0).frame(width: 18, height: 18)
+                HStack(spacing: 9) {
+                    dot.frame(width: 14, height: 14)
+                    VStack(alignment: .leading, spacing: 2) {
+                        title.font(.system(size: 15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.text).lineLimit(1)
+                        BandalText(hint).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1)
+                    }
                 }
                 Spacer(minLength: 6)
-                Text(badge).font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(accent ? Color.orange : NativeDesktopTheme.secondary)
-                    .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(accent ? Color.orange.opacity(0.14) : NativeDesktopTheme.text.opacity(0.06), in: Capsule())
+                BandalText(badge).font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(premium ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
+                    .padding(.horizontal, 8).frame(height: 20)
+                    .background(premium ? NativeAIModelLook.premiumTag : NativeDesktopTheme.surface, in: Capsule())
             }
-            .padding(.horizontal, 8).frame(minHeight: 44).contentShape(Rectangle())
-            .background(selected == id ? NativeDesktopTheme.text.opacity(0.05) : .clear, in: RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 12).frame(height: Self.rowHeight)
+            .background(selected == id ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous)).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityAddTraits(selected == id ? .isSelected : [])
+    }
+
+    private func usageBlock(_ percent: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("이번 달 사용량").font(.system(size: 13, weight: .medium)).foregroundStyle(NativeDesktopTheme.secondary)
+                Spacer()
+                Text(verbatim: "\(percent)%").font(.system(size: 13, weight: .semibold).monospacedDigit()).foregroundStyle(NativeDesktopTheme.text)
+            }
+            RoundedRectangle(cornerRadius: 3).fill(NativeDesktopTheme.surface).frame(height: 6).overlay(alignment: .leading) {
+                GeometryReader { bar in
+                    RoundedRectangle(cornerRadius: 3).fill(percent >= 90 ? Color.orange : NativeDesktopTheme.accent)
+                        .frame(width: bar.size.width * Double(min(100, max(0, percent))) / 100)
+                }
+            }
+            HStack {
+                if let onOpenUsage {
+                    Button("구독·사용량에서 자세히 보기 ›", action: onOpenUsage).font(.system(size: 13, weight: .medium)).buttonStyle(.plain)
+                        .foregroundStyle(NativeDesktopTheme.accent).accessibilityIdentifier("native-ai-usage-details")
+                }
+                Spacer()
+                AICreditButton().font(.system(size: 13, weight: .medium)).buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.text)
+                    .padding(.horizontal, 10).frame(height: 24).background(NativeDesktopTheme.surface, in: Capsule())
+            }
+        }.padding(.horizontal, 12).padding(.vertical, 10)
+    }
+
+    /// A composer action kept out of sight (owner's decision 1): attach the document, point at a region.
+    private func extra(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.secondary).frame(width: 18, height: 18)
+                BandalText(title).font(.system(size: 15, weight: .medium)).foregroundStyle(NativeDesktopTheme.text)
+                Spacer(minLength: 0)
+            }.padding(.horizontal, 12).frame(height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain)
     }
 
     @ViewBuilder private var effortRow: some View {
         HStack(spacing: 8) {
-            Text("생각 깊이").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary).fixedSize()
+            Text("생각 깊이").font(.system(size: 13, weight: .medium)).foregroundStyle(NativeDesktopTheme.secondary).fixedSize()
             Spacer(minLength: 4)
             if selected == "default" {
-                Text("자동은 가볍게 고정").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).accessibilityIdentifier("native-ai-effort-fixed")
+                Text("자동은 가볍게 고정").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted).accessibilityIdentifier("native-ai-effort-fixed")
             } else {
                 HStack(spacing: 2) {
                     ForEach(Array(zip(NativeAIPreferences.efforts, ["가볍게", "보통", "깊게", "최대"])), id: \.0) { value, title in
                         let on = (effort ?? NativeAIPreferences.effort) == value
                         Button { onSelect(selected, value, false) } label: {
-                            Text(title).font(.system(size: 12, weight: on ? .semibold : .regular)).padding(.horizontal, 9).frame(height: 28)
+                            BandalText(title).font(.system(size: 13, weight: on ? .semibold : .regular)).foregroundStyle(on ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
+                                .padding(.horizontal, 9).frame(height: 28)
                                 .background(on ? NativeDesktopTheme.overlay : .clear, in: RoundedRectangle(cornerRadius: 7))
                                 .shadow(color: .black.opacity(on ? 0.08 : 0), radius: 2, y: 1).contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityIdentifier("native-ai-effort-" + value).accessibilityAddTraits(on ? .isSelected : [])
                     }
-                }.padding(2).background(NativeDesktopTheme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+                }.padding(2).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 9))
                     .accessibilityElement(children: .contain).accessibilityIdentifier("native-ai-effort")
             }
-        }.frame(minHeight: 32).padding(.horizontal, 8)
+        }.frame(minHeight: 36).padding(.horizontal, 12)
     }
 }

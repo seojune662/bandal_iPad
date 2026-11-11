@@ -527,10 +527,9 @@ struct NativeWorkspaceView: View {
             if document.learningTarget != nil {
                 NativeLearningDocumentWorkspace(store: store, document: document, onOpenDocument: { openCapturedDocument($0, target: navigation.target(containing: document.id)) }, onOpenBrowser: openBrowserURL)
             } else if document.kind == "assistant" {
-                // AI as a full tab: one centred column, no side panel.
-                NativeAssistantWorkspace(store: store, workspaceID: document.relativePath, courseID: document.courseID, sourceDocument: nil)
-                    .frame(maxWidth: 720).frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(uiColor: .systemBackground))
+                // AI as a full tab: one centred column on the paper glass, no side panel.
+                NativeAssistantWorkspace(store: store, workspaceID: document.relativePath, courseID: document.courseID, sourceDocument: nil, fullTab: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityElement(children: .contain).accessibilityIdentifier("native-ai-tab")
             } else if document.kind == "learning-home" {
                 NativeProjectSidebar(store: store, selectedID: workspaceContext?.id, onOpen: changeWorkspace).frame(maxWidth: 420)

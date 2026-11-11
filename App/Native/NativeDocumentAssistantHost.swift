@@ -30,7 +30,7 @@ struct NativeDocumentAssistantHost<Content: View>: View {
     private var panel: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "sparkle")
+                Image(systemName: "sparkles")
                 Text("AI").fontWeight(.semibold)
                 Spacer()
                 NativeChromeButton(title: "AI 닫기", symbol: "xmark") { store.assistantDocumentIDs.remove(document.id) }

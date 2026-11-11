@@ -160,6 +160,7 @@ struct NativePDFWorkspace: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in model.saveInBackground() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in model.recordingPausedForBackground() }
         .bandalToast(Binding(get: { model.recordingNotice }, set: { model.recordingNotice = $0 }))
+        .bandalToast(Binding(get: { model.aiNoteNotice }, set: { model.aiNoteNotice = $0 }), symbol: "checkmark.circle.fill", actionTitle: "되돌리기") { model.undo() }
     }
 
 }
@@ -308,6 +309,8 @@ final class NativePDFWorkspaceModel {
     private(set) var recordingID: String?
     private(set) var recordingStartedAt: Date?
     var recordingNotice: String?
+    /// "노트에 넣었어요" after an AI answer landed on the page; its toast offers 되돌리기.
+    var aiNoteNotice: String?
     private(set) var summarizingRecording = false
     private(set) var selectionCount = 0
     private(set) var selectedText = false
@@ -2371,13 +2374,17 @@ final class NativePDFWorkspaceModel {
         host?.emit = { _, _ in }; host = nil
     }
     /// An AI answer lands on the page in view as a text box: movable, editable, one undo step.
-    func insertAINote(_ text: String) {
+    /// Figma A5 draws a memo card (grey fill, left bar, 원문 보기 · 내 글로 바꾸기); a text box has only the
+    /// seven palette fills and no actions, so the memo keeps the card's header line and body as text.
+    func insertAINote(_ text: String, model: String? = nil, sources: Int = 0) {
         guard !isLoading, !isBusy, errorMessage == nil, assistantAnnotation == nil else { return }
         if textEditorDraft != nil { finishText() }
         let plain = text.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "(?m)^#+\\s*", with: "", options: .regularExpression)
+        let header = (["✦ AI 메모"] + [model, sources > 0 ? "노트 \(sources)개 참고" : nil].compactMap { $0 }).joined(separator: " · ")
         let row: [String: Any] = ["page": page, "kind": "textbox", "style": NativePDFTextStyle.load(defaults: defaults).dictionary,
-            "data": ["text": "✦ AI 메모\n" + plain, "box": ["x": 0.1, "y": 0.12, "width": 0.8, "height": 0.1]]]
+            "data": ["text": header + "\n" + plain, "box": ["x": 0.1, "y": 0.12, "width": 0.8, "height": 0.1]]]
         performObjectEdit("create", values: [NativePDFTextDraft.fittedObject(row, pageSize: pageSize(page))], selectCreated: true)
+        aiNoteNotice = "노트에 넣었어요"
     }
     private func receiveStoreEvent(_ event: NativeWorkspaceEvent) {
         guard let payload = event.payload as? [String: Any], payload["courseId"] as? String == document.courseID,
@@ -2386,7 +2393,7 @@ final class NativePDFWorkspaceModel {
         switch event.channel {
         case "nativeWorkspace:insertAINote":
             if let tabID = payload["tabID"] as? String, tabID != document.id { return }
-            if let text = payload["text"] as? String { insertAINote(text) }
+            if let text = payload["text"] as? String { insertAINote(text, model: payload["model"] as? String, sources: payload["sources"] as? Int ?? 0) }
         case "nativeWorkspace:goToPage":
             if let tabID = payload["tabID"] as? String, tabID != document.id { return }
             guard let requested = payload["page"] as? Int, requested > 0 else { return }
