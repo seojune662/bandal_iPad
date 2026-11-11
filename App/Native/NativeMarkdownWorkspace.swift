@@ -236,6 +236,8 @@ struct NativeMarkdownWorkspace: View {
         [("인용", "quote", "quote.opening", true), ("링크", "link", "arrow.up.right", true), ("이미지", "image", "photo", true),
          ("인라인 코드", "code", "chevron.left.chevron.right", true), ("코드 블록", "codeblock", "curlybraces", true)]]
     private static let formatIDs = Set(formatGroups.joined().map(\.id))
+    /// 이미지 only inserts: as on the desktop, a selected image does not make its button the active one.
+    private var barFormats: Set<String> { activeFormats.subtracting(["image"]) }
 
     /// Every format is a button, drawn in the style of Figma 129:2615 (whose bar has fewer items). The items scroll
     /// sideways in a narrow pane; ⋯ and, while typing, undo · redo · 완료 stay at the trailing end.
@@ -252,7 +254,7 @@ struct NativeMarkdownWorkspace: View {
                         if index > 0 { NativeGlass.separator.frame(width: 1, height: 20).padding(.horizontal, 3) }
                         ForEach(group, id: \.id) { item in
                             Button { session.applyFormat?(item.id) } label: { if item.symbol { formatSymbol(item.glyph, item.id) } else { formatText(item.glyph, item.id) } }
-                                .formatItem(item.id == "link" && activeFormats.contains("link") ? "링크 해제" : item.title, item.id, activeFormats)
+                                .formatItem(item.id == "link" && activeFormats.contains("link") ? "링크 해제" : item.title, item.id, barFormats)
                         }
                     }
                 }
@@ -318,13 +320,13 @@ struct NativeMarkdownWorkspace: View {
     }
     /// A text item: 16 Semibold, padding 6/12, the active one on #EDEDED r9.
     private func formatText(_ title: String, _ format: String) -> some View {
-        let active = activeFormats.contains(format)
+        let active = barFormats.contains(format)
         return Text(title).font(.system(size: 16, weight: .semibold)).strikethrough(format == "strike").foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.text)
             .padding(.horizontal, 12).frame(height: 31)
             .background(active ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 9)).contentShape(Rectangle())
     }
     private func formatSymbol(_ symbol: String, _ format: String) -> some View {
-        let active = activeFormats.contains(format)
+        let active = barFormats.contains(format)
         return Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.text)
             .frame(width: 23, height: 31).background { if active { RoundedRectangle(cornerRadius: 9).fill(NativeDesktopTheme.raised).padding(.horizontal, -4) } }
             .contentShape(Rectangle().inset(by: -3))
