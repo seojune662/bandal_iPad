@@ -1517,13 +1517,13 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     static func color(_ name: String) -> UIColor {
         switch name {
         case "canvasLightInk": UIColor(white: 0.94, alpha: 1)
-        case "red": UIColor(red: 214/255, green: 36/255, blue: 46/255, alpha: 1)
+        case "red": UIColor(red: 229/255, green: 72/255, blue: 63/255, alpha: 1)
         case "orange": UIColor(red: 240/255, green: 99/255, blue: 20/255, alpha: 1)
         case "yellow": UIColor(red: 245/255, green: 184/255, blue: 10/255, alpha: 1)
-        case "green": UIColor(red: 26/255, green: 148/255, blue: 77/255, alpha: 1)
-        case "blue": UIColor(red: 20/255, green: 97/255, blue: 224/255, alpha: 1)
+        case "green": UIColor(red: 47/255, green: 168/255, blue: 90/255, alpha: 1)
+        case "blue": UIColor(red: 59/255, green: 111/255, blue: 224/255, alpha: 1)
         case "violet": UIColor(red: 125/255, green: 54/255, blue: 209/255, alpha: 1)
-        default: UIColor(red: 20/255, green: 23/255, blue: 31/255, alpha: 1)
+        default: UIColor(red: 26/255, green: 26/255, blue: 26/255, alpha: 1)
         }
     }
     func invalidateBackdrop(paper invalidatePaper: Bool = false, reason: String = "explicit") {

@@ -176,7 +176,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: select)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed, app.debugDescription)
         select.tap()
-        app.buttons["페이지 맞춤"].tap()
+        app.buttons["native-pdf-zoom"].tap(); app.buttons["native-pdf-fit"].tap() // fit lives in the "100% ∨" menu
         let pdf = app.otherElements["native-pdf-workspace"]
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.48)).press(forDuration: 1.2)
         let comment = app.buttons["native-pdf-comment-source"]

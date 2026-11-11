@@ -23,12 +23,12 @@ final class NativePDFWritingUITests: XCTestCase {
         app.sliders["native-pdf-opacity-slider"].adjust(toNormalizedSliderPosition: 0.8)
         let saveFavorite = app.buttons["native-pdf-save-favorite-0"]
         let settingsScroll = app.scrollViews["native-pdf-palette-scroll"]
-        for _ in 0..<3 where !saveFavorite.isHittable { settingsScroll.swipeUp() }
+        // Drag from the stroke preview: a swipe across the step bar would set the thickness.
+        for _ in 0..<3 where !saveFavorite.isHittable { settingsScroll.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2)).press(forDuration: 0.05, thenDragTo: settingsScroll.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: -0.4))) }
         saveFavorite.tap()
-        settingsScroll.swipeDown()
         capture("Swift pen palette and saved blue favorite")
         closePalette(in: app)
-        let penStyle = app.buttons["native-pdf-style"].value as? String
+        let penStyle = style(in: app)
         XCTAssertNotNil(penStyle)
         chooseTool("highlighter", in: app)
         openPalette(in: app)
@@ -37,40 +37,38 @@ final class NativePDFWritingUITests: XCTestCase {
         app.sliders["native-pdf-opacity-slider"].adjust(toNormalizedSliderPosition: 0.5)
         capture("Swift highlighter physical width and effective opacity")
         closePalette(in: app)
-        let markerStyle = app.buttons["native-pdf-style"].value as? String
+        let markerStyle = style(in: app)
         XCTAssertNotEqual(penStyle, markerStyle)
         chooseTool("pen", in: app)
-        XCTAssertEqual(app.buttons["native-pdf-style"].value as? String, penStyle)
+        XCTAssertEqual(style(in: app), penStyle)
         chooseTool("highlighter", in: app)
-        XCTAssertEqual(app.buttons["native-pdf-style"].value as? String, markerStyle)
+        XCTAssertEqual(style(in: app), markerStyle)
         chooseTool("ballpoint", in: app)
-        // The helper scrolls the tool row until the slot is hittable.
+        // The pen settings hold the three thickness slots and the chosen slot's twelve steps; pick step 10.
+        openPalette(in: app)
         tap("native-pdf-width-slot-2", in: app)
         XCTAssertTrue(app.buttons["native-pdf-width-slot-2"].firstMatch.isSelected)
-        // A second tap on the chosen slot opens its twelve steps; pick step 10.
-        tap("native-pdf-width-slot-2", in: app)
-        let steps = app.descendants(matching: .any)["native-pdf-width-steps"].firstMatch
+        let steps = app.descendants(matching: .any)["native-pdf-sheet-width-steps"].firstMatch
         XCTAssertTrue(steps.waitForExistence(timeout: 5), app.debugDescription)
         steps.coordinate(withNormalizedOffset: CGVector(dx: 9.5 / 12, dy: 0.5)).tap()
         XCTAssertEqual(steps.value as? String, "10단계")
         capture("Twelve-step thickness bar for a ballpoint slot")
-        app.buttons["native-pdf-width-slot-2"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).withOffset(CGVector(dx: 0, dy: 300)).tap()
-        let ballpointStyle = app.buttons["native-pdf-style"].value as? String
+        closePalette(in: app)
+        let ballpointStyle = style(in: app)
         XCTAssertNotEqual(ballpointStyle, penStyle, "볼펜 keeps its own width")
         capture("Swift ballpoint with its own fixed-width style")
         chooseTool("pen", in: app)
-        XCTAssertEqual(app.buttons["native-pdf-style"].value as? String, penStyle)
+        XCTAssertEqual(style(in: app), penStyle)
         chooseTool("ballpoint", in: app)
-        XCTAssertEqual(app.buttons["native-pdf-style"].value as? String, ballpointStyle)
+        XCTAssertEqual(style(in: app), ballpointStyle)
         chooseTool("pen", in: app)
         app.terminate(); app.launchArguments = arguments(reset: false); app.launch()
-        let palette = app.buttons["native-pdf-style"]
-        XCTAssertTrue(palette.waitForExistence(timeout: 25), app.debugDescription)
-        XCTAssertEqual(palette.value as? String, penStyle)
+        XCTAssertTrue(app.buttons["native-pdf-tool-pen"].waitForExistence(timeout: 25), app.debugDescription)
+        XCTAssertEqual(style(in: app), penStyle)
         chooseTool("highlighter", in: app)
-        XCTAssertEqual(palette.value as? String, markerStyle)
+        XCTAssertEqual(style(in: app), markerStyle)
         chooseTool("ballpoint", in: app)
-        XCTAssertEqual(palette.value as? String, ballpointStyle)
+        XCTAssertEqual(style(in: app), ballpointStyle)
         chooseTool("pen", in: app)
 
         let originalTab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-document-tab-", "Palette Notes")).firstMatch
@@ -91,18 +89,20 @@ final class NativePDFWritingUITests: XCTestCase {
             let tools = pane.scrollViews["native-pdf-tool-scroll"]
             XCTAssertTrue(tools.exists, app.debugDescription)
             XCTAssertGreaterThan(tools.frame.width, pane.frame.width - 48, "The floating palette fills a narrow pane up to its insets")
-            tools.swipeLeft()
-            XCTAssertTrue(pane.buttons["native-pdf-width-slot-2"].isHittable, app.debugDescription)
+            // The row ends with the collapse button; the pen is back at its start.
+            for _ in 0..<5 where !pane.buttons["native-pdf-palette-collapse"].isHittable { tools.swipeLeft() }
+            XCTAssertTrue(pane.buttons["native-pdf-palette-collapse"].isHittable, app.debugDescription)
+            for _ in 0..<5 where !pane.buttons["native-pdf-tool-pen"].isHittable { tools.swipeRight() }
         }
-        right.buttons["native-pdf-style"].tap()
+        right.buttons["native-pdf-tool-pen"].tap()
         let rightSettings = right.scrollViews["native-pdf-palette-scroll"]
         let savedPreset = right.buttons["native-pdf-palette-favorite-2"]
-        for _ in 0..<3 where !savedPreset.isHittable { rightSettings.swipeUp() }
+        for _ in 0..<3 where !savedPreset.isHittable { rightSettings.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.2)).press(forDuration: 0.05, thenDragTo: rightSettings.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: -0.4))) }
         savedPreset.tap()
-        XCTAssertEqual(left.buttons["native-pdf-style"].value as? String, penStyle)
+        XCTAssertEqual(left.buttons["native-pdf-tool-pen"].value as? String, penStyle)
         right.buttons["native-pdf-palette-favorite-0"].tap()
         right.buttons["native-pdf-style-close"].tap()
-        XCTAssertEqual(right.buttons["native-pdf-style"].value as? String, penStyle)
+        XCTAssertEqual(right.buttons["native-pdf-tool-pen"].value as? String, penStyle)
         capture("PDF tools use full width with numbered shortcuts removed")
         XCTAssertEqual(app.webViews.count, 0)
     }
@@ -335,11 +335,18 @@ final class NativePDFWritingUITests: XCTestCase {
         ["--native-ui-testing", "--native-pencil-dispatch-fixture"] + (reset ? ["--reset-native-ui-testing"] : [])
     }
     @MainActor private func chooseTool(_ tool: String, in app: XCUIApplication) {
-        let item = app.buttons["native-pdf-tool-" + tool]
-        if !item.isSelected { tap("native-pdf-tool-" + tool, in: app) }
+        // 만년필 ("pen") and 볼펜 share the palette's 펜 button; the type is picked in the pen settings.
+        let name = tool == "ballpoint" ? "pen" : tool, item = app.buttons["native-pdf-tool-" + name]
+        if !item.isSelected { tap("native-pdf-tool-" + name, in: app) }
+        guard name == "pen", style(in: app)?.hasPrefix(tool + " ") != true else { return }
+        openPalette(in: app); tap("native-pdf-pen-kind-" + tool, in: app); closePalette(in: app)
+    }
+    /// The chosen ink tool's button carries "<tool> <colour> <step> <opacity>".
+    @MainActor private func style(in app: XCUIApplication) -> String? {
+        ["pen", "highlighter"].map { app.buttons["native-pdf-tool-" + $0] }.first { $0.isSelected }?.value as? String
     }
     @MainActor private func openPalette(in app: XCUIApplication) {
-        let tool = ["highlighter", "ballpoint"].first { app.buttons["native-pdf-tool-" + $0].isSelected } ?? "pen"
+        let tool = app.buttons["native-pdf-tool-highlighter"].isSelected ? "highlighter" : "pen"
         tap("native-pdf-tool-" + tool, in: app)
         XCTAssertTrue(app.buttons["native-pdf-style-close"].waitForExistence(timeout: 5), app.debugDescription)
     }
