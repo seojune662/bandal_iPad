@@ -577,7 +577,7 @@ final class NativeSchoolPickerTests: XCTestCase {
         XCTAssertEqual(NativeAppLocale.string("학교 이름 검색", english), "Search by school name")
         XCTAssertEqual(NativeAppLocale.string("학교 이름 검색", korean), "학교 이름 검색")
         XCTAssertEqual(NativeAppLocale.string("번역이 아직 없는 문장", english), "번역이 아직 없는 문장", "Untranslated text stays Korean")
-        XCTAssertEqual(String(format: NativeAppLocale.string("%@ 사이트를 찾는 중…", english), "Bandal"), "Looking for Bandal sites…")
+        XCTAssertEqual(String(format: NativeAppLocale.string("AI가 ‘%@’ 사이트를 찾는 중이에요", english), "Bandal"), "AI is looking for “Bandal” sites")
     }
     func testAnUnreviewedSearchResultIsConfirmedBeforeItIsSaved() async {
         // Another user's AI search put this school in the directory: its links were never reviewed.
