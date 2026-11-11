@@ -477,7 +477,7 @@ struct BandalToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         let size = compact ? CGSize(width: 44, height: 26) : CGSize(width: 51, height: 31)
         return HStack(spacing: 12) {
-            configuration.label
+            configuration.label.accessibilityHidden(true)
             Spacer(minLength: 8)
             Capsule().fill(configuration.isOn ? NativeDesktopTheme.accent : Self.off)
                 .frame(width: size.width, height: size.height)
@@ -485,13 +485,16 @@ struct BandalToggleStyle: ToggleStyle {
                     Circle().fill(Self.knob).padding(2).shadow(color: .black.opacity(0.15), radius: compact ? 1.5 : 2, y: compact ? 1 : 2)
                 }
                 .animation(.easeOut(duration: 0.15), value: configuration.isOn)
-                // 44 pt of touch around the smaller drawing.
+                .accessibilityHidden(true)
+                // The system's switch lies unseen over the drawing for VoiceOver and UI tests (a switch with
+                // a label and a value); a touch goes to the drawing, which has 44 pt of height.
+                .overlay {
+                    Toggle(isOn: configuration.$isOn) { configuration.label }.labelsHidden().toggleStyle(.switch)
+                        .frame(width: max(size.width, 51), height: 44).opacity(0.02).allowsHitTesting(false)
+                }
                 .frame(minHeight: 44).contentShape(Rectangle())
                 .onTapGesture { configuration.isOn.toggle() }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton).accessibilityValue(configuration.isOn ? "1" : "0")
-        .accessibilityAction { configuration.isOn.toggle() }
     }
 }
 
