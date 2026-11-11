@@ -77,8 +77,7 @@ final class AppStoreScreenshotTests: XCTestCase {
         capture("02-markdown-note", app: app)
 
         // 3. Handwriting and note side by side
-        let menu = app.buttons["native-open-documents"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap()
+        app.openNativeDockLayoutMenu()
         let columns = app.buttons["native-dock-preset-columns"]
         XCTAssertTrue(columns.waitForExistence(timeout: 5), app.debugDescription); columns.tap()
         XCTAssertTrue(app.otherElements["native-pdf-workspace"].waitForExistence(timeout: 10))

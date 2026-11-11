@@ -75,7 +75,7 @@ final class NativePDFWritingUITests: XCTestCase {
 
         let originalTab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-document-tab-", "Palette Notes")).firstMatch
         let originalID = String(originalTab.identifier.dropFirst("native-document-tab-".count))
-        app.buttons["native-open-documents"].tap()
+        app.openNativeDockLayoutMenu()
         let duplicate = app.buttons["native-duplicate-right"].firstMatch
         XCTAssertTrue(duplicate.waitForExistence(timeout: 5)); duplicate.tap()
         let copyTab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-instance:")).firstMatch

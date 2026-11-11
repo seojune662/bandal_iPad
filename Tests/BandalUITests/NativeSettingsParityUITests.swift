@@ -100,7 +100,7 @@ final class NativeSettingsParityUITests: XCTestCase {
         app.buttons["native-new-tab-new-browser"].tap()
         let secondInput = app.webViews.firstMatch.textFields["Website input"]
         XCTAssertTrue(secondInput.waitForExistence(timeout: 15)); secondInput.tap(); secondInput.typeText("Right draft")
-        app.buttons["native-open-documents"].tap()
+        app.openNativeDockLayoutMenu()
         app.buttons["native-dock-preset-columns"].tap()
         // WebKit exposes nested WebView accessibility nodes for one website.
         // Count the native page containers, whose stable IDs identify ownership.
@@ -110,7 +110,7 @@ final class NativeSettingsParityUITests: XCTestCase {
         let values = pages.allElementsBoundByIndex.map { $0.textFields["Website input"].value as? String ?? "" }
         XCTAssertEqual(Set(values), Set(["Left draft", "Right draft"]))
         capture("Two independent native browser panes")
-        app.buttons["native-open-documents"].tap(); app.buttons["native-dock-preset-single"].tap()
+        app.openNativeDockLayoutMenu(); app.buttons["native-dock-preset-single"].tap()
         XCTAssertEqual(pages.count, 1)
         let retained = pages.firstMatch.textFields["Website input"].value as? String ?? ""
         XCTAssertTrue(["Left draft", "Right draft"].contains(retained))

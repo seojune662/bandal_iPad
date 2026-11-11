@@ -69,7 +69,7 @@ final class NativeBrowserParityUITests: XCTestCase {
         if courseRail.isSelected { courseRail.tap() }
         let materials = app.buttons["native-toggle-materials-rail"]
         if materials.isSelected { materials.tap() }
-        app.buttons["native-open-documents"].tap()
+        app.openNativeDockLayoutMenu()
         app.buttons["native-dock-preset-columns"].tap()
         let split = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             app.textFields.matching(identifier: "native-browser-address").allElementsBoundByIndex.filter { $0.isHittable }.count == 2

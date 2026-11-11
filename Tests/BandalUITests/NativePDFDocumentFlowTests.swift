@@ -102,7 +102,7 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         createPDF("Shared lecture", app: app)
         stroke(app, from: .init(dx: 0.35, dy: 0.35), to: .init(dx: 0.6, dy: 0.4)); expectInk(1, app: app)
         let originalTab = tab("Shared lecture", app: app), originalID = originalTab.identifier
-        app.buttons["native-open-documents"].tap()
+        app.openNativeDockLayoutMenu()
         let duplicate = app.buttons["native-duplicate-right"].firstMatch
         XCTAssertTrue(duplicate.waitForExistence(timeout: 5)); duplicate.tap()
         let copyTab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-instance:")).firstMatch
@@ -207,7 +207,7 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         XCTAssertTrue(item.isHittable, app.debugDescription); item.tap()
     }
     @MainActor private func chooseLayout(_ preset: String, app: XCUIApplication) {
-        app.buttons["native-open-documents"].tap()
+        app.openNativeDockLayoutMenu()
         let item = app.buttons["native-dock-preset-" + preset]
         XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
     }
