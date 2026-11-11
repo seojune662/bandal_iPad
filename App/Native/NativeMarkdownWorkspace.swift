@@ -226,8 +226,21 @@ struct NativeMarkdownWorkspace: View {
             .accessibilityIdentifier("native-markdown-reload-after-error")
     }
 
-    /// Figma 129:2615: H1 H2 H3 B I as text, the two lists, then undo · redo · 완료 while typing.
-    /// What the frame does not draw lives under a long press on B and on the lists, the rest under ⋯.
+    /// The desktop's Markdown bar (NoteToolbar.tsx), in its order and grouping; `symbol` picks an SF Symbol over a text glyph.
+    /// The two list symbols Figma 129:2615 draws are 글머리 목록 and 할 일 목록.
+    private static let formatGroups: [[(title: String, id: String, glyph: String, symbol: Bool)]] = [
+        [("본문", "paragraph", "¶", false)],
+        [("제목 1", "h1", "H1", false), ("제목 2", "h2", "H2", false), ("제목 3", "h3", "H3", false)],
+        [("굵게", "bold", "B", false), ("기울임", "italic", "I", false), ("취소선", "strike", "S", false)],
+        [("글머리 목록", "bullet", "list.dash", true), ("번호 목록", "number", "list.number", true), ("할 일 목록", "task", "text.badge.checkmark", true)],
+        [("인용", "quote", "quote.opening", true), ("링크", "link", "arrow.up.right", true), ("이미지", "image", "photo", true),
+         ("인라인 코드", "code", "chevron.left.chevron.right", true), ("코드 블록", "codeblock", "curlybraces", true)]]
+    private static let formatIDs = Set(formatGroups.joined().map(\.id))
+    /// 이미지 only inserts: as on the desktop, a selected image does not make its button the active one.
+    private var barFormats: Set<String> { activeFormats.subtracting(["image"]) }
+
+    /// Every format is a button, drawn in the style of Figma 129:2615 (whose bar has fewer items). The items scroll
+    /// sideways in a narrow pane; ⋯ and, while typing, undo · redo · 완료 stay at the trailing end.
     private var formattingToolbar: some View {
         HStack(spacing: 6) {
             if let note = NativePDFPageNoteDocument(session.text) {
@@ -236,32 +249,19 @@ struct NativeMarkdownWorkspace: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ForEach([("제목 1", "h1"), ("제목 2", "h2"), ("제목 3", "h3")], id: \.1) { item in
-                        Button { session.applyFormat?(item.1) } label: { formatText(item.1.uppercased(), item.1) }.formatItem(item.0, item.1, activeFormats)
+                    ForEach(Array(Self.formatGroups.enumerated()), id: \.offset) { index, group in
+                        // Clear of a symbol's highlight, which is 4 wider than the symbol on each side.
+                        if index > 0 { NativeGlass.separator.frame(width: 1, height: 20).padding(.horizontal, 3) }
+                        ForEach(group, id: \.id) { item in
+                            Button { session.applyFormat?(item.id) } label: { if item.symbol { formatSymbol(item.glyph, item.id) } else { formatText(item.glyph, item.id) } }
+                                .formatItem(item.id == "link" && activeFormats.contains("link") ? "링크 해제" : item.title, item.id, barFormats)
+                        }
                     }
-                    Menu {
-                        ForEach([("본문", "paragraph"), ("취소선", "strike"), ("인라인 코드", "code"), ("코드 블록", "codeblock")], id: \.1) { formatChoice($0.0, $0.1) }
-                        Menu("코드 블록 언어") {
-                            ForEach(NativeRichTextCommands.codeLanguages, id: \.id) { language in
-                                Button { session.applyFormat?("code-language:" + language.id) } label: {
-                                    if activeCodeLanguage == language.id { Label(language.title, systemImage: "checkmark") } else { Text(language.title) }
-                                }
-                            }
-                        }.disabled(activeCodeLanguage == nil).accessibilityIdentifier("native-markdown-code-language")
-                    } label: { formatText("B", "bold") } primaryAction: { session.applyFormat?("bold") }.formatItem("굵게", "bold", activeFormats)
-                    Button { session.applyFormat?("italic") } label: { formatText("I", "italic") }.formatItem("기울임", "italic", activeFormats)
-                    Menu {
-                        formatChoice("할 일 목록", "task"); formatChoice("인용", "quote")
-                    } label: { formatSymbol("list.dash", "bullet") } primaryAction: { session.applyFormat?("bullet") }.formatItem("글머리 목록", "bullet", activeFormats)
-                    Menu {
-                        Button("들여쓰기") { session.applyFormat?("indent") }
-                        Button("내어쓰기") { session.applyFormat?("outdent") }
-                    } label: { formatSymbol("list.number", "number") } primaryAction: { session.applyFormat?("number") }.formatItem("번호 목록", "number", activeFormats)
                 }
             }
             Menu {
-                ForEach(NativeRichTextCommands.insertions.filter { !["h1", "h2", "h3", "bullet", "number", "task", "quote", "codeblock"].contains($0.id) }, id: \.id) { item in
-                    Button(item.id == "link" && activeFormats.contains("link") ? "링크 해제" : item.title) { session.applyFormat?(item.id) }.accessibilityIdentifier("native-markdown-format-" + item.id)
+                ForEach(NativeRichTextCommands.insertions.filter { !Self.formatIDs.contains($0.id) }, id: \.id) { item in
+                    Button(item.title) { session.applyFormat?(item.id) }.accessibilityIdentifier("native-markdown-format-" + item.id)
                 }
                 if activeFormats.contains("link") { Button("링크 주소 편집") { session.applyFormat?("edit-link") }.accessibilityIdentifier("native-markdown-edit-link") }
                 Menu("표 편집") {
@@ -273,6 +273,15 @@ struct NativeMarkdownWorkspace: View {
                     Button("다음 셀") { session.applyFormat?("table-next") }
                     Button("이전 셀") { session.applyFormat?("table-previous") }
                 }
+                Button("들여쓰기") { session.applyFormat?("indent") }
+                Button("내어쓰기") { session.applyFormat?("outdent") }
+                Menu("코드 블록 언어") {
+                    ForEach(NativeRichTextCommands.codeLanguages, id: \.id) { language in
+                        Button { session.applyFormat?("code-language:" + language.id) } label: {
+                            if activeCodeLanguage == language.id { Label(language.title, systemImage: "checkmark") } else { Text(language.title) }
+                        }
+                    }
+                }.disabled(activeCodeLanguage == nil).accessibilityIdentifier("native-markdown-code-language")
                 Divider()
                 Menu("편집기 확대/축소") {
                     ForEach(NativeNoteFontScale.values, id: \.self) { value in
@@ -311,20 +320,16 @@ struct NativeMarkdownWorkspace: View {
     }
     /// A text item: 16 Semibold, padding 6/12, the active one on #EDEDED r9.
     private func formatText(_ title: String, _ format: String) -> some View {
-        let active = activeFormats.contains(format)
-        return Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.text)
+        let active = barFormats.contains(format)
+        return Text(title).font(.system(size: 16, weight: .semibold)).strikethrough(format == "strike").foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.text)
             .padding(.horizontal, 12).frame(height: 31)
             .background(active ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 9)).contentShape(Rectangle())
     }
     private func formatSymbol(_ symbol: String, _ format: String) -> some View {
-        let active = activeFormats.contains(format)
+        let active = barFormats.contains(format)
         return Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.text)
             .frame(width: 23, height: 31).background { if active { RoundedRectangle(cornerRadius: 9).fill(NativeDesktopTheme.raised).padding(.horizontal, -4) } }
             .contentShape(Rectangle().inset(by: -3))
-    }
-    private func formatChoice(_ title: String, _ format: String) -> some View {
-        Button { session.applyFormat?(format) } label: { if activeFormats.contains(format) { Label(LocalizedStringKey(title), systemImage: "checkmark") } else { Text(LocalizedStringKey(title)) } }
-            .accessibilityIdentifier("native-markdown-format-" + format)
     }
     private func selectPage(_ index: Int) {
         session.prepareForFlush?(); pageIndex = index; showAppendix = false

@@ -1,7 +1,7 @@
 import XCTest
 
 /// Captures of the preview, the windows overview and the Markdown bar for side-by-side comparison with
-/// Figma 130:4297, 132:2517 and 129:2615. The preview test also checks that its pages turn and it closes.
+/// Figma 130:4297, 132:2517 and 129:2615 (whose bar carries every item of the desktop's bar). The preview test also checks that its pages turn and it closes.
 final class FigmaViewsScreenshotTests: XCTestCase {
     override func setUp() { continueAfterFailure = true }
 
@@ -70,9 +70,26 @@ final class FigmaViewsScreenshotTests: XCTestCase {
         app.buttons["native-markdown-format-bullet"].tap()
         editor.typeText("인터뷰 질문 다시 정리하기\n떠 있는 팔레트 시안 2종 비교\n금요일까지 발표 자료 초안\n과목 폴더 구조")
         sleep(1); attach(app, "markdown \(appearance)")
-        app.buttons["native-markdown-format-bold"].press(forDuration: 1)
-        XCTAssertTrue(app.buttons["native-markdown-format-strike"].waitForExistence(timeout: 5), "A long press on B keeps 취소선 and code")
-        sleep(1); attach(app, "markdown B menu \(appearance)")
+        // A split pane is too narrow for every item: the items scroll sideways, ⋯ and what follows it stay.
+        app.openNativeDockLayoutMenu()
+        let duplicate = app.buttons["native-duplicate-right"].firstMatch
+        XCTAssertTrue(duplicate.waitForExistence(timeout: 5), app.debugDescription); duplicate.tap()
+        XCTAssertTrue(app.textViews.matching(identifier: "native-markdown-editor").element(boundBy: 1).waitForExistence(timeout: 15), app.debugDescription)
+        // A tap below the last line of a note that is still being edited only opens the edit menu.
+        let done = app.buttons["native-markdown-done"].firstMatch
+        if !done.waitForExistence(timeout: 2) { editor.tap() }
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "undo · redo · 완료 follow ⋯ while typing")
+        sleep(1); attach(app, "markdown split \(appearance)")
+        let last = app.buttons.matching(identifier: "native-markdown-format-codeblock").firstMatch, more = app.buttons.matching(identifier: "native-markdown-more").firstMatch
+        XCTAssertGreaterThan(last.frame.maxX, more.frame.minX, "The split pane is too narrow for every item")
+        // Drag the item area from its trailing end: a swipe on one small item is taken for a tap.
+        for _ in 0..<4 where last.frame.maxX > more.frame.minX {
+            let grip = more.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(CGVector(dx: -24, dy: 0))
+            grip.press(forDuration: 0.1, thenDragTo: grip.withOffset(CGVector(dx: -240, dy: 0)))
+        }
+        XCTAssertLessThanOrEqual(last.frame.maxX, more.frame.minX, "The items scroll sideways; ⋯ stays at the trailing end")
+        XCTAssertTrue(more.isHittable && last.isHittable, "Both the last item and ⋯ can be tapped")
+        sleep(1); attach(app, "markdown split scrolled \(appearance)")
     }
 
     @MainActor private func newNote(_ name: String, app: XCUIApplication) {

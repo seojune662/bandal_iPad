@@ -1267,6 +1267,8 @@
 "인라인 코드" = "Inline Code";
 "코드 블록" = "Code Block";
 "인용" = "Quote";
+"링크" = "Link";
+"링크 해제" = "Remove Link";
 "미리보기 닫기" = "Close Preview";
 "미리보기에서 공유" = "Share from Preview";
 "미리보기를 준비하지 못했습니다." = "Couldn’t prepare the preview.";
