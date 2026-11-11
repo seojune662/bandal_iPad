@@ -28,6 +28,9 @@ final class DesktopRuntime: @unchecked Sendable {
     private var search: NativeSearchRepository?
     private var indexingCourses = Set<String>()
     private var handwriting: NativeHandwritingRepository?
+    private var unifiedSearch: NativeUnifiedSearchRepository?
+    /// When each course's text index was last compared with its folder.
+    private var searchRefreshed: [String:Date] = [:]
     private var handwritingState = HandwritingState()
     private var learning: NativeLearningRepository?
     private var whiteboards: NativeWhiteboardRepository?
@@ -68,6 +71,7 @@ final class DesktopRuntime: @unchecked Sendable {
             self.search = try NativeSearchRepository(context:context)
             self.handwriting = try NativeHandwritingRepository(context:context,pdf:pdf)
             self.handwritingState.enabled = (try? self.preferences?.settings())?["handwritingSearch"] as? Bool != false
+            self.unifiedSearch = try NativeUnifiedSearchRepository(context:context)
             let learning = NativeLearningRepository(context:context)
             self.learning = learning
             // Interrupted-run recovery walks every course folder; it runs after the UI is ready.
@@ -147,6 +151,12 @@ final class DesktopRuntime: @unchecked Sendable {
             // Notes written before this build, or synced in while the app was closed, are read in the background.
             scheduleHandwriting(after:handwritingTiming.launch); return NativeValue.ok
         case "handwriting:status": return handwritingStatus
+        case "search:unified":
+            let course = request["courseId"] as? String
+            guard var result = try unifiedSearch?.query(text:try NativeValue.string(request["query"],"검색어"),courseID:course) else { return nil }
+            result["handwritingIndexing"] = handwritingState.running
+            refreshSearchIndexes(course)
+            return result
         case "nativeRuntime:active": active = request["active"] as? Bool == true; if active { poll() }; return NativeValue.ok
         case "pdf:openPageNote":
             guard let context, let pdf else { throw DesktopRuntimeError("PDF 저장소가 준비되지 않았습니다.") }
@@ -227,6 +237,22 @@ final class DesktopRuntime: @unchecked Sendable {
             }
         } catch { log.record("search.pdf.unavailable",code:(error as? DesktopRuntimeError)?.code) }
     }
+    /// The query above reads the index as it is. Folders are compared and new PDFs extracted afterwards,
+    /// one course per queue turn so a save never waits behind a whole library; `search:changed` re-runs the query.
+    private func refreshSearchIndexes(_ course: String?) {
+        let courses = course.map { [$0] } ?? ((try? context?.query("SELECT id FROM courses WHERE deleted_at IS NULL"))?.compactMap { $0["id"] as? String } ?? [])
+        for course in courses where Date().timeIntervalSince(searchRefreshed[course] ?? .distantPast) > 15 {
+            searchRefreshed[course] = Date()
+            queue.async { [weak self] in
+                guard let self, let search = self.search, let db = self.context?.db else { return }
+                let changes = db.totalChanges
+                do { try search.refresh(courseID:course) } catch { self.log.record("search.refresh.skipped",code:(error as? DesktopRuntimeError)?.code); return }
+                if db.totalChanges != changes { self.onEmit?("search:changed",["courseId":course]) }
+                self.schedulePDFSearch(course)
+            }
+        }
+    }
+
     // MARK: Handwriting index
 
     private struct HandwritingState {

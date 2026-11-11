@@ -975,6 +975,30 @@ final class NativePDFWorkspaceModel {
         stored.save(root: store.root, documentID: document.id, defaults: defaults)
         preferences.pendingPage = nil; preferences.viewport = stored.viewport
         if pendingPageToAcknowledge == requested { pendingPageToAcknowledge = nil }
+        if let highlight = store.pendingPDFHighlights.removeValue(forKey: document.id), highlight["page"] as? Int == requested { flash(highlight, page: requested) }
+    }
+    #if DEBUG
+    /// A UI test needs longer than a second to find the mark.
+    private static let searchFlashSeconds: Double = NativeSearchUITestFixture.requested ? 5 : 1
+    #else
+    private static let searchFlashSeconds: Double = 1
+    #endif
+    /// A search result just opened this page: its match is centred and marked for a second.
+    /// Text is found again in the page itself; a handwritten line brings its recognised box.
+    private func flash(_ highlight: [String: Any], page: Int) {
+        Task { @MainActor in
+            do {
+                var mark: [String: Any] = ["page": page, "current": true]
+                if let box = highlight["box"] as? [Double], box.count == 4 { mark["rects"] = [box]; mark["handwriting"] = true }
+                else if let query = highlight["query"] as? String,
+                        let found = (try await call("textMatches", ["page": page, "query": query]) as? [String: Any])?["matches"] as? [[[Double]]], let first = found.first { mark["rects"] = first }
+                guard let rects = mark["rects"] as? [[Double]], let first = rects.first, !retired else { return }
+                _ = try await call("navigate", ["page": page, "progress": min(1, max(0, first[1] + first[3] / 2))])
+                _ = try await call("searchMarks", ["marks": [mark]])
+                try await Task.sleep(for: .seconds(Self.searchFlashSeconds))
+                if !retired { _ = try await call("searchMarks", ["marks": [[String: Any]]()]) }
+            } catch { /* The page is open; only the momentary mark is missing. */ }
+        }
     }
     private func updateStyle() {
         savePreferences()

@@ -127,7 +127,8 @@ final class NativeSearchRepository {
             try saveMetadata(course: course, relative: relative, kind: "pdf", identity: identity, complete: true)
         }
     }
-    private func refresh(courseID: String) throws {
+    /// Brings the course's cached text in line with its folder. PDFs found new or changed wait for `preparePDFJobs`.
+    func refresh(courseID: String) throws {
         let root = try boundRoot(courseID)
         let old = try context.query("SELECT * FROM native_search_files WHERE course_id=?", [courseID])
         var byPath: [String: [String: Any]] = [:]

@@ -64,6 +64,18 @@ final class NativeHandwritingIndexTests: XCTestCase {
         XCTAssertLessThan(pixels.min() ?? 255, 60)
     }
 
+    func testKoreanAndEnglishInkLinesAreReadSeparately() throws {
+        let size = CGSize(width: 595, height: 842)
+        let rows = (NativeHandwritingFixture.strokes("엔트로피 증가 법칙", at: CGPoint(x: 70, y: 150), fontSize: 46, pageSize: size)
+            + NativeHandwritingFixture.strokes("Carnot cycle", at: CGPoint(x: 70, y: 250), fontSize: 46, pageSize: size, color: "blue"))
+            .map { $0.merging(["kind": "ink", "id": UUID().uuidString]) { _, new in new } }
+        let lines = try NativeHandwritingRecognizer.lines(rows: rows, pageSize: size)
+        XCTAssertEqual(lines.count, 2, "\(lines)")
+        XCTAssertTrue(lines.first?.text.contains("엔트로피") == true, "\(lines)")
+        XCTAssertTrue(lines.last?.text.localizedCaseInsensitiveContains("carnot") == true, "\(lines)")
+        XCTAssertLessThan(lines.first?.box.minY ?? 1, lines.last?.box.minY ?? 0)
+    }
+
     func testRecognisedLinesAreNormalisedFromTheTopLeft() throws {
         let size = CGSize(width: 1190, height: 1684)
         let image = UIGraphicsImageRenderer(size: size, format: { let format = UIGraphicsImageRendererFormat(); format.scale = 1; return format }()).image { context in

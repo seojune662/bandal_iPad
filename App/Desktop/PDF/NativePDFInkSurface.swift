@@ -531,7 +531,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         // in cropped children avoids a page-sized UIView backing allocation.
         scene.isUserInteractionEnabled = false; scene.accessibilityElementsHidden = true
         scene.contentMode = .scaleToFill
-        addSubview(navigationView); addSubview(scene); addSubview(metal); addSubview(decorations)
+        addSubview(navigationView); addSubview(scene); addSubview(metal); addSubview(decorations); addSubview(searchMarks)
         decorations.drawCanvas = { [weak self] context in self?.drawDecorations(in: context) }
         decorations.hasContent = { [weak self] in self?.hasDecorations ?? false }
         metal.onSubmission = { [weak self] milliseconds in
@@ -567,8 +567,11 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     func scribbleInteraction(_ interaction: UIScribbleInteraction, shouldBeginAt location: CGPoint) -> Bool {
         recordInput("scribble.denied"); return false
     }
+    /// Search matches on this page, above its ink.
+    let searchMarks = NativePDFSearchMarksView()
     override func layoutSubviews() {
         super.layoutSubviews(); onLayout?(); refreshViewport(); layoutTextEditor()
+        if searchMarks.frame != bounds { searchMarks.frame = bounds }
     }
     /// Called by PDFKit's host after scrolling, zooming, and window resizing.
     /// Rendering is coalesced to a display frame; input still uses page coords.
