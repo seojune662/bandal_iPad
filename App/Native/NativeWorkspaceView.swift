@@ -321,7 +321,7 @@ struct NativeWorkspaceView: View {
             // so the slide is keyed on what is visible rather than on the toggles.
             .animation(Self.railAnimation, value: [chrome.leftPinned, aiVisible, chrome.aiPinned, rightVisible, chrome.rightPinned,
                                                    compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width)])
-            .blur(radius: settingsOpen ? 6 : boardOverlayOpen ? 3 : 0)
+            .blur(radius: settingsOpen ? 4 : boardOverlayOpen ? 3 : 0)
             // Its own reader, clear of the keyboard: typing a task must not squeeze the popup.
             .overlay {
                 if boardOverlayOpen {
@@ -331,20 +331,17 @@ struct NativeWorkspaceView: View {
             }
             .overlay {
                 if settingsOpen {
+                    // Figma Sheet/설정: 940 × 760, radius 20, the sheet glass; behind it black 18% over the blurred workspace.
+                    let shape = RoundedRectangle(cornerRadius: 20)
                     ZStack {
-                        Color.black.opacity(0.28).ignoresSafeArea().contentShape(Rectangle())
+                        Color.black.opacity(0.18).ignoresSafeArea().contentShape(Rectangle())
                             .onTapGesture { transition { section = .library } }.accessibilityHidden(true)
-                        NativeSettingsWorkspace(store: store, initialCategory: settingsCategory)
-                            .frame(maxWidth: 920, maxHeight: 745)
-                            .clipShape(RoundedRectangle(cornerRadius: 22))
-                            .overlay(alignment: .topTrailing) {
-                                Button { transition { section = .library } } label: { Image(systemName: "xmark").font(.system(size: 14)).frame(width: 44, height: 44).contentShape(Rectangle()) }
-                                    .buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary).padding(8)
-                                    .accessibilityLabel("설정 닫기").accessibilityIdentifier("native-settings-close")
-                            }
-                            .shadow(color: .black.opacity(0.25), radius: 40, y: 12)
+                        NativeSettingsWorkspace(store: store, initialCategory: settingsCategory) { transition { section = .library } }
+                            .frame(maxWidth: 940, maxHeight: 760)
+                            .clipShape(shape).contentShape(shape).bandalGlass(in: shape, fill: NativeGlass.sheet)
                             .padding(24)
-                    }.transition(.opacity)
+                    // Centred in the window as drawn, not in what the home indicator leaves.
+                    }.ignoresSafeArea(.container, edges: .vertical).transition(.opacity)
                 }
             }
             .onAppear { updateWindowWidth(geometry.size.width) }
@@ -716,7 +713,7 @@ struct NativeWorkspaceView: View {
         // A window too short for the full height sits 6 pt low, clear of the top-trailing window controls.
         let drop: CGFloat = height < 1180 ? 6 : 0
         return ZStack {
-            Color.black.opacity(0.22).ignoresSafeArea().contentShape(Rectangle())
+            Color(uiColor: UIColor { UIColor.black.withAlphaComponent($0.userInterfaceStyle == .dark ? 0.45 : 0.22) }).ignoresSafeArea().contentShape(Rectangle())
                 .onTapGesture { transition { boardOverlayOpen = false } }.accessibilityHidden(true)
             NativePlannerWorkspace(store: store, keyboardInset: max(0, keyboard - (size.height - height) / 2 + drop), onClose: { transition { boardOverlayOpen = false } })
                 .frame(width: min(max(1, size.width - 84), 1200), height: height)

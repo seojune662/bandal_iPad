@@ -215,8 +215,8 @@ extension NativeUniversityCatalog {
 #if DEBUG
 /// A directory with no server behind it. Unit tests set the closures; UI tests and screenshots get
 /// the defaults with `--native-school-fixture`: signed in, the bundled list, and an AI search that
-/// finds four unverified sites for any name, nothing for one containing "없는", and takes
-/// 40 s over one containing "느린".
+/// finds four unverified sites for any name, nothing for one containing "없는", takes
+/// 40 s over one containing "느린", and has used up the day's searches for one containing "한도".
 struct SchoolDirectoryFake: SchoolDirectory {
     static let argument = "--native-school-fixture"
     var signedIn: () async -> Bool = { true }
@@ -224,6 +224,7 @@ struct SchoolDirectoryFake: SchoolDirectory {
     var onSetup: (String, String, String) async throws -> School? = { query, country, _ in
         try await Task.sleep(for: .seconds(query.contains("느린") ? 40 : 1))
         if query.contains("없는") { return nil }
+        if query.contains("한도") { throw SchoolDirectoryError.rateLimited(limit: 3) }
         let sites = [("home", "홈페이지", "https://www.bandal.example"), ("portal", "포털", "https://portal.bandal.example"),
                      ("lms", "강의실", "https://lms.bandal.example"), ("library", "도서관", "https://library.bandal.example")]
         return School(id: "fixture-school", name: query, nameEn: nil, aliases: [], country: country, domain: "bandal.example", verified: false, source: "ai",

@@ -17,7 +17,7 @@ struct NativeSettingsSystemPanels: View {
     private var selectedCalendars: [String] { calendarSettings["selectedCalendarIds"] as? [String] ?? [] }
     private var calendars: [[String: Any]] { calendar["calendars"] as? [[String: Any]] ?? [] }
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 28) {
             if let error { NativeToolError(message: error) }
             if let notice { Label(notice, systemImage: "checkmark.circle").foregroundStyle(.green).font(NativeDesktopTheme.font(12)) }
             switch section {
@@ -30,7 +30,7 @@ struct NativeSettingsSystemPanels: View {
             .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await reload() } } }
     }
     private var notificationPanel: some View {
-        NativeSettingsCard(title: "알림") {
+        NativeSettingsGroup(title: "알림") {
             Toggle("알림 사용", isOn: boolean("enabled", fallback: true)).accessibilityIdentifier("native-settings-notifications-enabled")
             if ["denied", "restricted"].contains((status["notifications"] as? [String: Any])?["authorization"] as? String) {
                 HStack { Text("iPad 설정에서 알림이 꺼져 있어요").foregroundStyle(NativeDesktopTheme.secondary); Spacer(); Button("설정 열기") { systemSettings() } }
@@ -51,8 +51,8 @@ struct NativeSettingsSystemPanels: View {
         }
     }
     private var calendarPanel: some View {
-        VStack(spacing: 24) {
-            NativeSettingsCard(title: "Apple 캘린더", description: "고른 캘린더의 일정을 반달에서 보여 줘요.") {
+        VStack(spacing: 28) {
+            NativeSettingsGroup(title: "Apple 캘린더", description: "고른 캘린더의 일정을 반달에서 보여 줘요.") {
                 LabeledContent("접근 권한", value: authorization(calendar["authorization"]))
                 HStack { Button("캘린더 접근 허용") { permission("calendar") }; Button("Apple 캘린더 열기") { run { _ = try await store.invokePrivate("nativeSettings:openCalendar") } } }
                 if calendar["authorization"] as? String == "denied" { Button("시스템 설정에서 변경") { systemSettings() } }
@@ -67,7 +67,7 @@ struct NativeSettingsSystemPanels: View {
                 } else if calendar["authorization"] as? String == "authorized" { Text("사용할 수 있는 캘린더가 없습니다. Apple 캘린더 앱에서 계정을 확인하세요.").foregroundStyle(NativeDesktopTheme.secondary) }
                 if !selectedCalendars.isEmpty { Button("캘린더 연결 해제", role: .destructive) { run { _ = try await store.invokePrivate("nativeSettings:disconnectCalendar"); await reload() } } }
             }
-            NativeSettingsCard(title: "반달 일정 내보내기", description: ".ics 파일로 저장하거나 공유해요.") {
+            NativeSettingsGroup(title: "반달 일정 내보내기", description: ".ics 파일로 저장하거나 공유해요.") {
                 Button("모든 과목 일정 내보내기", systemImage: "square.and.arrow.up") { run { _ = try await store.invokePrivate("nativeSettings:exportCalendar") } }
                 if let course = store.selectedCourseID { Button("현재 과목 일정 내보내기") { run { _ = try await store.invokePrivate("nativeSettings:exportCalendar", ["courseId": course]) } } }
         }
@@ -75,7 +75,7 @@ struct NativeSettingsSystemPanels: View {
     }
     /// 일반 › 고급: the three maintenance actions; the two destructive ones confirm on the button.
     private var advancedPanel: some View {
-        NativeSettingsCard(title: "고급") {
+        NativeSettingsGroup(title: "고급") {
             Button("진단 파일 내보내기", systemImage: "square.and.arrow.up") { exportDiagnostics() }.accessibilityIdentifier("native-settings-export-diagnostics")
             Button("캐시 비우기", systemImage: "trash") { confirmation = "cache" }
                 .bandalConfirm("캐시를 비울까요?", isPresented: confirming("cache"), message: "다시 만들 수 있는 임시 파일만 지워요.", action: "캐시 비우기", destructive: true) { maintain("cache") }

@@ -32,7 +32,7 @@ enum NativeOnboardingGate {
     }
 }
 
-/// Onboarding over the workspace, which is inert underneath; on a new install a plain cover
+/// Onboarding over the workspace, which is inert underneath; on a new install its bare surface
 /// stands in until the decision is made, so the workspace never flashes before onboarding.
 struct NativeOnboardingCover: ViewModifier {
     let stage: NativeOnboardingGate.Stage
@@ -42,12 +42,48 @@ struct NativeOnboardingCover: ViewModifier {
         content.disabled(stage == .pending || stage == .showing)
             .overlay {
                 switch stage {
-                case .pending: NativeDesktopTheme.bgApp.ignoresSafeArea()
+                case .pending: NativeOnboardingSurface()
                 case .showing: NativeOnboarding(store: store, finish: finish).transition(.opacity)
                 case .deciding, .closed: EmptyView()
                 }
             }
             .animation(.easeOut(duration: 0.25), value: stage)
+    }
+}
+
+/// The window's backdrop under paper glass. Onboarding lies over the workspace, so it brings its own
+/// backdrop: the workspace must not show through the paper.
+struct NativeOnboardingSurface: View {
+    var body: some View { ZStack { NativeWorkspaceBackdrop(); NativeGlass.paper.ignoresSafeArea() }.accessibilityHidden(true) }
+}
+
+/// Onboarding's main action: a 220 × 48 capsule that grows with its label, with the design's soft rim and a gloss from its trailing end.
+struct NativeOnboardingButton: View {
+    let title: String
+    let label: LocalizedStringKey
+    let identifier: String
+    let action: () -> Void
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.isEnabled) private var enabled
+    var body: some View {
+        Button(action: action) {
+            Text(verbatim: title).font(.system(size: 16, weight: .heavy)).foregroundStyle(NativeDesktopTheme.onAccent).lineLimit(1).fixedSize()
+                .padding(.horizontal, 18).frame(minWidth: 220, minHeight: 48)
+                .background(NativeDesktopTheme.accent, in: Capsule())
+                .overlay {
+                    // The frame's gradient runs from the trailing end to a little past the leading one.
+                    let end = UnitPoint(x: -0.126, y: 0.5)
+                    ZStack {
+                        Capsule().fill(LinearGradient(stops: [.init(color: .white.opacity(0.4), location: 0), .init(color: .white.opacity(0.1), location: 0.14), .init(color: .clear, location: 0.3)], startPoint: .trailing, endPoint: end))
+                        Capsule().strokeBorder(LinearGradient(stops: [.init(color: .white.opacity(0.6), location: 0), .init(color: .white.opacity(0.06), location: 0.22), .init(color: .white.opacity(0.1), location: 1)], startPoint: .trailing, endPoint: end))
+                    }
+                    .opacity(scheme == .dark ? 1 : 0.5).allowsHitTesting(false)
+                }
+                // The frame's inner shadow: #282828 along the rim, lighter than the fill in light and darker in dark.
+                .overlay { Capsule().strokeBorder(Color(white: 0x28 / 255.0).opacity(scheme == .dark ? 0.12 : 0.9), lineWidth: 8).blur(radius: 4).clipShape(Capsule()).allowsHitTesting(false) }
+                .opacity(enabled ? 1 : 0.4).contentShape(Capsule())
+        }
+        .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(identifier)
     }
 }
 
@@ -60,11 +96,16 @@ struct NativeOnboarding: View {
     private enum Step: Int, CaseIterable { case language, school, invite, done }
     @AppStorage(NativeAppLocale.key) private var language = NativeAppLocale.korean
     @State private var step = Step.language
+    /// The school this run saved, for the last step's summary.
+    @State private var school: School?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
+    private static let width: CGFloat = 520
+    private var english: Bool { locale.language.languageCode?.identifier == "en" }
 
     var body: some View {
-        VStack(spacing: 0) {
-            topBar
+        ZStack(alignment: .top) {
+            // The frame's content sits 16 pt under the window's centre (7 pt over it on the last step).
             Group {
                 switch step {
                 case .language: languageStep
@@ -73,12 +114,14 @@ struct NativeOnboarding: View {
                 case .done: doneStep
                 }
             }
-            .frame(maxWidth: 560).frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: Self.width).frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.top, 82).padding(.bottom, step == .done ? 96 : 50).padding(.horizontal, 24)
             .id(step).transition(.opacity)
+            topBar
         }
-        .padding(.horizontal, 24)
-        .background(NativeDesktopTheme.bgApp.ignoresSafeArea())
-        .font(NativeDesktopTheme.font(14)).foregroundStyle(NativeDesktopTheme.text).tint(NativeDesktopTheme.accent)
+        .ignoresSafeArea(.container)
+        .background { NativeOnboardingSurface() }
+        .foregroundStyle(NativeDesktopTheme.text).tint(NativeDesktopTheme.accent)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: step)
         // An invite link opened the app: its code goes into the invite step's field.
         .onChange(of: store.referral.linkedCode, initial: true) { _, code in if code != nil { step = .invite } }
@@ -91,82 +134,76 @@ struct NativeOnboarding: View {
         ZStack {
             HStack(spacing: 8) {
                 ForEach(Step.allCases, id: \.self) { item in
-                    Circle().fill(NativeDesktopTheme.text.opacity(item == step ? 1 : 0.18)).frame(width: 8, height: 8)
+                    Capsule().fill(item == step ? NativeDesktopTheme.text : NativeDesktopTheme.muted.opacity(0.45)).frame(width: item == step ? 24 : 8, height: 8)
                 }
             }
+            .offset(y: 2)
             .accessibilityElement().accessibilityLabel("\(Step.allCases.count)단계 중 \(step.rawValue + 1)단계").accessibilityIdentifier("native-onboarding-dots")
             HStack {
                 if let previous = Step(rawValue: step.rawValue - 1) {
                     Button { step = previous } label: {
-                        Image(systemName: "chevron.left").font(.system(size: 14, weight: .semibold)).frame(width: 44, height: 44).contentShape(Circle())
+                        HStack(spacing: 6) { Image(systemName: "chevron.left").font(.system(size: 15)); Text("이전").font(.system(size: 17, weight: .medium)) }
+                            .frame(height: 44).contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain).bandalGlass(in: Circle()).accessibilityLabel("이전 단계").accessibilityIdentifier("native-onboarding-back")
+                    .buttonStyle(.plain).accessibilityLabel("이전 단계").accessibilityIdentifier("native-onboarding-back")
                 }
                 Spacer()
-                if step != .done {
-                    Button(action: finish) {
-                        Text("나중에").font(NativeDesktopTheme.font(13, weight: .medium)).padding(.horizontal, 16).frame(height: 44).contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain).bandalGlass(in: Capsule()).accessibilityLabel("첫 설정 나중에 하기").accessibilityIdentifier("native-onboarding-later")
-                }
+                // "나중에" is "Later" elsewhere in the app; here the design says Skip.
+                Button(action: finish) { Text(verbatim: english ? "Skip" : "나중에").font(.system(size: 17, weight: .medium)).frame(height: 44).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).accessibilityLabel("첫 설정 나중에 하기").accessibilityIdentifier("native-onboarding-later")
             }
+            .foregroundStyle(NativeDesktopTheme.secondary)
         }
-        .frame(height: 44).padding(.top, 24)
+        .frame(height: 44).padding(.top, 38).padding(.leading, 60).padding(.trailing, 64)
     }
 
-    private func heading(_ title: LocalizedStringKey, _ subtitle: LocalizedStringKey?, size: CGFloat = 30) -> some View {
-        VStack(spacing: 8) {
-            Text(title).font(NativeDesktopTheme.font(size, weight: .bold)).multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
-            if let subtitle { Text(subtitle).font(NativeDesktopTheme.font(15)).foregroundStyle(NativeDesktopTheme.secondary).multilineTextAlignment(.center) }
+    private func heading(_ title: LocalizedStringKey, _ subtitle: Text?) -> some View {
+        VStack(spacing: 10) {
+            Text(title).font(.system(size: 34, weight: .bold)).frame(minHeight: 48).accessibilityAddTraits(.isHeader)
+            if let subtitle { subtitle.font(.system(size: 17)).foregroundStyle(NativeDesktopTheme.secondary).frame(minHeight: 24) }
         }
+        .multilineTextAlignment(.center).frame(maxWidth: .infinity)
     }
 
-    private func primaryButton(_ title: LocalizedStringKey, label: LocalizedStringKey, identifier: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title).font(NativeDesktopTheme.font(15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.onAccent)
-                .frame(maxWidth: 280, minHeight: 48)
-                .background(NativeDesktopTheme.accent, in: RoundedRectangle(cornerRadius: BandalMetrics.radiusLarge)).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(identifier)
+    private func primaryButton(_ title: String, label: LocalizedStringKey, identifier: String, action: @escaping () -> Void) -> some View {
+        NativeOnboardingButton(title: NativeAppLocale.string(title, locale), label: label, identifier: identifier, action: action)
     }
+
+    private var divider: some View { NativeDesktopTheme.border.frame(height: 1).padding(.leading, 16) }
 
     // MARK: Steps
 
     private var languageStep: some View {
         VStack(spacing: 28) {
-            NativeBandalMark(size: 56)
-            heading("반달에 오신 걸 환영해요", "어떤 언어로 쓸까요? 설정에서 언제든 바꿀 수 있어요.")
-            HStack(spacing: 12) {
-                languageCard(NativeAppLocale.korean, glyph: "가", name: "한국어", other: "Korean")
-                languageCard(NativeAppLocale.english, glyph: "A", name: "English", other: "영어")
+            RoundedRectangle(cornerRadius: 24, style: .continuous).fill(NativeDesktopTheme.bgApp).frame(width: 80, height: 80)
+                .overlay { RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(NativeDesktopTheme.border) }
+                .shadow(color: .black.opacity(0.08), radius: 6, x: 4, y: 6)
+                .overlay { Image(systemName: "moon").font(.system(size: 36)) }.accessibilityHidden(true)
+            heading("반달에 오신 걸 환영해요", Text("필기 · 자료 · AI를 한곳에서 이어 쓰는 공부 노트"))
+            VStack(alignment: .leading, spacing: 10) {
+                Text("언어").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary).frame(minHeight: 18)
+                BandalChoiceCard {
+                    VStack(spacing: 0) {
+                        languageRow(NativeAppLocale.korean, name: "한국어", other: "Korean")
+                        divider
+                        languageRow(NativeAppLocale.english, name: "English", other: english ? "English" : "영어")
+                        divider
+                        // No Japanese table yet: the row is drawn and waits.
+                        BandalChoiceRow(title: "日本語", detail: english ? "Japanese" : "일본어", showsDivider: false) {}
+                            .overlay(alignment: .trailing) { Text("준비 중").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted).padding(.trailing, 16) }
+                            .allowsHitTesting(false).accessibilityIdentifier("native-onboarding-language-ja")
+                    }
+                    .padding(.vertical, 1)
+                }
             }
             primaryButton("다음", label: "다음 단계", identifier: "native-onboarding-next") { step = .school }
         }
     }
 
-    /// The language's own name, with the other language's word for it underneath; neither is translated.
-    private func languageCard(_ value: String, glyph: String, name: String, other: String) -> some View {
-        let on = language == value
-        return Button { choose(value) } label: {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack(alignment: .top) {
-                    Text(verbatim: glyph).font(.system(size: 34, weight: .semibold))
-                    Spacer()
-                    Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.system(size: 20))
-                        .foregroundStyle(on ? NativeDesktopTheme.accent : NativeDesktopTheme.muted.opacity(0.5))
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: name).font(NativeDesktopTheme.font(17, weight: .semibold))
-                    Text(verbatim: other).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
-                }
-            }
-            .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-            .background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(on ? NativeDesktopTheme.accent : NativeDesktopTheme.border, lineWidth: on ? 2 : 1))
-            .contentShape(RoundedRectangle(cornerRadius: 14))
-        }
-        .buttonStyle(.plain).accessibilityLabel(Text(verbatim: name + " · " + other)).accessibilityAddTraits(on ? .isSelected : [])
-        .accessibilityIdentifier("native-onboarding-language-" + value)
+    /// The language's own name, with its name in the language on screen underneath.
+    private func languageRow(_ value: String, name: String, other: String) -> some View {
+        BandalChoiceRow(title: name, detail: other, chosen: language == value, showsDivider: false, tinted: false) { choose(value) }
+            .accessibilityLabel(Text(verbatim: name + " · " + other)).accessibilityIdentifier("native-onboarding-language-" + value)
     }
 
     /// The screen switches at once; settings.json (the preference) follows.
@@ -180,51 +217,71 @@ struct NativeOnboarding: View {
     }
 
     private var schoolStep: some View {
-        // The search field has the keyboard from the start. The list takes the height the keyboard
-        // leaves, so the field and the buttons under the list stay on screen on every iPad. Under
-        // 320pt (an iPad mini in landscape with the keyboard up) the heading gives up its second line.
+        // The list takes the height the keyboard leaves, so the field and the buttons under the list
+        // stay on screen on every iPad; a short window gives up the second line, then the heading.
         GeometryReader { geometry in
-            let tight = geometry.size.height < 320
-            VStack(spacing: tight ? 10 : 16) {
-                heading("다니는 학교를 알려 주세요", tight ? nil : "학교 사이트 바로가기를 사이드바에 모아 드려요.", size: tight ? 20 : 24)
-                // Everything on this step but the list: 190pt when tight, 250pt otherwise.
-                NativeSchoolPicker(store: store, maxListHeight: min(420, max(44, geometry.size.height - (tight ? 190 : 250)))) { _ in step = .invite }
-                    .padding(BandalMetrics.padding)
-                    .background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: BandalMetrics.radiusLarge))
-                    .overlay(RoundedRectangle(cornerRadius: BandalMetrics.radiusLarge).strokeBorder(NativeDesktopTheme.border))
+            let height = geometry.size.height
+            VStack(spacing: 28) {
+                if height >= 420 { heading("학교를 골라 주세요", height >= 520 ? Text("학교 사이트와 포털 바로가기를 자동으로 채워 드려요") : nil) }
+                // Everything on this step but the list: field, chips, button and the line under it.
+                NativeSchoolPicker(store: store, onboarding: true, maxListHeight: max(68, min(275, height - (height >= 520 ? 352 : height >= 420 ? 318 : 242)))) { school in
+                    self.school = school; step = .invite
+                }
             }
-            .padding(.top, tight ? 4 : 16).frame(maxWidth: .infinity)
+            // Anchored where the frame's four-row list puts it, so the heading stays put while the list changes.
+            .padding(.top, max(0, (height - 628) / 2)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
     }
 
     /// 초대 코드, for someone a friend invited: a code that exists is kept on this iPad and claimed
-    /// when they sign in. The field has the keyboard from the start; under 320pt (an iPad mini in
-    /// landscape with the keyboard up) the step draws tighter so its button stays on screen.
+    /// when they sign in. The field has the keyboard from the start.
     private var inviteStep: some View {
-        GeometryReader { geometry in
-            let tight = geometry.size.height < 320
-            VStack(spacing: tight ? 10 : 20) {
-                heading("초대 코드가 있나요?", nil, size: tight ? 20 : 30)
-                NativeReferralCodeEntry(referral: store.referral, large: true)
-                if store.referral.applied {
-                    primaryButton("다음", label: "다음 단계", identifier: "native-onboarding-next") { step = .done }
-                } else {
-                    Button { store.referral.withdraw(); step = .done } label: {
-                        Text("없어요, 건너뛰기").font(NativeDesktopTheme.font(15, weight: .medium)).foregroundStyle(NativeDesktopTheme.secondary)
-                            .frame(maxWidth: 280, minHeight: 48).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain).accessibilityIdentifier("native-referral-skip")
+        VStack(spacing: 28) {
+            heading("초대 코드가 있나요?", nil)
+            NativeReferralCodeEntry(referral: store.referral, large: true)
+            if store.referral.applied {
+                primaryButton("다음", label: "다음 단계", identifier: "native-onboarding-next") { step = .done }
+            } else {
+                Button { store.referral.withdraw(); step = .done } label: {
+                    Text("없어요, 건너뛰기").font(.system(size: 15, weight: .medium)).foregroundStyle(NativeDesktopTheme.secondary)
+                        .frame(minWidth: 220, minHeight: 48).contentShape(Rectangle())
                 }
+                .buttonStyle(.plain).accessibilityIdentifier("native-referral-skip")
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
     private var doneStep: some View {
         VStack(spacing: 28) {
-            NativeBandalMark(size: 56)
-            heading("준비됐어요", "언어와 학교는 설정에서 언제든 바꿀 수 있어요.")
+            Circle().fill(NativeDesktopTheme.adaptive(0xededed, 0x1f1f1f)).frame(width: 80, height: 80)
+                .overlay { BandalCheck(width: 22.5, weight: 3) }
+                .accessibilityHidden(true)
+            heading("준비됐어요", doneLine)
+            BandalChoiceCard {
+                VStack(spacing: 0) {
+                    summaryRow("학교", value: school.map(name) ?? NativeAppLocale.string("아직 고르지 않았어요", locale))
+                    divider
+                    summaryRow("언어", value: language == NativeAppLocale.english ? "English" : "한국어")
+                }
+                .padding(.top, 1).padding(.bottom, 2)
+            }
             primaryButton("시작하기", label: "반달 시작하기", identifier: "native-onboarding-finish", action: finish)
         }
+    }
+
+    /// What this run put in the sidebar; without a school (an invite link went straight to its step), where to find the choices later.
+    private var doneLine: Text {
+        guard let school else { return Text("언어와 학교는 설정에서 언제든 바꿀 수 있어요.") }
+        return school.links.isEmpty ? Text("\(name(school)) · 링크는 사이드바에서 AI로 찾을 수 있어요") : Text("\(name(school)) 바로가기 \(school.links.count)개를 사이드바에 넣었어요")
+    }
+    private func name(_ school: School) -> String { english ? school.nameEn ?? school.name : school.name }
+
+    private func summaryRow(_ title: LocalizedStringKey, value: String) -> some View {
+        HStack(spacing: 12) {
+            Text(title).foregroundStyle(NativeDesktopTheme.secondary)
+            Spacer(minLength: 8)
+            Text(verbatim: value).fontWeight(.medium).lineLimit(1)
+        }
+        .font(.system(size: 15)).padding(.horizontal, 16).frame(height: 47)
     }
 }

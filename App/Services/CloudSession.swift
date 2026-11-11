@@ -6,5 +6,10 @@ struct CloudSession: Codable {
     var expires_at: Double?
     var user: CloudUser
 }
-struct CloudUser: Codable { var id: String; var email: String? }
+struct CloudUser: Codable {
+    var id: String; var email: String?
+    /// How the account signed in ("apple", "google"), as the auth server reports it.
+    var app_metadata: Metadata?
+    struct Metadata: Codable { var provider: String? }
+}
 

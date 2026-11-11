@@ -90,6 +90,7 @@ struct NativePlannerWorkspace: View {
     @State private var pendingDeletion: NativePlannerTask?
     @State private var requestID = UUID()
     @State private var changing = Set<String>()
+    @Environment(\.colorScheme) private var scheme
     private struct TaskEditorIdentity: Identifiable {
         let id = UUID()
         let task: NativePlannerTask?
@@ -144,14 +145,14 @@ struct NativePlannerWorkspace: View {
                 }
                 if mode == "board" {
                     Toggle("완료 숨기기", isOn: $hidingDone).font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.secondary)
-                        .toggleStyle(.switch).controlSize(.mini).fixedSize().accessibilityIdentifier("native-planner-hide-done")
+                        .toggleStyle(BandalToggleStyle(compact: true, labelGap: 8, offKnob: .white)).fixedSize().accessibilityIdentifier("native-planner-hide-done")
                 }
             }.frame(height: 36)
         }.padding(.horizontal, 28).padding(.vertical, 22)
     }
     private var boardTitle: some View {
         HStack(spacing: 10) {
-            Image(systemName: "rectangle.split.3x1").font(.system(size: 22, weight: .medium)).accessibilityHidden(true)
+            Image(systemName: "rectangle.split.3x1").font(.system(size: 24)).accessibilityHidden(true)
             Text("학업 보드").font(.system(size: 26, weight: .bold)).fixedSize()
         }.accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader)
     }
@@ -163,7 +164,7 @@ struct NativePlannerWorkspace: View {
     @ViewBuilder private var closeButton: some View {
         if let onClose {
             Button(action: onClose) {
-                Image(systemName: "xmark").font(.system(size: 22)).foregroundStyle(NativeDesktopTheme.secondary)
+                Image(systemName: "xmark").font(.system(size: 26)).foregroundStyle(NativeDesktopTheme.secondary)
                     .frame(width: 68, height: 68).background(NativePlannerPalette.tool, in: Circle()).contentShape(Circle())
             }.buttonStyle(.plain).accessibilityLabel("학업 보드 닫기").accessibilityIdentifier("native-board-overlay-close")
         }
@@ -176,43 +177,44 @@ struct NativePlannerWorkspace: View {
         let stacked = size.width < size.height || size.width < 720
         return Group {
             if stacked {
-                NativePlannerSectionStack(spacing: 14) { ForEach(statuses, id: \.self) { column($0, across: size.width >= 640 ? 2 : 1, inset: 15) } }
+                NativePlannerSectionStack(spacing: 14) { ForEach(statuses, id: \.self) { column($0, across: size.width >= 640 ? 2 : 1, inset: 15, gutter: 14) } }
             } else {
-                HStack(alignment: .top, spacing: 14) { ForEach(statuses, id: \.self) { column($0, across: 1, inset: 13) } }
+                HStack(alignment: .top, spacing: 14) { ForEach(statuses, id: \.self) { column($0, across: 1, inset: 13, gutter: 12) } }
             }
         }.padding(.horizontal, 24).padding(.vertical, 20)
     }
-    private func column(_ status: String, across: Int, inset: CGFloat) -> some View {
+    /// `inset` is the cards' leading edge in the column (their trailing edge is 2 pt closer, as drawn);
+    /// `gutter` is what they give up on the right for the scroll bar once they scroll.
+    private func column(_ status: String, across: Int, inset: CGFloat, gutter: CGFloat) -> some View {
         let values = visibleTasks.filter { $0.status == status }, title = NativePlannerTask.statusTitle(status)
         let cards = VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
                 ForEach(0..<across, id: \.self) { index in
-                    VStack(spacing: 10) { ForEach(values.enumerated().filter { $0.offset % across == index }.map(\.element)) { card($0) } }
+                    VStack(spacing: across > 1 ? 7 : 10) { ForEach(values.enumerated().filter { $0.offset % across == index }.map(\.element)) { card($0) } }
                         .frame(maxWidth: .infinity, alignment: .top)
                 }
             }
             if status != "done" {
                 Button { editor = TaskEditorIdentity(task: nil, status: status) } label: {
-                    HStack(spacing: 6) { Image(systemName: "plus"); Text("할 일 추가") }.font(.system(size: 14))
-                        .foregroundStyle(NativeDesktopTheme.muted).padding(6).contentShape(Rectangle())
+                    HStack(spacing: 6) { Image(systemName: "plus").font(.system(size: 13)); Text("할 일 추가").font(.system(size: 14)) }
+                        .foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 6).frame(height: 32).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(title + " 열에 할 일 추가")
                     .accessibilityIdentifier(status == "todo" ? "native-task-add" : "native-task-add-" + status)
             }
-        }.padding(.horizontal, inset).padding(.bottom, 2)
+        }.padding(.leading, inset).padding(.bottom, 2)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: NativePlannerTask.statusSymbols[status] ?? "circle").font(.system(size: 15, weight: .semibold)).frame(width: 18, height: 18)
-                    .accessibilityHidden(true)
+                NativePlannerStatusGlyph(status: status)
                 Text(title).font(.system(size: 15, weight: .semibold))
                 Text(String(values.count)).font(.system(size: 14, weight: .medium)).foregroundStyle(NativeDesktopTheme.muted)
             }.frame(height: 21).padding(.horizontal, inset + 4).accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader)
             // The cards at their own height while they fit, which is also what the stacked layout measures. Past that
-            // they scroll, and the scroll view spans the column so its indicator sits in the gutter beside the cards.
-            ViewThatFits(in: .vertical) { cards; ScrollView { cards }.scrollIndicatorsFlash(onAppear: true) }
+            // they scroll, narrower by the gutter the bar is drawn in.
+            ViewThatFits(in: .vertical) { cards.padding(.trailing, inset - 2); NativePlannerScroll { cards.padding(.trailing, inset - 2 + gutter) } }
         }
         .padding(.vertical, 15).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NativePlannerPalette.panel, in: RoundedRectangle(cornerRadius: 20))
-        .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(NativeDesktopTheme.border) }
+        .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(NativePlannerPalette.panelStroke) }
         .accessibilityElement(children: .contain).accessibilityIdentifier("native-planner-column-" + status)
         .dropDestination(for: String.self) { ids, _ in
             guard let id = ids.first, let task = tasks.first(where: { $0.id == id }) else { return false }
@@ -228,7 +230,7 @@ struct NativePlannerWorkspace: View {
             .buttonStyle(.plain).disabled(changing.contains(task.id))
             .accessibilityLabel(task.title).accessibilityValue([course?.name, task.dueText(), NativePlannerTask.statusTitle(task.status)].compactMap { $0 }.joined(separator: ", "))
             .accessibilityIdentifier("native-task-edit-\(task.id)")
-            .bandalPopover(isPresented: .editing(task.id, in: $detailID), arrowEdge: .leading, width: 362) {
+            .bandalPopover(isPresented: .editing(task.id, in: $detailID), arrowEdge: .leading, width: 362, radius: 22, padding: 18, fill: NativePlannerPalette.popover) {
                 NativePlannerTaskDetail(task: task, course: course,
                     setStatus: { detailID = nil; setStatus(task, status: $0) }, delete: { detailID = nil; delete(task) })
             }
@@ -248,11 +250,12 @@ struct NativePlannerWorkspace: View {
     private func editorSheet(_ item: TaskEditorIdentity, in size: CGSize) -> some View {
         let shape = RoundedRectangle(cornerRadius: 28)
         return ZStack {
-            Color.black.opacity(0.12).contentShape(Rectangle()).onTapGesture { editor = nil }.accessibilityHidden(true)
+            Color.black.opacity(scheme == .dark ? 0.3 : 0.12).contentShape(Rectangle()).onTapGesture { editor = nil }.accessibilityHidden(true)
             NativeTaskEditor(task: item.task, courses: store.courses, defaultCourseID: courseFilter ?? courseID ?? store.selectedCourseID,
                              defaultStatus: item.status, defaultDueDate: item.date, close: { editor = nil }) { request in
-                _ = try await store.invoke(item.task == nil ? "board:createTask" : "board:updateTask", request)
+                let saved = try await store.invoke(item.task == nil ? "board:createTask" : "board:updateTask", request)
                 await load()
+                return saved
             }
             .frame(maxWidth: 540, maxHeight: max(200, size.height - keyboardInset - 32)).fixedSize(horizontal: false, vertical: true)
             // Glass does not show through glass: the sheet gets a body of its own, and a shape so that a tap on it stays on it.
@@ -279,6 +282,7 @@ struct NativePlannerWorkspace: View {
             let result: [NativePlannerTask] = try NativeToolJSON.decode(try await store.invoke("board:listTasks", ["includeDone": true]))
             guard identifier == requestID else { return }
             tasks = result; error = nil
+            NativePlannerReminder.reconcile(result)
         } catch { if identifier == requestID { self.error = error.localizedDescription } }
     }
     private func setStatus(_ task: NativePlannerTask, status: String) {

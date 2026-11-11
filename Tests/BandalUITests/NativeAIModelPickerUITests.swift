@@ -51,7 +51,7 @@ final class NativeAIModelPickerUITests: XCTestCase {
         XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription); category.tap()
         XCTAssertTrue(app.staticTexts["native-ai-summary"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(app.secureTextFields.count, 0, "No API key fields")
-        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'API 키를'")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["AI는 반달이 제공해요. 따로 API 키를 넣지 않아도 돼요."].exists, "The design's footnote: " + app.debugDescription)
         attach(app, "Settings AI (no keys)")
     }
 

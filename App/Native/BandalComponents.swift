@@ -20,10 +20,10 @@ extension View {
     /// `arrowEdge: nil` lets the system pick the side with room (a prompt that may open next to the keyboard).
     /// `radius` and `padding` follow the Figma frame of that popover (menus 8, forms 18).
     func bandalPopover<Content: View>(isPresented: Binding<Bool>, arrowEdge: Edge? = .top, width: CGFloat? = 280,
-                                      radius: CGFloat = 22, padding: CGFloat = BandalMetrics.padding,
+                                      radius: CGFloat = 22, padding: CGFloat = BandalMetrics.padding, fill: Color = NativeGlass.popup,
                                       @ViewBuilder content: @escaping () -> Content) -> some View {
         modifier(BandalDeferredPopover(isPresented: isPresented, arrowEdge: arrowEdge) {
-            BandalPopoverBody(width: width, radius: radius, padding: padding, arrowEdge: arrowEdge, close: { isPresented.wrappedValue = false }, content: content)
+            BandalPopoverBody(width: width, radius: radius, padding: padding, fill: fill, arrowEdge: arrowEdge, close: { isPresented.wrappedValue = false }, content: content)
         })
     }
 
@@ -50,8 +50,8 @@ extension View {
 
     /// A popover's surface: the design's own glass card with no arrow and no system chrome.
     /// `arrowEdge` is the one given to `.popover`: the card sits on the opposite side of the anchor.
-    func bandalPopoverSurface(radius: CGFloat = 22, arrowEdge: Edge? = .top) -> some View {
-        bandalGlass(in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+    func bandalPopoverSurface(radius: CGFloat = 22, arrowEdge: Edge? = .top, fill: Color = NativeGlass.popup) -> some View {
+        bandalGlass(in: RoundedRectangle(cornerRadius: radius, style: .continuous), fill: fill)
             .presentationBackground(.clear)
     }
 
@@ -97,6 +97,8 @@ private struct BandalPopoverBody<Content: View>: View {
     let width: CGFloat?
     var radius: CGFloat = 22
     var padding = BandalMetrics.padding
+    /// The tint over the glass; a popover over a dimmed sheet passes a denser one.
+    var fill = NativeGlass.popup
     var arrowEdge: Edge? = .top
     let close: () -> Void
     @ViewBuilder let content: () -> Content
@@ -105,7 +107,7 @@ private struct BandalPopoverBody<Content: View>: View {
             .padding(padding)
             .frame(width: width, alignment: .leading)
             .foregroundStyle(NativeDesktopTheme.text)
-            .bandalPopoverSurface(radius: radius, arrowEdge: arrowEdge)
+            .bandalPopoverSurface(radius: radius, arrowEdge: arrowEdge, fill: fill)
             .presentationCompactAdaptation(.popover)
             .background { BandalEscapeKey(action: close) }
     }
@@ -472,17 +474,21 @@ enum NativeLocalPreferences {
 /// The design's switch, drawn rather than the system one: 51 × 31 in settings, 44 × 26 (`compact`) on the board.
 struct BandalToggleStyle: ToggleStyle {
     var compact = false
+    /// Set where the switch follows its label at a fixed distance instead of sitting at the row's far edge.
+    var labelGap: CGFloat?
+    /// The knob while off, where it is drawn differently from the knob while on (the board's is white in both appearances).
+    var offKnob: Color?
     private static let off = NativeDesktopTheme.border
     private static let knob = NativeDesktopTheme.adaptive(0xffffff, 0x181818)
     func makeBody(configuration: Configuration) -> some View {
         let size = compact ? CGSize(width: 44, height: 26) : CGSize(width: 51, height: 31)
-        return HStack(spacing: 12) {
+        return HStack(spacing: labelGap ?? 12) {
             configuration.label.accessibilityHidden(true)
-            Spacer(minLength: 8)
+            if labelGap == nil { Spacer(minLength: 8) }
             Capsule().fill(configuration.isOn ? NativeDesktopTheme.accent : Self.off)
                 .frame(width: size.width, height: size.height)
                 .overlay(alignment: configuration.isOn ? .trailing : .leading) {
-                    Circle().fill(Self.knob).padding(2).shadow(color: .black.opacity(0.15), radius: compact ? 1.5 : 2, y: compact ? 1 : 2)
+                    Circle().fill(configuration.isOn ? Self.knob : offKnob ?? Self.knob).padding(2).shadow(color: .black.opacity(0.15), radius: compact ? 1.5 : 2, y: compact ? 1 : 2)
                 }
                 .animation(.easeOut(duration: 0.15), value: configuration.isOn)
                 .accessibilityHidden(true)
@@ -560,6 +566,17 @@ struct BandalChoiceCard<Content: View>: View {
     }
 }
 
+/// The design's check mark: two strokes with round ends, 10.6 × 7.4 at weight 2.4 in a list row.
+struct BandalCheck: View {
+    var width: CGFloat = 10.6
+    var weight: CGFloat = 2.4
+    var body: some View {
+        Path { path in path.move(to: CGPoint(x: 0, y: 0.524)); path.addLine(to: CGPoint(x: 1.0 / 3, y: 1)); path.addLine(to: CGPoint(x: 1, y: 0)) }
+            .applying(CGAffineTransform(scaleX: width, y: width * 0.7))
+            .stroke(style: StrokeStyle(lineWidth: weight, lineCap: .round, lineJoin: .round)).frame(width: width, height: width * 0.7)
+    }
+}
+
 /// One row of a `BandalChoiceCard`: title over a detail, a check on the chosen one, 68 high (62 with `compact`).
 struct BandalChoiceRow: View {
     let title: String
@@ -567,19 +584,21 @@ struct BandalChoiceRow: View {
     var chosen = false
     var compact = false
     var showsDivider = true
+    /// The chosen row lies on `surface` (a list of results); a list of settings shows the check alone.
+    var tinted = true
     let action: () -> Void
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: title).font(.system(size: compact ? 15 : 16, weight: .medium)).foregroundStyle(NativeDesktopTheme.text).lineLimit(1)
-                    if let detail { Text(verbatim: detail).font(.system(size: compact ? 12 : 13)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1) }
+                    Text(verbatim: title).font(.system(size: compact ? 15 : 16, weight: .medium)).foregroundStyle(NativeDesktopTheme.text).lineLimit(1).frame(minHeight: compact ? 21 : 22)
+                    if let detail { Text(verbatim: detail).font(.system(size: compact ? 12 : 13)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1).frame(minHeight: compact ? 17 : 18) }
                 }
                 Spacer(minLength: 8)
-                if chosen { Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.accent) }
+                if chosen { BandalCheck(width: compact ? 9.4 : 10.6, weight: compact ? 2 : 2.4).foregroundStyle(NativeDesktopTheme.text).padding(.trailing, 3).accessibilityHidden(true) }
             }
             .padding(.horizontal, compact ? 14 : 16).frame(minHeight: compact ? 62 : 68)
-            .background(chosen ? NativeDesktopTheme.surface : .clear).contentShape(Rectangle())
+            .background(chosen && tinted ? NativeDesktopTheme.surface : .clear).contentShape(Rectangle())
             .overlay(alignment: .bottom) { if showsDivider { NativeDesktopTheme.border.frame(height: 1).padding(.leading, compact ? 14 : 16) } }
         }.buttonStyle(.plain).accessibilityAddTraits(chosen ? .isSelected : [])
     }

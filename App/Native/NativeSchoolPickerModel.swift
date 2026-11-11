@@ -10,7 +10,14 @@ final class NativeSchoolPickerModel {
     enum Phase: Equatable { case searching, signIn, finding, confirming, notFound, manual }
     enum Notice: Equatable { case rateLimited(Int), aiUnavailable, saveFailed(String) }
 
-    var query = "" { didSet { if query != oldValue { scheduleSearch() } } }
+    var query = "" {
+        didSet {
+            guard query != oldValue else { return }
+            // Another name: the used-up notice gives the list back.
+            if case .rateLimited = notice { notice = nil }
+            scheduleSearch()
+        }
+    }
     var country: String { didSet { if country != oldValue { scheduleSearch() } } }
     private(set) var results: [School] = []
     /// `results` answer the query on screen, not an earlier one still loading.
@@ -34,7 +41,27 @@ final class NativeSchoolPickerModel {
     private let debounce: Duration
     private let slowAfter: Duration
     private let save: (School) async throws -> Void
-    private let done: (School) -> Void
+    /// The host's close. A picker that takes over a search left running sets its own.
+    var done: (School) -> Void
+    /// The row picked where choosing waits for "다음" (onboarding).
+    var selected: School?
+    /// Set while no picker shows this model ("닫고 기다리기"): how the search ended, for a toast.
+    var announce: ((Phase, Notice?) -> Void)?
+    /// A search left running by a popover that closed; the next picker shows it.
+    static var waiting: NativeSchoolPickerModel?
+    /// AI searches a day (the server's ration) and how many this iPad has started today.
+    private(set) var limit = 3
+    var remaining: Int { max(0, limit - used) }
+    private let defaults: UserDefaults
+    static let usedKey = "native.school.aiSearches"
+    static var today: String { Date.now.formatted(.iso8601.year().month().day()) }
+    private var used: Int {
+        get {
+            let parts = (defaults.string(forKey: Self.usedKey) ?? "").split(separator: ":")
+            return parts.count == 2 && parts[0] == Self.today ? Int(parts[1]) ?? 0 : 0
+        }
+        set { defaults.set(Self.today + ":\(newValue)", forKey: Self.usedKey) }
+    }
     private var pending: Task<Void, Never>?
     private var finding: Task<School?, Error>?
     private var attempt = 0
@@ -45,10 +72,10 @@ final class NativeSchoolPickerModel {
     nonisolated static var deviceCountry: String { Locale.current.region?.identifier ?? "KR" }
 
     init(directory: any SchoolDirectory, bundled: [School] = NativeUniversityCatalog.schools, country: String = deviceCountry, locale: String = NativeAppLocale.current,
-         debounce: Duration = .milliseconds(300), slowAfter: Duration = .seconds(15),
+         debounce: Duration = .milliseconds(300), slowAfter: Duration = .seconds(15), defaults: UserDefaults = .standard,
          save: @escaping (School) async throws -> Void, done: @escaping (School) -> Void) {
         self.directory = directory; self.bundled = bundled; self.country = country; self.locale = locale
-        self.debounce = debounce; self.slowAfter = slowAfter; self.save = save; self.done = done
+        self.debounce = debounce; self.slowAfter = slowAfter; self.defaults = defaults; self.save = save; self.done = done
     }
 
     // MARK: Search
@@ -80,6 +107,7 @@ final class NativeSchoolPickerModel {
         // A newer keystroke or country owns the list now.
         guard text == trimmed(query), country == self.country else { return }
         results = answer; self.offline = offline; searched = true
+        if let selected, !answer.contains(where: { $0.id == selected.id }) { self.selected = nil }
     }
 
     /// A reviewed school saves at once. Links nobody reviewed (an AI finding that another search put
@@ -104,6 +132,7 @@ final class NativeSchoolPickerModel {
         guard phase == .searching || phase == .signIn, name == trimmed(query) else { return }
         guard signedIn else { phase = .signIn; return }
         phase = .finding; slow = false
+        used += 1
         attempt += 1
         let attempt = attempt
         let timer = Task { [slowAfter] in
@@ -123,9 +152,17 @@ final class NativeSchoolPickerModel {
             let school = answer.map { answer in bundled.first { $0.id == answer.id } ?? answer }
             if let school, !school.links.isEmpty { found = school; links = school.links; phase = .confirming } else { phase = .notFound }
         case .failure(SchoolDirectoryError.signInRequired): phase = .signIn
-        case .failure(SchoolDirectoryError.rateLimited(let limit)): notice = .rateLimited(limit); phase = .searching
+        case .failure(SchoolDirectoryError.rateLimited(let limit)): self.limit = limit; used = limit; notice = .rateLimited(limit); phase = .searching
         case .failure: notice = .aiUnavailable; phase = .searching
         }
+        announce?(phase, notice)
+    }
+
+    /// 다시 찾기 after a search that found nothing: one more of the day's searches.
+    func findAgain() async {
+        guard phase == .notFound else { return }
+        phase = .searching
+        await findWithAI()
     }
 
     func signedIn() async { if phase == .signIn { await findWithAI() } }

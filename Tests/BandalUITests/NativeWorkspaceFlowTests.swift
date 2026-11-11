@@ -315,6 +315,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         app.buttons["native-section-settings"].tap()
         let category = app.buttons["native-settings-category-subscription"]
         XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription); category.tap()
+        app.openNativeSettingsMore()
         let open = app.buttons["native-membership-open"]
         XCTAssertTrue(open.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS '로그인'")).firstMatch.exists)

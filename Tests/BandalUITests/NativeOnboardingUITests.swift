@@ -31,12 +31,12 @@ final class NativeOnboardingUITests: XCTestCase {
             if name == "light" {
                 // The picker follows the language too.
                 app.buttons["native-onboarding-next"].tap()
-                XCTAssertTrue(app.staticTexts["Which school do you go to?"].waitForExistence(timeout: 5), app.debugDescription)
+                XCTAssertTrue(app.staticTexts["Choose your school"].waitForExistence(timeout: 5), app.debugDescription)
                 let search = app.textFields["native-school-search"]
                 XCTAssertTrue(search.waitForExistence(timeout: 5)); XCTAssertEqual(search.placeholderValue, "Search by school name")
                 search.tap(); search.typeText("Bandal")
                 XCTAssertTrue(app.buttons["Find with AI"].waitForExistence(timeout: 5), app.debugDescription)
-                XCTAssertTrue(app.buttons["Enter it myself"].exists)
+                XCTAssertTrue(app.buttons["Enter it yourself"].exists)
                 capture("2 School in English (\(name))")
                 app.buttons["native-onboarding-back"].tap()
                 // On a small iPad the keyboard that is leaving still covers the language cards.
@@ -49,14 +49,15 @@ final class NativeOnboardingUITests: XCTestCase {
             // 2. 학교: the bundled list first, then a search.
             let search = app.textFields["native-school-search"]
             XCTAssertTrue(search.waitForExistence(timeout: 5), app.debugDescription)
-            XCTAssertTrue(app.staticTexts["다니는 학교를 알려 주세요"].exists)
+            XCTAssertTrue(app.staticTexts["학교를 골라 주세요"].exists)
             XCTAssertTrue(app.buttons["native-school-result-snu"].waitForExistence(timeout: 5), "Korea starts on the bundled schools")
-            XCTAssertTrue(app.buttons["native-school-country"].label.contains("대한민국"), "The chip starts on the device's region")
+            XCTAssertTrue(app.buttons["native-school-country-KR"].isSelected, "The chips start on the device's region")
+            XCTAssertFalse(app.buttons["native-onboarding-next"].isEnabled, "다음 waits for a school")
             capture("2 학교 (\(name))")
             search.tap(); search.typeText("서울")
             XCTAssertTrue(app.buttons["native-school-result-snu"].waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertFalse(app.buttons["native-school-result-yonsei"].exists)
-            XCTAssertTrue(app.buttons["native-school-ai"].waitForExistence(timeout: 5), "AI and 직접 입력 stay within reach")
+            XCTAssertTrue(app.buttons["native-onboarding-manual"].exists, "직접 입력 stays within reach; AI is offered once nothing matches")
             capture("2 학교 검색 (\(name))")
 
             // No match → AI. A search that takes long says so, and can be stopped.
@@ -67,7 +68,7 @@ final class NativeOnboardingUITests: XCTestCase {
             app.buttons["native-school-ai"].tap()
             let finding = app.staticTexts["native-school-finding"]
             XCTAssertTrue(finding.waitForExistence(timeout: 5), app.debugDescription)
-            XCTAssertEqual(finding.label, "느린대학교 사이트를 찾는 중…")
+            XCTAssertEqual(finding.label, "AI가 ‘느린대학교’ 사이트를 찾는 중이에요")
             if name == "light" {
                 XCTAssertFalse(app.staticTexts["native-school-slow"].exists)
                 XCTAssertTrue(app.staticTexts["native-school-slow"].waitForExistence(timeout: 25), "조금 더 걸려요 after 15 s")
@@ -86,7 +87,7 @@ final class NativeOnboardingUITests: XCTestCase {
             XCTAssertEqual(app.staticTexts["native-school-found-name"].label, "반달대학교")
             XCTAssertEqual(app.staticTexts["native-school-unverified"].label, "AI가 찾은 정보 · 검토 전")
             for id in ["home", "portal", "lms", "library"] { XCTAssertTrue(app.buttons["native-school-link-edit-" + id].exists, id) }
-            XCTAssertTrue(app.staticTexts["https://lms.bandal.example"].exists)
+            XCTAssertTrue(app.staticTexts["lms.bandal.example"].exists)
             capture("AI 결과 확인 (\(name))")
             if name == "light" {
                 // A row left open, then back to the search and the same school again: the new result is not stuck behind it.
@@ -133,7 +134,7 @@ final class NativeOnboardingUITests: XCTestCase {
             let finish = app.buttons["native-onboarding-finish"]
             XCTAssertTrue(finish.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertTrue(app.staticTexts["준비됐어요"].exists)
-            XCTAssertFalse(app.buttons["native-onboarding-later"].exists, "Nothing left to put off")
+            XCTAssertTrue(app.staticTexts["반달대학교 바로가기 4개를 사이드바에 넣었어요"].exists, app.debugDescription)
             capture("4 완료 (\(name))")
             finish.tap()
             let heading = app.buttons["native-university-heading"]
@@ -227,7 +228,7 @@ final class NativeOnboardingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["native-university-choose"].exists, "No school yet, and still no onboarding")
     }
 
-    /// 설정 › 일반 › 언어 switches the app at once, and 계정 › 학교 opens the same picker with a country chip.
+    /// 설정 › 일반 › 언어 switches the app at once, and 일반 › 학교 opens the same picker with a country chip.
     @MainActor
     func testSettingsLanguageAppliesAtOnceAndSettingsHostsThePicker() {
         let app = launch(["--native-school-fixture"])
@@ -242,32 +243,29 @@ final class NativeOnboardingUITests: XCTestCase {
         app.buttons["English"].tap()
         XCTAssertTrue(wait(for: choose) { $0.label == "Choose school" }, "The sidebar behind Settings is already in English: " + choose.label)
 
-        app.buttons["native-settings-category-account"].tap()
+        app.openNativeSettingsSchool()
         let pick = app.buttons["native-settings-school-choose"]
         XCTAssertTrue(pick.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(pick.label, "Choose my school")
         pick.tap()
         let search = app.textFields["native-school-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 10), app.debugDescription)
-        // The country chip: Korea by region, then Japan, then any ISO code.
-        let country = app.buttons["native-school-country"]
-        XCTAssertEqual(country.label, "Country: South Korea")
+        // The country chips: Korea by region, then Japan, then any ISO code under Other.
+        let korea = app.buttons["native-school-country-KR"], japan = app.buttons["native-school-country-JP"]
+        XCTAssertEqual(korea.label, "Korea"); XCTAssertTrue(korea.isSelected)
         search.tap() // lets the keyboard settle: the popover moves with it
         capture("Settings: school picker (English)")
-        country.tap()
-        XCTAssertTrue(app.buttons["native-school-country-JP"].waitForExistence(timeout: 5), app.debugDescription)
-        capture("Settings: school picker and country (English)")
-        app.buttons["native-school-country-JP"].tap()
-        XCTAssertTrue(wait(for: country) { $0.label == "Country: Japan" }, country.label)
+        japan.tap()
+        XCTAssertTrue(wait(for: japan) { $0.isSelected }, japan.label)
         XCTAssertTrue(waitForAbsence(app.buttons["native-school-result-snu"]), "The bundled list is Korea's")
-        country.tap()
         app.buttons["native-school-country-other"].tap()
         let code = app.textFields["native-school-country-code"]
         XCTAssertTrue(code.waitForExistence(timeout: 5), app.debugDescription)
+        capture("Settings: school picker and country code (English)")
         code.tap(); code.typeText("zz\n")
         XCTAssertTrue(app.staticTexts["No such country code. Try DE, FR or CN."].waitForExistence(timeout: 5), app.debugDescription)
         code.tap(); code.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 2) + "kr\n")
-        XCTAssertTrue(wait(for: country) { $0.label == "Country: South Korea" }, country.label)
+        XCTAssertTrue(wait(for: korea) { $0.isSelected }, korea.label)
 
         search.tap(); search.typeText("kaist")
         let school = app.buttons["native-school-result-kaist"]
@@ -281,7 +279,7 @@ final class NativeOnboardingUITests: XCTestCase {
         XCTAssertTrue(language.waitForExistence(timeout: 10))
         for _ in 0..<5 where !app.buttons["한국어"].exists { language.tap(); _ = app.buttons["한국어"].waitForExistence(timeout: 2) }
         app.buttons["한국어"].tap()
-        app.buttons["native-settings-category-account"].tap()
+        app.openNativeSettingsSchool()
         XCTAssertTrue(wait(for: pick) { $0.label == "내 학교 바꾸기" }, pick.label)
     }
 
@@ -292,7 +290,7 @@ final class NativeOnboardingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["native-university-choose"].waitForExistence(timeout: 25), app.debugDescription)
         app.buttons["native-section-settings"].tap()
         let account = app.buttons["native-settings-category-account"]
-        XCTAssertTrue(account.waitForExistence(timeout: 15), app.debugDescription); account.tap()
+        XCTAssertTrue(account.waitForExistence(timeout: 15), app.debugDescription); app.openNativeSettingsSchool()
         let pick = app.buttons["native-settings-school-choose"]
         XCTAssertTrue(pick.waitForExistence(timeout: 10), app.debugDescription); pick.tap()
         let search = app.textFields["native-school-search"]

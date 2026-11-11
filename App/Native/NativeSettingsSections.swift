@@ -1,9 +1,7 @@
 import SwiftUI
 
-/// Shared controls keep the desktop category layout while using native input,
-/// focus and accessibility. Persistence is supplied by the owning workspace.
-/// Cursor-density settings group: an 11pt grey caps header (and at most one line of help) over a
-/// card with 12pt padding and 36pt rows.
+/// The help page's card: an 11pt grey caps header (and at most one line of help) over a card with
+/// 12pt padding and 36pt rows. Settings draws `NativeSettingsGroup`.
 struct NativeSettingsCard<Content: View>: View {
     let title: String
     var description = ""
@@ -23,6 +21,115 @@ struct NativeSettingsCard<Content: View>: View {
     }
 }
 
+/// A settings group as the design draws it (Figma 132:2769): a 13 pt Semibold header, a paper card
+/// (radius 12, hairline, no padding) whose children are rows split by lines inset 16, and a 13 pt
+/// footnote under the card. Every child of `content` is one row.
+struct NativeSettingsGroup<Content: View>: View {
+    var title = ""
+    var description = ""
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !title.isEmpty { BandalText(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityAddTraits(.isHeader) }
+            VStack(spacing: 0) {
+                Group(subviews: content()) { rows in
+                    ForEach(Array(zip(rows.indices, rows)), id: \.1.id) { index, row in
+                        if index > 0 { NativeDesktopTheme.border.frame(height: 1).padding(.leading, 16) }
+                        // Its ideal height, always: a frame with only a minimum gives way when the stack is offered less.
+                        row.padding(.horizontal, 16).padding(.vertical, NativeSettingsRowMetrics.inset).frame(maxWidth: .infinity, minHeight: 47, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .font(.system(size: 16)).foregroundStyle(NativeDesktopTheme.text).padding(1)
+            .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(NativeDesktopTheme.border))
+            if !description.isEmpty { BandalText(description).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted).fixedSize(horizontal: false, vertical: true) }
+        }
+        .buttonStyle(BandalButtonStyle(kind: .soft)).tint(NativeDesktopTheme.accent)
+    }
+}
+
+enum NativeSettingsRowMetrics {
+    /// What the group pads above and below every row; a row asks for its design height less this.
+    static let inset: CGFloat = 6
+    static let red = Color(uiColor: .systemRed)
+    static let green = Color(uiColor: .systemGreen)
+}
+
+/// One row: title 16 (and a 13 pt note) on the left, the control on the right. `height` is the row's
+/// height in the design: 47, 57 with a note, 61 around a segmented control.
+struct NativeSettingsRow<Control: View>: View {
+    let title: String
+    var note: String?
+    var tint = NativeDesktopTheme.text
+    var height: CGFloat?
+    @ViewBuilder var control: () -> Control
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                BandalText(title).foregroundStyle(tint)
+                if let note { BandalText(note).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true) }
+            }
+            Spacer(minLength: 8)
+            control()
+        }.frame(minHeight: (height ?? (note == nil ? 47 : 57)) - 2 * NativeSettingsRowMetrics.inset).contentShape(Rectangle())
+    }
+}
+
+extension NativeSettingsRow where Control == EmptyView {
+    init(title: String, note: String? = nil, tint: Color = NativeDesktopTheme.text) { self.init(title: title, note: note, tint: tint) { EmptyView() } }
+}
+
+/// A row's value: 15 pt secondary, and the 13 pt chevron of a row that opens something.
+struct NativeSettingsValue: View {
+    var text = ""
+    var chevron = true
+    init(_ text: String = "", chevron: Bool = true) { self.text = text; self.chevron = chevron }
+    var body: some View {
+        HStack(spacing: 6) {
+            if !text.isEmpty { BandalText(text).font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1) }
+            if chevron { Image(systemName: "chevron.right").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted) }
+        }
+    }
+}
+
+/// A switch row: 59 high, 57 with a note.
+struct NativeSettingsToggle: View {
+    let title: String
+    var note: String?
+    @Binding var isOn: Bool
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            VStack(alignment: .leading, spacing: 2) {
+                BandalText(title)
+                if let note { BandalText(note).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary) }
+            }
+        }.frame(minHeight: (note == nil ? 59 : 57) - 2 * NativeSettingsRowMetrics.inset)
+    }
+}
+
+/// The row that ends a page: what the design leaves out of the page lives on the page it opens.
+struct NativeSettingsMoreRow: View {
+    let action: () -> Void
+    var body: some View {
+        NativeSettingsGroup {
+            Button(action: action) { NativeSettingsRow(title: "더 보기") { NativeSettingsValue() } }.buttonStyle(.plain).accessibilityIdentifier("native-settings-more")
+        }
+    }
+}
+
+/// A destructive or plain action drawn as a 16 pt text row.
+struct NativeSettingsActionRow: View {
+    let title: String
+    var note: String?
+    var destructive = false
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) { NativeSettingsRow(title: title, note: note, tint: destructive ? NativeSettingsRowMetrics.red : NativeDesktopTheme.text) }.buttonStyle(.plain)
+    }
+}
+
 struct NativeSettingsSections: View {
     let section: String
     var store: NativeWorkspaceStore
@@ -36,14 +143,18 @@ struct NativeSettingsSections: View {
     @State private var tab = "note"
     @State private var devices: [[String: Any]] = []
     @AppStorage(NativeLocalPreferences.newDocumentKind) private var newDocumentKind = "note"
+    @State private var pickingLead = false
+    @State private var pickingLocale = false
+    @Environment(\.locale) private var locale
     private var tabs: [String: Any] { settings["tabs"] as? [String: Any] ?? [:] }
     private var widgets: [String: Any] { settings["widgets"] as? [String: Any] ?? [:] }
     private var enabledWidgets: [String] { widgets["enabled"] as? [String] ?? [] }
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 28) {
             if let error { NativeToolError(message: error) }
             switch section {
             case "general": general
+            case "general-extra": generalExtra
             case "tabs": tabPanel
             case "widgets": widgetPanel
             case "university": NativeSettingsUniversityPanel(store: store, settings: settings, save: save)
@@ -61,35 +172,67 @@ struct NativeSettingsSections: View {
                 }
             }
     }
+    private var schoolName: String? { NativeUniversityCatalog.university(settings)?["nameKo"] as? String }
+    private var notifications: [String: Any] { settings["notifications"] as? [String: Any] ?? [:] }
+    private var leadDays: [Int] { notifications["leadDays"] as? [Int] ?? [3, 1] }
+    private static func leadTitle(_ day: Int) -> String { day == 0 ? "당일" : day == 1 ? "하루 전" : "\(day)일 전" }
+    /// 일반 as the design draws it (132:2769): 학교, 새 문서, 알림, 언어.
     private var general: some View {
-        VStack(spacing: 24) {
-            NativeSettingsCard(title: "언어") {
-                Picker("언어", selection: string("locale", fallback: "ko-KR")) { Text("한국어").tag("ko-KR"); Text("English").tag("en-US") }
-                    .accessibilityIdentifier("native-settings-locale")
+        VStack(alignment: .leading, spacing: 28) {
+            NativeSettingsGroup(title: "학교") {
+                Button { navigate("university") } label: { NativeSettingsRow(title: "학교") { NativeSettingsValue(schoolName ?? "고르기") } }
+                    .buttonStyle(.plain).accessibilityIdentifier("native-settings-school")
             }
-            NativeSettingsCard(title: "학교") {
-                Button { navigate("university") } label: {
-                    BandalSettingRow(title: "학교") { HStack(spacing: 4) { Text("계정에서 고르기"); Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)) }.foregroundStyle(NativeDesktopTheme.secondary) }
-                        .contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityIdentifier("native-settings-school")
-            }
-            NativeSettingsCard(title: "새 문서") {
-                BandalSettingRow(title: "새 탭 기본 문서", note: "홈의 새 노트 버튼과 새 탭 메뉴의 첫 선택") {
+            NativeSettingsGroup(title: "새 문서") {
+                NativeSettingsRow(title: "새 탭 기본 문서", height: 61) {
                     BandalSegmented(options: [("note", "노트"), ("markdown", "마크다운")], selection: $newDocumentKind, identifierPrefix: "native-settings-new-document-")
                 }
-                Divider()
-                BandalSettingRow(title: "앱을 열면") {
+                NativeSettingsRow(title: "앱을 열면", height: 61) {
                     BandalSegmented(options: [("restore", "이어서 쓰기"), ("home", "첫 화면")],
                         selection: Binding(get: { boolean("restoreLastCourse", fallback: true).wrappedValue ? "restore" : "home" }, set: { boolean("restoreLastCourse", fallback: true).wrappedValue = $0 == "restore" }),
                         identifierPrefix: "native-settings-launch-")
                 }
-                Divider()
-                Toggle("새 탭을 현재 탭 옆에서 열기", isOn: boolean("openAdjacentTab", fallback: false)).accessibilityIdentifier("native-settings-adjacent-tabs")
+            }
+            NativeSettingsGroup(title: "알림") {
+                // Off also when all notifications are off; turning it on turns those on too.
+                NativeSettingsToggle(title: "과제 마감 알림", isOn: Binding(get: { notifications["enabled"] as? Bool != false && notifications["deadlines"] as? Bool != false },
+                                                                       set: { persist(["notifications": $0 ? ["enabled": true, "deadlines": true] : ["deadlines": false]]) }))
+                    .accessibilityIdentifier("native-settings-deadline-alerts")
+                Button { pickingLead = true } label: {
+                    NativeSettingsRow(title: "알림 시간") { NativeSettingsValue(leadDays.isEmpty ? "없음" : leadDays.map { NativeAppLocale.string(Self.leadTitle($0), locale) }.joined(separator: " · ")) }
+                }.buttonStyle(.plain).accessibilityIdentifier("native-settings-lead-days")
+                    .bandalPopover(isPresented: $pickingLead, width: 220, radius: 16, padding: 8) {
+                        VStack(spacing: 0) {
+                            ForEach([7, 3, 1, 0], id: \.self) { day in
+                                BandalMenuRow(Self.leadTitle(day), checked: leadDays.contains(day)) {
+                                    persist(["notifications": ["leadDays": leadDays.contains(day) ? leadDays.filter { $0 != day } : (leadDays + [day]).sorted(by: >)]])
+                                }.accessibilityIdentifier("native-settings-lead-day-\(day)")
+                            }
+                        }
+                    }
+            }
+            NativeSettingsGroup {
+                Button { pickingLocale = true } label: {
+                    NativeSettingsRow(title: "언어") { NativeSettingsValue(settings["locale"] as? String == "en-US" ? "English" : "한국어") }
+                }.buttonStyle(.plain).accessibilityIdentifier("native-settings-locale")
+                    .bandalPopover(isPresented: $pickingLocale, width: 220, radius: 16, padding: 8) {
+                        VStack(spacing: 0) {
+                            ForEach([("ko-KR", "한국어"), ("en-US", "English")], id: \.0) { id, title in
+                                BandalMenuRow(title, checked: (settings["locale"] as? String ?? "ko-KR") == id) { pickingLocale = false; persist(["locale": id]) }
+                            }
+                        }
+                    }
             }
         }
     }
+    /// 일반 › 더 보기: what the design's 새 문서 card leaves out.
+    private var generalExtra: some View {
+        NativeSettingsGroup(title: "탭") {
+            NativeSettingsToggle(title: "새 탭을 현재 탭 옆에서 열기", isOn: boolean("openAdjacentTab", fallback: false)).accessibilityIdentifier("native-settings-adjacent-tabs")
+        }
+    }
     private var tabPanel: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 28) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     ForEach([("note", "마크다운"), ("recording", "녹음"), ("whiteboard", "노트"), ("board", "학업 보드")].filter { NativeReleaseFlags.showsRecording || $0.0 != "recording" }, id: \.0) { id, title in
@@ -99,7 +242,7 @@ struct NativeSettingsSections: View {
             }
             switch tab {
             case "note":
-                NativeSettingsCard(title: "새 마크다운") {
+                NativeSettingsGroup(title: "새 마크다운") {
                     // Applies when the field loses focus or on Enter; no save button.
                     LabeledContent("제목 접두사") {
                         TextField("새 마크다운", text: $titlePrefix).multilineTextAlignment(.trailing).frame(maxWidth: 220)
@@ -108,12 +251,12 @@ struct NativeSettingsSections: View {
                     }
                 }
             case "recording": recording
-            case "whiteboard": NativeSettingsCard(title: "노트", description: "새로 만드는 노트의 배경을 선택합니다.") {
+            case "whiteboard": NativeSettingsGroup(title: "노트", description: "새로 만드는 노트의 배경을 선택합니다.") {
                 Picker("기본 배경", selection: string("whiteboardBackground", group: "tabs", fallback: "grid")) {
                     Text("격자").tag("grid"); Text("점").tag("dots"); Text("줄").tag("lines"); Text("빈 배경").tag("blank")
                 }.accessibilityIdentifier("native-settings-whiteboard-background")
             }
-            default: NativeSettingsCard(title: "학업 보드", description: "새로 여는 보드의 기본 화면을 선택합니다.") {
+            default: NativeSettingsGroup(title: "학업 보드", description: "새로 여는 보드의 기본 화면을 선택합니다.") {
                 Picker("기본 보기", selection: string("boardDefaultView", group: "tabs", fallback: "calendar")) { Text("달력").tag("calendar"); Text("목록").tag("board") }
                 Toggle("완료된 일정 숨기기", isOn: boolean("boardHideDone", group: "tabs", fallback: false))
             }
@@ -121,7 +264,7 @@ struct NativeSettingsSections: View {
         }
     }
     private var recording: some View {
-        NativeSettingsCard(title: "녹음") {
+        NativeSettingsGroup(title: "녹음") {
             Picker("음성 모델", selection: string("recordingModel", group: "tabs", fallback: "zipformer-ko")) {
                 Text("한국어 · Zipformer").tag("zipformer-ko"); Text("다국어 · SenseVoice").tag("sensevoice")
                 if tabs["recordingModel"] as? String == "whisper-large-v3-turbo" { Text("Whisper · iPad에서 사용할 수 없음").tag("whisper-large-v3-turbo") }
@@ -138,8 +281,8 @@ struct NativeSettingsSections: View {
         }
     }
     private var widgetPanel: some View {
-        VStack(spacing: 24) {
-            NativeSettingsCard(title: "오른쪽 위젯") {
+        VStack(spacing: 28) {
+            NativeSettingsGroup(title: "오른쪽 위젯") {
                 ForEach([("todo", "투두"), ("board", "학업 보드"), ("mail", "메일함")], id: \.0) { id, title in
                     HStack {
                         Toggle(title, isOn: Binding(get: { enabledWidgets.contains(id) }, set: { enabled in

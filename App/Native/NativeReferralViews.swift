@@ -16,7 +16,7 @@ struct NativeReferralCodeEntry: View {
     @State private var linked: String?
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var colorScheme
-    private var height: CGFloat { large ? 56 : 44 }
+    private var height: CGFloat { large ? 50 : 44 }
 
     var body: some View {
         VStack(alignment: large ? .center : .leading, spacing: 8) {
@@ -28,7 +28,7 @@ struct NativeReferralCodeEntry: View {
                     field
                     // Made again when the theme changes: the system draws it in the colours it was given.
                     NativeReferralPasteControl { text = Referral.normalize($0) }.frame(height: height).id(colorScheme)
-                }.frame(maxWidth: large ? 280 : nil)
+                }.frame(maxWidth: large ? 520 : nil)
                 outcome.frame(minHeight: 18)
             }
         }
@@ -60,12 +60,12 @@ struct NativeReferralCodeEntry: View {
 
     private var field: some View {
         TextField("", text: $text, prompt: Text("6자리 코드"))
-            .font(.system(size: large ? 24 : 15, weight: .semibold, design: .monospaced)).multilineTextAlignment(large ? .center : .leading)
+            .font(.system(size: large ? 17 : 15, weight: .semibold, design: .monospaced)).multilineTextAlignment(large ? .center : .leading)
             .textFieldStyle(.plain).keyboardType(.asciiCapable).textInputAutocapitalization(.characters).autocorrectionDisabled()
             .focused($focused)
             .padding(.horizontal, 12).frame(maxWidth: large ? .infinity : 150).frame(height: height)
-            .background(large ? NativeDesktopTheme.surface : NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: BandalMetrics.radius))
-            .overlay { RoundedRectangle(cornerRadius: BandalMetrics.radius).strokeBorder(NativeDesktopTheme.border) }
+            .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: large ? 14 : BandalMetrics.radius, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: large ? 14 : BandalMetrics.radius, style: .continuous).strokeBorder(NativeDesktopTheme.border) }
             .accessibilityLabel("초대 코드").accessibilityIdentifier("native-referral-field")
     }
 
@@ -233,7 +233,7 @@ struct NativeReferralHost: ViewModifier {
             .bandalToast(Binding(get: { referral.notice?.text(locale) }, set: { if $0 == nil { referral.notice = nil } }))
             // A universal link arrives through the root's `onOpenURL`; a handed-off page arrives here.
             .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in if let url = activity.webpageURL { referral.open(url) } }
-            .onChange(of: ready ? referral.linkedCode : nil, initial: true) { _, code in if code != nil { openSettings("account") } }
+            .onChange(of: ready ? referral.linkedCode : nil, initial: true) { _, code in if code != nil { openSettings("referral") } }
             #if DEBUG
             .task { if let link = Referral.fixtureLink { referral.open(link) } }
             #endif
@@ -274,12 +274,11 @@ struct NativeReferralSettingsCard: View {
     @Environment(\.locale) private var locale
     @State private var inviting = false
     var body: some View {
-        NativeSettingsCard(title: NativeAppLocale.string("친구 초대", locale)) {
+        NativeSettingsGroup(title: NativeAppLocale.string("친구 초대", locale)) {
             BandalSettingRow(title: NativeAppLocale.string("친구 초대", locale), note: NativeAppLocale.string("친구가 로그인하고 첫 과목을 만들면 둘 다 AI 100회", locale)) {
                 Button { inviting = true } label: { Text("초대하기").frame(minHeight: 44) }.accessibilityIdentifier("native-referral-settings-open")
                     .bandalPopover(isPresented: $inviting, width: 280) { NativeReferralInvite(store: store) }
             }
-            Divider()
             VStack(alignment: .leading, spacing: 6) {
                 Text("초대 코드 입력")
                 NativeReferralCodeEntry(referral: store.referral)

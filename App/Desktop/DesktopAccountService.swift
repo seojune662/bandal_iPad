@@ -84,6 +84,7 @@ final class DesktopAccountService {
     var userID: String? { phase == "signed-in" ? session?.user.id : nil }
     private var state: [String: Any] {
         ["phase": phase, "profile": profile ?? NSNull() as Any, "email": session?.user.email ?? NSNull() as Any,
+         "provider": session?.user.app_metadata?.provider ?? NSNull() as Any,
          "avatarUrl": avatarURL ?? NSNull() as Any, "online": online, "errorCode": errorCode ?? NSNull() as Any]
     }
     private func publish() { emit?("auth:changed", state) }

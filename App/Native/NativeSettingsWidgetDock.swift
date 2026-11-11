@@ -74,7 +74,7 @@ private struct NativeWidgetTasks: View {
             .onReceive(store.events) { event in if event.channel == "board:changed" { Task { await load() } } }
             .popover(item: $editor, attachmentAnchor: .point(.top), arrowEdge: .bottom) { item in
                 NativeTaskEditor(task: item.task, courses: store.courses, defaultCourseID: store.selectedCourseID, close: { editor = nil }) { request in
-                    _ = try await store.invoke(item.task == nil ? "board:createTask" : "board:updateTask", request); await load()
+                    let saved = try await store.invoke(item.task == nil ? "board:createTask" : "board:updateTask", request); await load(); return saved
                 }
                 .frame(width: 420).presentationCompactAdaptation(.popover)
             }
