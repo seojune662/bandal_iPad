@@ -267,7 +267,7 @@ struct NativeWorkspaceView: View {
                     HStack(spacing: 0) {
                         courseSidebar.frame(width: min(320, geometry.size.width - 48))
                             .nativeWorkspacePreviewExcluded(occludesContent: true)
-                            .background(NativeGlass.panel).overlay(alignment: .trailing) { railDivider }
+                            .overlay(alignment: .trailing) { railDivider }
                             .transition(.move(edge: .leading))
                         Color.black.opacity(0.12).onTapGesture { setCourseRail(false, width: geometry.size.width) }
                     }.padding(.leading, NativeDesktopTheme.navigationWidth).clipped()
@@ -646,7 +646,7 @@ struct NativeWorkspaceView: View {
                 }
             }.accessibilityIdentifier("native-section-library")
             NativeChromeButton(title: railVisible(.ai, width: width) ? "AI 닫기" : "AI 열기", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width),
-                               joinsPanel: chromeLayout(width: width).aiPinned) {
+                               joinsPanel: chromeLayout(width: width).aiPinned && !(chromeLayout(width: width).leftPinned && railVisible(.course, width: width))) {
                 if showsWorkspace { toggleAIRail(width: width) } else { transition { openAIRail() } }
             }.accessibilityIdentifier("native-ai-rail-toggle")
             NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
@@ -885,7 +885,7 @@ struct NativeWorkspaceView: View {
                 }.id(context.id).frame(maxHeight: .infinity)
                 NativeSettingsWidgetDock(store: store, services: services, availableHeight: 600)
             } else { noWorkspacePlaceholder }
-        }.background(NativeGlass.panel)
+        }
     }
     private var aiRail: some View {
         VStack(spacing: 0) {

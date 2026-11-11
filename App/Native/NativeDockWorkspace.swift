@@ -77,7 +77,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 let bounds = CGRect(x: 0, y: selectorHeight, width: proxy.size.width, height: max(0, proxy.size.height - selectorHeight))
                 let geometry = focusMode ? NativeDockGeometry(panes: [.init(group: selected, frame: bounds)]) : layout.geometry(in: bounds)
                 ZStack(alignment: .topLeading) {
-                    NativeDesktopTheme.bgApp
+                    // Sizes the stack; the paper glass behind the dock is the only fill.
+                    Color.clear
                     ForEach(geometry.panes) { pane in
                         paneChrome(pane, focused: layout.focusedGroupID == pane.id,
                                    corner: pane.frame.maxX >= bounds.maxX - 1 && pane.frame.minY <= bounds.minY + 1)
