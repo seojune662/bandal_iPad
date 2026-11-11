@@ -977,11 +977,11 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                 scroll.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
                 scroll.pinchGestureRecognizer?.isEnabled = true
                 scroll.alwaysBounceVertical = true // pull past the last page to add one
-                // The first page rests below the floating top row and palette (80 pt with the page's own 10 pt margin).
-                if scroll.contentInset.top != 70 {
+                // The first page rests below the floating palette (14 + 56, then 20: 90 pt with the page's own 10 pt margin).
+                if scroll.contentInset.top != 80 {
                     let atTop = scroll.contentOffset.y <= 0
-                    scroll.contentInset.top = 70
-                    if atTop { scroll.contentOffset.y = -70 }
+                    scroll.contentInset.top = 80
+                    if atTop { scroll.contentOffset.y = -80 }
                 }
                 if nativePinch !== scroll.pinchGestureRecognizer, nativePinch == nil {
                     nativePinch = scroll.pinchGestureRecognizer

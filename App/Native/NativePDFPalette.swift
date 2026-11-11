@@ -1,25 +1,24 @@
 import SwiftUI
 
-/// Visual contract: a floating top row (pages · zoom · view), under it a glass pill with
-/// tools · colours · favourite pens. A second tap on the chosen tool opens its popover under the button
+/// Visual contract (Figma 155:7571): one glass pill under the tab strip with history · tools · colours ·
+/// three thicknesses · collapse. A second tap on the chosen tool opens its popover under the button
 /// (`NativePDFPenSettings`, `NativePDFToolPopovers`).
 @MainActor enum NativePDFPaletteLook {
     static let colorNames = ["ink": "먹색", "red": "빨강", "orange": "주황", "yellow": "노랑", "green": "초록", "blue": "파랑", "violet": "보라"]
     static func colorName(_ color: String) -> String { colorNames[color] ?? color }
     static func uiColor(_ color: String) -> Color { Color(uiColor: NativePDFInkSurface.color(color)) }
-    /// Palette order (Figma 269:8719): writing tools, then the rest. The 22 pt line icons are the design's own vectors.
+    /// Palette order (Figma 155:7571): writing tools, then the rest. The 22 pt line icons are the design's own vectors.
     static let writingTools = [("pen", "펜", "PDFIconPen"), ("highlighter", "형광펜", "PDFIconHighlighter"), ("eraser", "지우개", "PDFIconEraser"), ("line", "직선", "PDFIconLine"), ("lasso", "올가미", "PDFIconLasso")]
     static let otherTools = [("text", "텍스트", "PDFIconText"), ("tape", "테이프", "PDFIconTape"), ("laser", "레이저 포인터", "PDFIconLaser"), ("comment", "댓글", "PDFIconComment"), ("select", "손", "PDFIconHand")]
     static func toolImage(_ tool: String) -> String { (writingTools + otherTools).first { $0.0 == tool }?.2 ?? "PDFIconPen" }
-    /// A favourite cell's 17 pt pen-type icon (Figma 268:8710).
-    static func penImage(_ kind: String) -> String { kind == "ballpoint" ? "PDFIconBallpoint" : kind == "brush" ? "PDFIconBrush" : "PDFIconFountain" }
-    /// The 펜 button shows the type chosen last (Figma 262:1392); 볼펜 is the plain pen.
-    static func penToolImage(_ kind: String) -> String { kind == "brush" ? "PDFIconBrushTool" : kind == "pen" ? "PDFIconFountainTool" : "PDFIconPen" }
     static let icon = NativeDesktopTheme.adaptive(0x6b6b6b, 0x9a9a9a)
     static let chosen = alpha(black: 0.07, white: 0.10)
     static let divider = alpha(black: 0.08, white: 0.11)
     static let ring = alpha(black: 0.85, white: 1)
     static let addRing = alpha(black: 0.20, white: 0.28)
+    /// A thickness dot (155:7651): the chosen one solid, the others a step lighter.
+    static let dot = NativeDesktopTheme.adaptive(0x1a1a1a, 0xededed)
+    static let dotIdle = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.98) : UIColor(white: 0x1a / 255, alpha: 0.7) })
     /// A swatch on the palette: 먹색 reads light on the dark glass, the ink itself stays dark on the page.
     static func swatch(_ color: String, tape: Bool = false) -> Color {
         tape ? Color(uiColor: NativePDFObjectRenderer.tapeColor(color)) : color == "ink" ? NativeDesktopTheme.adaptive(0x1a1a1a, 0xededed) : uiColor(color)
@@ -32,9 +31,10 @@ import SwiftUI
 /// Where the window draws a PDF pane's palette: above the side panels, centred on the page area.
 /// A pane registers its page area here; with one pane the window floats the palette, otherwise each pane keeps its own.
 @MainActor @Observable final class NativePDFPaletteHost {
-    struct Entry { let model: NativePDFWorkspaceModel; var frame: CGRect }
+    /// `top`: the palette's distance from the top of the page area.
+    struct Entry { let model: NativePDFWorkspaceModel; var frame: CGRect; var top = NativePDFFloatingPalette.top }
     var entries: [String: Entry] = [:]
-    /// A drawer covers the document: the palette stays inside its pane, under the drawer.
+    /// A drawer covers the document, or another pane sits beside it: the palette stays inside its pane.
     var suspended = false
     func floats(_ id: String) -> Bool { !suspended && entries.count == 1 && entries[id] != nil }
 }
@@ -51,19 +51,19 @@ struct NativePDFPaletteLayer: View {
                 let half = max(0, min(middle, geometry.size.width - middle) - 8)
                 NativePDFFloatingPalette(model: entry.model).frame(width: half * 2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .offset(x: middle - half, y: entry.frame.minY - origin.y + NativePDFFloatingPalette.top)
+                    .offset(x: middle - half, y: entry.frame.minY - origin.y + entry.top)
             }
         }.onChange(of: covered, initial: true) { _, value in host.suspended = value }
     }
 }
 
-/// The glass pill floating below the PDF top row (Figma 269:8719): history · tools · colours · favourite pens · collapse.
+/// The glass pill floating over the page (Figma 155:7571): history · tools · colours · thicknesses · collapse.
 /// Collapsed (130:4713) it keeps only the current tool and colour.
 struct NativePDFFloatingPalette: View {
     var model: NativePDFWorkspaceModel
     @AppStorage("native.pdf.paletteCollapsed") private var collapsed = false
-    /// Gap below the PDF top row.
-    static let top: CGFloat = 4
+    /// Its gap below the tab strip (155:7571 sits at y 66 under the 52 pt strip) and its height.
+    static let top: CGFloat = 14, height: CGFloat = 56
     var body: some View {
         Group {
             if collapsed { mini } else {
@@ -110,7 +110,7 @@ struct NativePDFPaletteQuickControls: View {
                 divider
                 colors
                 divider
-                ForEach(model.favorites.indices, id: \.self) { favorite($0) }
+                widths
                 if let collapse {
                     divider
                     Button(action: collapse) { cell("PDFIconChevron") }.accessibilityLabel("팔레트 접기").accessibilityIdentifier("native-pdf-palette-collapse")
@@ -127,14 +127,9 @@ struct NativePDFPaletteQuickControls: View {
         Button(action: action) { cell(image) }.disabled(!enabled).accessibilityLabel(title).accessibilityIdentifier(id)
     }
     @ViewBuilder private func tool(_ value: (String, String, String)) -> some View {
-        // One 펜 button for the three pen types; the type is chosen in the pen settings.
+        // One 펜 button for the three pen types, always the design's pen; the type is chosen in the pen settings.
         let pen = value.0 == "pen", chosen = pen ? model.isPenLike : model.tool == value.0
-        let button = Button { if pen { model.choosePen() } else { model.chooseTool(value.0) } } label: {
-            if pen, model.penKind != "ballpoint" {
-                Image(NativePDFPaletteLook.penToolImage(model.penKind)).resizable().frame(width: 19, height: 19).foregroundStyle(NativePDFPaletteLook.icon).frame(width: 40, height: 40)
-                    .background(chosen ? NativePDFPaletteLook.chosen : .clear, in: RoundedRectangle(cornerRadius: 12)).contentShape(Rectangle())
-            } else { cell(value.2, chosen: chosen) }
-        }
+        let button = Button { if pen { model.choosePen() } else { model.chooseTool(value.0) } } label: { cell(value.2, chosen: chosen) }
             .accessibilityLabel(LocalizedStringKey(value.1)).accessibilityIdentifier("native-pdf-tool-" + value.0)
             .accessibilityValue(chosen && model.isInkTool ? model.styleAccessibilityValue : value.0 == "tape" ? model.tapeAccessibilityValue : "")
             .accessibilityAddTraits(chosen ? .isSelected : []).help(LocalizedStringKey(value.1))
@@ -154,7 +149,7 @@ struct NativePDFPaletteQuickControls: View {
     }
     /// The current tool's colours, or the pen's while a tool without colour is chosen (a tap then returns to the pen).
     @ViewBuilder private var colors: some View {
-        let slots = model.usesColorSlots ? model.colorSlots : model.palette.colors(for: "pen"), tape = model.tool == "tape"
+        let slots = model.usesColorSlots ? model.colorSlots : model.palette.colors(for: model.penKind), tape = model.tool == "tape"
         ForEach(slots, id: \.self) { name in
             let chosen = model.usesColorSlots && model.activeColor == name
             Button {
@@ -176,29 +171,25 @@ struct NativePDFPaletteQuickControls: View {
                 .overlay(Circle().strokeBorder(NativePDFPaletteLook.addRing, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))).frame(height: 40).contentShape(Rectangle())
         }.disabled(missing.isEmpty).accessibilityLabel("색 추가").accessibilityIdentifier("native-pdf-color-add")
     }
-    /// A favourite pen (Figma 268:8710): its type's icon over a bar as thick as its stroke, both in its colour.
-    /// A tap uses it, a tap on the one in use opens the pen settings. An empty cell takes the current pen.
-    @ViewBuilder private func favorite(_ index: Int) -> some View {
-        if let preset = model.favorites[index] {
-            let chosen = model.favoriteIndex == index
-            let bar = 2 + (CGFloat(NativePDFPaletteStyle.nearestStep(preset.width, tool: "pen")) * 6 / 11).rounded() / 2
-            Button { if chosen { model.showStyle.toggle() } else { model.chooseFavorite(index) } } label: {
-                VStack(spacing: 3) {
-                    Image(NativePDFPaletteLook.penImage(preset.kind))
-                    Capsule().frame(width: 16, height: bar)
-                }.foregroundStyle(NativePDFPaletteLook.swatch(preset.color)).frame(width: 40, height: 40)
-                    .background(chosen ? NativePDFPaletteLook.chosen : .clear, in: RoundedRectangle(cornerRadius: 12)).contentShape(Rectangle())
-            }.accessibilityLabel("즐겨찾는 펜 \(index + 1): " + NativePDFPaletteLook.colorName(preset.color)).accessibilityValue(model.favoriteAccessibilityValue(index))
-                .accessibilityIdentifier("native-pdf-quick-favorite-\(index)").accessibilityAddTraits(chosen ? .isSelected : [])
-                .contextMenu {
-                    Button("현재 펜 저장") { model.saveFavorite(index) }.disabled(!model.isPenLike)
-                    Button("즐겨찾기에서 빼기", role: .destructive) { model.clearFavorite(index) }
+    /// The three thickness dots (Figma 155:7650): a tap picks one, a tap on the picked one opens its twelve steps.
+    /// While a tool without thickness is chosen they are the pen's, and a tap returns to the pen.
+    @ViewBuilder private var widths: some View {
+        let own = model.usesWidthSlots, slots = own ? model.widthSlots : model.palette.widths(for: model.penKind), selected = own ? model.selectedWidthSlot : nil
+        ForEach(Array(slots.enumerated()), id: \.offset) { index, step in
+            let chosen = selected == index
+            Button {
+                if own { model.chooseWidthSlot(index) } else { model.choosePen(); if model.selectedWidthSlot != index { model.chooseWidthSlot(index) } }
+            } label: {
+                // 4 · 7 · 10 pt for the pen's default steps 3 · 6 · 9.
+                Circle().fill(chosen ? NativePDFPaletteLook.dot : NativePDFPaletteLook.dotIdle).frame(width: 2 + CGFloat(step), height: 2 + CGFloat(step))
+                    .frame(width: 28, height: 32).background(chosen ? NativePDFPaletteLook.chosen : .clear, in: Capsule()).frame(height: 40).contentShape(Rectangle())
+            }.accessibilityLabel("굵기 \(index + 1)").accessibilityValue(NativePDFPaletteStyle.stepLabel(step))
+                .accessibilityIdentifier("native-pdf-width-slot-\(index)").accessibilityAddTraits(chosen ? .isSelected : [])
+                // The eraser and tape popovers show the same slots and open the steps themselves.
+                .bandalPopover(isPresented: Binding(get: { model.editingWidthSlot == index && !model.showStyle }, set: { if !$0, model.editingWidthSlot == index { model.editingWidthSlot = nil } }),
+                               width: 320, radius: 18, padding: 14, dims: false) {
+                    NativePDFWidthSteps(color: NativeDesktopTheme.text, selected: model.widthSlots.indices.contains(index) ? model.widthSlots[index] : step) { model.setWidthStep($0, slot: index) }
                 }
-        } else {
-            Button { if !model.isPenLike { model.choosePen() }; model.saveFavorite(index) } label: {
-                Image("PDFIconPlus").foregroundStyle(NativeDesktopTheme.muted).frame(width: 40, height: 40)
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(NativeDesktopTheme.muted, lineWidth: 1.2).padding(2)).contentShape(Rectangle())
-            }.accessibilityLabel("즐겨찾는 펜 \(index + 1)에 현재 펜 저장").accessibilityIdentifier("native-pdf-quick-favorite-\(index)")
         }
     }
 }
@@ -272,20 +263,24 @@ private struct NativePDFRecordButton: View {
     }
 }
 
-/// While the palette microphone records (Figma 260:9026): a glass capsule at the top centre of the page area with
-/// the elapsed time, a waveform, pause and 끝내고 요약. 끝내기 without a summary is the palette microphone, or a
-/// long press on this bar. While the summary is being made the bar is the "요약하는 중이에요" card (260:9033).
+/// While the palette microphone records (Figma 260:9026): a glass capsule at the top centre of the page area, under
+/// the palette, with the elapsed time, a waveform, pause and 끝내고 요약. 끝내기 without a summary is the palette
+/// microphone, or a long press on this bar. While the summary is being made the bar is the "요약하는 중이에요" card (260:9033).
 struct NativePDFRecordingBar: View {
     var model: NativePDFWorkspaceModel
-    /// Below the floating palette (its 4 pt gap, 56 pt height) with the design's 8 pt between floating bars.
-    static let top = NativePDFFloatingPalette.top + 56 + 8
     private static let wave: [CGFloat] = [4, 17.1, 5.5, 7.4, 9.8, 16.6, 14, 8.8, 5.2, 8, 18.8, 6.3, 13.7, 4.1, 12.1, 9.2, 17.9, 10.7, 6.3, 8.9, 11.1, 18.5, 7.8, 9.2, 4.2, 16.1]
     private static let dot = NativeDesktopTheme.adaptive(0xff383c, 0xff383c)
     var body: some View {
-        Group {
-            if let started = model.recordingStartedAt { bar(started) }
-            else if model.summarizingRecording { summarizing }
-        }.padding(.top, Self.top)
+        if model.recordingStartedAt != nil || model.summarizingRecording {
+            // Centred, clear of the thumbnails button at the right end of the same band; in a pane too narrow for both, under it.
+            ViewThatFits(in: .horizontal) {
+                content.padding(.horizontal, NativePDFViewButton.trailing + NativePDFViewButton.size + 8)
+                content.padding(.top, NativePDFViewButton.size + 8)
+            }
+        }
+    }
+    @ViewBuilder private var content: some View {
+        if let started = model.recordingStartedAt { bar(started) } else { summarizing }
     }
     private func bar(_ started: Date) -> some View {
         let paused = model.recordingPausedAt

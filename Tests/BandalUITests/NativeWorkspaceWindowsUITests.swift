@@ -80,9 +80,10 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
         let title = app.textFields["native-new-note-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Window Pencil Notes")
         app.buttons["native-new-note-create"].tap()
-        let pen = app.buttons["native-pdf-tool-pen"], page = app.textFields["native-pdf-page"]
+        // The general PDF tools are the thumbnails button (and the menu its long press opens).
+        let pen = app.buttons["native-pdf-tool-pen"], general = app.buttons["native-pdf-pages"]
         waitEnabled(pen, app: app)
-        XCTAssertTrue(page.exists)
+        XCTAssertTrue(general.exists)
         let fixedFrame = controls(app).frame
         let pdf = app.otherElements["native-pdf-workspace"]
         XCTAssertTrue(pdf.waitForExistence(timeout: 10))
@@ -91,13 +92,12 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
 
         changeMode("탭만 숨김", app: app)
         wait(app, "Tab controls leave the accessibility tree") { !app.buttons["native-close-document"].exists }
-        XCTAssertTrue(page.exists, "General PDF tools remain in tabs-only mode")
+        XCTAssertTrue(general.exists, "General PDF tools remain in tabs-only mode")
         XCTAssertTrue(pen.isHittable)
         XCTAssertLessThan(pdf.frame.minY, originalTop)
         assertFixedControls(fixedFrame, app: app)
-        page.tap()
         changeMode("탭·일반 도구 숨김", app: app)
-        wait(app, "Hidden page field cannot keep keyboard focus") { !page.exists && !app.keyboards.firstMatch.isHittable }
+        wait(app, "General PDF tools leave in immersion mode") { !general.exists }
         XCTAssertFalse(app.buttons["native-close-document"].exists)
         XCTAssertTrue(pen.isHittable, "Writing tools remain directly reachable in immersion mode")
         XCTAssertTrue(app.buttons["native-pdf-tool-eraser"].exists)
@@ -105,7 +105,7 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
         setInspector(open: false, app: app); assertFixedControls(fixedFrame, app: app)
         setInspector(open: true, app: app); assertFixedControls(fixedFrame, app: app)
         changeMode("모두 표시", app: app)
-        wait(app, "Restored toolbar and tab") { page.exists && app.buttons["native-close-document"].exists }
+        wait(app, "Restored toolbar and tab") { general.exists && app.buttons["native-close-document"].exists }
         XCTAssertEqual(pdf.frame.minY, originalTop, accuracy: 1)
         XCTAssertTrue(pen.isHittable)
         capture(app, "PDF controls restored without moving the fixed capsule")

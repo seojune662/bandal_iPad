@@ -137,6 +137,22 @@ extension XCUIApplication {
         let add = buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 10), debugDescription); add.press(forDuration: 1)
     }
+    /// The design has no row above the PDF palette: page jump (`native-pdf-page`, ‹ ›), zoom, PDF에서 찾기, 원본 주석 and
+    /// 페이지 필기 are in the menu a long press on the thumbnails button opens (in a split, `pane`'s button).
+    /// The reader's position needs no menu: it is that button's value ("2 / 3").
+    @MainActor func openNativePDFViewMenu(in pane: XCUIElement? = nil) {
+        let button = (pane ?? self).buttons["native-pdf-pages"].firstMatch
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"), object: button)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed, debugDescription); button.press(forDuration: 1)
+        XCTAssertTrue(textFields["native-pdf-page"].waitForExistence(timeout: 5), debugDescription)
+    }
+    /// An outside tap closes that menu; the popover takes the tap, so nothing under it is touched.
+    @MainActor func closeNativePDFViewMenu() {
+        let field = textFields["native-pdf-page"]
+        guard field.exists else { return }
+        coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), debugDescription)
+    }
     /// 원문 보기 is not in the design's Markdown bar: it lives in the bar's ⋯ menu.
     @MainActor func toggleNativeMarkdownSource() {
         let more = buttons["native-markdown-more"].firstMatch

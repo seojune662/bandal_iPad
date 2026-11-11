@@ -300,8 +300,8 @@ struct NativeWorkspaceView: View {
                         .position(x: geometry.size.width - chrome.rightWidth - 0.5, y: geometry.size.height / 2)
                 }
             }
-            // The PDF palette floats over the side panels; under a drawer it stays inside its pane.
-            .overlay { NativePDFPaletteLayer(host: pdfPalette, covered: compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) || rightVisible && !chrome.rightPinned) }
+            // The PDF palette floats over the side panels; under a drawer, or beside another pane (whose bar it would cover), it stays inside its pane.
+            .overlay { NativePDFPaletteLayer(host: pdfPalette, covered: compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) || rightVisible && !chrome.rightPinned || navigation.groups.count > 1) }
             // Over the rail and both panels: the overview is the whole window (Figma 132:2517).
             .overlay { if windowsOverviewOpen { windowsOverview } }
             .overlay(alignment: .topTrailing) {

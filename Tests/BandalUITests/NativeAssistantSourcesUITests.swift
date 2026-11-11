@@ -23,8 +23,9 @@ final class NativeAssistantSourcesUITests: XCTestCase {
         app.buttons["native-pdf-pages"].tap()
         let add = app.buttons["native-pdf-page-add"]
         XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription); add.tap()
-        let count = app.staticTexts["native-pdf-page-count"]
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "/ 2"), object: count)], timeout: 15), .completed, app.debugDescription)
+        // The thumbnails button's value is the reader's position ("1 / 2").
+        let pages = app.buttons["native-pdf-pages"]
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value ENDSWITH %@", "/ 2"), object: pages)], timeout: 15), .completed, app.debugDescription)
         app.buttons["native-close-document"].firstMatch.tap()
         XCTAssertTrue(app.buttons["native-pdf-tool-pen"].waitForNonExistence(timeout: 10), app.debugDescription)
 
@@ -35,8 +36,7 @@ final class NativeAssistantSourcesUITests: XCTestCase {
 
         app.buttons["출처: 새 노트 p.2"].tap()
         XCTAssertTrue(app.buttons["native-pdf-tool-pen"].waitForExistence(timeout: 20), app.debugDescription)
-        let page = app.textFields["native-pdf-page"]
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "2"), object: page)], timeout: 15), .completed, "The note opens at the page the answer read: " + app.debugDescription)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH %@", "2 /"), object: pages)], timeout: 15), .completed, "The note opens at the page the answer read: " + app.debugDescription)
 
         let tabs = app.buttons.matching(identifier: "native-close-document").count
         app.buttons["출처: 강의자료 p.12"].tap()

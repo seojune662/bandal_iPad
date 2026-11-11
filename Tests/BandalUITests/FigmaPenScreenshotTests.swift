@@ -1,7 +1,7 @@
 import XCTest
 
 /// Captures of the pen settings, the tool popovers, the selection menu, the memo popover and the recording bar
-/// for side-by-side comparison with Figma 261:8407, 259:8469 (H2 · H4 · H5 · H6) and 268:9049.
+/// for side-by-side comparison with Figma 261:8407 (without its favourites), 259:8469 (H2 · H4 · H5 · H6) and 155:7503.
 /// Each test only drives and attaches; behaviour is asserted in the feature tests.
 final class FigmaPenScreenshotTests: XCTestCase {
     override func setUp() { continueAfterFailure = true }
@@ -25,20 +25,18 @@ final class FigmaPenScreenshotTests: XCTestCase {
         let pen = app.buttons["native-pdf-tool-pen"], close = app.buttons["native-pdf-style-close"], body = app.otherElements["native-pdf-workspace"]
         XCTAssertTrue(pen.waitForExistence(timeout: 20), app.debugDescription); sleep(2)
 
-        // 펜 설정: 볼펜, step 5, as the frame draws it.
+        // 펜 설정: the plain pen first, then 볼펜 at step 5 as the frame draws it, then 붓.
         pen.tap()
         let ballpoint = app.buttons["native-pdf-pen-kind-ballpoint"]
-        XCTAssertTrue(ballpoint.waitForExistence(timeout: 5), app.debugDescription); ballpoint.tap()
+        XCTAssertTrue(ballpoint.waitForExistence(timeout: 5), app.debugDescription); sleep(1)
+        attach(app, "pen 01 펜 설정 \(appearance)")
+        ballpoint.tap()
         let width = app.descendants(matching: .any)["native-pdf-width-slider"].firstMatch
         width.coordinate(withNormalizedOffset: .init(dx: 0.38, dy: 0.5)).tap(); sleep(1)
-        attach(app, "pen 01 펜 설정 \(appearance)")
-        app.buttons["native-pdf-favorite-star"].tap(); sleep(1)
-        attach(app, "pen 02 별표 3칸 다 참 \(appearance)")
-        app.buttons["native-pdf-palette-favorite-0"].tap()
+        attach(app, "pen 02 볼펜 \(appearance)")
         app.buttons["native-pdf-pen-kind-brush"].tap(); sleep(1)
         attach(app, "pen 03 붓 \(appearance)")
-        app.buttons["native-pdf-palette-favorite-0"].tap(); sleep(1)
-        attach(app, "pen 04 즐겨찾기 고름 \(appearance)")
+        app.buttons["native-pdf-pen-kind-pen"].tap()
         close.tap(); sleep(1)
 
         for dy in [0.42, 0.5] {

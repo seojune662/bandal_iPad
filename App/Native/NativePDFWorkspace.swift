@@ -15,10 +15,19 @@ struct NativePDFWorkspace: View {
     @State private var bodyFrame = CGRect.zero
     private let tabID: String
     private var showsPalette: Bool { visible && model.assistantAnnotation == nil && (chromeMode == .toolsHidden || model.toolsExpanded) }
+    /// Where the palette starts. With the tabs hidden the window buttons sit over this pane's corner: start below them.
+    private var paletteTop: CGFloat { NativePDFFloatingPalette.top + (controlInset > 0 ? 44 : 0) }
+    /// The band under the palette: the thumbnails button at its right end, the recording bar in its middle.
+    private var belowPalette: CGFloat { showsPalette ? paletteTop + NativePDFFloatingPalette.height + 8 : paletteTop }
+    @AppStorage("native.pdf.paletteCollapsed") private var paletteCollapsed = false
+    /// The window's palette is wider than the page area and floats over the pages panel and the annotation rail:
+    /// their headers start under it.
+    // ponytail: also pads in a window wide enough for the palette to stay inside the page area; compare frames if that band shows.
+    private var sidePanelTop: CGFloat { showsPalette && !paletteCollapsed && paletteHost?.floats(tabID) == true ? belowPalette : 0 }
     /// The window draws the palette above the side panels; this pane only says where its page area is.
     private func registerPalette() {
         guard let paletteHost else { return }
-        if showsPalette, bodyFrame.width > 0 { paletteHost.entries[tabID] = .init(model: model, frame: bodyFrame) }
+        if showsPalette, bodyFrame.width > 0 { paletteHost.entries[tabID] = .init(model: model, frame: bodyFrame, top: paletteTop) }
         else if paletteHost.entries[tabID] != nil { paletteHost.entries[tabID] = nil }
     }
 
@@ -30,16 +39,11 @@ struct NativePDFWorkspace: View {
         VStack(spacing: 0) {
             // A hidden retained tab keeps its model and UIKit body but no chrome:
             // its controls must not answer accessibility queries meant for the visible tab.
-            if visible {
-                if model.assistantAnnotation != nil {
-                    NativeAnnotationToolbar(coordinator: model.annotationCoordinator,
-                        regionMode: Binding(get: { model.assistantRegionMode }, set: { model.setAssistantRegionMode($0) }),
-                        busy: model.assistantCapturing, attachText: model.attachAssistantText)
-                        .padding(.trailing, controlInset).padding(.top, topInset)
-                } else {
-                    NativePDFToolbar(model: model, writingOnly: chromeMode == .toolsHidden)
-                        .padding(.trailing, controlInset).padding(.top, topInset)
-                }
+            if visible, model.assistantAnnotation != nil {
+                NativeAnnotationToolbar(coordinator: model.annotationCoordinator,
+                    regionMode: Binding(get: { model.assistantRegionMode }, set: { model.setAssistantRegionMode($0) }),
+                    busy: model.assistantCapturing, attachText: model.attachAssistantText)
+                    .padding(.trailing, controlInset).padding(.top, topInset)
             }
             if !model.sourceQuote.isEmpty, visible, model.assistantAnnotation == nil {
                 HStack(spacing: 12) {
@@ -62,7 +66,7 @@ struct NativePDFWorkspace: View {
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     if model.showPages && visible {
-                        NativePDFPagesPanel(model: model).frame(width: geometry.size.width < 700 ? 128 : 160)
+                        NativePDFPagesPanel(model: model).padding(.top, sidePanelTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 128 : 160)
                         Divider()
                     }
                     ZStack {
@@ -78,15 +82,20 @@ struct NativePDFWorkspace: View {
                             }
                         }
                         .overlay(alignment: .top) {
-                            if showsPalette, paletteHost?.floats(tabID) != true { NativePDFFloatingPalette(model: model).padding(.horizontal, 8).padding(.top, NativePDFFloatingPalette.top) }
+                            if showsPalette, paletteHost?.floats(tabID) != true { NativePDFFloatingPalette(model: model).padding(.horizontal, 8).padding(.top, paletteTop) }
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bodyFrame = $0; registerPalette() }
-                        .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model) } }
+                        .overlay(alignment: .topTrailing) {
+                            if visible, model.assistantAnnotation == nil, chromeMode != .toolsHidden {
+                                NativePDFViewButton(model: model).padding(.trailing, NativePDFViewButton.trailing).padding(.top, belowPalette)
+                            }
+                        }
+                        .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model).padding(.top, belowPalette) } }
                         .overlay { if visible { NativePDFCommentAnchor(model: model) } }
                         .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame) } }
                     if model.showAnnotations && visible {
                         Divider()
-                        NativePDFAnnotationRail(model: model).frame(width: geometry.size.width < 700 ? 220 : 280)
+                        NativePDFAnnotationRail(model: model).padding(.top, sidePanelTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 220 : 280)
                     }
                 }
                 .onChange(of: geometry.size.width, initial: true) { _, width in model.setAvailableWidth(width) }
@@ -103,6 +112,7 @@ struct NativePDFWorkspace: View {
         }
         .onChange(of: visible, initial: true) { _, value in model.setVisible(value) }
         .onChange(of: showsPalette, initial: true) { _, _ in registerPalette() }
+        .onChange(of: paletteTop) { _, _ in registerPalette() }
         .onDisappear { paletteHost?.entries[tabID] = nil }
         .accessibilityElement(children: .contain).accessibilityIdentifier(visible ? "native-pdf-pane-" + tabID : "")
         // 원문 메모 and 댓글 open over the page; closing keeps the edit (Esc cancels, 실행 취소 undoes).
@@ -228,19 +238,19 @@ final class NativePDFWorkspaceModel {
     var tool = "pen"
     var color = "ink"
     var width = NativePDFPenPreset.pen.width
-    var showStyle = false { didSet { if showStyle != oldValue { restoreInput() } } }
-    private(set) var favorites = NativePDFPalettePreferences().favorites
+    /// A tool's popover. Closing it also closes the twelve steps opened from its size cells, so the palette's dots do not reopen them.
+    var showStyle = false { didSet { if showStyle != oldValue { restoreInput(); if !showStyle { editingWidthSlot = nil } } } }
     /// Workspace-wide colour and thickness slots and eraser settings.
     private(set) var palette = NativePDFPalettePreferences()
     /// The slot whose twelve-step thickness bar is open.
     var editingWidthSlot: Int?
     private(set) var shapeRecognitionEnabled = true
     var isInkTool: Bool { isPenLike || tool == "highlighter" }
-    /// 만년필, 볼펜 and 붓 share the palette's 펜 button and the favourites; they differ in how width follows the hand.
+    /// 펜, 볼펜 and 붓 share the palette's 펜 button; they differ in how width follows the hand.
     var isPenLike: Bool { NativePDFPenPreset.kinds.contains(tool) }
     /// Tools whose button opens a popover on a second tap.
     var hasToolOptions: Bool { isInkTool || ["eraser", "lasso", "tape"].contains(tool) }
-    /// The pen type the palette's one 펜 button returns to (만년필 "pen", 볼펜 "ballpoint" or 붓 "brush").
+    /// The pen type the palette's one 펜 button returns to (펜 "pen", 볼펜 "ballpoint" or 붓 "brush").
     private(set) var penKind = "pen"
     /// The palette's 펜 button: picks the last pen type, or opens its settings when already chosen.
     func choosePen() { chooseTool(isPenLike ? tool : penKind) }
@@ -250,12 +260,7 @@ final class NativePDFWorkspaceModel {
         chooseTool(kind, keepingStyle: true)
     }
     var currentPreset: NativePDFPenPreset { .init(color: color, width: width, opacity: opacity) }
-    /// The current pen as a favourite: its style and its type.
-    var currentFavorite: NativePDFPenPreset { var value = currentPreset.validated(); value.kind = isPenLike ? tool : penKind; return value }
-    /// The favourite cell holding exactly the current pen.
-    var favoriteIndex: Int? { isPenLike ? favorites.firstIndex { $0 == currentFavorite } : nil }
-    var hasEmptyFavorite: Bool { favorites.contains { $0 == nil } }
-    /// "한 칸을 먼저 지워 주세요" and other one-line palette messages.
+    /// "글자로 바꾸기는 준비 중이에요" and other one-line palette messages.
     var paletteNotice: String?
     /// The straight line draws with the pen's colours and widths.
     private var slotTool: String { tool == "line" ? "pen" : tool }
@@ -277,10 +282,6 @@ final class NativePDFWorkspaceModel {
         NativePDFPaletteStyle.stepLabel(NativePDFPaletteStyle.nearestStep(width, tool: tool ?? self.tool))
     }
     var styleAccessibilityValue: String { "\(tool) \(color) \(widthLabel(for: width)) \(Int((opacity * 100).rounded()))%" }
-    func favoriteAccessibilityValue(_ index: Int) -> String {
-        guard favorites.indices.contains(index), let value = favorites[index] else { return "" }
-        return "\(value.kind) \(value.color) \(widthLabel(for: value.width, tool: "pen")) \(Int((value.opacity * 100).rounded()))%"
-    }
     var page = 1 { didSet { NativeDockShareControls.visiblePage[document.id] = page } }
     var pageCount = 1
     var isLoading = true
@@ -437,7 +438,7 @@ final class NativePDFWorkspaceModel {
             saved.color = palette.recentPen.color; saved.width = palette.recentPen.width; saved.opacity = palette.recentPen.opacity
         }
         saved.shapeRecognitionEnabled = palette.drawAndHold
-        favorites = palette.favorites; shapeRecognitionEnabled = palette.drawAndHold; self.palette = palette
+        shapeRecognitionEnabled = palette.drawAndHold; self.palette = palette
         if preferenceID != document.id { saved.pendingPage = nil; saved.save(root: store.root, documentID: document.id, defaults: defaults) }
         preferences = saved
         tool = saved.tool; color = saved.color; width = saved.width; opacity = saved.opacity
@@ -456,7 +457,6 @@ final class NativePDFWorkspaceModel {
             guard let self, event.userInfo?["key"] as? String == NativePDFPalettePreferences.key(root: self.store.root),
                   let changedDefaults = event.object as? UserDefaults, changedDefaults === self.defaults else { return }
             let shared = NativePDFPalettePreferences.load(root: self.store.root, defaults: self.defaults)
-            self.favorites = shared.favorites
             if shared != self.palette {
                 let toolChanged = shared.eraserRadius != self.palette.eraserRadius || shared.eraserMode != self.palette.eraserMode
                     || shared.eraserHighlighterOnly != self.palette.eraserHighlighterOnly || shared.highlighterStraight != self.palette.highlighterStraight
@@ -804,7 +804,7 @@ final class NativePDFWorkspaceModel {
         default: break
         }
     }
-    /// `keepingStyle`: a pen type or favourite picked inside the pen settings leaves them open.
+    /// `keepingStyle`: a pen type picked inside the pen settings leaves them open.
     func chooseTool(_ next: String, keepingStyle: Bool = false) {
         guard assistantAnnotation == nil, NativePDFWorkspacePreferences.tools.contains(next), !isBusy else { return }
         editingWidthSlot = nil
@@ -889,29 +889,6 @@ final class NativePDFWorkspaceModel {
     func setOpacity(_ value: Double) {
         guard value.isFinite, isInkTool else { return }
         opacity = min(tool == "highlighter" ? 0.34 : 1, max(0.05, value)); rememberActiveStyle(); updateStyle()
-    }
-    func chooseFavorite(_ index: Int) {
-        guard favorites.indices.contains(index), let favorite = favorites[index], !isBusy, errorMessage == nil else { return }
-        // A favourite is a whole pen: its type comes back with its colour and width.
-        if tool != favorite.kind { chooseTool(favorite.kind, keepingStyle: true) }
-        guard tool == favorite.kind else { return }
-        applyStyle(favorite); rememberActiveStyle(); updateStyle()
-    }
-    func saveFavorite(_ index: Int) {
-        guard favorites.indices.contains(index), isPenLike else { return }
-        let value = currentFavorite
-        favorites = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.favorites[index] = value }.favorites
-    }
-    func clearFavorite(_ index: Int) {
-        guard favorites.indices.contains(index) else { return }
-        favorites = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.favorites[index] = nil }.favorites
-    }
-    /// The star in the pen settings (Figma 264:1440): removes the current pen from the favourites,
-    /// or puts it in the first empty cell; with no empty cell it says so.
-    func toggleFavorite() {
-        guard isPenLike else { return }
-        if let index = favoriteIndex { clearFavorite(index) } else if let empty = favorites.firstIndex(where: { $0 == nil }) { saveFavorite(empty) }
-        else { paletteNotice = "한 칸을 먼저 지워 주세요" }
     }
     func setEraserHighlighterOnly(_ value: Bool) {
         palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.eraserHighlighterOnly = value }; updateStyle()

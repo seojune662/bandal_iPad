@@ -18,6 +18,8 @@ final class NativePagedMarkdownUITests: XCTestCase {
         let name = app.textFields["native-new-note-title"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Lecture")
         app.buttons["native-new-note-create"].tap()
+        // 페이지 필기 is a row of the thumbnails button's long-press menu.
+        app.openNativePDFViewMenu()
         let note = app.buttons["native-pdf-page-note"]
         XCTAssertTrue(note.waitForExistence(timeout: 20)); note.tap()
         let first = app.textViews["native-markdown-page-editor-1"]
@@ -28,13 +30,14 @@ final class NativePagedMarkdownUITests: XCTestCase {
         let second = app.textViews["native-markdown-page-editor-2"]
         XCTAssertTrue(second.waitForExistence(timeout: 15)); second.tap(); second.typeText("Second page has a different explanation.")
         dismissKeyboard(app)
-        let page = app.textFields["native-pdf-page"]
-        let linked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "2"), object: page)
+        // The thumbnails button's value is the reader's position ("2 / 3").
+        let page = app.buttons["native-pdf-pages"]
+        let linked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH %@", "2 /"), object: page)
         XCTAssertEqual(XCTWaiter.wait(for: [linked], timeout: 15), .completed, app.debugDescription)
         let sync = app.buttons["native-markdown-page-sync"]
         XCTAssertTrue(sync.exists); sync.tap()
         jump(1, app)
-        XCTAssertEqual(page.value as? String, "2", "An unlinked note must not navigate its paired PDF")
+        XCTAssertEqual((page.value as? String)?.hasPrefix("2 /"), true, "An unlinked note must not navigate its paired PDF")
         XCTAssertTrue((first.value as? String ?? "").contains("First page keeps its own notes."))
         XCTAssertFalse(app.staticTexts["native-pdf-save-status"].exists)
         XCTAssertFalse(app.staticTexts["손가락으로 이동 · Apple Pencil로 필기"].exists)
