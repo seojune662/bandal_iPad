@@ -48,7 +48,7 @@ final class NativeAssistantSourcesUITests: XCTestCase {
         XCTAssertTrue(category.waitForExistence(timeout: 5), app.debugDescription); category.tap()
         let toggle = app.switches["native-settings-ai-sources"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5), app.debugDescription)
-        toggle.switches.firstMatch.tap()
+        toggle.tap()
         app.buttons["native-settings-close"].tap()
         XCTAssertTrue(chips.firstMatch.waitForNonExistence(timeout: 10), "출처 표시를 끄면 칩이 사라진다: " + app.debugDescription)
         XCTAssertTrue(app.buttons["native-ai-copy-answer"].exists, "The answer and its actions stay")
