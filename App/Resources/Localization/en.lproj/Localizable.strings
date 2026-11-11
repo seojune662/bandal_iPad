@@ -1262,3 +1262,17 @@
 "오프라인 저장" = "Keep Offline";
 "과목에서 빼기" = "Remove from Course";
 "회색" = "Gray";
+"본문" = "Body";
+"취소선" = "Strikethrough";
+"인라인 코드" = "Inline Code";
+"코드 블록" = "Code Block";
+"인용" = "Quote";
+"미리보기 닫기" = "Close Preview";
+"미리보기에서 공유" = "Share from Preview";
+"미리보기를 준비하지 못했습니다." = "Couldn’t prepare the preview.";
+"제목 1" = "Heading 1";
+"제목 2" = "Heading 2";
+"제목 3" = "Heading 3";
+"기울임" = "Italic";
+"글머리 목록" = "Bulleted List";
+"번호 목록" = "Numbered List";

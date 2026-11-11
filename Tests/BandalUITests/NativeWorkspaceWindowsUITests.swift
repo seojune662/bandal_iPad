@@ -27,9 +27,9 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
         addWindow(app)
         openOverview(app); expectCards(2, app: app)
         renameWindow("윈도우 2", to: "문제 풀이", app: app)
-        app.buttons["문제 풀이 관리"].tap(); app.buttons["앞으로 이동"].tap()
+        app.buttons["문제 풀이 열기"].press(forDuration: 1); app.buttons["앞으로 이동"].tap()
         wait(app, "Reordered window is first") { self.cards(app).firstMatch.label == "문제 풀이 열기" }
-        app.buttons["강의 관리"].tap(); app.buttons["윈도우 닫기"].tap()
+        app.buttons["강의 열기"].press(forDuration: 1); app.buttons["윈도우 닫기"].tap()
         expectCards(1, app: app)
         XCTAssertEqual(cards(app).firstMatch.label, "문제 풀이 열기")
         chooseWindow("문제 풀이", app: app)
@@ -146,9 +146,10 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
         let editor = app.textViews["native-markdown-editor"].firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 15)); editor.tap(); editor.typeText("\nOriginal shared content.")
         app.dismissNativeTestKeyboard()
-        let sourceMode = app.buttons["native-markdown-source-toggle"].firstMatch
-        XCTAssertTrue(sourceMode.waitForExistence(timeout: 5)); sourceMode.tap()
-        XCTAssertEqual(sourceMode.label, "서식 편집")
+        // The bar's value names the pane's mode; the toggle itself is in the ⋯ menu.
+        let sourceMode = app.descendants(matching: .any).matching(identifier: "native-markdown-toolbar").firstMatch
+        app.toggleNativeMarkdownSource()
+        XCTAssertEqual(sourceMode.value as? String, "Markdown 원문")
         changeMode("탭만 숨김", app: app)
         openOverview(app); expectCards(1, app: app)
         XCTAssertFalse(app.textViews.matching(identifier: "native-markdown-editor").allElementsBoundByIndex.contains { $0.isHittable }, "The overview cannot type into retained editors")
@@ -157,16 +158,16 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
         let material = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-material-", "Shared Window Note")).firstMatch
         XCTAssertTrue(material.waitForExistence(timeout: 10)); material.tap()
         wait(app, "Second panel reads the same resource") { editor.exists && (editor.value as? String ?? "").contains("Original shared content.") }
-        XCTAssertEqual(sourceMode.label, "Markdown 원문", "Source mode belongs to the panel, not the shared document")
+        XCTAssertEqual(sourceMode.value as? String, "서식 편집", "Source mode belongs to the panel, not the shared document")
         XCTAssertTrue(app.buttons["native-close-document"].exists, "The second window starts with its own all-visible mode")
         editor.tap(); editor.typeText("\nEdited in the second window.")
         app.dismissNativeTestKeyboard()
         openOverview(app); chooseWindow("윈도우 1", app: app)
         wait(app, "Original panel observes the shared edit") { editor.exists && (editor.value as? String ?? "").contains("Edited in the second window.") }
-        XCTAssertEqual(sourceMode.label, "서식 편집")
+        XCTAssertEqual(sourceMode.value as? String, "Markdown 원문")
         XCTAssertFalse(app.buttons["native-close-document"].exists)
         openOverview(app); chooseWindow("윈도우 2", app: app)
-        XCTAssertEqual(sourceMode.label, "Markdown 원문")
+        XCTAssertEqual(sourceMode.value as? String, "서식 편집")
         app.terminate(); app.launchArguments = arguments(reset: false); app.launch()
         wait(app, "Shared content and selected window restore") { editor.exists && (editor.value as? String ?? "").contains("Edited in the second window.") }
         openOverview(app); expectCards(2, app: app)
@@ -203,7 +204,7 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
         app.typeKey("w", modifierFlags: .command)
         expectCards(1, app: app)
         XCTAssertTrue(overview(app).exists, "Command-W cannot close the hidden working document from the overview")
-        app.buttons["native-windows-overview-close"].tap()
+        app.buttons["native-workspace-windows-toggle"].tap()
         wait(app, "Close returns after blocked overview input") { !self.overview(app).exists }
         XCTAssertEqual(app.buttons.matching(identifier: "native-close-document").count, originalWorkTabCount)
         wait(app, "The work tab and website form survive Command-W in the overview") {

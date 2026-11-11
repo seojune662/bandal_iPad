@@ -235,9 +235,7 @@ struct NativeWorkspaceView: View {
                         .environment(\.nativePDFPaletteHost, pdfPalette)
                     }
                         .opacity(covered && !settingsOpen ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered)
-                    if windowsOverviewOpen {
-                        windowsOverview
-                    } else if section == .settings {
+                    if windowsOverviewOpen || section == .settings {
                         EmptyView()
                     } else if let auxiliary {
                         switch auxiliary {
@@ -304,6 +302,8 @@ struct NativeWorkspaceView: View {
             }
             // The PDF palette floats over the side panels; under a drawer it stays inside its pane.
             .overlay { NativePDFPaletteLayer(host: pdfPalette, covered: compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) || rightVisible && !chrome.rightPinned) }
+            // Over the rail and both panels: the overview is the whole window (Figma 132:2517).
+            .overlay { if windowsOverviewOpen { windowsOverview } }
             .overlay(alignment: .topTrailing) {
                 NativeWorkspaceWindowControls(mode: navigation.chromeMode, overview: windowsOverviewOpen,
                     rightVisible: rightVisible, enabled: showsWorkspace && !boardOverlayOpen && workspaceContext != nil && !busy && annotation.request == nil,
@@ -317,6 +317,7 @@ struct NativeWorkspaceView: View {
                 if showBusy { ProgressView().padding(10).background(.regularMaterial, in: Capsule()).padding(.top, 48) }
             }
             .overlay(alignment: .bottom) { NativeSyncMoveNotice(store: store) { openSettings("sync") } }
+            .overlay { NativeDocumentPreviewLayer(store: store) }
             // @AppStorage writes reach the view outside withAnimation's transaction,
             // so the slide is keyed on what is visible rather than on the toggles.
             .animation(Self.railAnimation, value: [chrome.leftPinned, aiVisible, chrome.aiPinned, rightVisible, chrome.rightPinned,
