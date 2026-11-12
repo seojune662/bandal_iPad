@@ -7,17 +7,8 @@ struct NativePDFPenPreset: Codable, Equatable {
     var color: String
     var width: Double
     var opacity: Double
-    /// The pen type a favourite returns to: 만년필 "pen", 볼펜 "ballpoint" or 붓 "brush". Absent on older values (만년필).
-    var kind = "pen"
+    /// The pen types behind the palette's one 펜 button: 펜 "pen", 볼펜 "ballpoint" and 붓 "brush".
     static let kinds = ["pen", "ballpoint", "brush"]
-    init(color: String, width: Double, opacity: Double, kind: String = "pen") { self.color = color; self.width = width; self.opacity = opacity; self.kind = kind }
-    private enum CodingKeys: String, CodingKey { case color, width, opacity, kind }
-    init(from decoder: Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        color = try values.decode(String.self, forKey: .color); width = try values.decode(Double.self, forKey: .width)
-        opacity = try values.decode(Double.self, forKey: .opacity)
-        if let kind = try? values.decode(String.self, forKey: .kind), Self.kinds.contains(kind) { self.kind = kind }
-    }
 
     static let pen = Self(color: "ink", width: 0.004, opacity: 0.95)
     static let ballpoint = Self(color: "ink", width: 0.003, opacity: 1)
@@ -25,15 +16,14 @@ struct NativePDFPenPreset: Codable, Equatable {
     static let highlighter = Self(color: "yellow", width: 0.006, opacity: 0.28)
     static let colors = ["ink", "red", "orange", "yellow", "green", "blue", "violet"]
     var isValid: Bool {
-        Self.colors.contains(color) && Self.kinds.contains(kind) && width.isFinite && (0.001...0.04).contains(width) &&
+        Self.colors.contains(color) && width.isFinite && (0.001...0.04).contains(width) &&
             opacity.isFinite && (0.05...1).contains(opacity)
     }
     func validated(highlighter: Bool = false) -> Self {
         let fallback = highlighter ? Self.highlighter : .pen
         return Self(color: Self.colors.contains(color) ? color : fallback.color,
                     width: width.isFinite ? min(0.04, max(0.001, width)) : fallback.width,
-                    opacity: opacity.isFinite ? min(highlighter ? 0.34 : 1, max(0.05, opacity)) : fallback.opacity,
-                    kind: Self.kinds.contains(kind) ? kind : "pen")
+                    opacity: opacity.isFinite ? min(highlighter ? 0.34 : 1, max(0.05, opacity)) : fallback.opacity)
     }
 }
 
@@ -78,13 +68,11 @@ enum NativePDFPaletteStyle {
     }
 }
 
-/// Favorites and recent styles are workspace-wide; open panes keep their own
+/// Recent styles, slots and tool options are workspace-wide; open panes keep their own
 /// active style. Every mutation rereads the latest value to preserve edits made
 /// in another PDF pane between two UI actions.
 struct NativePDFPalettePreferences: Codable, Equatable {
     var version = 2
-    /// Three cells; a nil cell is empty (the star in the pen settings fills the first empty one).
-    var favorites: [NativePDFPenPreset?] = [.pen, .init(color: "blue", width: 0.004, opacity: 0.95), .init(color: "red", width: 0.004, opacity: 0.95)]
     var recentPen = NativePDFPenPreset.pen
     var recentHighlighter = NativePDFPenPreset.highlighter
     var recentBallpoint = NativePDFPenPreset.ballpoint
@@ -117,34 +105,21 @@ struct NativePDFPalettePreferences: Codable, Equatable {
     static let changed = Notification.Name("NativePDFPalettePreferences.changed")
 
     init() {}
-    private enum CodingKeys: String, CodingKey { case version, favorites, presets, recentPen, recentHighlighter, recentBallpoint, recentBrush, drawAndHold, colorSlots, widthSlots, eraserMode, eraserRadius, tapeColor, tapeWidth
+    /// Builds up to 1.4.2 (24) also stored `favorites` (favourite pens, removed); the key is ignored.
+    private enum CodingKeys: String, CodingKey { case version, presets, recentPen, recentHighlighter, recentBallpoint, recentBrush, drawAndHold, colorSlots, widthSlots, eraserMode, eraserRadius, tapeColor, tapeWidth
         case eraserHighlighterOnly, lassoInkOnly, tapePageOnly, highlighterStraight }
     private struct Candidate: Decodable {
         let value: NativePDFPenPreset?
-        /// A stored null: the cell was emptied. A broken value is not empty; it keeps the default.
-        let empty: Bool
-        init(from decoder: Decoder) throws {
-            empty = (try? decoder.singleValueContainer().decodeNil()) ?? false
-            value = empty ? nil : try? NativePDFPenPreset(from: decoder)
-        }
+        init(from decoder: Decoder) throws { value = try? NativePDFPenPreset(from: decoder) }
     }
     init(from decoder: Decoder) throws {
         self.init()
         let values = try decoder.container(keyedBy: CodingKeys.self)
         let version = try values.decodeIfPresent(Int.self, forKey: .version) ?? 2
         guard version == 1 || version == 2 else { return }
-        let old = version == 1
-        let candidates = (try? values.decode([Candidate].self, forKey: old ? .presets : .favorites)) ?? []
-        let previous = candidates.compactMap(\.value).filter(\.isValid)
-        for index in favorites.indices {
-            if old { if previous.indices.contains(index) { favorites[index] = previous[index] } }
-            else if candidates.indices.contains(index) {
-                if candidates[index].empty { favorites[index] = nil }
-                else if let preset = candidates[index].value, preset.isValid { favorites[index] = preset }
-            }
-        }
         if let value = try? values.decode(NativePDFPenPreset.self, forKey: .recentPen), value.isValid { recentPen = value }
-        else if old, let first = previous.first { recentPen = first }
+        // Version 1 had no recent pen: its first preset was the pen in use.
+        else if version == 1, let first = ((try? values.decode([Candidate].self, forKey: .presets)) ?? []).compactMap(\.value).first(where: \.isValid) { recentPen = first }
         if let value = try? values.decode(NativePDFPenPreset.self, forKey: .recentHighlighter), value.isValid { recentHighlighter = value.validated(highlighter: true) }
         if let value = try? values.decode(NativePDFPenPreset.self, forKey: .recentBallpoint), value.isValid { recentBallpoint = value }
         if let value = try? values.decode(NativePDFPenPreset.self, forKey: .recentBrush), value.isValid { recentBrush = value }
@@ -165,7 +140,7 @@ struct NativePDFPalettePreferences: Codable, Equatable {
     }
     func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
-        try values.encode(2, forKey: .version); try values.encode(favorites, forKey: .favorites)
+        try values.encode(2, forKey: .version)
         try values.encode(recentPen, forKey: .recentPen); try values.encode(recentHighlighter, forKey: .recentHighlighter)
         try values.encode(recentBallpoint, forKey: .recentBallpoint); try values.encode(recentBrush, forKey: .recentBrush)
         try values.encode(eraserHighlighterOnly, forKey: .eraserHighlighterOnly); try values.encode(lassoInkOnly, forKey: .lassoInkOnly)

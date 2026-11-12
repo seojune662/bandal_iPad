@@ -6,10 +6,14 @@ final class NativePDFWritingUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor
-    func testPaletteFavoritesIndependentToolsAndNarrowPanesPersist() {
+    func testPaletteIndependentToolsAndNarrowPanesPersist() {
         let app = createDocument("Palette Notes")
-        chooseTool("pen", in: app)
+        // A new note starts with the plain pen, the first of the three pen types; the palette has no favourite pens.
+        XCTAssertEqual(style(in: app)?.hasPrefix("pen ink "), true, String(describing: style(in: app)))
+        XCTAssertFalse(app.buttons["native-pdf-quick-favorite-0"].exists)
         openPalette(in: app)
+        XCTAssertTrue(app.buttons["native-pdf-pen-kind-pen"].isSelected); XCTAssertEqual(app.buttons["native-pdf-pen-kind-pen"].label, "펜")
+        XCTAssertFalse(app.buttons["native-pdf-favorite-star"].exists); XCTAssertFalse(app.buttons["native-pdf-palette-favorite-0"].exists)
         // The pen settings show the palette's colours (the rest are behind +) on the design's 36 pt cells.
         for color in ["ink", "blue", "red", "green"] {
             let button = app.buttons["native-pdf-color-" + color].firstMatch
@@ -17,25 +21,15 @@ final class NativePDFWritingUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(button.frame.width, 36)
             XCTAssertGreaterThanOrEqual(button.frame.height, 36)
         }
-        // The star: the three cells are taken, so the pen in the third cell is removed first to make room.
-        let star = app.buttons["native-pdf-favorite-star"]
-        XCTAssertTrue(star.isSelected, "The default pen is the first favourite")
-        app.buttons["native-pdf-palette-favorite-2"].tap()
-        XCTAssertTrue(star.isSelected); star.tap()
-        XCTAssertTrue(app.buttons["native-pdf-save-favorite-2"].waitForExistence(timeout: 5), "The star empties the cell of the pen in use")
         app.buttons["native-pdf-color-blue"].firstMatch.tap()
         // Thickness is one of twelve steps on a slider (no millimetre value).
         setSlider("native-pdf-width-slider", to: 8.0 / 11, in: app)
         XCTAssertEqual(app.descendants(matching: .any)["native-pdf-width-slider"].firstMatch.value as? String, "9단계")
         setSlider("native-pdf-opacity-slider", to: 0.8, in: app)
-        star.tap()
-        let saved = app.buttons["native-pdf-palette-favorite-2"]
-        XCTAssertTrue(saved.waitForExistence(timeout: 5), "The star puts the current pen in the empty cell")
-        XCTAssertTrue((saved.value as? String ?? "").hasPrefix("pen blue 9단계"), String(describing: saved.value))
-        capture("Swift pen settings and saved blue favorite")
+        capture("Swift pen settings with a blue pen")
         closePalette(in: app)
         let penStyle = style(in: app)
-        XCTAssertNotNil(penStyle)
+        XCTAssertEqual(penStyle?.hasPrefix("pen blue 9단계"), true, String(describing: penStyle))
         chooseTool("highlighter", in: app)
         openPalette(in: app)
         app.buttons["native-pdf-color-green"].firstMatch.tap()
@@ -65,8 +59,8 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTAssertEqual(style(in: app), ballpointStyle)
         chooseTool("brush", in: app)
         XCTAssertEqual(style(in: app)?.hasPrefix("brush ink "), true, "붓 is a third pen type with its own style")
-        // A favourite is a whole pen: the saved blue one brings 만년필 back from 붓.
-        tap("native-pdf-quick-favorite-2", in: app)
+        // The plain pen comes back from 붓 with its own style.
+        chooseTool("pen", in: app)
         XCTAssertEqual(style(in: app), penStyle)
         app.terminate(); app.launchArguments = arguments(reset: false); app.launch()
         XCTAssertTrue(app.buttons["native-pdf-tool-pen"].waitForExistence(timeout: 25), app.debugDescription)
@@ -76,6 +70,7 @@ final class NativePDFWritingUITests: XCTestCase {
         chooseTool("ballpoint", in: app)
         XCTAssertEqual(style(in: app), ballpointStyle)
         chooseTool("pen", in: app)
+        XCTAssertEqual(style(in: app), penStyle)
 
         let originalTab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-document-tab-", "Palette Notes")).firstMatch
         let originalID = String(originalTab.identifier.dropFirst("native-document-tab-".count))
@@ -90,30 +85,60 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTAssertTrue(left.waitForExistence(timeout: 15)); XCTAssertTrue(right.waitForExistence(timeout: 15))
         for pane in [left, right] {
             for index in 0..<3 {
-                XCTAssertFalse(pane.buttons["native-pdf-favorite-\(index)"].exists)
+                XCTAssertFalse(pane.buttons["native-pdf-quick-favorite-\(index)"].exists)
+                XCTAssertTrue(pane.buttons["native-pdf-width-slot-\(index)"].exists, "The row ends with the three thickness dots")
             }
             let tools = pane.scrollViews["native-pdf-tool-scroll"]
             XCTAssertTrue(tools.exists, app.debugDescription)
             XCTAssertGreaterThan(tools.frame.width, pane.frame.width - 48, "The floating palette fills a narrow pane up to its insets")
+            // The thumbnails button stands alone under the palette, clear of it at any pane width.
+            let pages = pane.buttons["native-pdf-pages"]
+            XCTAssertTrue(pages.isHittable, app.debugDescription)
+            XCTAssertGreaterThanOrEqual(pages.frame.minY, tools.frame.maxY, "The thumbnails button never overlaps the palette")
             // The row ends with the collapse button; the pen is back at its start.
             for _ in 0..<5 where !pane.buttons["native-pdf-palette-collapse"].isHittable { tools.swipeLeft() }
             XCTAssertTrue(pane.buttons["native-pdf-palette-collapse"].isHittable, app.debugDescription)
             for _ in 0..<5 where !pane.buttons["native-pdf-tool-pen"].isHittable { tools.swipeRight() }
         }
-        // The pen settings open under the pane's own 펜 button; a favourite changes that pane only.
+        // The pen settings open under the pane's own 펜 button; a colour picked there changes that pane only.
         right.buttons["native-pdf-tool-pen"].tap()
-        let other = app.buttons["native-pdf-palette-favorite-1"]
+        let other = app.buttons["native-pdf-color-red"].firstMatch
         XCTAssertTrue(other.waitForExistence(timeout: 5), app.debugDescription); other.tap()
         closePalette(in: app)
         XCTAssertNotEqual(right.buttons["native-pdf-tool-pen"].value as? String, penStyle)
         XCTAssertEqual(left.buttons["native-pdf-tool-pen"].value as? String, penStyle)
         right.buttons["native-pdf-tool-pen"].tap()
-        XCTAssertTrue(app.buttons["native-pdf-palette-favorite-2"].waitForExistence(timeout: 5), app.debugDescription)
-        app.buttons["native-pdf-palette-favorite-2"].tap()
+        XCTAssertTrue(app.buttons["native-pdf-color-blue"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["native-pdf-color-blue"].firstMatch.tap()
         closePalette(in: app)
         XCTAssertEqual(right.buttons["native-pdf-tool-pen"].value as? String, penStyle)
-        capture("PDF tools use full width with numbered shortcuts removed")
+        capture("PDF tools use full width in narrow panes")
         XCTAssertEqual(app.webViews.count, 0)
+    }
+
+    @MainActor
+    func testPaletteThicknessDotsPickASlotOpenItsTwelveStepsAndReturnToThePen() {
+        let app = createDocument("Thickness Notes")
+        let dots = (0..<3).map { app.buttons["native-pdf-width-slot-\($0)"] }
+        XCTAssertTrue(dots[1].isSelected, "The pen starts on the middle dot")
+        XCTAssertEqual(dots.map { $0.value as? String }, ["3단계", "6단계", "9단계"])
+        tap("native-pdf-width-slot-2", in: app)
+        XCTAssertTrue(dots[2].isSelected); XCTAssertEqual(style(in: app)?.hasPrefix("pen ink 9단계"), true, String(describing: style(in: app)))
+        // A second tap on the chosen dot opens its twelve steps; the step picked there stays in that dot.
+        tap("native-pdf-width-slot-2", in: app)
+        let steps = app.descendants(matching: .any)["native-pdf-width-steps"].firstMatch
+        XCTAssertTrue(steps.waitForExistence(timeout: 5), app.debugDescription)
+        steps.coordinate(withNormalizedOffset: .init(dx: 0.96, dy: 0.5)).tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "12단계"), object: steps)], timeout: 5), .completed, app.debugDescription)
+        capture("Twelve steps of the palette's third thickness dot")
+        app.coordinate(withNormalizedOffset: .init(dx: 0.02, dy: 0.5)).tap()
+        XCTAssertTrue(steps.waitForNonExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(dots[2].value as? String, "12단계"); XCTAssertEqual(style(in: app)?.hasPrefix("pen ink 12단계"), true)
+        // With a tool that has no thickness the dots are the pen's: a tap returns to the pen with that thickness.
+        tap("native-pdf-tool-select", in: app)
+        XCTAssertFalse(dots[2].isSelected)
+        tap("native-pdf-width-slot-0", in: app)
+        XCTAssertTrue(app.buttons["native-pdf-tool-pen"].isSelected); XCTAssertEqual(style(in: app)?.hasPrefix("pen ink 3단계"), true, String(describing: style(in: app)))
     }
 
     @MainActor
@@ -290,7 +315,7 @@ final class NativePDFWritingUITests: XCTestCase {
         let partial = app.buttons["native-pdf-eraser-mode-partial"]
         XCTAssertTrue(partial.waitForExistence(timeout: 5), app.debugDescription); partial.tap()
         // A tap on the size already chosen would open its twelve steps (the palette is shared across documents).
-        let smallest = app.buttons["native-pdf-width-slot-0"]
+        let smallest = app.buttons["native-pdf-option-width-slot-0"]
         if !smallest.isSelected { smallest.tap() }
         closePalette(in: app)
         body.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.32)).press(forDuration: 0.05,
@@ -379,7 +404,7 @@ final class NativePDFWritingUITests: XCTestCase {
         ["--native-ui-testing", "--native-pencil-dispatch-fixture"] + (reset ? ["--reset-native-ui-testing"] : [])
     }
     @MainActor private func chooseTool(_ tool: String, in app: XCUIApplication) {
-        // 만년필 ("pen"), 볼펜 and 붓 share the palette's 펜 button; the type is picked in the pen settings.
+        // 펜 ("pen"), 볼펜 and 붓 share the palette's 펜 button; the type is picked in the pen settings.
         let name = ["ballpoint", "brush"].contains(tool) ? "pen" : tool, item = app.buttons["native-pdf-tool-" + name]
         if !item.isSelected { tap("native-pdf-tool-" + name, in: app) }
         guard name == "pen", style(in: app)?.hasPrefix(tool + " ") != true else { return }

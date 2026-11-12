@@ -1,6 +1,6 @@
 import XCTest
 
-/// Captures of the note / PDF screen for side-by-side comparison with Figma 269:9222 and 130:4614.
+/// Captures of the note / PDF screen for side-by-side comparison with Figma 155:7503 and 130:4614.
 /// Each test only drives and attaches; behaviour is asserted in the feature tests.
 final class FigmaNoteScreenshotTests: XCTestCase {
     override func setUp() { continueAfterFailure = true }
@@ -35,6 +35,23 @@ final class FigmaNoteScreenshotTests: XCTestCase {
         app.buttons["native-pdf-palette-collapse"].tap(); sleep(1)
         attach(app, "note 03 팔레트 접힘 \(appearance)")
         app.buttons["native-pdf-palette-expand"].tap()
+
+        // What the design does not show: the thumbnails button's long-press menu, the thumbnails, a dot's twelve steps.
+        app.openNativePDFViewMenu(); sleep(1)
+        attach(app, "note 04 보기 메뉴 \(appearance)")
+        app.closeNativePDFViewMenu()
+        app.buttons["native-pdf-pages"].tap(); sleep(1)
+        attach(app, "note 05 미리보기 \(appearance)")
+        app.buttons["native-pdf-pages"].tap()
+        app.buttons["native-pdf-width-slot-1"].tap()
+        if app.descendants(matching: .any)["native-pdf-width-steps"].firstMatch.waitForExistence(timeout: 5) {
+            sleep(1); attach(app, "note 06 굵기 12단계 \(appearance)")
+            app.coordinate(withNormalizedOffset: .init(dx: 0.02, dy: 0.5)).tap(); sleep(1)
+        }
+        // A narrow split pane: the palette scrolls inside its pill and the thumbnails button stays clear of it.
+        app.openNativeDockLayoutMenu()
+        let duplicate = app.buttons["native-duplicate-right"].firstMatch
+        if duplicate.waitForExistence(timeout: 5) { duplicate.tap(); sleep(3); attach(app, "note 07 나눈 칸 \(appearance)") }
     }
 
     @MainActor private func attach(_ app: XCUIApplication, _ name: String) {

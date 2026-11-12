@@ -182,7 +182,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: select)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed, app.debugDescription)
         select.tap()
-        app.buttons["native-pdf-zoom"].tap(); app.buttons["native-pdf-fit"].tap() // fit lives in the "100% ∨" menu
+        app.openNativePDFViewMenu(); app.buttons["native-pdf-fit"].tap() // fit lives in the thumbnails button's long-press menu
         let pdf = app.otherElements["native-pdf-workspace"]
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.48)).press(forDuration: 1.2)
         let comment = app.buttons["native-pdf-comment-source"]
@@ -191,11 +191,14 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 10), app.debugDescription)
         editor.tap(); editor.typeText("Source comment survives restart")
         app.buttons["native-pdf-save-annotation"].tap()
+        // 원본 주석 and its count are a row of the thumbnails button's long-press menu.
         let count = app.buttons["native-pdf-annotations"]
+        app.openNativePDFViewMenu()
         let saved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND value == %@", "1"), object: count)
         XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 15), .completed, app.debugDescription)
+        app.closeNativePDFViewMenu()
         app.terminate(); app.launchArguments = ["--native-ui-testing"]; app.launch()
-        XCTAssertTrue(app.buttons["native-pdf-annotations"].waitForExistence(timeout: 20), app.debugDescription)
+        app.openNativePDFViewMenu()
         let restored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND value == %@", "1"), object: count)
         XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 15), .completed, app.debugDescription)
         app.buttons["native-pdf-annotations"].tap()
@@ -225,7 +228,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         // move after page two, and the reader follows that original page.
         let first = app.buttons["native-pdf-thumbnail-1"], second = app.buttons["native-pdf-thumbnail-2"]
         first.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.5, thenDragTo: second.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)), withVelocity: .slow, thenHoldForDuration: 0.1)
-        let moved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "2"), object: app.textFields["native-pdf-page"])
+        let moved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH %@", "2 /"), object: app.buttons["native-pdf-pages"])
         XCTAssertEqual(XCTWaiter.wait(for: [moved], timeout: 20), .completed, app.debugDescription)
         expectPageCount(3, in: app); expectInkCount(1, in: app)
         deleteFirstPage(in: app)
@@ -255,11 +258,9 @@ final class NativeWorkspaceFlowTests: XCTestCase {
     }
 
     @MainActor private func expectPageCount(_ count: Int, in app: XCUIApplication) {
-        let value = app.staticTexts["native-pdf-page-count"]
-        let expected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND label == %@", "/ \(count)"), object: value)
-        XCTAssertEqual(XCTWaiter.wait(for: [expected], timeout: 20), .completed, app.debugDescription)
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: app.buttons["native-pdf-pages"])
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription)
+        // The thumbnails button's value is the reader's position ("2 / 3").
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true AND value ENDSWITH %@", "/ \(count)"), object: app.buttons["native-pdf-pages"])
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed, app.debugDescription)
     }
 
     @MainActor private func expectBoardCount(_ count: Int, in app: XCUIApplication) {

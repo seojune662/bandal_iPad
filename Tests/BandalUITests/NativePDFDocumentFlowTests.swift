@@ -38,9 +38,14 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         let secondPage = app.buttons["native-pdf-thumbnail-2"]
         XCTAssertTrue(secondPage.waitForExistence(timeout: 10)); secondPage.tap()
         tapControl("native-pdf-pages", app: app)
-        // Zoom steps live in the "100% ∨" menu, which stays open for repeated steps.
-        tapControl("native-pdf-zoom", app: app); tapControl("native-pdf-zoom-in", app: app)
-        app.staticTexts["native-pdf-page-count"].tap() // closes the menu without touching the page
+        // Page jump and zoom live in the thumbnails button's long-press menu, which stays open for repeated steps.
+        app.openNativePDFViewMenu()
+        XCTAssertEqual(app.textFields["native-pdf-page"].value as? String, "2"); XCTAssertEqual(app.staticTexts["native-pdf-page-count"].label, "/ 3")
+        tapControl("native-pdf-page-previous", app: app); expectPage(1, app: app)
+        tapControl("native-pdf-page-next", app: app); expectPage(2, app: app)
+        tapControl("native-pdf-zoom-in", app: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "110%"), object: app.staticTexts["native-pdf-zoom"])], timeout: 10), .completed, app.debugDescription)
+        app.closeNativePDFViewMenu()
         expectPage(2, app: app)
 
         // Creation changes the active tab through the same document flush
@@ -166,7 +171,7 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 20), .completed)
     }
     @MainActor private func expectPanePage(_ page: Int, pane: XCUIElement) {
-        let current = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", String(page)), object: pane.textFields["native-pdf-page"])
+        let current = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH %@", "\(page) /"), object: pane.buttons["native-pdf-pages"])
         XCTAssertEqual(XCTWaiter.wait(for: [current], timeout: 10), .completed)
     }
     private func arguments(reset: Bool) -> [String] {
@@ -231,7 +236,8 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: timeout), .completed, app.debugDescription)
     }
     @MainActor private func expectPage(_ page: Int, app: XCUIApplication) {
-        let current = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", String(page)), object: app.textFields["native-pdf-page"])
+        // The thumbnails button's value is the reader's position ("2 / 3").
+        let current = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH %@", "\(page) /"), object: app.buttons["native-pdf-pages"])
         XCTAssertEqual(XCTWaiter.wait(for: [current], timeout: 10), .completed, app.debugDescription)
     }
     @MainActor private func expectZoom(_ zoom: Double, app: XCUIApplication) {

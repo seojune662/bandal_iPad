@@ -49,7 +49,6 @@
 "링크 추가" = "Add link";
 "링크 편집 마치기" = "Finish editing link";
 "링크는 사이드바의 ‘AI로 링크 찾기’나 설정에서 나중에 더할 수 있어요." = "You can add links later with “Find links with AI” in the sidebar, or in Settings.";
-"만년필" = "Fountain pen";
 "목록에 없어요 · 직접 입력" = "Not listed? Enter it yourself";
 "미국" = "US";
 "반달 시작하기" = "Start using Bandal";
@@ -903,8 +902,6 @@
 "즐겨찾기 해제" = "Remove from favorites";
 "즐겨찾기에 추가" = "Add to favorites";
 "즐겨찾기와 사이트 로그인은 그대로 남아요." = "Favorites and site logins are kept.";
-"즐겨찾는 펜" = "Favorite pens";
-"즐겨찾는 펜 %lld에 현재 펜 저장" = "Save current pen to favorite pen %lld";
 "지금 노트와 과목 자료를 참고해서 답해요" = "Answers using your current note and course materials";
 "이 노트 핵심만 요약해 줘" = "Summarize the key points of this note";
 "시험에 나올 문제 3개 만들어 줘" = "Make 3 questions likely to be on the exam";
@@ -1119,7 +1116,6 @@
 "현재 탭" = "Current tab";
 "현재 탭 즐겨찾기에 추가" = "Add current tab to favorites";
 "현재 페이지 중앙에 메모를 추가합니다." = "Adds a note at the center of the current page.";
-"현재 펜 저장" = "Save current pen";
 "형광 표시" = "Highlight";
 "형광펜 · 메모" = "Highlights · Notes";
 "홈" = "Home";
@@ -1208,8 +1204,6 @@
 "투명도" = "Opacity";
 "모양 다듬기" = "Tidy Shapes";
 "그리다 멈추면 직선 · 원으로" = "Pause while drawing for a line or circle";
-"즐겨찾기에서 빼기" = "Remove from Favorites";
-"한 칸을 먼저 지워 주세요" = "Clear a favorite slot first";
 "지우개" = "Eraser";
 "크기 · 부분 지우개일 때" = "Size · Partial eraser";
 "형광펜만 지우기" = "Erase Highlighter Only";
@@ -1278,3 +1272,5 @@
 "기울임" = "Italic";
 "글머리 목록" = "Bulleted List";
 "번호 목록" = "Numbered List";
+"보기 메뉴" = "View Menu";
+"길게 누르면 페이지 이동과 보기 메뉴가 열립니다" = "Touch and hold for page jump and the view menu";

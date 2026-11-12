@@ -152,7 +152,8 @@ struct NativePDFOptionToggle: View {
     }
 }
 
-/// Three size cells (44 × 40). A tap picks one; a tap on the picked one opens its twelve steps.
+/// Three size cells (44 × 40) in a tool's popover: the palette's three thickness dots again, under their own identifiers.
+/// A tap picks one; a tap on the picked one opens its twelve steps.
 struct NativePDFWidthSlots: View {
     var model: NativePDFWorkspaceModel
     private static let sizes: [CGFloat] = [8, 14, 22]
@@ -167,7 +168,7 @@ struct NativePDFWidthSlots: View {
                         .background(selected == index ? NativeGlass.tool : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous)).contentShape(Rectangle())
                 }
                 .accessibilityLabel("굵기 \(index + 1)").accessibilityValue(NativePDFPaletteStyle.stepLabel(step))
-                .accessibilityIdentifier("native-pdf-width-slot-\(index)").accessibilityAddTraits(selected == index ? .isSelected : [])
+                .accessibilityIdentifier("native-pdf-option-width-slot-\(index)").accessibilityAddTraits(selected == index ? .isSelected : [])
                 .bandalPopover(isPresented: Binding(get: { model.editingWidthSlot == index }, set: { if !$0, model.editingWidthSlot == index { model.editingWidthSlot = nil } }),
                                width: 320, radius: 18, padding: 14, dims: false) {
                     NativePDFWidthSteps(color: tint, selected: model.widthSlots.indices.contains(index) ? model.widthSlots[index] : step) { model.setWidthStep($0, slot: index) }
