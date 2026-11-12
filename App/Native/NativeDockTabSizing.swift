@@ -24,7 +24,7 @@ struct NativeDockStripMetrics: Equatable {
 /// full screen keeps its strip below that edge; full screen, the strip starts at the top (Figma 129:1596).
 enum NativeDockHeaderMetrics {
     /// Read while laying out: entering or leaving full screen resizes the window, which lays the dock out again.
-    static var windowed: Bool {
+    @MainActor static var windowed: Bool {
         UIApplication.shared.connectedScenes.contains { scene in
             guard let scene = scene as? UIWindowScene, scene.activationState == .foregroundActive else { return false }
             let window = scene.coordinateSpace.bounds.size, screen = scene.screen.bounds.size

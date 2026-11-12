@@ -72,7 +72,7 @@ struct NativePDFFloatingPalette: View {
     var onFrame: ((CGRect) -> Void)? = nil
     @AppStorage("native.pdf.paletteCollapsed") private var collapsed = false
     /// Its gap below the tab strip and its height: the 34 pt row and 5 pt above and below.
-    static let top: CGFloat = 14, height: CGFloat = NativePDFPaletteLook.cell + 10
+    static let top: CGFloat = 14, height: CGFloat = 44
     var body: some View {
         Group {
             if collapsed { mini } else {

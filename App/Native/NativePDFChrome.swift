@@ -9,7 +9,7 @@ struct NativePDFViewButton: View {
     var model: NativePDFWorkspaceModel
     @State private var showMenu = false
     /// The palette's 34 pt cell in a glass circle as tall as the palette, 14 from the page area's left edge.
-    static let size: CGFloat = NativePDFFloatingPalette.height, leading: CGFloat = 14
+    static let size: CGFloat = 44, leading: CGFloat = 14
     private static let menuWidth: CGFloat = 260
     private var unavailable: Bool { model.isLoading || model.isBusy || model.errorMessage != nil }
     var body: some View {
