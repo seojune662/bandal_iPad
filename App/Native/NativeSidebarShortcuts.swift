@@ -47,7 +47,7 @@ struct NativeSidebarShortcuts: View {
     }
     private func heading(_ title: String, collapsed: Binding<Bool>) -> some View {
         Button { collapsed.wrappedValue.toggle() } label: {
-            HStack(spacing: 7) { Image(systemName: collapsed.wrappedValue ? "chevron.right" : "chevron.down").font(.system(size: 9)).frame(width: 12); Text(title).font(NativeDesktopTheme.font(12, weight: .semibold)).lineLimit(1); Spacer(minLength: 0) }.frame(minHeight: 28).contentShape(Rectangle())
+            HStack(spacing: 7) { Image(systemName: collapsed.wrappedValue ? "chevron.right" : "chevron.down").font(NativeDesktopTheme.font(9)).frame(width: 12); Text(title).font(NativeDesktopTheme.font(12, weight: .semibold)).lineLimit(1); Spacer(minLength: 0) }.frame(minHeight: 28).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel(title + (collapsed.wrappedValue ? " 펼치기" : " 접기"))
     }
     private func serviceButton(_ service: NativeUniversityService) -> some View {
@@ -56,10 +56,10 @@ struct NativeSidebarShortcuts: View {
             else { onOpenURL(service.url) }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: symbol(service.kind)).font(.system(size: 13)).frame(width: 16)
+                Image(systemName: symbol(service.kind)).font(NativeDesktopTheme.font(13)).frame(width: 16)
                 Text(service.label).font(NativeDesktopTheme.font(12)).lineLimit(1)
                 Spacer(minLength: 0)
-                if service.opensExternally { Image(systemName: "arrow.up.right").font(.system(size: 8)) }
+                if service.opensExternally { Image(systemName: "arrow.up.right").font(NativeDesktopTheme.font(8)) }
             }.padding(.horizontal, 6).frame(minHeight: 36).contentShape(Rectangle())
         }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary)
             .accessibilityIdentifier("native-university-service-" + service.id)

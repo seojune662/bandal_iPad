@@ -11,7 +11,7 @@ struct NativeHelpView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text("도움말").font(.system(size: 26, weight: .medium))
+                Text("도움말").font(NativeDesktopTheme.font(26, weight: .medium))
                 Text("반달에서 읽고, 기록하고, 연결하세요.").foregroundStyle(NativeDesktopTheme.secondary)
                 NativeSettingsCard(title: "시작하기", description: "자료와 생각을 한 작업 공간에서 이어갑니다.") {
                     VStack(alignment: .leading, spacing: 14) {
@@ -19,7 +19,7 @@ struct NativeHelpView: View {
                         Label(NativeReleaseFlags.showsRecording ? "탭 옆 +에서 브라우저, 노트, 마크다운, AI, 녹음을 여세요." : "탭 옆 +에서 브라우저, 노트, 마크다운, AI를 여세요.", systemImage: "plus")
                         Label("탭을 끌어 나누거나 화면 배치 메뉴로 여러 자료를 함께 보세요.", systemImage: "rectangle.split.2x1")
                         Label("PDF와 노트에는 Apple Pencil로 필기할 수 있습니다.", systemImage: "pencil.tip")
-                    }.font(.system(size: 13))
+                    }.font(NativeDesktopTheme.font(13))
                 }
                 NativeSettingsCard(title: "도움말과 지원", description: "공식 문서와 변경 사항을 확인하세요.") {
                     VStack(alignment: .leading, spacing: 16) {
@@ -29,13 +29,13 @@ struct NativeHelpView: View {
                         Link(destination: URL(string: "https://github.com/seojune662/bandal/issues")!) { Label("문제 제보 · 기능 제안", systemImage: "bubble.left") }
                     }.buttonStyle(.plain)
                 }
-                Text("반달 \(version)").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
+                Text("반달 \(version)").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
             }.padding(32).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity, alignment: .topLeading)
         }.background(NativeDesktopTheme.bgApp)
             .sheet(isPresented: $shortcuts) {
                 NavigationStack {
                     List(NativeBrowserShortcuts.specs) { item in
-                        HStack { Text(item.label); Spacer(); Text(item.chord.replacingOccurrences(of: "mod+", with: "⌘").replacingOccurrences(of: "alt+", with: "⌥").replacingOccurrences(of: "shift+", with: "⇧").uppercased()).foregroundStyle(.secondary) }
+                        HStack { Text(item.label); Spacer(); Text(item.chord.replacingOccurrences(of: "mod+", with: "⌘").replacingOccurrences(of: "alt+", with: "⌥").replacingOccurrences(of: "shift+", with: "⇧").uppercased()).foregroundStyle(NativeDesktopTheme.secondary) }
                     }.navigationTitle("기본 단축키").toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { shortcuts = false } } }
                 }
             }
@@ -128,7 +128,7 @@ struct NativeMarketplaceView: View {
                 HStack(spacing: 24) {
                     ForEach([("browse", "둘러보기"), ("purchases", "구매한 자료"), ("sales", "판매 관리")], id: \.0) { id, label in
                         Button { tab = id } label: {
-                            Text(label).font(.system(size: 14, weight: tab == id ? .semibold : .regular)).padding(.vertical, 12)
+                            Text(label).font(NativeDesktopTheme.font(14, weight: tab == id ? .semibold : .regular)).padding(.vertical, 12)
                                 .overlay(alignment: .bottom) { (tab == id ? NativeDesktopTheme.accent : .clear).frame(height: 2) }
                         }.buttonStyle(.plain).accessibilityIdentifier("native-market-" + id)
                     }
@@ -136,14 +136,14 @@ struct NativeMarketplaceView: View {
                     Button { Task { await model.reload() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("마켓 새로고침")
                 }.overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
                 if let error = model.error { NativeToolError(message: error) }
-                if let notice = model.context["notice"] as? String, !notice.isEmpty { Text(notice).foregroundStyle(NativeDesktopTheme.secondary).font(.system(size: 13)).padding(14).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 8)) }
+                if let notice = model.context["notice"] as? String, !notice.isEmpty { Text(notice).foregroundStyle(NativeDesktopTheme.secondary).font(NativeDesktopTheme.font(13)).padding(14).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 8)) }
                 if model.loading { ProgressView().frame(maxWidth: .infinity) }
                 if tab == "browse" { browse }
                 else if !model.signedIn { empty("로그인하고 내 자료를 확인하세요", description: "구매한 자료와 판매 내역은 계정에 보관됩니다."); Button("로그인") { showingAccount = true }.buttonStyle(.borderedProminent) }
                 else if tab == "purchases" { purchases }
                 else { sales }
                 Text("iPad에서는 자료와 구매·판매 내역을 조회할 수 있습니다. 구매, 판매 등록, 환불, 구매 자료 가져오기는 아직 지원하지 않습니다.")
-                    .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).fixedSize(horizontal: false, vertical: true)
+                    .font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted).fixedSize(horizontal: false, vertical: true)
             }.padding(32).frame(maxWidth: 1100, alignment: .leading).frame(maxWidth: .infinity, alignment: .topLeading)
         }.background(NativeDesktopTheme.bgApp)
             .task { await model.reload() }
@@ -159,9 +159,9 @@ struct NativeMarketplaceView: View {
         VStack(alignment: .leading, spacing: 12) {
             Menu {
                 ForEach(model.universities.compactMap { row -> MarketSchool? in guard let id = row["id"] as? String, let name = row["name"] as? String else { return nil }; return MarketSchool(id: id, name: name) }) { school in Button(school.name) { model.schoolID = school.id } }
-            } label: { HStack { Text(model.universities.first(where: { $0["id"] as? String == model.schoolID })?["name"] as? String ?? "대학교 선택"); Image(systemName: "chevron.down") }.font(.system(size: 13)) }
+            } label: { HStack { Text(model.universities.first(where: { $0["id"] as? String == model.schoolID })?["name"] as? String ?? "대학교 선택"); Image(systemName: "chevron.down") }.font(NativeDesktopTheme.font(13)) }
                 .disabled(model.universities.isEmpty).accessibilityIdentifier("native-market-school")
-            Text("마켓플레이스").font(.system(size: 28, weight: .semibold))
+            Text("마켓플레이스").font(NativeDesktopTheme.font(28, weight: .semibold))
             Text("나의 공부가 누군가의 다음 공부가 되는 곳.").foregroundStyle(NativeDesktopTheme.secondary)
         }
     }
@@ -172,7 +172,7 @@ struct NativeMarketplaceView: View {
         else {
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(NativeDesktopTheme.muted)
-                TextField("어떤 과목의 자료를 찾나요?", text: $model.query).textFieldStyle(.plain).accessibilityIdentifier("native-market-search")
+                TextField("어떤 과목의 자료를 찾나요?", text: $model.query, prompt: NativeDesktopTheme.prompt("어떤 과목의 자료를 찾나요?")).textFieldStyle(.plain).accessibilityIdentifier("native-market-search")
                 Picker("자료 정렬", selection: $model.sort) { Text("최신순").tag("newest"); Text("낮은 가격순").tag("price") }.labelsHidden()
             }.padding(12).background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 8))
             Picker("과목 선택", selection: $model.courseID) {
@@ -190,11 +190,11 @@ struct NativeMarketplaceView: View {
     }
     private func listingCard(_ row: [String: Any]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: "doc.richtext").font(.system(size: 36, weight: .light)).foregroundStyle(NativeDesktopTheme.muted).frame(maxWidth: .infinity).frame(height: 116).background(NativeDesktopTheme.raised)
-            Text((row["course"] as? [String: Any])?["name"] as? String ?? "").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
-            Text(row["title"] as? String ?? "자료").font(.system(size: 15, weight: .medium)).lineLimit(2)
-            Text(row["sellerName"] as? String ?? "").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
-            Text(won(row["price"])).font(.system(size: 16, weight: .semibold))
+            Image(systemName: "doc.richtext").font(NativeDesktopTheme.font(36, weight: .light)).foregroundStyle(NativeDesktopTheme.muted).frame(maxWidth: .infinity).frame(height: 116).background(NativeDesktopTheme.raised)
+            Text((row["course"] as? [String: Any])?["name"] as? String ?? "").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted)
+            Text(row["title"] as? String ?? "자료").font(NativeDesktopTheme.font(15, weight: .medium)).lineLimit(2)
+            Text(row["sellerName"] as? String ?? "").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
+            Text(won(row["price"])).font(NativeDesktopTheme.font(16, weight: .semibold))
         }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(NativeDesktopTheme.border, lineWidth: 1))
     }
@@ -218,10 +218,10 @@ struct NativeMarketplaceView: View {
     }
     private func total(_ title: String, _ value: String) -> some View { VStack(alignment: .leading, spacing: 6) { Text(title).font(.caption).foregroundStyle(NativeDesktopTheme.muted); Text(value).font(.title3.weight(.semibold)) } }
     private func won(_ value: Any?) -> String { guard let number = value as? NSNumber else { return "—" }; return number.intValue.formatted(.number.locale(Locale(identifier: "ko-KR"))) + "원" }
-    private func empty(_ title: String, description: String) -> some View { VStack(spacing: 12) { Image(systemName: "books.vertical").font(.system(size: 34, weight: .light)); Text(title).font(.headline); Text(description).font(.subheadline).multilineTextAlignment(.center) }.foregroundStyle(NativeDesktopTheme.secondary).frame(maxWidth: .infinity).padding(.vertical, 44) }
+    private func empty(_ title: String, description: String) -> some View { VStack(spacing: 12) { Image(systemName: "books.vertical").font(NativeDesktopTheme.font(34, weight: .light)); Text(title).font(.headline); Text(description).font(.subheadline).multilineTextAlignment(.center) }.foregroundStyle(NativeDesktopTheme.secondary).frame(maxWidth: .infinity).padding(.vertical, 44) }
     private func detailView(_ row: [String: Any]) -> some View {
         NavigationStack {
-            ScrollView { VStack(alignment: .leading, spacing: 16) { listingCard(row); Text(row["description"] as? String ?? ""); if let files = row["files"] as? [[String: Any]] { ForEach(Array(files.enumerated()), id: \.offset) { _, file in Label(file["path"] as? String ?? "파일", systemImage: "doc") } }; Text("구매와 판매 등록은 iPad에서 아직 지원하지 않습니다.").font(.footnote).foregroundStyle(.secondary) }.padding(24) }
+            ScrollView { VStack(alignment: .leading, spacing: 16) { listingCard(row); Text(row["description"] as? String ?? ""); if let files = row["files"] as? [[String: Any]] { ForEach(Array(files.enumerated()), id: \.offset) { _, file in Label(file["path"] as? String ?? "파일", systemImage: "doc") } }; Text("구매와 판매 등록은 iPad에서 아직 지원하지 않습니다.").font(.footnote).foregroundStyle(NativeDesktopTheme.secondary) }.padding(24) }
                 .navigationTitle("자료 정보").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { detail = nil } } }
         }
     }

@@ -42,7 +42,7 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         screenshot("자료 열 보기")
         chooseView("list", title: "목록", in: app)
         XCTAssertTrue(material.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(material.isHittable, "Switching to the tree must expand Parent/Child instead of hiding the current folder")
+        XCTAssertTrue(material.isHittable, "Switching to the detailed list must keep the current Parent/Child folder visible")
         chooseView("gallery", title: "갤러리", in: app)
         XCTAssertTrue(app.buttons["native-library-gallery-preview"].waitForExistence(timeout: 10), app.debugDescription)
         screenshot("자료 갤러리 보기")
@@ -63,6 +63,98 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         XCTAssertTrue(childFolder.waitForExistence(timeout: 5)); childFolder.tap()
         XCTAssertTrue(app.buttons["native-library-gallery-preview"].waitForExistence(timeout: 10), app.debugDescription)
         chooseView("list", title: "목록", in: app)
+    }
+
+    @MainActor
+    func testDetailedLibraryExpandsAndPreservesFolderSearchBeforeOpeningDocument() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]
+        app.launch()
+        XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 20), app.debugDescription)
+        app.buttons["native-course-add-menu"].tap(); app.buttons["native-new-course"].tap()
+        let courseName = app.textFields["native-course-name"]
+        XCTAssertTrue(courseName.waitForExistence(timeout: 5))
+        courseName.tap(); courseName.typeText("Readable Library")
+        app.buttons["native-create-course"].tap()
+        XCTAssertTrue(app.buttons["native-library-create"].waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.buttons["native-library-view-menu"].label.contains("목록"), "New libraries should start with the detailed list")
+
+        createFolder("Lectures", path: "Lectures", in: app)
+        let folder = app.buttons["native-material-Lectures"]
+        folder.tap()
+        let back = app.buttons["native-library-back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        let breadcrumbs = app.descendants(matching: .any).matching(identifier: "native-library-breadcrumbs").firstMatch
+        XCTAssertTrue(breadcrumbs.buttons["Lectures"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(folder.exists, "Opening a folder should show its contents rather than retain the parent tree row")
+        app.buttons["native-library-create"].tap(); app.buttons["새 노트"].tap()
+        let name = app.textFields["native-new-note-title"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap(); name.typeText("Readable Preview")
+        app.buttons["native-new-note-create"].tap()
+        let pdf = app.otherElements["native-pdf-workspace"]
+        XCTAssertTrue(pdf.waitForExistence(timeout: 20), app.debugDescription)
+        let pen = app.buttons["native-pdf-tool-pen"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: pen)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed, app.debugDescription)
+
+        let list = app.descendants(matching: .any).matching(identifier: "native-library-list").firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10), app.debugDescription)
+        let material = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-material-Lectures/", "Readable Preview")).firstMatch
+        XCTAssertTrue(material.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(material.isHittable)
+        XCTAssertGreaterThan(material.frame.height, 60, "Detailed rows must have room for the document preview and secondary information")
+        screenshot("썸네일과 제목이 보이는 자료 상세 목록")
+
+        let sort = app.buttons["native-library-sort-menu"]
+        XCTAssertTrue(sort.isHittable)
+        sort.tap(); app.buttons["이름순"].firstMatch.tap()
+        XCTAssertTrue(sort.label.contains("이름순"), app.debugDescription)
+        let search = app.textFields["native-library-search"]
+        search.tap(); search.typeText("Readable")
+        app.dismissNativeTestKeyboard()
+        XCTAssertTrue(material.waitForExistence(timeout: 10), app.debugDescription)
+        let sidebarSearchWidth = search.frame.width
+        XCTAssertGreaterThan(sidebarSearchWidth, 0)
+        let expand = app.buttons["native-library-expand"]
+        XCTAssertEqual(expand.label, "자료 넓게 보기")
+        expand.tap()
+        let expanded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            expand.label == "자료 줄여 보기" && search.frame.width > sidebarSearchWidth + 100
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 10), .completed, "Expanding must give the library substantially more horizontal space: " + app.debugDescription)
+        XCTAssertEqual(search.value as? String, "Readable", "Expansion must keep the active search")
+        XCTAssertTrue(breadcrumbs.buttons["Lectures"].exists, "Expansion must keep the current folder")
+        XCTAssertTrue(material.isHittable)
+        screenshot("검색과 현재 폴더를 유지하는 넓은 자료 목록")
+
+        expand.tap()
+        let collapsed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            expand.label == "자료 넓게 보기" && abs(search.frame.width - sidebarSearchWidth) < 2
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [collapsed], timeout: 10), .completed, app.debugDescription)
+        XCTAssertEqual(search.value as? String, "Readable", "Collapsing must keep the active search")
+        XCTAssertTrue(breadcrumbs.buttons["Lectures"].exists)
+        XCTAssertTrue(material.isHittable)
+
+        expand.tap()
+        let expandedAgain = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "자료 줄여 보기"), object: expand)
+        XCTAssertEqual(XCTWaiter.wait(for: [expandedAgain], timeout: 10), .completed, app.debugDescription)
+        app.buttons["검색 지우기"].tap()
+        back.tap()
+        XCTAssertTrue(folder.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(material.exists, "Going back must show the parent folder's contents")
+        XCTAssertEqual(expand.label, "자료 줄여 보기", "Folder navigation should keep the library expanded")
+        folder.tap()
+        XCTAssertTrue(material.waitForExistence(timeout: 5), app.debugDescription)
+        material.tap()
+        let returnedToEditor = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            expand.label == "자료 넓게 보기" && pdf.exists && pen.isHittable
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [returnedToEditor], timeout: 20), .completed, "Opening a material must dismiss the expanded library and return to the PDF editor: " + app.debugDescription)
+        XCTAssertTrue(breadcrumbs.buttons["Lectures"].exists)
+        screenshot("넓은 자료 목록에서 문서를 열고 편집기로 복귀")
     }
 
     @MainActor

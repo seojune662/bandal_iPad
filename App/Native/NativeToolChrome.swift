@@ -7,7 +7,7 @@ struct NativeToolButtonStyle: ButtonStyle {
   @Environment(\.isEnabled) private var enabled
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.system(size: 13, weight: primary ? .medium : .regular))
+      .font(NativeDesktopTheme.font(13, weight: primary ? .medium : .regular))
       .padding(.horizontal, compact ? 8 : 12)
       .frame(minHeight: compact ? 32 : 36)
       .foregroundStyle(primary ? NativeDesktopTheme.onAccent : NativeDesktopTheme.text)
@@ -28,7 +28,7 @@ struct NativeToolButtonStyle: ButtonStyle {
 struct NativeToolIconStyle: ButtonStyle {
   @Environment(\.isEnabled) private var enabled
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label.font(.system(size: 16)).labelStyle(.iconOnly)
+    configuration.label.font(NativeDesktopTheme.font(16)).labelStyle(.iconOnly)
       .frame(width: 32, height: 32).contentShape(Rectangle())
       .foregroundStyle(NativeDesktopTheme.secondary)
       .background(
@@ -55,10 +55,10 @@ struct NativeToolEmptyState: View {
   var symbol: String = "doc"
   var body: some View {
     VStack(spacing: 12) {
-      Image(systemName: symbol).font(.system(size: 32, weight: .light)).foregroundStyle(
+      Image(systemName: symbol).font(NativeDesktopTheme.font(32, weight: .light)).foregroundStyle(
         NativeDesktopTheme.muted)
-      Text(title).font(.system(size: 18, weight: .medium)).foregroundStyle(NativeDesktopTheme.text)
-      Text(message).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
+      Text(title).font(NativeDesktopTheme.font(18, weight: .medium)).foregroundStyle(NativeDesktopTheme.text)
+      Text(message).font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.secondary)
         .multilineTextAlignment(.center)
     }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
   }
@@ -66,7 +66,7 @@ struct NativeToolEmptyState: View {
 
 extension View {
   func nativeToolField() -> some View {
-    self.font(.system(size: 13)).padding(.horizontal, 12).padding(.vertical, 8)
+    self.font(NativeDesktopTheme.font(13)).padding(.horizontal, 12).padding(.vertical, 8)
       .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 6))
       .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(NativeDesktopTheme.border))
   }

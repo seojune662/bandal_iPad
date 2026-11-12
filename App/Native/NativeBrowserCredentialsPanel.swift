@@ -25,12 +25,12 @@ struct NativeBrowserCredentialsPanel: View {
             List {
                 Section {
                     Text(target.origin).font(.headline).textSelection(.enabled)
-                    Text("현재 사이트와 프로필에 저장된 로그인만 표시합니다.").font(.caption).foregroundStyle(.secondary)
+                    Text("현재 사이트와 프로필에 저장된 로그인만 표시합니다.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
                     if let failure { Text(failure).foregroundStyle(.red) }
-                    if let message { Text(message).foregroundStyle(.secondary) }
+                    if let message { Text(message).foregroundStyle(NativeDesktopTheme.secondary) }
                 }
                 Section("저장된 로그인 채우기") {
-                    if entries.isEmpty { Text("이 사이트에 저장된 로그인이 없습니다.").foregroundStyle(.secondary) }
+                    if entries.isEmpty { Text("이 사이트에 저장된 로그인이 없습니다.").foregroundStyle(NativeDesktopTheme.secondary) }
                     ForEach(entries.indices, id: \.self) { index in
                         if let id = entries[index]["id"] as? String {
                             HStack {

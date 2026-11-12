@@ -189,9 +189,9 @@ struct NativeRecordingWorkspace: View {
     GeometryReader { workspaceSize in
       VStack(spacing: 0) {
         HStack(spacing: 8) {
-          Label("녹음", systemImage: "waveform").font(.system(size: 13, weight: .medium))
+          Label("녹음", systemImage: "waveform").font(NativeDesktopTheme.font(13, weight: .medium))
           if workspaceSize.size.width >= 470 {
-            Text("기기에서 처리").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
+            Text("기기에서 처리").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
               .padding(.horizontal, 8).padding(.vertical, 3).overlay(
                 Capsule().strokeBorder(NativeDesktopTheme.border))
           }
@@ -250,7 +250,7 @@ struct NativeRecordingWorkspace: View {
             }
           }
         }
-      }.font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.text).background(
+      }.font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.text).background(
         NativeDesktopTheme.bgApp
       )
       .overlay { if loading && sessions.isEmpty { ProgressView() } }
@@ -288,13 +288,13 @@ struct NativeRecordingWorkspace: View {
   private var recordingIntro: some View {
     VStack(alignment: .leading, spacing: 12) {
       if displayed == nil {
-        Text("LECTURE NOTES").font(.system(size: 12)).tracking(0.18).foregroundStyle(
+        Text("LECTURE NOTES").font(NativeDesktopTheme.font(12)).tracking(0.18).foregroundStyle(
           NativeDesktopTheme.muted)
       }
-      Text(displayed?.title ?? "듣는 순간, 기록이 됩니다.").font(.system(size: 24, weight: .semibold))
+      Text(displayed?.title ?? "듣는 순간, 기록이 됩니다.").font(NativeDesktopTheme.font(24, weight: .semibold))
         .tracking(-0.36)
       if displayed == nil {
-        Text("강의는 자막으로 남기고, 중요한 순간은 자료에 연결하세요.").font(.system(size: 13)).foregroundStyle(
+        Text("강의는 자막으로 남기고, 중요한 순간은 자료에 연결하세요.").font(NativeDesktopTheme.font(13)).foregroundStyle(
           NativeDesktopTheme.secondary)
       }
     }.padding(.top, 12)
@@ -310,7 +310,7 @@ struct NativeRecordingWorkspace: View {
               NativeDesktopTheme.secondary)
           }
           Spacer()
-          Text(displayed?.duration ?? "00:00:00").font(.system(size: 24, design: .monospaced))
+          Text(displayed?.duration ?? "00:00:00").font(NativeDesktopTheme.font(24, design: .monospaced))
             .monospacedDigit()
         }
         if displayed == nil || active != nil {
@@ -325,7 +325,7 @@ struct NativeRecordingWorkspace: View {
             .accessibilityLabel("마이크 입력")
         }
         if displayed == nil {
-          TextField("강의 제목을 입력하세요", text: $title).nativeToolField().accessibilityIdentifier(
+          TextField("강의 제목을 입력하세요", text: $title, prompt: NativeDesktopTheme.prompt("강의 제목을 입력하세요")).nativeToolField().accessibilityIdentifier(
             "native-recording-title")
           Button("녹음 시작", systemImage: "record.circle") { create() }
             .buttonStyle(NativeToolButtonStyle(primary: true))
@@ -337,7 +337,7 @@ struct NativeRecordingWorkspace: View {
             models.contains(where: { $0.id == modelID && $0.status == "installed" })
               ? "마이크에서 강의를 듣고 자막으로 기록합니다." : "녹음 설정에서 음성 모델을 먼저 다운로드해 주세요."
           )
-          .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
+          .font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
         } else if let active {
           HStack(spacing: 8) {
             Button(
@@ -349,7 +349,7 @@ struct NativeRecordingWorkspace: View {
               .buttonStyle(NativeToolButtonStyle(primary: true)).accessibilityIdentifier(
                 "native-recording-stop")
           }.disabled(busy)
-          Text("원음 자동 저장 중 · 다른 탭에서도 녹음이 계속됩니다.").font(.system(size: 12)).foregroundStyle(
+          Text("원음 자동 저장 중 · 다른 탭에서도 녹음이 계속됩니다.").font(NativeDesktopTheme.font(12)).foregroundStyle(
             NativeDesktopTheme.muted)
         } else if let displayed {
           HStack(spacing: 12) {
@@ -387,7 +387,7 @@ struct NativeRecordingWorkspace: View {
   private func transcript(_ session: NativeRecordingSession) -> some View {
     VStack(alignment: .leading, spacing: 16) {
       HStack {
-        Text("실시간 자막").font(.system(size: 14, weight: .medium))
+        Text("실시간 자막").font(NativeDesktopTheme.font(14, weight: .medium))
         Spacer()
         Button("전사 노트 만들기", systemImage: "doc.badge.plus") { exportTranscript(session) }
           .buttonStyle(NativeToolButtonStyle(compact: true)).disabled(
@@ -395,7 +395,7 @@ struct NativeRecordingWorkspace: View {
       }
       if let message = session.error { NativeToolError(message: message) }
       if let exportNotice {
-        Text(exportNotice).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
+        Text(exportNotice).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
       }
       if let detail, detail.session.id == session.id, !detail.segments.isEmpty {
         ForEach(detail.segments) { segment in
@@ -403,15 +403,15 @@ struct NativeRecordingWorkspace: View {
             Button(NativeRecordingSession.time(Double(segment.startSample) / 16_000)) {
               seek(session, sample: segment.startSample)
             }
-            .font(.system(size: 12, design: .monospaced)).foregroundStyle(NativeDesktopTheme.muted)
+            .font(NativeDesktopTheme.font(12, design: .monospaced)).foregroundStyle(NativeDesktopTheme.muted)
             .buttonStyle(.plain).disabled(session.status == "recording")
-            Text(segment.text).textSelection(.enabled).font(.system(size: 14)).lineSpacing(7).frame(
+            Text(segment.text).textSelection(.enabled).font(NativeDesktopTheme.font(14)).lineSpacing(7).frame(
               maxWidth: .infinity, alignment: .leading)
           }.padding(.vertical, 8)
         }
       } else {
         Text("녹음을 시작하면 여기에 자막이 나타납니다.\n말소리가 있는 구간을 인식해 차곡차곡 저장해요.")
-          .font(.system(size: 13)).lineSpacing(8).foregroundStyle(NativeDesktopTheme.muted).frame(
+          .font(NativeDesktopTheme.font(13)).lineSpacing(8).foregroundStyle(NativeDesktopTheme.muted).frame(
             maxWidth: .infinity, alignment: .center
           ).padding(.vertical, 48)
       }
@@ -422,7 +422,7 @@ struct NativeRecordingWorkspace: View {
       HStack {
         Text("녹음 설정").fontWeight(.medium)
         Spacer()
-        Text("음성 모델").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
+        Text("음성 모델").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted)
       }
       Picker("음성 모델", selection: $modelID) {
         ForEach(models.filter { $0.status == "installed" }) { Text($0.name).tag($0.id) }
@@ -437,7 +437,7 @@ struct NativeRecordingWorkspace: View {
         Text(String(sessions.count)).foregroundStyle(NativeDesktopTheme.muted)
       }
       if sessions.isEmpty {
-        Text("이 과목의 첫 강의를 남겨 보세요.").font(.system(size: 12)).foregroundStyle(
+        Text("이 과목의 첫 강의를 남겨 보세요.").font(NativeDesktopTheme.font(12)).foregroundStyle(
           NativeDesktopTheme.muted)
       }
       ForEach(sessions) { session in
@@ -447,8 +447,8 @@ struct NativeRecordingWorkspace: View {
           Task { await loadDetail(session.id) }
         } label: {
           VStack(alignment: .leading, spacing: 5) {
-            Text(session.title).font(.system(size: 13)).lineLimit(2)
-            Text(session.duration + " · " + session.statusTitle).font(.system(size: 11))
+            Text(session.title).font(NativeDesktopTheme.font(13)).lineLimit(2)
+            Text(session.duration + " · " + session.statusTitle).font(NativeDesktopTheme.font(11))
               .foregroundStyle(NativeDesktopTheme.muted)
           }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
             .background(
@@ -471,7 +471,7 @@ struct NativeRecordingWorkspace: View {
         Spacer()
         Image(systemName: "link").foregroundStyle(NativeDesktopTheme.muted)
       }
-      Text("중요한 순간을 자료와 함께 남겨 보세요.").font(.system(size: 12)).foregroundStyle(
+      Text("중요한 순간을 자료와 함께 남겨 보세요.").font(NativeDesktopTheme.font(12)).foregroundStyle(
         NativeDesktopTheme.muted)
       Picker("연결할 자료", selection: $anchorPath) {
         Text("시간만 기록").tag("")
@@ -479,10 +479,10 @@ struct NativeRecordingWorkspace: View {
       }.pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading).accessibilityIdentifier(
         "native-recording-anchor-material")
       if (anchorPath as NSString).pathExtension.lowercased() == "pdf" {
-        TextField("페이지 (선택)", text: $anchorPage).keyboardType(.numberPad).nativeToolField()
+        TextField("페이지 (선택)", text: $anchorPage, prompt: NativeDesktopTheme.prompt("페이지 (선택)")).keyboardType(.numberPad).nativeToolField()
           .accessibilityIdentifier("native-recording-anchor-page")
       }
-      TextField("기록할 내용 (선택)", text: $anchorLabel).nativeToolField().accessibilityIdentifier(
+      TextField("기록할 내용 (선택)", text: $anchorLabel, prompt: NativeDesktopTheme.prompt("기록할 내용 (선택)")).nativeToolField().accessibilityIdentifier(
         "native-recording-anchor-label")
       Button("이 순간 기록", systemImage: "bookmark") { if let displayed { addAnchor(displayed) } }
         .buttonStyle(NativeToolButtonStyle()).disabled(displayed == nil || busy)
@@ -494,10 +494,10 @@ struct NativeRecordingWorkspace: View {
               Button(NativeRecordingSession.time(Double(anchor.sample) / 16_000)) {
                 seek(session, sample: anchor.sample)
               }
-              .font(.system(size: 11, design: .monospaced)).buttonStyle(.plain).foregroundStyle(
+              .font(NativeDesktopTheme.font(11, design: .monospaced)).buttonStyle(.plain).foregroundStyle(
                 NativeDesktopTheme.muted
               ).disabled(active != nil)
-              Text(anchor.label).font(.system(size: 12)).frame(
+              Text(anchor.label).font(NativeDesktopTheme.font(12)).frame(
                 maxWidth: .infinity, alignment: .leading)
             }
             if anchor.relPath != nil || anchor.removedPage != nil {
@@ -507,7 +507,7 @@ struct NativeRecordingWorkspace: View {
                 Label(
                   anchor.locationTitle,
                   systemImage: anchor.canOpenDocument ? "doc" : "exclamationmark.circle"
-                ).font(.system(size: 11)).lineLimit(2)
+                ).font(NativeDesktopTheme.font(11)).lineLimit(2)
               }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary).disabled(
                 !anchor.canOpenDocument)
             }
@@ -522,8 +522,8 @@ struct NativeRecordingWorkspace: View {
       VStack(alignment: .leading, spacing: 7) {
         HStack {
           VStack(alignment: .leading) {
-            Text(model.name).font(.system(size: 13, weight: .medium))
-            Text(model.description).font(.caption).foregroundStyle(.secondary)
+            Text(model.name).font(NativeDesktopTheme.font(13, weight: .medium))
+            Text(model.description).font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
           }
           Spacer()
           if model.status == "installed" {
@@ -542,7 +542,7 @@ struct NativeRecordingWorkspace: View {
         if let message = model.error ?? model.unavailableReason {
           Text(message).font(.caption).foregroundStyle(.red)
         }
-      }.font(.system(size: 12)).buttonStyle(NativeToolButtonStyle(compact: true)).padding(
+      }.font(NativeDesktopTheme.font(12)).buttonStyle(NativeToolButtonStyle(compact: true)).padding(
         .vertical, 4)
     }
   }

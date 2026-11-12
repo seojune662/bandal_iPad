@@ -5,13 +5,21 @@ import UniformTypeIdentifiers
 
 /// Shared between the compact materials rail and its expanded presentation.
 enum NativeLibraryDisplayMode: String, CaseIterable, Identifiable {
-    case icons, list, columns, gallery
+    case icons, list, compact, columns, gallery
     var id: String { rawValue }
     var title: String {
-        switch self { case .icons: "아이콘"; case .list: "목록"; case .columns: "열"; case .gallery: "갤러리" }
+        switch self { case .icons: "아이콘"; case .list: "목록"; case .compact: "간단히"; case .columns: "열"; case .gallery: "갤러리" }
     }
     var symbol: String {
-        switch self { case .icons: "square.grid.2x2"; case .list: "list.bullet"; case .columns: "rectangle.split.3x1"; case .gallery: "rectangle.stack" }
+        switch self { case .icons: "square.grid.2x2"; case .list: "list.bullet"; case .compact: "list.bullet.indent"; case .columns: "rectangle.split.3x1"; case .gallery: "rectangle.stack" }
+    }
+}
+
+enum NativeLibrarySortOrder: String, CaseIterable, Identifiable {
+    case name, modified, kind
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .name: "이름순"; case .modified: "최근 수정순"; case .kind: "종류순" }
     }
 }
 
@@ -23,12 +31,38 @@ struct NativeLibraryColumn: Identifiable, Equatable {
 }
 
 enum NativeLibraryPresentation {
-    static func sorted(_ items: [NativeMaterial]) -> [NativeMaterial] {
-        items.sorted {
-            if $0.isDirectory != $1.isDirectory { return $0.isDirectory }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+    static func sorted(_ items: [NativeMaterial], order: NativeLibrarySortOrder = .name) -> [NativeMaterial] {
+        items.sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
+            switch order {
+            case .name:
+                break
+            case .modified:
+                let left = modificationTime(lhs), right = modificationTime(rhs)
+                switch (left, right) {
+                case let (left?, right?) where left != right: return left > right
+                case (_?, nil): return true
+                case (nil, _?): return false
+                default: break
+                }
+            case .kind:
+                let comparison = lhs.kind.localizedStandardCompare(rhs.kind)
+                if comparison != .orderedSame { return comparison == .orderedAscending }
+            }
+            let nameComparison = lhs.name.localizedStandardCompare(rhs.name)
+            if nameComparison != .orderedSame { return nameComparison == .orderedAscending }
+            let pathComparison = lhs.relPath.localizedStandardCompare(rhs.relPath)
+            if pathComparison != .orderedSame { return pathComparison == .orderedAscending }
+            return lhs.relPath < rhs.relPath
         }
     }
+
+    private static func modificationTime(_ material: NativeMaterial) -> Double? {
+        guard let time = material.mtime, time.isFinite, time > 0 else { return nil }
+        // Current repositories use Unix milliseconds; legacy items may use seconds.
+        return time > 100_000_000_000 ? time / 1000 : time
+    }
+
     /// Only valid ancestors are included. A deleted folder cannot leave an empty
     /// inaccessible column selected after the library refreshes.
     static func columns(folder: String, materials: [NativeMaterial]) -> [NativeLibraryColumn] {
@@ -89,7 +123,7 @@ struct NativeLibraryThumbnail: View {
             if let image {
                 Image(uiImage: image).resizable().scaledToFit().padding(3)
             } else {
-                Image(systemName: symbol).font(.system(size: isDirectory ? 34 : 30, weight: .light))
+                Image(systemName: symbol).font(NativeDesktopTheme.font(isDirectory ? 34 : 30, weight: .light))
                     .foregroundStyle(isDirectory ? Color.accentColor : NativeDesktopTheme.muted)
             }
         }

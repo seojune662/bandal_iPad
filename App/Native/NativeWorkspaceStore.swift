@@ -123,7 +123,7 @@ final class NativeWorkspaceStore: ObservableObject {
             #if DEBUG
             // Each explicitly reset UI fixture starts with visible desktop rails.
             // Normal launches and restart tests preserve the user's preference.
-            for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.home.section", "native.inspector.tab", "native.inspector.width"] { UserDefaults.standard.removeObject(forKey: key) }
+            for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.library.sortOrder", "native.home.section", "native.inspector.tab", "native.inspector.width"] { UserDefaults.standard.removeObject(forKey: key) }
             #endif
         }
         let legacy = storageRoot != nil ? folder.appendingPathComponent("Legacy", isDirectory: true)

@@ -32,4 +32,16 @@ final class NativeWorkspaceChromeTests: XCTestCase {
         XCTAssertFalse(value.leftPinned); XCTAssertFalse(value.rightPinned)
         XCTAssertEqual(value.leftWidth + value.rightWidth, 0)
     }
+    func testExpandedLibraryFitsSplitViewAndLeavesDismissibleMarginOnLargerWindows() {
+        for width in [0.0, 320, 507, 599] {
+            let value = NativeWorkspaceChromeLayout(width: width, leftOpen: true, rightOpen: true)
+            XCTAssertEqual(value.expandedMaterialsWidth, width)
+        }
+        for width in [600.0, 744, 834, 1024, 1366] {
+            let value = NativeWorkspaceChromeLayout(width: width, leftOpen: true, rightOpen: true)
+            XCTAssertEqual(value.expandedMaterialsWidth, min(980, width - 72))
+            XCTAssertGreaterThanOrEqual(width - value.expandedMaterialsWidth, 72)
+        }
+        XCTAssertEqual(NativeWorkspaceChromeLayout(width: .infinity, leftOpen: false, rightOpen: false).expandedMaterialsWidth, 0)
+    }
 }

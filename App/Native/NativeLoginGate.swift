@@ -19,17 +19,17 @@ struct NativeLoginGate: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Image(systemName: "moon.stars.fill").font(.system(size: 56)).foregroundStyle(NativeDesktopTheme.muted)
+            Image(systemName: "moon.stars.fill").font(NativeDesktopTheme.font(56)).foregroundStyle(NativeDesktopTheme.muted)
             Text("반달 계정으로 시작").font(NativeDesktopTheme.font(22, weight: .semibold))
             if access["requiresBindingConfirmation"] as? Bool == true {
                 Text("이 기기에 이미 자료가 있습니다. 지금 로그인한 계정에 연결할까요? 연결 후에는 이 계정으로만 이 자료를 열 수 있습니다.")
-                    .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 420)
+                    .multilineTextAlignment(.center).foregroundStyle(NativeDesktopTheme.secondary).frame(maxWidth: 420)
                 Button("이 계정에 자료 연결") { run { _ = try await store.invoke("auth:confirmProfile", ["userID": pendingUserID ?? ""]) } }
                     .buttonStyle(.borderedProminent).disabled(busy)
                 Button("다른 계정으로 로그인") { run { _ = try await store.invoke("auth:signOut") } }.disabled(busy)
             } else {
                 Text(account["errorCode"] as? String == "reauthentication-required" ? "안전을 위해 다시 로그인해 주세요." : NativeReleaseFlags.isLocalOnly ? "이 자료는 계정에 연결되어 있어요. 로그인하면 이 기기의 자료를 열 수 있어요." : "로그인하면 이 기기의 자료를 열고 다른 기기와 동기화할 수 있어요.")
-                    .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 420)
+                    .multilineTextAlignment(.center).foregroundStyle(NativeDesktopTheme.secondary).frame(maxWidth: 420)
                 VStack(spacing: 10) {
                     Button("Apple로 로그인") { signIn("apple") }
                     Button("Google로 로그인") { signIn("google") }

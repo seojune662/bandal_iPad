@@ -39,7 +39,7 @@ struct NativeSettingsBrowserPanel: View {
     }
     private var navigation: some View {
         NativeSettingsCard(title: "홈페이지·검색·확대/축소", description: "새 브라우저 페이지에서 사용할 기본값입니다.") {
-            TextField("홈페이지 · 비워두면 기본 검색 엔진", text: $homePage).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().nativeToolField().accessibilityIdentifier("native-settings-browser-home")
+            TextField("홈페이지 · 비워두면 기본 검색 엔진", text: $homePage, prompt: NativeDesktopTheme.prompt("홈페이지 · 비워두면 기본 검색 엔진")).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().nativeToolField().accessibilityIdentifier("native-settings-browser-home")
             Button("홈페이지 저장") { run { let value = homePage.trimmingCharacters(in: .whitespacesAndNewlines); if !value.isEmpty { _ = try NativeSettingsValidation.webURL(value) }; try await save(["browser": ["homePage": value]]) } }
             Picker("검색 엔진", selection: Binding(get: { settings["browserSearchEngine"] as? String ?? "google" }, set: { value in persist(["browserSearchEngine": value]) })) { Text("Google").tag("google"); Text("네이버").tag("naver"); Text("다음").tag("daum"); Text("DuckDuckGo").tag("duckduckgo") }.accessibilityIdentifier("native-settings-search-engine")
             Picker("기본 확대/축소", selection: Binding(get: { (browser["defaultZoomLevel"] as? NSNumber)?.doubleValue ?? 0 }, set: { persist(["browser": ["defaultZoomLevel": $0]]) })) {
@@ -61,7 +61,7 @@ struct NativeSettingsBrowserPanel: View {
     private var profilePanel: some View {
         NativeSettingsCard(title: "브라우저 프로필", description: "로그인·방문 기록·사이트 권한을 프로필별로 구분합니다.") {
             Picker("프로필", selection: $profile) { ForEach(profiles, id: \.profileID) { Text($0["name"] ?? "프로필").tag($0["id"] ?? "default") } }.accessibilityIdentifier("native-settings-browser-profile")
-            TextField("새 프로필 이름", text: $profileName).nativeToolField()
+            TextField("새 프로필 이름", text: $profileName, prompt: NativeDesktopTheme.prompt("새 프로필 이름")).nativeToolField()
             HStack {
                 Button("프로필 추가") { run { _ = try await store.invoke("browser:saveProfile", ["name": profileName, "color": "blue", "icon": "globe"]); profileName = ""; await loadProfiles() } }.disabled(profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Spacer()
@@ -80,7 +80,7 @@ struct NativeSettingsBrowserPanel: View {
                 }
             }
             DisclosureGroup("방문 기록") {
-                HStack { TextField("기록 검색", text: $historyQuery).nativeToolField(); Button("검색") { Task { await loadHistory() } } }
+                HStack { TextField("기록 검색", text: $historyQuery, prompt: NativeDesktopTheme.prompt("기록 검색")).nativeToolField(); Button("검색") { Task { await loadHistory() } } }
                 ForEach(Array(history.enumerated()), id: \.offset) { _, visit in
                     VStack(alignment: .leading, spacing: 3) { Text(visit["title"] as? String ?? ""); Text(visit["url"] as? String ?? "").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted).textSelection(.enabled) }
                 }

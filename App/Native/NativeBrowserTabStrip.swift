@@ -28,7 +28,7 @@ struct NativeBrowserTabStrip: View {
                     .accessibilityLabel("새 탭").accessibilityIdentifier("native-browser-add-tab")
                 Button { showingList = true } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .accessibilityLabel("브라우저의 열린 탭 \(tabs.count)개").accessibilityIdentifier("native-browser-tabs-list")
-            }.padding(.horizontal, 4).buttonStyle(.plain).font(.system(size: 13))
+            }.padding(.horizontal, 4).buttonStyle(.plain).font(NativeDesktopTheme.font(13))
         }.frame(height: 44).clipped().background(NativeDesktopTheme.surface)
             .foregroundStyle(NativeDesktopTheme.text)
             .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
@@ -45,7 +45,7 @@ struct NativeBrowserTabStrip: View {
                 select: { select(tab.id) }, close: { close(tab.id) })
                 .frame(width: sizing.width - (sizing.showsClose ? 44 : 0), height: 44).clipped()
             if sizing.showsClose {
-                Button { close(tab.id) } label: { Image(systemName: "xmark").font(.system(size: 11)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                Button { close(tab.id) } label: { Image(systemName: "xmark").font(NativeDesktopTheme.font(11)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .buttonStyle(.plain).accessibilityLabel(Self.title(tab) + " 닫기")
                     .accessibilityIdentifier("native-browser-close-tab-" + tab.id)
             }

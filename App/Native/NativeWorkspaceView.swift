@@ -33,6 +33,7 @@ struct NativeWorkspaceView: View {
     @State private var settingsCategory = "appearance"
     @State private var compactCourseRail = false
     @State private var compactMaterialsRail = false
+    @State private var materialsExpanded = false
     @AppStorage("native.openAdjacentTab") private var openAdjacentTab = false
     @AppStorage("native.restoreLastCourse") private var restoreLastCourse = true
     @AppStorage("native.fontScale") private var fontScale = 1.0
@@ -179,13 +180,14 @@ struct NativeWorkspaceView: View {
     }
 
 
-    var body: some View {
+    private var workspaceLayout: some View {
         GeometryReader { geometry in
             let chrome = NativeWorkspaceChromeLayout(width: geometry.size.width,
                 leftOpen: courseRailOpen, rightOpen: materialsRailOpen && annotation.request == nil,
                 leftRequested: courseRailWidth, rightRequested: materialsRailWidth, showsWorkspace: showsWorkspace)
+            let expandedMaterialsVisible = materialsExpanded && showsWorkspace && annotation.request == nil && !boardOverlayOpen
             let rightVisible = showsWorkspace && annotation.request == nil &&
-                (chrome.rightPinned || geometry.size.width < 900 && compactMaterialsRail)
+                (expandedMaterialsVisible || chrome.rightPinned || geometry.size.width < 900 && compactMaterialsRail)
             HStack(spacing: 0) {
                 globalNavigation(width: geometry.size.width)
                 if chrome.leftPinned {
@@ -196,7 +198,7 @@ struct NativeWorkspaceView: View {
                 // and opening a keyboard must not discard an in-progress draft.
                 let covered = section != .library || auxiliary != nil || windowsOverviewOpen
                 ZStack {
-                    NativeWorkspacePreviewContainer(controller: previews, isInteractive: !covered) {
+                    NativeWorkspacePreviewContainer(controller: previews, isInteractive: !covered && !expandedMaterialsVisible) {
                     NativeDockWorkspace(navigation: navigation, store: store, content: { workspace($0) }, empty: { emptyWorkspace },
                         perform: transition, persist: saveNavigation, closeDocuments: closeDocuments,
                         materialsOpen: rightVisible,
@@ -228,8 +230,10 @@ struct NativeWorkspaceView: View {
                     Color.clear.frame(width: chrome.rightWidth)
                 }
             }
+            .allowsHitTesting(!expandedMaterialsVisible)
+            .accessibilityHidden(expandedMaterialsVisible)
             .overlay {
-                if chrome.leftPinned {
+                if chrome.leftPinned && !expandedMaterialsVisible {
                     NativeDockRailResizer(side: .left, width: Binding(get: { chrome.leftWidth }, set: { courseRailWidth = $0 }), maximum: min(360, geometry.size.width - 48 - chrome.rightWidth - 480))
                         .frame(width: 44, height: geometry.size.height)
                         .position(x: 48 + chrome.leftWidth + 0.5, y: geometry.size.height / 2)
@@ -246,26 +250,11 @@ struct NativeWorkspaceView: View {
                 }
             }
             .overlay(alignment: .trailing) {
-                // A concrete stack keeps the drawer's drawing and hit region
-                // aligned to the trailing edge when the backdrop appears.
-                ZStack(alignment: .trailing) {
-                    if rightVisible && !chrome.rightPinned {
-                        Color.black.opacity(0.12).onTapGesture { compactMaterialsRail = false }
-                    }
-                    // One stable host, including while hidden, for file browsing and AI.
-                    inspectorSidebar
-                        .frame(width: chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth,
-                               height: max(0, geometry.size.height - NativeWorkspaceWindowControls.inspectorTop))
-                        .padding(.top, NativeWorkspaceWindowControls.inspectorTop)
-                        .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
-                        .background(NativeDesktopTheme.surface)
-                        .shadow(color: rightVisible && !chrome.rightPinned ? .black.opacity(0.14) : .clear, radius: 12, x: -4)
-                        .opacity(rightVisible ? 1 : 0).allowsHitTesting(rightVisible).accessibilityHidden(!rightVisible)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                inspectorOverlay(chrome: chrome, height: geometry.size.height,
+                                 expanded: expandedMaterialsVisible, visible: rightVisible)
             }
             .overlay {
-                if chrome.rightPinned {
+                if chrome.rightPinned && !expandedMaterialsVisible {
                     NativeDockRailResizer(side: .right, width: Binding(get: { chrome.rightWidth }, set: { materialsRailWidth = max(320, $0) }), maximum: min(520, geometry.size.width - 48 - chrome.leftWidth - 480), resetWidth: 360)
                         .frame(width: 44, height: geometry.size.height)
                         .position(x: geometry.size.width - chrome.rightWidth - 0.5, y: geometry.size.height / 2)
@@ -280,6 +269,9 @@ struct NativeWorkspaceView: View {
                     .padding(.trailing, NativeWorkspaceWindowControls.trailing)
                     .padding(.top, NativeWorkspaceWindowControls.top)
                     .nativeWorkspacePreviewExcluded()
+                    .opacity(expandedMaterialsVisible ? 0 : 1)
+                    .allowsHitTesting(!expandedMaterialsVisible)
+                    .accessibilityHidden(expandedMaterialsVisible)
             }
             .overlay(alignment: .top) {
                 if showBusy { ProgressView().padding(10).background(.regularMaterial, in: Capsule()).padding(.top, 48) }
@@ -293,6 +285,35 @@ struct NativeWorkspaceView: View {
                 if busy { showBusy = true }
             }
         }
+    }
+
+    private func inspectorOverlay(chrome: NativeWorkspaceChromeLayout, height: CGFloat, expanded: Bool, visible: Bool) -> some View {
+        let width = expanded ? chrome.expandedMaterialsWidth : chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth
+        let topInset: CGFloat = expanded ? 0 : NativeWorkspaceWindowControls.inspectorTop
+        // The same host grows into a library, retaining folder/search state and
+        // pending import or creation sheets as its frame changes.
+        return ZStack(alignment: .trailing) {
+            if expanded {
+                Color.black.opacity(0.22).contentShape(Rectangle())
+                    .onTapGesture { materialsExpanded = false }
+                    .accessibilityHidden(true)
+            } else if visible && !chrome.rightPinned {
+                Color.black.opacity(0.12).onTapGesture { compactMaterialsRail = false }
+            }
+            inspectorSidebar
+                .frame(width: width, height: max(0, height - topInset))
+                .padding(.top, topInset)
+                .nativeWorkspacePreviewExcluded(occludesContent: (expanded || !chrome.rightPinned) && visible, enabled: visible)
+                .background {
+                    NativeDesktopTheme.surface
+                        .shadow(color: visible && (expanded || !chrome.rightPinned) ? .black.opacity(0.14) : .clear, radius: 12, x: -4)
+                }
+                .opacity(visible ? 1 : 0).allowsHitTesting(visible).accessibilityHidden(!visible)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+    }
+
+    private var configuredWorkspace: some View {
+        workspaceLayout
         .font(NativeDesktopTheme.font(14))
         .foregroundStyle(NativeDesktopTheme.text)
         .background(NativeDesktopTheme.surface.ignoresSafeArea())
@@ -314,6 +335,10 @@ struct NativeWorkspaceView: View {
         .alert("작업을 완료하지 못했어요", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("확인", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
+    }
+
+    private var initializedWorkspace: some View {
+        configuredWorkspace
         .task {
             await store.start()
             // Sync, auth and settings can wait for the restored tabs; the first screen cannot.
@@ -368,6 +393,10 @@ struct NativeWorkspaceView: View {
             }
             await importSharedMaterials()
         }
+    }
+
+    private var navigationObservedWorkspace: some View {
+        initializedWorkspace
         .onChange(of: store.selectedCourseID) { _, courseID in
             if let courseID, restored, !busy, navigation.activeWorkspace?.courseID != courseID,
                let course = store.courses.first(where: { $0.id == courseID }) {
@@ -380,18 +409,26 @@ struct NativeWorkspaceView: View {
             store.assistantDocumentIDs.removeAll()
         }
         .onChange(of: section) { old, new in
+            if new != .library { materialsExpanded = false }
             if old == .settings && new != .settings {
                 store.events.send(NativeWorkspaceEvent(channel: "agent:changed", payload: [:]))
             }
         }
         .onChange(of: navigation.activeID) { _, _ in annotation.cancel() }
-        .onChange(of: navigation.currentWindowRef) { _, _ in previews.invalidate(); syncNavigationInstances() }
+        .onChange(of: navigation.currentWindowRef) { _, _ in materialsExpanded = false; previews.invalidate(); syncNavigationInstances() }
         .onChange(of: navigation.documentDuplicateSourceIDs) { _, _ in syncNavigationInstances() }
-        .onChange(of: windowsOverviewOpen) { _, value in
-            services.browser.setPresentation(blocked: value, inputBlocked: value, overlays: [])
+        .onChange(of: inspectorTab) { _, tab in if tab != .materials { materialsExpanded = false } }
+        .onChange(of: materialsExpanded) { _, _ in updateBrowserOverlayPresentation() }
+        .onChange(of: windowsOverviewOpen) { _, _ in
+            updateBrowserOverlayPresentation()
         }
+    }
+
+    var body: some View {
+        navigationObservedWorkspace
         .onChange(of: annotation.completed?.id) { _, _ in receiveAnnotation() }
         .onChange(of: annotation.request?.id) { old, new in
+            if new != nil { materialsExpanded = false }
             if old != nil && new == nil && restoreInspectorAfterAnnotation && showsWorkspace && !boardOverlayOpen { revealInspector(.assistant) }
         }
         .onChange(of: openAdjacentTab) { _, value in navigation.openAdjacentTab = value }
@@ -475,7 +512,22 @@ struct NativeWorkspaceView: View {
     }
 
     private var railDivider: some View { NativeDesktopTheme.border.frame(width: 1) }
+    private func updateBrowserOverlayPresentation() {
+        let blocked = windowsOverviewOpen || materialsExpanded
+        services.browser.setPresentation(blocked: blocked, inputBlocked: blocked, overlays: [])
+    }
+    private func toggleExpandedMaterials() {
+        guard workspaceContext != nil, annotation.request == nil else { return }
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        compactCourseRail = false
+        materialsExpanded.toggle()
+    }
+    private func closeMaterialsInspector() {
+        if materialsExpanded { materialsExpanded = false; return }
+        compactMaterialsRail = false; materialsRailOpen = false
+    }
     private func toggleMaterialsRail(width: CGFloat) {
+        if materialsExpanded { materialsExpanded = false; return }
         if width < 900 { compactMaterialsRail.toggle() } else { materialsRailOpen.toggle() }
         compactCourseRail = false
     }
@@ -489,6 +541,7 @@ struct NativeWorkspaceView: View {
         windowWidth = width; hasWindowWidth = true
     }
     private func revealInspector(_ tab: NativeInspectorTab) {
+        if tab != .materials { materialsExpanded = false }
         inspectorTab = tab
         section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false
         compactCourseRail = false
@@ -713,7 +766,7 @@ struct NativeWorkspaceView: View {
     }
     private func shortcut(_ title: String, _ symbol: String, _ target: NativeWorkspaceSection) -> some View {
         Button { openTool(target, new: true) } label: {
-            Label(title, systemImage: symbol).font(.system(size: 12)).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).frame(height: 32).contentShape(Rectangle())
+            Label(title, systemImage: symbol).font(NativeDesktopTheme.font(12)).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).frame(height: 32).contentShape(Rectangle())
         }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary)
     }
     private func courseColor(_ value: String) -> Color {
@@ -726,12 +779,14 @@ struct NativeWorkspaceView: View {
                 ZStack {
                     VStack(spacing: 0) {
                         NativeLibraryView(store: store, sourceTrayModel: librarySources, scope: context,
+                            isExpanded: materialsExpanded, onToggleExpanded: toggleExpandedMaterials,
                             onOpenAI: { revealInspector(.assistant) }, selectedDocumentID: navigation.active?.storageID,
+                            onClose: closeMaterialsInspector,
                             captureOpen: {
                                 let target = navigation.captureTarget()
-                                return { document in openCapturedDocument(document, target: target) }
+                                return { document in materialsExpanded = false; openCapturedDocument(document, target: target) }
                             }) { document in
-                            compactMaterialsRail = false; open(document)
+                            materialsExpanded = false; compactMaterialsRail = false; open(document)
                         }.id(context.id).frame(maxHeight: .infinity)
                         NativeSettingsWidgetDock(store: store, services: services, availableHeight: 600)
                     }.opacity(inspectorTab == .materials ? 1 : 0)
@@ -756,11 +811,11 @@ struct NativeWorkspaceView: View {
     private var toolTabs: some View {
         HStack(spacing: 4) {
             Button { transition { section = .library } } label: { Label(courseTitle, systemImage: "folder").lineLimit(1) }.buttonStyle(.plain)
-            Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted)
+            Image(systemName: "chevron.right").font(NativeDesktopTheme.font(10)).foregroundStyle(NativeDesktopTheme.muted)
             Text(section.title).fontWeight(.medium)
             Spacer()
             NativeChromeButton(title: "닫기", symbol: "xmark") { transition { section = .library } }
-        }.font(.system(size: 13)).padding(.horizontal, 12).frame(height: 44).background(NativeDesktopTheme.surface)
+        }.font(NativeDesktopTheme.font(13)).padding(.horizontal, 12).frame(height: 44).background(NativeDesktopTheme.surface)
             .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
     }
     private var emptyWorkspace: some View {
@@ -786,7 +841,7 @@ struct NativeWorkspaceView: View {
     }
     private func emptyAction(_ title: String, _ subtitle: String, _ icon: String, _ action: NativeNewTabAction) -> some View {
         Button { openNewTab(action, navigation.focusedGroupID ?? "") } label: {
-            VStack(alignment: .leading, spacing: 10) { Image(systemName: icon).font(.system(size: 20)); Text(title).font(NativeDesktopTheme.font(14, weight: .medium)); Text(subtitle).font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted) }
+            VStack(alignment: .leading, spacing: 10) { Image(systemName: icon).font(NativeDesktopTheme.font(20)); Text(title).font(NativeDesktopTheme.font(14, weight: .medium)); Text(subtitle).font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted) }
                 .padding(18).frame(maxWidth: 180, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
         }.buttonStyle(.plain)
     }
@@ -840,7 +895,7 @@ struct NativeWorkspaceView: View {
     private var courseSheet: some View {
         NavigationStack {
             Form {
-                TextField("과목 이름", text: $courseName)
+                TextField("과목 이름", text: $courseName, prompt: NativeDesktopTheme.prompt("과목 이름"))
                     .accessibilityIdentifier("native-course-name")
                     .submitLabel(.done)
                     .onSubmit(createCourse)
@@ -880,6 +935,7 @@ struct NativeWorkspaceView: View {
         openInGroup(document, groupID: nil, preservingWorkspace: true)
     }
     private func openInGroup(_ document: NativeDocumentReference, groupID: String?, preservingWorkspace: Bool = false) {
+        materialsExpanded = false
         if document.kind == "assistant" {
             if let context = workspaceContext,
                let conversation = NativeToolSelection.conversationID(workspaceID: document.relativePath, root: store.root) {
@@ -1124,6 +1180,7 @@ struct NativeWorkspaceView: View {
                         store.events.send(.init(channel: "nativeWorkspace:goToPage", payload: ["courseId": course, "relPath": path, "page": page, "tabID": opened.id]))
                     }
                     if navigation.currentWindowRef == destination.ref {
+                        materialsExpanded = false; compactMaterialsRail = false
                         section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false; windowsOverviewOpen = false
                     }
                 } catch { store.errorMessage = error.localizedDescription }
@@ -1153,6 +1210,10 @@ struct NativeWorkspaceView: View {
             return
         }
         if event.channel == "shortcut:passthrough", let payload = event.payload as? [String:Any], let action = payload["action"] as? String {
+            if materialsExpanded {
+                if action == "toggle-right-rail" { materialsExpanded = false }
+                return
+            }
             if windowsOverviewOpen { return }
             let browserLocal = ["new-tab", "close-tab", "prev-tab", "previous-tab", "next-tab", "activate-last-tab"].contains(action) || action.hasPrefix("activate-tab-")
             if payload["webContentsId"] != nil && browserLocal { return }

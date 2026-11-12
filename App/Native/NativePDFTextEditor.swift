@@ -27,7 +27,7 @@ struct NativePDFTextEditor: View {
                 Button("취소", action: onCancel).disabled(isBusy || !canCancel).frame(minHeight: 44).padding(.horizontal, 6)
                     .accessibilityIdentifier("native-pdf-cancel-text")
                 Button(errorMessage == nil ? "완료" : "다시 저장", action: finish).disabled(isBusy || !draft.hasText)
-                    .font(.system(size: 15, weight: .semibold)).frame(minHeight: 44).padding(.horizontal, 6)
+                    .font(NativeDesktopTheme.font(15, weight: .semibold)).frame(minHeight: 44).padding(.horizontal, 6)
                     .accessibilityIdentifier("native-pdf-save-text")
             }.padding(.trailing, 8)
         }
@@ -47,7 +47,7 @@ struct NativePDFTextEditor: View {
                     } label: { Label("스타일", systemImage: "textformat").frame(minHeight: 44).padding(.horizontal, 8) }
                     Button { draft.stepSize(-1) } label: { Image(systemName: "minus").frame(width: 44, height: 44) }.accessibilityLabel("글자 작게")
                     NativePDFTextSizeField(draft: draft).frame(width: 50, height: 44)
-                    Text("pt").font(.caption).foregroundStyle(.secondary)
+                    Text("pt").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
                     Button { draft.stepSize(1) } label: { Image(systemName: "plus").frame(width: 44, height: 44) }.accessibilityLabel("글자 크게")
                     Divider().frame(height: 24)
                     toggle("bold", symbol: "bold", label: "굵게", selected: draft.style.bold)
@@ -90,7 +90,7 @@ struct NativePDFTextEditor: View {
         VStack(alignment: .leading, spacing: 6) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
-                    Text("배경").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 6)
+                    Text("배경").font(.caption).foregroundStyle(NativeDesktopTheme.secondary).padding(.horizontal, 6)
                     Button { draft.apply(["fill": NSNull()]) } label: {
                         Image(systemName: "nosign").frame(width: 44, height: 44)
                             .background(draft.boxStyle.fill == nil ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6))
@@ -129,7 +129,7 @@ struct NativePDFTextEditor: View {
                 ZStack {
                     Circle().fill(Color(uiColor: NativePDFObjectRenderer.color(color))).frame(width: 23, height: 23)
                     if selected { Circle().stroke(Color.primary, lineWidth: 2).frame(width: 31, height: 31) }
-                    if selected { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.white) }
+                    if selected { Image(systemName: "checkmark").font(NativeDesktopTheme.font(10, weight: .bold)).foregroundStyle(.white) }
                 }.frame(width: 44, height: 44)
             }.accessibilityLabel((fill ? "배경 " : "글자색 ") + NativePDFTextStyle.labels[index])
                 .accessibilityIdentifier("native-pdf-text-" + (fill ? "fill-" : "color-") + color)

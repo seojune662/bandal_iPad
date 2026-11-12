@@ -1,0 +1,77 @@
+{
+  "date": "2026-10-28",
+  "change": "Readable material list and expanded folder browser",
+  "behavior": [
+    "Default list shows saved PDF/image previews, two-line titles, modification dates and file types.",
+    "Folders open their own contents with breadcrumbs and an accessible parent-folder button.",
+    "The existing inspector expands over the retained editor while preserving folder and search state.",
+    "Name, modification-date and kind sorting keep folders first. The previous inline tree remains available as compact mode.",
+    "Opening a document returns to the editor. Empty-folder import captures the current destination."
+  ],
+  "validation": {
+    "simulator": "iPad Pro 13-inch (M5), iOS 26.3",
+    "build": "passed",
+    "unit_and_integration": {
+      "passed": 35,
+      "skipped": 1,
+      "failed": 0,
+      "suites": [
+        "NativeLibraryPresentationTests",
+        "NativeWorkspaceChromeTests",
+        "NativeProjectWorkspaceTests",
+        "NativeThumbnailPerformanceTests"
+      ],
+      "skip_reason": "The opt-in private-document thumbnail benchmark requires an external replay fixture.",
+      "result": ".build/materials-browser-tests-2.xcresult"
+    },
+    "ui": {
+      "passed": 1,
+      "failed": 0,
+      "test": "NativeLibraryPresentationUITests/testDetailedLibraryExpandsAndPreservesFolderSearchBeforeOpeningDocument",
+      "coverage": [
+        "folder entry",
+        "PDF creation",
+        "preview row",
+        "sort menu",
+        "search retained through expand/collapse",
+        "measured expanded width",
+        "parent navigation",
+        "document return"
+      ],
+      "result": ".build/materials-browser-ui-final.xcresult",
+      "screenshots": ".build/materials-browser-final-previews/",
+      "visual_review": "Sidebar and expanded screenshots inspected; shadow is confined to the panel background.",
+      "runtime_warning": "Xcode recorded two UIKit _UIReparentingView hierarchy warnings; the UI test completed successfully."
+    },
+    "earlier_failures_resolved": [
+      "SwiftUI type-check timeout resolved by splitting the workspace view and modifier chain into opaque view properties.",
+      "Parent-button accessibility identifier inheritance resolved with a containing breadcrumb accessibility element."
+    ],
+    "git_diff_check": "passed",
+    "physical_device": {
+      "version": "1.1.0",
+      "build": "9",
+      "configuration": "Release",
+      "bundle_id": "app.bandal.ipad",
+      "device_model": "iPad Pro 11-inch (3rd generation)",
+      "device_os": "27.0.1",
+      "installed": true,
+      "signature_verified": true,
+      "normal_launch_arguments": [],
+      "running_after_launch": true,
+      "backup_directory": "/Users/iseojun/dev/bandal-iPad-backups/2026-10-28-materials-browser",
+      "material_files_preserved": 169,
+      "material_files_byte_identical": 168,
+      "material_json_reserialized_with_identical_content": 1,
+      "pdf_drawing_records_preserved": 26818,
+      "pdf_drawings_identical": true,
+      "active_pdf_ink_records_preserved": 19810,
+      "database_integrity_passed": 2,
+      "content_tables_preserved": true,
+      "content_and_user_state_tables_checked": 45,
+      "navigation_preserved": true,
+      "preferences_keys_preserved": true,
+      "verification_scope": "Copied app Documents and Preferences; external linked folders are outside this check. Normal launch verified via devicectl and sustained process presence. No additional physical-device UI test was run."
+    }
+  }
+}

@@ -5,6 +5,57 @@ import UniformTypeIdentifiers
 @testable import Bandal
 
 final class NativeLibraryPresentationTests: XCTestCase {
+    func testEverySortOrderKeepsFoldersBeforeFiles() {
+        let folder = NativeMaterial(relPath: "Folder 20", name: "Folder 20", kind: "dir")
+        let file = NativeMaterial(relPath: "File 1.mp3", name: "File 1.mp3", kind: "audio", mtime: 1_800_000_000)
+        for order in NativeLibrarySortOrder.allCases {
+            XCTAssertEqual(NativeLibraryPresentation.sorted([file, folder], order: order).map(\.relPath),
+                           [folder.relPath, file.relPath], "Folders must come first for \(order)")
+        }
+    }
+
+    func testNameSortUsesNaturalNumbersAndPathsToBreakEqualNames() {
+        let items = [
+            NativeMaterial(relPath: "Lecture 10.pdf", name: "Lecture 10.pdf", kind: "pdf"),
+            NativeMaterial(relPath: "Folder 10/Lecture 2.pdf", name: "Lecture 2.pdf", kind: "pdf"),
+            NativeMaterial(relPath: "Folder 2/Lecture 2.pdf", name: "Lecture 2.pdf", kind: "pdf")
+        ]
+        let expected = ["Folder 2/Lecture 2.pdf", "Folder 10/Lecture 2.pdf", "Lecture 10.pdf"]
+        XCTAssertEqual(NativeLibraryPresentation.sorted(items).map(\.relPath), expected)
+        XCTAssertEqual(NativeLibraryPresentation.sorted(Array(items.reversed())).map(\.relPath), expected)
+    }
+
+    func testModifiedSortNormalizesSecondsAndMillisecondsAndPlacesInvalidDatesLast() {
+        let items = [
+            NativeMaterial(relPath: "missing.pdf", name: "Missing.pdf", kind: "pdf"),
+            NativeMaterial(relPath: "older.pdf", name: "Older.pdf", kind: "pdf", mtime: 1_700_000_000_000),
+            NativeMaterial(relPath: "equal-ms.pdf", name: "Lecture 10.pdf", kind: "pdf", mtime: 1_750_000_000_000),
+            NativeMaterial(relPath: "newest.pdf", name: "Newest.pdf", kind: "pdf", mtime: 1_800_000_000),
+            NativeMaterial(relPath: "equal-seconds.pdf", name: "Lecture 2.pdf", kind: "pdf", mtime: 1_750_000_000),
+            NativeMaterial(relPath: "nan.pdf", name: "Not a number.pdf", kind: "pdf", mtime: .nan),
+            NativeMaterial(relPath: "infinite.pdf", name: "Infinite.pdf", kind: "pdf", mtime: .infinity),
+            NativeMaterial(relPath: "negative.pdf", name: "Negative.pdf", kind: "pdf", mtime: -1),
+            NativeMaterial(relPath: "zero.pdf", name: "Zero.pdf", kind: "pdf", mtime: 0)
+        ]
+        XCTAssertEqual(NativeLibraryPresentation.sorted(items, order: .modified).map(\.relPath), [
+            "newest.pdf", "equal-seconds.pdf", "equal-ms.pdf", "older.pdf",
+            "infinite.pdf", "missing.pdf", "negative.pdf", "nan.pdf", "zero.pdf"
+        ])
+    }
+
+    func testKindSortGroupsMaterialsThenUsesNaturalNames() {
+        let items = [
+            NativeMaterial(relPath: "Lecture 10.pdf", name: "Lecture 10.pdf", kind: "pdf"),
+            NativeMaterial(relPath: "Lecture 2.pdf", name: "Lecture 2.pdf", kind: "pdf"),
+            NativeMaterial(relPath: "Zebra.md", name: "Zebra.md", kind: "note"),
+            NativeMaterial(relPath: "Image 10.png", name: "Image 10.png", kind: "image"),
+            NativeMaterial(relPath: "Image 2.png", name: "Image 2.png", kind: "image")
+        ]
+        XCTAssertEqual(NativeLibraryPresentation.sorted(items, order: .kind).map(\.relPath), [
+            "Image 2.png", "Image 10.png", "Zebra.md", "Lecture 2.pdf", "Lecture 10.pdf"
+        ])
+    }
+
     func testColumnsFollowFolderAncestorsAndStopAtMissingFolder() {
         let leaf = NativeMaterial(relPath: "강의/과제/문제.pdf", name: "문제.pdf", kind: "pdf")
         let nested = NativeMaterial(relPath: "강의/과제", name: "과제", kind: "dir", children: [leaf])

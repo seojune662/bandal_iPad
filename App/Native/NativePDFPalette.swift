@@ -41,16 +41,16 @@ struct NativePDFPaletteControls: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text(NativePDFPaletteLook.toolName(model.tool) + " 설정").font(.system(size: 15, weight: .semibold))
+                Text(NativePDFPaletteLook.toolName(model.tool) + " 설정").font(NativeDesktopTheme.font(15, weight: .semibold))
                 Spacer(minLength: 0)
-                Button { model.showStyle = false } label: { Text("×").font(.system(size: 25)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                Button { model.showStyle = false } label: { Text("×").font(NativeDesktopTheme.font(25)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .accessibilityLabel("도구 메뉴 닫기").accessibilityIdentifier("native-pdf-style-close")
             }.padding(.leading, 16).padding(.trailing, 8).padding(.top, 4)
             Divider().padding(.horizontal, 12)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if model.isInkTool { inkControls }
-                    else { Text(toolHint).font(.system(size: 13)).lineSpacing(5).foregroundStyle(NativeDesktopTheme.secondary).padding(.horizontal, 4).padding(.vertical, 12).fixedSize(horizontal: false, vertical: true) }
+                    else { Text(toolHint).font(NativeDesktopTheme.font(13)).lineSpacing(5).foregroundStyle(NativeDesktopTheme.secondary).padding(.horizontal, 4).padding(.vertical, 12).fixedSize(horizontal: false, vertical: true) }
                     presets
                 }.padding(12)
             }.accessibilityIdentifier("native-pdf-palette-scroll")
@@ -62,7 +62,7 @@ struct NativePDFPaletteControls: View {
             VStack(spacing: 2) {
                 NativePDFStrokePreview(preset: model.currentPreset, highlighter: highlighter).frame(height: 66)
                 HStack { Text(NativePDFPaletteLook.colorName(model.color)); Spacer(); Text(model.widthLabel(for: model.width)).bold().monospacedDigit() }
-                    .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary)
+                    .font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary)
             }.padding(.horizontal, 10).padding(.bottom, 10)
                 .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 12))
                 .accessibilityElement(children: .ignore).accessibilityLabel("미리보기 · " + NativePDFPaletteLook.colorName(model.color) + " · " + model.widthLabel(for: model.width))
@@ -74,9 +74,9 @@ struct NativePDFPaletteControls: View {
                         VStack(spacing: 6) {
                             ZStack {
                                 Circle().fill(NativePDFPaletteLook.uiColor(item.name)).frame(width: 26, height: 26).overlay(Circle().stroke(.black.opacity(0.07), lineWidth: 1))
-                                if selected { Text("✓").font(.system(size: 15)).foregroundStyle(.white).shadow(color: .black.opacity(0.55), radius: 1, y: 1) }
+                                if selected { Text("✓").font(NativeDesktopTheme.font(15)).foregroundStyle(.white).shadow(color: .black.opacity(0.55), radius: 1, y: 1) }
                             }
-                            Text(NativePDFPaletteLook.colorName(item.name)).font(.system(size: 11))
+                            Text(NativePDFPaletteLook.colorName(item.name)).font(NativeDesktopTheme.font(11))
                         }.frame(maxWidth: .infinity, minHeight: 62).padding(7)
                             .background(selected ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 10))
                             .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? NativeDesktopTheme.accent : .clear, lineWidth: 1))
@@ -100,8 +100,8 @@ struct NativePDFPaletteControls: View {
             Divider().padding(.top, 8)
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("그린 뒤 유지하여 도형 정리").font(.system(size: 13, weight: .semibold))
-                    Text("펜을 떼지 않고 잠시 멈추세요. 계속 쓰면 원래 필기로 돌아갑니다.").font(.system(size: 11)).lineSpacing(4).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text("그린 뒤 유지하여 도형 정리").font(NativeDesktopTheme.font(13, weight: .semibold))
+                    Text("펜을 떼지 않고 잠시 멈추세요. 계속 쓰면 원래 필기로 돌아갑니다.").font(NativeDesktopTheme.font(11)).lineSpacing(4).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Toggle("", isOn: Binding(get: { model.shapeRecognitionEnabled }, set: { model.setShapeRecognition($0) })).labelsHidden().tint(NativeDesktopTheme.accent)
@@ -111,7 +111,7 @@ struct NativePDFPaletteControls: View {
     }
     private func range(_ title: String, value: String, id: String, binding: Binding<Double>, in bounds: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) { Text(title).font(.system(size: 13, weight: .semibold)); Spacer(); Text(value).font(.system(size: 13, weight: .semibold)).monospacedDigit().foregroundStyle(NativeDesktopTheme.accent) }
+            HStack(alignment: .firstTextBaseline) { Text(title).font(NativeDesktopTheme.font(13, weight: .semibold)); Spacer(); Text(value).font(NativeDesktopTheme.font(13, weight: .semibold)).monospacedDigit().foregroundStyle(NativeDesktopTheme.accent) }
             Slider(value: binding, in: bounds).tint(NativeDesktopTheme.accent).frame(height: 44)
                 .accessibilityLabel(title).accessibilityValue(value).accessibilityIdentifier(id)
         }.padding(.horizontal, 4).padding(.top, 14).padding(.bottom, 6)
@@ -120,8 +120,8 @@ struct NativePDFPaletteControls: View {
         VStack(alignment: .leading, spacing: 4) {
             Divider()
             VStack(alignment: .leading, spacing: 4) {
-                Text("즐겨찾는 펜").font(.system(size: 12, weight: .semibold))
-                Text("색상 · 굵기 · 불투명도를 함께 기억해요").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.secondary)
+                Text("즐겨찾는 펜").font(NativeDesktopTheme.font(12, weight: .semibold))
+                Text("색상 · 굵기 · 불투명도를 함께 기억해요").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.secondary)
             }.padding(.horizontal, 4).padding(.vertical, 8)
             HStack(alignment: .top, spacing: 4) {
                 ForEach(model.favorites.indices, id: \.self) { index in
@@ -130,13 +130,13 @@ struct NativePDFPaletteControls: View {
                         Button { model.chooseFavorite(index) } label: {
                             HStack(spacing: 7) {
                                 Circle().fill(NativePDFPaletteLook.uiColor(preset.color)).frame(width: 22, height: 22).overlay(Circle().stroke(.black.opacity(0.07), lineWidth: 1))
-                                Text("\(index + 1) · " + model.widthLabel(for: preset.width, highlighter: false)).font(.system(size: 12)).monospacedDigit().foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
+                                Text("\(index + 1) · " + model.widthLabel(for: preset.width, highlighter: false)).font(NativeDesktopTheme.font(12)).monospacedDigit().foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
                             }.frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
                         }.accessibilityLabel("즐겨찾는 펜 \(index + 1): " + NativePDFPaletteLook.colorName(preset.color)).accessibilityValue(model.favoriteAccessibilityValue(index))
                             .accessibilityIdentifier("native-pdf-palette-favorite-\(index)")
                             .accessibilityAddTraits(model.isPenLike && model.currentPreset == preset ? .isSelected : [])
                         Button { model.saveFavorite(index) } label: {
-                            Text("현재 펜 저장").font(.system(size: 12)).lineLimit(1).frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+                            Text("현재 펜 저장").font(NativeDesktopTheme.font(12)).lineLimit(1).frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
                         }.disabled(!model.isPenLike).opacity(model.isPenLike ? 1 : 0.35)
                             .accessibilityLabel("즐겨찾는 펜 \(index + 1)에 현재 펜 저장").accessibilityIdentifier("native-pdf-save-favorite-\(index)")
                     }.frame(maxWidth: .infinity)
@@ -180,10 +180,10 @@ struct NativePDFPaletteQuickControls: View {
                             Slider(value: Binding(get: { model.width }, set: { model.setWidth($0) }), in: NativePDFPaletteStyle.widthRange(model.width, highlighter: highlighter))
                                 .tint(NativeDesktopTheme.accent).frame(width: 96, height: 44)
                                 .accessibilityLabel("선 굵기").accessibilityValue(model.widthLabel(for: model.width)).accessibilityIdentifier("native-pdf-quick-width")
-                            Text(model.widthLabel(for: model.width)).font(.system(size: 10)).monospacedDigit().lineLimit(1)
+                            Text(model.widthLabel(for: model.width)).font(NativeDesktopTheme.font(11)).monospacedDigit().lineLimit(1)
                                 .foregroundStyle(NativeDesktopTheme.secondary).frame(width: 46).padding(.leading, 2)
                             Button { model.showStyle.toggle() } label: {
-                                Image(systemName: "slider.horizontal.3").font(.system(size: 17)).frame(width: 44, height: 44)
+                                Image(systemName: "slider.horizontal.3").font(NativeDesktopTheme.font(17)).frame(width: 44, height: 44)
                                     .foregroundStyle(model.showStyle ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary)
                                     .background(model.showStyle ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 10)).contentShape(Rectangle())
                             }.accessibilityLabel("필기 스타일").accessibilityValue(model.styleAccessibilityValue).accessibilityIdentifier("native-pdf-style")
@@ -193,7 +193,7 @@ struct NativePDFPaletteQuickControls: View {
                             Text("자유형").tag("freeform"); Text("박스형").tag("box")
                         }.pickerStyle(.segmented).frame(width: 170).padding(.horizontal, 4).accessibilityIdentifier("native-pdf-lasso-mode")
                         Button { model.pasteObjects() } label: {
-                            Label("붙여넣기", systemImage: "doc.on.clipboard").font(.system(size: 12)).frame(height: 44).padding(.horizontal, 8).contentShape(Rectangle())
+                            Label("붙여넣기", systemImage: "doc.on.clipboard").font(NativeDesktopTheme.font(12)).frame(height: 44).padding(.horizontal, 8).contentShape(Rectangle())
                         }.disabled(!model.canPaste).opacity(model.canPaste ? 1 : 0.4).accessibilityIdentifier("native-pdf-paste")
                     }
                 }.fixedSize(horizontal: true, vertical: false)

@@ -33,7 +33,7 @@ struct NativeLearningWorkspace: View {
                 await model.start()
                 if tab == "words" && model.rows("words").isEmpty { tab = "history" }
             }.onDisappear { Task { await model.close() } }
-            .alert("기사 주소", isPresented: $showingAdd) { TextField("https://…", text: $articleURL).textInputAutocapitalization(.never).keyboardType(.URL); Button("취소", role: .cancel) { }; Button("추가") { addArticle() } } message: { Text("기사의 원문을 학습 공간에 보관합니다.") }
+            .alert("기사 주소", isPresented: $showingAdd) { TextField("https://…", text: $articleURL, prompt: NativeDesktopTheme.prompt("https://…")).textInputAutocapitalization(.never).keyboardType(.URL); Button("취소", role: .cancel) { }; Button("추가") { addArticle() } } message: { Text("기사의 원문을 학습 공간에 보관합니다.") }
     }
     private var header: some View {
         VStack(spacing: 8) {
@@ -71,16 +71,16 @@ struct NativeLearningWorkspace: View {
     private var articles: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack { Text("영어 이어읽기").font(.headline); Spacer(); Button("주소 추가", systemImage: "link") { showingAdd = true }.accessibilityIdentifier("native-learning-add-article") }
-            if model.rows("articles").isEmpty { Text("읽고 싶은 기사의 주소를 추가해 보세요.").foregroundStyle(.secondary) }
+            if model.rows("articles").isEmpty { Text("읽고 싶은 기사의 주소를 추가해 보세요.").foregroundStyle(NativeDesktopTheme.secondary) }
             ForEach(Array(model.rows("articles").enumerated()), id: \.offset) { _, row in
-                Button { openResult(row, kind: .article) } label: { HStack { VStack(alignment: .leading, spacing: 6) { Text(row["title"] as? String ?? "기사"); Text(row["status"] as? String == "completed" ? "읽기 완료" : "이어서 읽기").font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right") }.padding(14).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 9)) }.buttonStyle(.plain)
+                Button { openResult(row, kind: .article) } label: { HStack { VStack(alignment: .leading, spacing: 6) { Text(row["title"] as? String ?? "기사"); Text(row["status"] as? String == "completed" ? "읽기 완료" : "이어서 읽기").font(.caption).foregroundStyle(NativeDesktopTheme.secondary) }; Spacer(); Image(systemName: "chevron.right") }.padding(14).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 9)) }.buttonStyle(.plain)
             }
         }
     }
     private var artifacts: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack { Text("학습 자료와 복습").font(.headline); Spacer(); Menu("만들기") { Button("AI로 만들기", systemImage: "sparkles") { store.assistantDocumentIDs.insert(binding.id) } } }
-            if model.rows("artifacts").isEmpty { Text("퀴즈나 카드를 만들면 원문과 함께 여기에 보관됩니다.").foregroundStyle(.secondary) }
+            if model.rows("artifacts").isEmpty { Text("퀴즈나 카드를 만들면 원문과 함께 여기에 보관됩니다.").foregroundStyle(NativeDesktopTheme.secondary) }
             ForEach(Array(model.rows("artifacts").enumerated()), id: \.offset) { _, row in
                 Button { openResult(row, kind: .artifact) } label: { HStack { Image(systemName: row["kind"] as? String == "quiz" ? "questionmark.square" : row["kind"] as? String == "cards" ? "rectangle.on.rectangle" : "text.alignleft"); Text(row["title"] as? String ?? "학습 자료"); Spacer(); Image(systemName: "chevron.right") }.padding(14).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 9)) }.buttonStyle(.plain)
             }
@@ -89,18 +89,18 @@ struct NativeLearningWorkspace: View {
     private var words: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("모은 표현").font(.headline)
-            if model.rows("words").isEmpty { Text("글의 문단에서 표현 저장을 눌러 원문과 함께 모아 보세요.").foregroundStyle(.secondary) }
+            if model.rows("words").isEmpty { Text("글의 문단에서 표현 저장을 눌러 원문과 함께 모아 보세요.").foregroundStyle(NativeDesktopTheme.secondary) }
             ForEach(Array(model.rows("words").enumerated()), id: \.offset) { _, word in NativeLearningWordRow(model: model, word: word) }
         }
     }
     private var history: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("학습 기록").font(.headline)
-            if model.rows("history").isEmpty { Text("아직 저장된 기록이 없습니다.").foregroundStyle(.secondary) }
+            if model.rows("history").isEmpty { Text("아직 저장된 기록이 없습니다.").foregroundStyle(NativeDesktopTheme.secondary) }
             ForEach(Array(model.rows("history").reversed().enumerated()), id: \.offset) { _, row in
                 VStack(alignment: .leading, spacing: 5) {
                     Text(row["summary"] as? String ?? "학습 기록")
-                    Text(row["createdAt"] as? String ?? "").font(.caption).foregroundStyle(.secondary)
+                    Text(row["createdAt"] as? String ?? "").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 9))
             }
         }

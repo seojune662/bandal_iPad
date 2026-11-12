@@ -22,6 +22,7 @@ struct NativeWorkspaceChromeLayout: Equatable {
     let leftWidth: Double
     let rightWidth: Double
     let compactRightWidth: Double
+    let expandedMaterialsWidth: Double
 
     init(width: Double, leftOpen: Bool, rightOpen: Bool, leftRequested: Double = 240,
          rightRequested: Double = 360, showsWorkspace: Bool = true) {
@@ -34,6 +35,9 @@ struct NativeWorkspaceChromeLayout: Equatable {
         leftWidth = leftPinned ? min(left, max(200, budget - (rightPinned ? 320 : 0))) : 0
         rightWidth = rightPinned ? min(right, max(320, budget - leftWidth)) : 0
         compactRightWidth = self.width < 600 ? self.width : min(360, max(0, self.width - 48))
+        // A library can cover the editor without changing its underlying dock
+        // geometry. Keep a dismissible margin beside it on larger windows.
+        expandedMaterialsWidth = self.width < 600 ? self.width : min(980, max(0, self.width - 72))
     }
 }
 
@@ -61,7 +65,7 @@ struct NativeInspectorHeader: View {
         HStack(spacing: 4) {
             ForEach(NativeInspectorTab.allCases) { tab in
                 Button { selection = tab } label: {
-                    Image(systemName: tab.symbol).font(.system(size: 17, weight: .medium))
+                    Image(systemName: tab.symbol).font(NativeDesktopTheme.font(17, weight: .medium))
                         .frame(width: 44, height: 44)
                         .foregroundStyle(selection == tab ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
                         .overlay(alignment: .bottom) {

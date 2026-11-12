@@ -13,7 +13,7 @@ struct NativeDockTabList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("열린 탭 \(documents.count)개").font(.headline).padding(.horizontal, 4)
-            TextField("열린 탭 검색", text: $query).textFieldStyle(.roundedBorder)
+            TextField("열린 탭 검색", text: $query, prompt: NativeDesktopTheme.prompt("열린 탭 검색")).textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("native-dock-tabs-search")
             ScrollView {
                 LazyVStack(spacing: 2) {
@@ -28,7 +28,7 @@ struct NativeDockTabList: View {
                             }.buttonStyle(.plain)
                                 .accessibilityIdentifier("native-dock-tab-list-select-" + document.id)
                                 .accessibilityAddTraits(document.id == activeID ? .isSelected : [])
-                            Button { close(document.id) } label: { Image(systemName: "xmark").font(.system(size: 12)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                            Button { close(document.id) } label: { Image(systemName: "xmark").font(NativeDesktopTheme.font(12)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                                 .buttonStyle(.plain).accessibilityLabel(document.title + " 닫기")
                                 .accessibilityIdentifier("native-dock-tab-list-close-" + document.id)
                         }.background(document.id == activeID ? NativeDesktopTheme.raised : Color.clear, in: RoundedRectangle(cornerRadius: 6))

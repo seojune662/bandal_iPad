@@ -73,7 +73,7 @@ struct PDFWorkspaceView: View {
             }.padding(.horizontal, 8).background(.bar)
             if showsSearch {
                 HStack {
-                    TextField("PDF에서 검색", text: $searchText).textFieldStyle(.roundedBorder)
+                    TextField("PDF에서 검색", text: $searchText, prompt: NativeDesktopTheme.prompt("PDF에서 검색")).textFieldStyle(.roundedBorder)
                         .submitLabel(.search).onSubmit { controller.search(searchText) }
                     Button("검색") { controller.search(searchText) }.frame(minWidth: 44, minHeight: 44)
                     if !controller.searchResults.isEmpty {
@@ -127,7 +127,7 @@ struct PDFWorkspaceView: View {
             }.presentationDetents([.medium, .large])
         }
         .alert("텍스트 메모", isPresented: $showsText) {
-            TextField("내용", text: $textToInsert)
+            TextField("내용", text: $textToInsert, prompt: NativeDesktopTheme.prompt("내용"))
             Button("추가") { controller.insertText(textToInsert, color: tools.color); textToInsert = "" }
             Button("취소", role: .cancel) { textToInsert = "" }
         } message: { Text("현재 페이지 중앙에 메모를 추가합니다.") }

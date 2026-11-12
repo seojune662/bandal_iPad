@@ -7,14 +7,15 @@ struct NativeSettingsCard<Content: View>: View {
     var description = ""
     @ViewBuilder var content: () -> Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // Title and controls share one surface; a divided header band would be a
+        // second frame inside the card.
+        VStack(alignment: .leading, spacing: NativeDesktopTheme.spacing(16)) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(NativeDesktopTheme.font(14, weight: .medium))
+                Text(title).font(NativeDesktopTheme.font(14, weight: .semibold))
                 if !description.isEmpty { Text(description).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true) }
-            }.padding(20)
-            NativeDesktopTheme.border.frame(height: 1)
-            VStack(alignment: .leading, spacing: NativeDesktopTheme.spacing(16)) { content() }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
-        }.background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+            }
+            content()
+        }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(NativeDesktopTheme.border))
             .buttonStyle(NativeToolButtonStyle()).tint(NativeDesktopTheme.accent)
     }
@@ -91,7 +92,7 @@ struct NativeSettingsSections: View {
             switch tab {
             case "note":
                 NativeSettingsCard(title: "새 마크다운", description: "새로 만드는 텍스트 노트에 적용합니다.") {
-                    TextField("제목 접두사", text: $titlePrefix).nativeToolField().accessibilityIdentifier("native-settings-markdown-prefix")
+                    TextField("제목 접두사", text: $titlePrefix, prompt: NativeDesktopTheme.prompt("제목 접두사")).nativeToolField().accessibilityIdentifier("native-settings-markdown-prefix")
                     Button("제목 저장") { persist(["tabs": ["markdownTitlePrefix": titlePrefix]]) }.disabled(titlePrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     Picker("필기 글꼴", selection: string("editorFont", fallback: "sans")) { Text("산세리프").tag("sans"); Text("세리프").tag("serif"); Text("고정폭").tag("mono") }
                 }
@@ -148,7 +149,7 @@ struct NativeSettingsSections: View {
                 Text("투두와 학업 보드는 기존 일정을 사용합니다. 메일함은 선택한 학교 메일 또는 아래 웹 주소를 엽니다.").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary)
             }
             NativeSettingsCard(title: "메일 위젯 연결", description: "웹 메일의 전체 메일함을 표시합니다.") {
-                TextField("https://mail.example.edu", text: $mailURL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().nativeToolField()
+                TextField("https://mail.example.edu", text: $mailURL, prompt: NativeDesktopTheme.prompt("https://mail.example.edu")).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().nativeToolField()
                 Button("메일 주소 저장") {
                     do { if !mailURL.isEmpty { _ = try NativeSettingsValidation.webURL(mailURL) }; persist(["widgets": ["mailUrl": mailURL]]) }
                     catch { self.error = error.localizedDescription }

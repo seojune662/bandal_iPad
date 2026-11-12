@@ -28,15 +28,15 @@ struct NativeLearningStartSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section { Text(kind == .english ? kind.detail : "선택한 자료의 원문을 근거로 학습 자료를 만듭니다.").foregroundStyle(.secondary) }
+                Section { Text(kind == .english ? kind.detail : "선택한 자료의 원문을 근거로 학습 자료를 만듭니다.").foregroundStyle(NativeDesktopTheme.secondary) }
                 if kind == .english && packID == nil {
                     Section("학습 공간") {
-                        TextField("학습 공간 이름", text: $name).accessibilityIdentifier("native-learning-create-name")
-                        TextField("관심 주제", text: $topic).accessibilityIdentifier("native-learning-create-topic")
+                        TextField("학습 공간 이름", text: $name, prompt: NativeDesktopTheme.prompt("학습 공간 이름")).accessibilityIdentifier("native-learning-create-name")
+                        TextField("관심 주제", text: $topic, prompt: NativeDesktopTheme.prompt("관심 주제")).accessibilityIdentifier("native-learning-create-topic")
                         Picker("읽기 수준", selection: $level) { Text("입문").tag("beginner"); Text("중급").tag("intermediate"); Text("고급").tag("advanced") }
                         Picker("읽는 시간", selection: $minutes) { ForEach([3, 4, 5, 8], id: \.self) { Text("\($0)분").tag($0) } }
                     }
-                    Section { Text("공간을 만든 뒤 기사 주소를 추가해 읽고, 원문에서 표현을 저장할 수 있어요.").font(.footnote).foregroundStyle(.secondary) }
+                    Section { Text("공간을 만든 뒤 기사 주소를 추가해 읽고, 원문에서 표현을 저장할 수 있어요.").font(.footnote).foregroundStyle(NativeDesktopTheme.secondary) }
                 } else {
                     Section("학습할 자료") {
                         if !articles.isEmpty || !wordIDs.isEmpty {
@@ -54,11 +54,11 @@ struct NativeLearningStartSheet: View {
                         } else if sourceMode == "vocabulary" { Text("모은 표현 \(wordIDs.count)개와 원문 예문을 사용합니다.") }
                         else {
                             Picker("과목", selection: $courseID) { Text("과목 선택").tag(""); ForEach(courses) { Text($0.name).tag($0.id) } }
-                            if materialAvailable { Toggle("현재 자료 사용", isOn: $useMaterial); if useMaterial { Text(source?.title ?? "").font(.subheadline); if !selectedText.isEmpty { Toggle("선택한 글만 사용", isOn: $useSelection); if useSelection { Text(selectedText).font(.caption).lineLimit(5).foregroundStyle(.secondary) } } } }
-                            Text(materialAvailable && useMaterial ? "현재 자료에 저장된 본문을 사용합니다." : "선택한 과목의 자료를 사용합니다.").font(.footnote).foregroundStyle(.secondary)
+                            if materialAvailable { Toggle("현재 자료 사용", isOn: $useMaterial); if useMaterial { Text(source?.title ?? "").font(.subheadline); if !selectedText.isEmpty { Toggle("선택한 글만 사용", isOn: $useSelection); if useSelection { Text(selectedText).font(.caption).lineLimit(5).foregroundStyle(NativeDesktopTheme.secondary) } } } }
+                            Text(materialAvailable && useMaterial ? "현재 자료에 저장된 본문을 사용합니다." : "선택한 과목의 자료를 사용합니다.").font(.footnote).foregroundStyle(NativeDesktopTheme.secondary)
                         }
                     }
-                    Section { Text("AI 연결과 기본 모델은 설정의 AI 항목을 따릅니다. 생성 상태와 결과는 학습 공간에 보관됩니다.").font(.footnote).foregroundStyle(.secondary) }
+                    Section { Text("AI 연결과 기본 모델은 설정의 AI 항목을 따릅니다. 생성 상태와 결과는 학습 공간에 보관됩니다.").font(.footnote).foregroundStyle(NativeDesktopTheme.secondary) }
                 }
                 if let error { Section { NativeToolError(message: error) } }
             }.navigationTitle(title).navigationBarTitleDisplayMode(.inline)

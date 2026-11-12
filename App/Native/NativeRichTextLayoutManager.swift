@@ -8,6 +8,8 @@ extension NSAttributedString.Key {
 /// Draws a native table grid behind the editable text. The source remains in
 /// the projection; no attachment or secondary editor owns a copy of cell text.
 final class NativeRichTextLayoutManager: NSLayoutManager {
+    /// Resolved against `UITraitCollection.current` while drawing, so it follows light and dark.
+    private static let ruleColor = UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.16) : UIColor(white: 0, alpha: 0.12) }
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         guard let storage = textStorage, let graphics = UIGraphicsGetCurrentContext(), storage.length > 0 else { return }
@@ -26,11 +28,11 @@ final class NativeRichTextLayoutManager: NSLayoutManager {
             guard !bounds.isNull else { continue }
             bounds.origin.x = origin.x; bounds.origin.y += origin.y
             bounds.size.width = container.size.width
-            let header = storage.attribute(.nativeTableHeader, at: row.location, effectiveRange: nil) as? Bool ?? false
-            graphics.setFillColor((header ? UIColor.secondarySystemBackground : UIColor.systemBackground).cgColor)
-            graphics.fill(bounds)
-            graphics.setStrokeColor(UIColor.separator.withAlphaComponent(0.6).cgColor); graphics.setLineWidth(0.75)
-            graphics.stroke(bounds.insetBy(dx: 0.375, dy: 0.375))
+            // The editor already paints the app ground; cells take it as is (a system
+            // background here is pure black in dark mode). Header rows are told
+            // apart by weight, not by a band.
+            graphics.setStrokeColor(Self.ruleColor.cgColor); graphics.setLineWidth(1)
+            graphics.stroke(bounds.insetBy(dx: 0.5, dy: 0.5))
             for column in 1..<columns {
                 let x = bounds.minX + bounds.width * CGFloat(column) / CGFloat(columns)
                 graphics.move(to: CGPoint(x: x, y: bounds.minY)); graphics.addLine(to: CGPoint(x: x, y: bounds.maxY))

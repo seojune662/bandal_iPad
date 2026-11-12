@@ -30,17 +30,17 @@ struct NativePDFToolbar: View {
             if !compact {
                 icon("미리보기", "sidebar.left", id: "native-pdf-pages", active: model.showPages) { model.togglePages() }
             }
-            TextField("페이지", text: $entry).keyboardType(.numbersAndPunctuation).submitLabel(.go).multilineTextAlignment(.center)
-                .frame(width: 34, height: 44).font(.system(size: 13).monospacedDigit())
+            TextField("페이지", text: $entry, prompt: NativeDesktopTheme.prompt("페이지")).keyboardType(.numbersAndPunctuation).submitLabel(.go).multilineTextAlignment(.center)
+                .frame(width: 34, height: 44).font(NativeDesktopTheme.font(13).monospacedDigit())
                 .onSubmit { navigate() }.accessibilityIdentifier("native-pdf-page")
                 .toolbar { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("페이지로 이동") { navigate() } } }
-            Text("/ \(model.pageCount)").font(.system(size: 13).monospacedDigit()).foregroundStyle(NativeDesktopTheme.muted)
+            Text("/ \(model.pageCount)").font(NativeDesktopTheme.font(13).monospacedDigit()).foregroundStyle(NativeDesktopTheme.muted)
                 .accessibilityIdentifier("native-pdf-page-count")
             Menu {
                 Button("이전 페이지") { model.go(to: model.page - 1) }.disabled(model.page <= 1)
                 Button("다음 페이지") { model.go(to: model.page + 1) }.disabled(model.page >= model.pageCount)
                 Button("페이지로 이동") { navigate() }
-            } label: { Image(systemName: "chevron.down").font(.system(size: 10)).frame(width: 44, height: 44) }.accessibilityLabel("페이지 이동")
+            } label: { Image(systemName: "chevron.down").font(NativeDesktopTheme.font(10)).frame(width: 44, height: 44) }.accessibilityLabel("페이지 이동")
             if model.hasPageNoteAction && !compact { icon("페이지 필기", "doc.text", id: "native-pdf-page-note") { model.openPageNote() } }
             icon("주석 도구", "pencil.tip.crop.circle", id: "native-pdf-drawing-tools", active: model.toolsExpanded) { model.toggleTools() }
                 .accessibilityValue("drawings=\(model.drawingCount) pending=\(model.pendingCount)")
@@ -58,7 +58,7 @@ struct NativePDFToolbar: View {
     static let tools = [("pen", "펜", "pencil.tip"), ("ballpoint", "볼펜", "pencil.line"), ("highlighter", "형광펜", "highlighter"), ("eraser", "지우개", "eraser"), ("text", "텍스트", "textformat"), ("lasso", "올가미", "lasso"), ("select", "손", "hand.point.up.left")]
     static func toolButton(_ model: NativePDFWorkspaceModel, _ value: (String, String, String)) -> some View {
         Button { model.chooseTool(value.0) } label: {
-            Image(systemName: value.2).font(.system(size: 17)).frame(width: 44, height: 44)
+            Image(systemName: value.2).font(NativeDesktopTheme.font(17)).frame(width: 44, height: 44)
                 .foregroundStyle(model.tool == value.0 ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary)
                 .background(model.tool == value.0 ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(alignment: .bottom) { if model.tool == value.0 { Capsule().fill(NativeDesktopTheme.accent).frame(width: 20, height: 2).padding(.bottom, 4) } }
@@ -68,12 +68,12 @@ struct NativePDFToolbar: View {
     private var viewActions: some View {
         HStack(spacing: 0) {
             icon("축소", "minus", id: "native-pdf-zoom-out") { model.setZoom(model.zoom - 0.1) }
-            Button { model.fitPage() } label: { Text("\(Int((model.zoom * 100).rounded()))%").monospacedDigit().font(.system(size: 12)).frame(width: 48, height: 44).contentShape(Rectangle()) }
+            Button { model.fitPage() } label: { Text("\(Int((model.zoom * 100).rounded()))%").monospacedDigit().font(NativeDesktopTheme.font(12)).frame(width: 48, height: 44).contentShape(Rectangle()) }
                 .accessibilityLabel("페이지 맞춤").accessibilityIdentifier("native-pdf-fit")
             icon("확대", "plus", id: "native-pdf-zoom-in") { model.setZoom(model.zoom + 0.1) }
             icon("PDF에서 찾기", "magnifyingglass", id: "native-pdf-search") { model.find() }
             Button { model.toggleAnnotations() } label: {
-                HStack(spacing: 3) { Image(systemName: "text.bubble"); if model.annotationCount > 0 { Text(String(model.annotationCount)).font(.system(size: 10)) } }
+                HStack(spacing: 3) { Image(systemName: "text.bubble"); if model.annotationCount > 0 { Text(String(model.annotationCount)).font(NativeDesktopTheme.font(11)) } }
                     .frame(minWidth: 44, minHeight: 44).background(model.showAnnotations ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 6)).contentShape(Rectangle())
             }.accessibilityLabel("원문 주석").accessibilityIdentifier("native-pdf-annotations").accessibilityValue(String(model.annotationCount))
         }.fixedSize(horizontal: true, vertical: false)
@@ -94,7 +94,7 @@ struct NativePDFToolbar: View {
     }
     private func icon(_ title: String, _ symbol: String, id: String, active: Bool = false, underline: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 17)).frame(width: 44, height: 44)
+            Image(systemName: symbol).font(NativeDesktopTheme.font(17)).frame(width: 44, height: 44)
                 .foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.secondary)
                 .background(active ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(alignment: .bottom) { if active && underline { Capsule().fill(NativeDesktopTheme.accent).frame(width: 20, height: 2).padding(.bottom, 4) } }
@@ -135,7 +135,7 @@ struct NativePDFSelectionBar: View {
                         Button(role: .destructive) { model.deleteSelection() } label: { action("삭제").foregroundStyle(.red) }.accessibilityIdentifier("native-pdf-delete-selection")
                     }
                     Button { model.clearSelection() } label: {
-                        Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 36, height: 40).contentShape(Rectangle())
+                        Image(systemName: "xmark").font(NativeDesktopTheme.font(12, weight: .semibold)).frame(width: 36, height: 40).contentShape(Rectangle())
                     }.accessibilityLabel("선택 해제")
                 }.padding(.horizontal, 6)
             }
@@ -149,7 +149,7 @@ struct NativePDFSelectionBar: View {
             .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-selection-bar")
     }
     private func action(_ title: String) -> some View {
-        Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1).padding(.horizontal, 10).frame(height: 40).contentShape(Rectangle())
+        Text(title).font(NativeDesktopTheme.font(13, weight: .medium)).lineLimit(1).padding(.horizontal, 10).frame(height: 40).contentShape(Rectangle())
     }
 }
 
@@ -159,7 +159,7 @@ struct NativePDFPagesPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("페이지").font(.system(size: 12, weight: .semibold)); Spacer(); Text("\(model.pageCount)쪽").font(.system(size: 10))
+                Text("페이지").font(NativeDesktopTheme.font(12, weight: .semibold)); Spacer(); Text("\(model.pageCount)쪽").font(NativeDesktopTheme.font(11))
                 Button { model.addPage(after: model.pageCount) } label: { Image(systemName: "plus").frame(width: 32, height: 32).contentShape(Rectangle()) }
                     .disabled(!model.pageCanRestructure).accessibilityLabel("페이지 추가").accessibilityIdentifier("native-pdf-page-add")
             }
@@ -210,7 +210,7 @@ struct NativePDFPagesPanel: View {
                 .onDrag { model.draggedPage = number; return NSItemProvider(object: (model.dragIdentity + ":" + String(number)) as NSString) }
                 .onDrop(of: [UTType.text], delegate: NativePDFPageDropDelegate(model: model, slot: number, midpoint: thumbnailHeights[number].map { $0 / 2 }))
             HStack {
-                Text(String(number)).font(.system(size: 11).monospacedDigit()).foregroundStyle(NativeDesktopTheme.muted)
+                Text(String(number)).font(NativeDesktopTheme.font(11).monospacedDigit()).foregroundStyle(NativeDesktopTheme.muted)
                 Spacer()
                 Menu {
                     Button("아래에 페이지 추가") { model.addPage(after: number) }.disabled(!model.pageCanRestructure).accessibilityIdentifier("native-pdf-page-insert-below")
@@ -254,19 +254,19 @@ struct NativePDFAnnotationRail: View {
     @ObservedObject var model: NativePDFWorkspaceModel
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Text("형광펜 · 메모").font(.system(size: 13, weight: .semibold)); Spacer(); Button { model.toggleAnnotations() } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }.accessibilityLabel("주석 닫기") }.padding(.leading, 14)
+            HStack { Text("형광펜 · 메모").font(NativeDesktopTheme.font(13, weight: .semibold)); Spacer(); Button { model.toggleAnnotations() } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }.accessibilityLabel("주석 닫기") }.padding(.leading, 14)
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    if model.annotationItems.isEmpty { Text("텍스트를 선택하면 형광펜과 메모를 추가할 수 있어요.").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(.top, 8) }
+                    if model.annotationItems.isEmpty { Text("텍스트를 선택하면 형광펜과 메모를 추가할 수 있어요.").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted).padding(.top, 8) }
                     ForEach(Array(Set(model.annotationItems.map(\.page))).sorted(), id: \.self) { page in
-                        Text("p.\(page)").font(.system(size: 11, weight: .semibold)).foregroundStyle(NativeDesktopTheme.muted).padding(.top, 8)
+                        Text("p.\(page)").font(NativeDesktopTheme.font(11, weight: .semibold)).foregroundStyle(NativeDesktopTheme.muted).padding(.top, 8)
                         ForEach(model.annotationItems.filter { $0.page == page }) { item in
                             HStack(alignment: .top, spacing: 8) {
                                 RoundedRectangle(cornerRadius: 2).fill(NativePDFWorkspaceModel.annotationColors.first(where: { $0.name == item.color })?.color ?? .yellow).frame(width: 4)
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Button { model.go(to: item.page) } label: { Text(item.quote).font(.system(size: 13)).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading) }
-                                    if !item.comment.isEmpty { Text(item.comment).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary) }
+                                    Button { model.go(to: item.page) } label: { Text(item.quote).font(NativeDesktopTheme.font(13)).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading) }
+                                    if !item.comment.isEmpty { Text(item.comment).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary) }
                                 }.padding(.vertical, 10)
                                 Button { model.openAnnotation(id: item.id) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }
                                     .accessibilityLabel("주석 편집").accessibilityIdentifier("native-pdf-annotation-" + item.id)

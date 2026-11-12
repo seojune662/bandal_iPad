@@ -103,7 +103,7 @@ struct NativePlannerWorkspace: View {
                     }
                 }
             }
-        }.background(NativeDesktopTheme.bgApp).foregroundStyle(NativeDesktopTheme.text).font(.system(size: 13))
+        }.background(NativeDesktopTheme.bgApp).foregroundStyle(NativeDesktopTheme.text).font(NativeDesktopTheme.font(13))
         .sheet(item: $editor) { item in
             NativeTaskEditor(task: item.task, courses: store.courses, defaultCourseID: courseFilter == "*" ? effectiveCourseID : courseFilter.isEmpty ? nil : courseFilter, defaultStatus: item.status, defaultDueDate: item.date) { request in
                 _ = try await store.invoke(item.task == nil ? "board:createTask" : "board:updateTask", request)
@@ -124,13 +124,13 @@ struct NativePlannerWorkspace: View {
         .onReceive(store.events) { event in if event.channel == "board:changed" { Task { await load() } } }
     }
     private var boardTitle: some View {
-        Text(calendarView ? "달력과 마감" : "과제와 시험").font(.system(size: 18, weight: .semibold)).fixedSize()
+        Text(calendarView ? "달력과 마감" : "과제와 시험").font(NativeDesktopTheme.font(18, weight: .semibold)).fixedSize()
     }
     private var viewSwitch: some View {
         HStack(spacing: 0) {
             ForEach([true, false], id: \.self) { calendar in
                 Button(calendar ? "달력" : "목록") { calendarView = calendar }
-                    .font(.system(size: 13, weight: .medium)).frame(width: 60, height: 36)
+                    .font(NativeDesktopTheme.font(13, weight: .medium)).frame(width: 60, height: 36)
                     .foregroundStyle(calendarView == calendar ? NativeDesktopTheme.onAccent : NativeDesktopTheme.secondary)
                     .background(calendarView == calendar ? NativeDesktopTheme.accent : .clear, in: RoundedRectangle(cornerRadius: 6))
                     .accessibilityIdentifier(calendar ? "native-planner-calendar" : "native-planner-board")
@@ -151,7 +151,7 @@ struct NativePlannerWorkspace: View {
             HStack(spacing: 8) {
                 if id != "*" { Circle().fill(NativeDesktopTheme.muted).frame(width: 8, height: 8) }
                 Text(title).lineLimit(1)
-            }.font(.system(size: 12)).padding(.horizontal, 12).frame(height: 32)
+            }.font(NativeDesktopTheme.font(12)).padding(.horizontal, 12).frame(height: 32)
                 .foregroundStyle(courseFilter == id ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
                 .background(courseFilter == id ? NativeDesktopTheme.accentMuted : NativeDesktopTheme.bgApp, in: Capsule())
         }.buttonStyle(.plain)
@@ -160,7 +160,7 @@ struct NativePlannerWorkspace: View {
         HStack(spacing: 8) {
             if !calendarView {
                 Toggle("완료 숨기기", isOn: Binding(get: { !showingCompleted }, set: { showingCompleted = !$0 }))
-                    .font(.system(size: 12)).toggleStyle(.switch).controlSize(.mini).fixedSize()
+                    .font(NativeDesktopTheme.font(12)).toggleStyle(.switch).controlSize(.mini).fixedSize()
             }
             Button("새로고침", systemImage: "arrow.clockwise") { Task { await load() } }.buttonStyle(NativeToolIconStyle()).disabled(loading)
             Button("할 일 추가", systemImage: "plus") { editor = TaskEditorIdentity(task: nil) }
@@ -172,24 +172,21 @@ struct NativePlannerWorkspace: View {
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Circle().fill(statusColor(status)).frame(width: 8, height: 8)
-                Text(statusTitle(status)).font(.system(size: 13, weight: .medium))
-                Text(String(values.count)).font(.system(size: 12, design: .monospaced)).foregroundStyle(NativeDesktopTheme.muted)
-                    .frame(minWidth: 24, minHeight: 24).background(NativeDesktopTheme.raised, in: Capsule())
+                Text(statusTitle(status)).font(NativeDesktopTheme.font(13, weight: .medium))
+                Text(String(values.count)).font(NativeDesktopTheme.font(13).monospacedDigit()).foregroundStyle(NativeDesktopTheme.muted)
                 Spacer()
             }.padding(.horizontal, 12).frame(height: 44)
-            NativeDesktopTheme.border.frame(height: 1)
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(values) { task in taskCard(task).draggable(task.id) }
                     if values.isEmpty {
                         Text(status == "todo" ? "할 일을 추가해보세요" : status == "in-progress" ? "진행 중인 일정이 없어요" : "완료한 일정이 여기에 모여요")
-                            .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).frame(maxWidth: .infinity).padding(.vertical, 40)
+                            .font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted).frame(maxWidth: .infinity).padding(.vertical, 40)
                     }
-                }.padding(12)
+                }.padding(.horizontal, 12).padding(.bottom, 12)
             }.frame(minHeight: 220)
-            NativeDesktopTheme.border.frame(height: 1)
-            Button { editor = TaskEditorIdentity(task: nil, status: status) } label: { Label("추가", systemImage: "plus").font(.system(size: 13)).frame(maxWidth: .infinity).frame(height: 36) }
-                .buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary).background(NativeDesktopTheme.bgApp)
+            Button { editor = TaskEditorIdentity(task: nil, status: status) } label: { Label("추가", systemImage: "plus").font(NativeDesktopTheme.font(13)).frame(maxWidth: .infinity).frame(height: 44) }
+                .buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary)
         }.background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(NativeDesktopTheme.border))
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -202,19 +199,19 @@ struct NativePlannerWorkspace: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
                 Button { setStatus(task, status: task.completed ? "todo" : "done") } label: {
-                    Image(systemName: task.completed ? "checkmark.circle.fill" : "circle").font(.system(size: 16)).frame(width: 24, height: 24)
+                    Image(systemName: task.completed ? "checkmark.circle.fill" : "circle").font(NativeDesktopTheme.font(16)).frame(width: 24, height: 24)
                 }.buttonStyle(.plain).foregroundStyle(statusColor(task.status)).disabled(changing.contains(task.id))
                     .accessibilityLabel(task.completed ? "미완료로 표시" : "완료로 표시").accessibilityIdentifier("native-task-toggle-\(task.id)")
                 Button { editor = TaskEditorIdentity(task: task) } label: {
-                    Text(task.title).strikethrough(task.completed).font(.system(size: 13, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 3)
+                    Text(task.title).strikethrough(task.completed).font(NativeDesktopTheme.font(13, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 3)
                 }.buttonStyle(.plain).accessibilityIdentifier("native-task-edit-\(task.id)")
             }
-            if !task.notes.isEmpty { Text(task.notes).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(3) }
+            if !task.notes.isEmpty { Text(task.notes).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(3) }
             HStack(spacing: 8) {
                 if let course = store.courses.first(where: { $0.id == task.courseId }) { Text(course.name).lineLimit(1) }
                 Spacer(minLength: 0)
                 if let date = task.dueDate { Label(date.formatted(date: .abbreviated, time: task.allDay ? .omitted : .shortened), systemImage: "calendar") }
-            }.font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
+            }.font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted)
         }.padding(12).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(NativeDesktopTheme.border))
             .contextMenu {
@@ -283,7 +280,7 @@ struct NativeTaskEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("제목", text: $title).accessibilityIdentifier("native-task-title")
+                    TextField("제목", text: $title, prompt: NativeDesktopTheme.prompt("제목")).accessibilityIdentifier("native-task-title")
                     TextField("메모", text: $notes, axis: .vertical).lineLimit(3...8)
                     Picker("과목", selection: $courseID) {
                         Text("공통").tag("")

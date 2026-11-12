@@ -53,7 +53,7 @@ struct NativeWorkspaceWindowControls: View {
     }
 
     private func icon(_ name: String, selected: Bool = false) -> some View {
-        Image(systemName: name).font(.system(size: 17, weight: .medium))
+        Image(systemName: name).font(NativeDesktopTheme.font(17, weight: .medium))
             .foregroundStyle(selected ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
             .frame(width: 44, height: 44)
             .background(selected ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 8))
@@ -106,7 +106,7 @@ struct NativeWorkspaceWindowsOverview: View {
                     }
                     Button(action: add) {
                         VStack(spacing: 12) {
-                            Image(systemName: "plus.circle").font(.system(size: 34, weight: .light))
+                            Image(systemName: "plus.circle").font(NativeDesktopTheme.font(34, weight: .light))
                             Text("윈도우 추가").font(.body.weight(.medium))
                         }.frame(maxWidth: .infinity).frame(height: 190)
                             .background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 14))
@@ -123,7 +123,7 @@ struct NativeWorkspaceWindowsOverview: View {
             .accessibilityIdentifier("native-windows-overview")
             .onAppear { headingFocused = true; overviewFocused = true }
             .alert("윈도우 이름", isPresented: Binding(get: { renamingID != nil }, set: { if !$0 { renamingID = nil } })) {
-                TextField("이름", text: $name)
+                TextField("이름", text: $name, prompt: NativeDesktopTheme.prompt("이름"))
                 Button("취소", role: .cancel) { renamingID = nil }
                 Button("저장") {
                     if let id = renamingID { rename(id, name.trimmingCharacters(in: .whitespacesAndNewlines)) }

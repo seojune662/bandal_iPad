@@ -54,7 +54,7 @@ struct NativeNewTabMenu: View {
                 VStack(spacing: 8) {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(NativeDesktopTheme.muted)
-                        TextField("검색하거나 URL 입력…", text: $query).textFieldStyle(.plain)
+                        TextField("검색하거나 URL 입력…", text: $query, prompt: NativeDesktopTheme.prompt("검색하거나 URL 입력…")).textFieldStyle(.plain)
                             .autocorrectionDisabled().textInputAutocapitalization(.never).focused($searchFocused)
                             .accessibilityIdentifier("native-new-tab-search")
                             .onSubmit { activateHighlighted() }
@@ -75,7 +75,7 @@ struct NativeNewTabMenu: View {
                         }
                     }.frame(maxHeight: 340)
                 }
-        }.font(.system(size: 13)).padding(8).frame(width: 352)
+        }.font(NativeDesktopTheme.font(13)).padding(8).frame(width: 352)
             .background(NativeDesktopTheme.surface)
             .onChange(of: query) { _, _ in highlighted = 0 }
             .task { settings = (try? await store.invoke("settings:get")) as? [String: Any] ?? [:]; searchFocused = true }
@@ -85,8 +85,8 @@ struct NativeNewTabMenu: View {
             Image(systemName: item.symbol).frame(width: 18).foregroundStyle(NativeDesktopTheme.muted)
             Text(item.title).lineLimit(1)
             Spacer(minLength: 4)
-            if !item.hint.isEmpty { Text(item.hint).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
-            if let chord = shortcut(item.shortcutID) { Text(chord).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).fixedSize() }
+            if !item.hint.isEmpty { Text(item.hint).font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1) }
+            if let chord = shortcut(item.shortcutID) { Text(chord).font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted).fixedSize() }
         }.padding(.horizontal, 8).frame(height: 36).contentShape(Rectangle())
             .background(selected ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 5))
     }

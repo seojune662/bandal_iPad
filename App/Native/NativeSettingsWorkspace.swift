@@ -289,12 +289,10 @@ struct NativeSettingsWorkspace: View {
   private func settingsCard<Content: View>(_ title: String, @ViewBuilder content: () -> Content)
     -> some View
   {
-    VStack(alignment: .leading, spacing: 0) {
-      Text(title).font(NativeDesktopTheme.font( 14, weight: .medium)).padding(20)
-      NativeDesktopTheme.border.frame(height: 1)
-      VStack(alignment: .leading, spacing: 16) { content() }.padding(20).frame(
-        maxWidth: .infinity, alignment: .leading)
-    }.background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+    VStack(alignment: .leading, spacing: 16) {
+      Text(title).font(NativeDesktopTheme.font(14, weight: .semibold))
+      content()
+    }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
       .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(NativeDesktopTheme.border))
       .buttonStyle(NativeToolButtonStyle()).tint(NativeDesktopTheme.accent)
   }
@@ -322,7 +320,7 @@ struct NativeSettingsWorkspace: View {
     NativeSettingsCard(title: "밀도", description: "여백과 버튼 높이를 고릅니다. 작은 화면에서는 촘촘하게가 한 줄 더 보여줍니다.") {
       Picker("밀도", selection: Binding(get: { density }, set: { savePreference(["density": $0]) })) {
         Text("편안하게").tag("comfortable"); Text("촘촘하게").tag("compact")
-      }.pickerStyle(.segmented).accessibilityIdentifier("native-settings-density")
+      }.pickerStyle(.segmented).frame(maxWidth: 320).accessibilityIdentifier("native-settings-density")
     }
     }
   }
@@ -375,7 +373,7 @@ struct NativeSettingsWorkspace: View {
             Label("키가 연결되어 있어요 · …\(status?["hint"] as? String ?? "")", systemImage: "key.fill")
               .font(.caption)
           } else {
-            Text("등록된 API 키가 없어요.").font(.caption).foregroundStyle(.secondary)
+            Text("등록된 API 키가 없어요.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
           }
           SecureField(
             "새 API 키",
@@ -414,7 +412,7 @@ struct NativeSettingsWorkspace: View {
       Text(granted
         ? (english ? "Consent to send to \(AIConsent.company(target)) given" : "\(AIConsent.company(target)) 전송에 동의함")
         : (english ? "Consent will be asked before the first send" : "처음 보낼 때 동의를 묻습니다"))
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
       Spacer()
       if granted {
         Button(english ? "Withdraw consent" : "동의 철회", role: .destructive) {
@@ -429,7 +427,7 @@ struct NativeSettingsWorkspace: View {
         if let email = account["email"] as? String {
           Label(email, systemImage: "person.crop.circle")
         }
-        TextField("닉네임", text: $nickname)
+        TextField("닉네임", text: $nickname, prompt: NativeDesktopTheme.prompt("닉네임"))
         Button("닉네임 저장") {
           run {
             _ = try await store.invoke("auth:setNickname", ["nickname": nickname])
@@ -444,11 +442,11 @@ struct NativeSettingsWorkspace: View {
           Button("카카오로 다시 로그인") { signIn("kakao") }
         }
         if let pending = (account["localAccess"] as? [String: Any])?["pendingUserID"] as? String {
-          Text("이 기기의 자료를 지금 계정에 연결해야 열 수 있어요.").font(.caption).foregroundStyle(.secondary)
+          Text("이 기기의 자료를 지금 계정에 연결해야 열 수 있어요.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
           Button("이 계정에 자료 연결") { run { _ = try await store.invoke("auth:confirmProfile", ["userID": pending]); try await loadAccount() } }
         }
         DisclosureGroup("다른 로그인 방법 연결") {
-          Text("같은 반달 계정에 다른 로그인 수단을 추가합니다.").font(.caption).foregroundStyle(.secondary)
+          Text("같은 반달 계정에 다른 로그인 수단을 추가합니다.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
           Button("Apple 연결") { linkProvider("apple") }
           Button("Google 연결") { linkProvider("google") }
           Button("카카오 연결") { linkProvider("kakao") }
@@ -456,15 +454,15 @@ struct NativeSettingsWorkspace: View {
         Button("로그아웃", role: .destructive) { signOutConfirmation = true }
         Button("계정 삭제", role: .destructive) { deleteAccountConfirmation = true }
       } else {
-        Text(accountPhase).foregroundStyle(.secondary)
+        Text(accountPhase).foregroundStyle(NativeDesktopTheme.secondary)
         Button("Apple로 로그인") { signIn("apple") }.disabled(account["phase"] as? String == "signing-in")
         Button("Google로 로그인") { signIn("google") }.disabled(
           account["phase"] as? String == "signing-in")
         Button("카카오로 로그인") { signIn("kakao") }.disabled(account["phase"] as? String == "signing-in")
         DisclosureGroup("서버 설정") {
-          TextField("https://project.supabase.co", text: $serverURL).keyboardType(.URL)
+          TextField("https://project.supabase.co", text: $serverURL, prompt: NativeDesktopTheme.prompt("https://project.supabase.co")).keyboardType(.URL)
             .textInputAutocapitalization(.never).autocorrectionDisabled()
-          TextField("공개 키", text: $publicKey).textInputAutocapitalization(.never)
+          TextField("공개 키", text: $publicKey, prompt: NativeDesktopTheme.prompt("공개 키")).textInputAutocapitalization(.never)
             .autocorrectionDisabled()
           Text("동기화 서버의 공개 키를 사용하세요. 서비스 역할 비밀키는 입력하지 마세요.").font(.caption).foregroundStyle(
             .secondary)
@@ -476,7 +474,7 @@ struct NativeSettingsWorkspace: View {
   private var subscriptionPanel: some View {
     settingsCard("동기화 구독") {
       if !signedIn {
-        Text("로그인하면 구독 상태를 확인할 수 있어요.").foregroundStyle(.secondary)
+        Text("로그인하면 구독 상태를 확인할 수 있어요.").foregroundStyle(NativeDesktopTheme.secondary)
       } else {
         let subscription = billing["subscription"] as? [String: Any] ?? [:]
         LabeledContent("상태", value: subscription["active"] as? Bool == true ? "이용 중" : "구독 없음")
@@ -493,11 +491,11 @@ struct NativeSettingsWorkspace: View {
               }
             }
           }
-          if products.isEmpty { Text("App Store 구독 상품을 아직 사용할 수 없어요. 데스크톱 구독도 이 계정에 적용됩니다.").font(.caption).foregroundStyle(.secondary) }
+          if products.isEmpty { Text("App Store 구독 상품을 아직 사용할 수 없어요. 데스크톱 구독도 이 계정에 적용됩니다.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary) }
         }
         Button("구매 복원") { run { _ = try await store.invoke("billing:restore"); try await loadSync(); notice = "구매를 확인했어요." } }
         Button("구독 관리") { run { _ = try await store.invoke("billing:manageApple") } }
-        Text("구독은 Apple·데스크톱 결제 중 하나면 충분하며 같은 반달 계정에 적용됩니다. 구독이 없어도 기기의 자료와 기존 동기화 자료 다운로드는 계속 사용할 수 있어요.").font(.caption).foregroundStyle(.secondary)
+        Text("구독은 Apple·데스크톱 결제 중 하나면 충분하며 같은 반달 계정에 적용됩니다. 구독이 없어도 기기의 자료와 기존 동기화 자료 다운로드는 계속 사용할 수 있어요.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
       }
     }
   }
@@ -511,7 +509,7 @@ struct NativeSettingsWorkspace: View {
         }
       }
       Button("새 프로필로 시작", systemImage: "person.badge.plus") { newProfileConfirmation = true }
-      Text("다른 계정으로 쓰려면 먼저 현재 자료를 백업한 뒤 새 프로필을 만드세요. 기존 프로필 폴더는 지우지 않습니다.").font(.caption).foregroundStyle(.secondary)
+      Text("다른 계정으로 쓰려면 먼저 현재 자료를 백업한 뒤 새 프로필을 만드세요. 기존 프로필 폴더는 지우지 않습니다.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
     }
   }
   private var syncPanel: some View {

@@ -29,6 +29,9 @@ enum NativeDesktopTheme {
     static func font(_ size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
         .system(size: size * fontScale, weight: weight, design: design)
     }
+    /// Placeholder text at 4.5:1 or better on `raised` fields; the system
+    /// placeholder grey measured about 1.9:1 there.
+    static func prompt(_ key: LocalizedStringKey) -> Text { Text(key).foregroundStyle(muted) }
     static func spacing(_ base: CGFloat) -> CGFloat {
         let value: CGFloat = compact && base == 12 ? 8 : compact && base == 16 ? 12 : base
         return value * fontScale
@@ -49,7 +52,7 @@ struct NativeChromeButton: View {
     var action: () -> Void
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 16, weight: .regular))
+            Image(systemName: symbol).font(NativeDesktopTheme.font(16, weight: .regular))
                 .foregroundStyle(selected ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
                 .frame(width: 44, height: 44)
                 .background(selected ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 6))

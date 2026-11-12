@@ -56,7 +56,7 @@ struct NativeLearningHome: View {
                 HStack(alignment: .top, spacing: 12) {
                     Text(kind.symbol).font(NativeDesktopTheme.font(24, weight: .semibold)).frame(width: 32)
                     VStack(alignment: .leading, spacing: 8) { Text(kind.title).fontWeight(.semibold); Text(kind.detail).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true) }
-                    Spacer(minLength: 0); Image(systemName: "chevron.right").font(.system(size: 10))
+                    Spacer(minLength: 0); Image(systemName: "chevron.right").font(NativeDesktopTheme.font(10))
                 }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
             }.buttonStyle(.plain).accessibilityIdentifier("native-learning-start-" + kind.id)
         }
@@ -72,7 +72,7 @@ struct NativeLearningSidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Text("학습 공간").font(NativeDesktopTheme.font(16, weight: .semibold)); Spacer(); NativeChromeButton(title: "학습 공간 새로고침", symbol: "arrow.clockwise") { Task { await model.reload(store) } } }
-            HStack { Image(systemName: "magnifyingglass"); TextField("공간 검색", text: $query).textFieldStyle(.plain) }.font(NativeDesktopTheme.font(12)).padding(8).background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 8))
+            HStack { Image(systemName: "magnifyingglass"); TextField("공간 검색", text: $query, prompt: NativeDesktopTheme.prompt("공간 검색")).textFieldStyle(.plain) }.font(NativeDesktopTheme.font(12)).padding(8).background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 8))
             Menu { ForEach(NativeLearningStartKind.allCases) { kind in Button(kind.title) { creating = kind } } } label: { Label("새 학습", systemImage: "plus").foregroundStyle(NativeDesktopTheme.onAccent).frame(maxWidth: .infinity, minHeight: 36) }.buttonStyle(.borderedProminent).tint(NativeDesktopTheme.accent)
             if model.loading { ProgressView() }
             if let error = model.error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red) }
@@ -116,15 +116,15 @@ private struct NativeLearningProjectRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(project.displayName(courses: store.courses)).font(NativeDesktopTheme.font(13, weight: .medium)).lineLimit(2)
                 Text(project.group == "course-review" ? "퀴즈와 카드, 풀이 기록" : project.topic).font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(2)
-                if project.completedArticleCount > 0 || project.wordCount > 0 || project.dueCardCount > 0 { Text("읽은 글 \(project.completedArticleCount) · 표현 \(project.wordCount) · 복습 \(project.dueCardCount)").font(NativeDesktopTheme.font(10)).foregroundStyle(NativeDesktopTheme.muted) }
-                if let warning = project.warning { Text(warning).font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
+                if project.completedArticleCount > 0 || project.wordCount > 0 || project.dueCardCount > 0 { Text("읽은 글 \(project.completedArticleCount) · 표현 \(project.wordCount) · 복습 \(project.dueCardCount)").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted) }
+                if let warning = project.warning { Text(warning).font(NativeDesktopTheme.font(11)).foregroundStyle(.orange) }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 8)).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier("native-learning-project-" + project.binding.id)
             .contextMenu {
                 Button("이름 변경", systemImage: "pencil") { name = project.name; renaming = true }
                 Button("목록에서 삭제", systemImage: "trash", role: .destructive) { deleting = true }
             }
-            .alert("학습 공간 이름", isPresented: $renaming) { TextField("이름", text: $name); Button("취소", role: .cancel) { }; Button("저장") { mutate("learning:rename", ["name": name]) } }
+            .alert("학습 공간 이름", isPresented: $renaming) { TextField("이름", text: $name, prompt: NativeDesktopTheme.prompt("이름")); Button("취소", role: .cancel) { }; Button("저장") { mutate("learning:rename", ["name": name]) } }
             .confirmationDialog("학습 공간을 목록에서 삭제할까요?", isPresented: $deleting, titleVisibility: .visible) { Button("목록에서 삭제", role: .destructive) { mutate("learning:delete", [:]) } } message: { Text("파일과 학습 기록은 보존되며 학습 홈에서 복원할 수 있습니다.") }
     }
     private func mutate(_ channel: String, _ extra: [String: Any]) {
@@ -153,17 +153,15 @@ struct NativeProjectSidebar: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("프로젝트").font(NativeDesktopTheme.font(16, weight: .semibold))
-                Spacer()
+            HStack(spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(NativeDesktopTheme.muted)
+                    TextField("프로젝트 찾기", text: $query, prompt: NativeDesktopTheme.prompt("프로젝트 찾기")).textFieldStyle(.plain).accessibilityIdentifier("native-project-search")
+                }.font(NativeDesktopTheme.font(13)).padding(.horizontal, 12).frame(minHeight: 44)
+                    .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 9))
                 Button { creating = true } label: { Image(systemName: "plus").frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .accessibilityLabel("새 프로젝트").accessibilityIdentifier("native-project-create")
-            }.padding(.horizontal, 12)
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(NativeDesktopTheme.muted)
-                TextField("프로젝트 찾기", text: $query).textFieldStyle(.plain).accessibilityIdentifier("native-project-search")
-            }.font(NativeDesktopTheme.font(13)).padding(.horizontal, 12).frame(minHeight: 44)
-                .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 9)).padding(.horizontal, 12).padding(.bottom, 12)
+            }.padding(.leading, 12).padding(.trailing, 4).padding(.bottom, 12)
             if catalog.loading && catalog.projects.isEmpty { ProgressView().frame(maxWidth: .infinity).padding() }
             if let message = error ?? catalog.error { Text(message).font(.caption).foregroundStyle(.red).padding(12) }
             ScrollView {
@@ -215,7 +213,7 @@ struct NativeProjectSidebar: View {
         let context = NativeWorkspaceContext.project(project, courses: store.courses)
         return Button { onOpen(context) } label: {
             HStack(spacing: 10) {
-                Image(systemName: "folder").font(.system(size: 17)).foregroundStyle(NativeDesktopTheme.muted)
+                Image(systemName: "folder").font(NativeDesktopTheme.font(17)).foregroundStyle(NativeDesktopTheme.muted)
                 Text(context.title).font(NativeDesktopTheme.font(13)).lineLimit(1)
                 Spacer(minLength: 0)
                 if project.dueCardCount > 0 { Text("\(project.dueCardCount)").font(.caption2).foregroundStyle(NativeDesktopTheme.muted) }

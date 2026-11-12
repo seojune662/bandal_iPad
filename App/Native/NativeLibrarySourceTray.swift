@@ -134,7 +134,7 @@ struct NativeLibrarySourceTray: View {
             HStack(spacing: 8) {
                 Button { expanded.toggle() } label: {
                     Label("사진 · 파일", systemImage: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 12, weight: .medium)).frame(minHeight: 30).contentShape(Rectangle())
+                        .font(NativeDesktopTheme.font(12, weight: .medium)).frame(minHeight: 30).contentShape(Rectangle())
                 }.accessibilityIdentifier("native-library-sources-toggle")
                 Spacer(minLength: 0)
                 if model.working || saving { ProgressView().controlSize(.mini) }
@@ -150,12 +150,12 @@ struct NativeLibrarySourceTray: View {
                 .accessibilityLabel("파일 앱에서 선택")
             }
             Text("사진·파일에서 골라 문서로 드래그")
-                .font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted)
+                .font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if expanded {
                 if model.assets.isEmpty {
                     Text("사진이나 파일을 선택한 뒤\n문서로 끌어다 놓으세요.")
-                        .font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted)
+                        .font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted)
                         .multilineTextAlignment(.center).frame(maxWidth: .infinity).frame(height: 56)
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -164,9 +164,9 @@ struct NativeLibrarySourceTray: View {
                         }.padding(.vertical, 2)
                     }.frame(height: 118)
                     HStack {
-                        Text("문서로 드래그 · \(model.assets.count)개").font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted)
+                        Text("문서로 드래그 · \(model.assets.count)개").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted)
                         Spacer()
-                        Button("비우기") { model.clear() }.font(.system(size: 10)).disabled(saving)
+                        Button("비우기") { model.clear() }.font(NativeDesktopTheme.font(11)).disabled(saving)
                             .accessibilityLabel("사진 파일 보관함 비우기")
                     }
                 }
@@ -202,7 +202,7 @@ struct NativeLibrarySourceTray: View {
     private func sourceButton(_ title: String, symbol: String, identifier: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
-                .font(.system(size: 12, weight: .medium))
+                .font(NativeDesktopTheme.font(12, weight: .medium))
                 .frame(maxWidth: .infinity, minHeight: 38)
                 .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 8))
                 .contentShape(Rectangle())
@@ -220,7 +220,7 @@ struct NativeLibrarySourceTray: View {
                 .accessibilityLabel(asset.name + ", 문서로 드래그")
                 .accessibilityIdentifier("native-library-source-asset-" + asset.name)
                 .accessibilityValue(sourceIdentityForTesting(asset))
-            Text(asset.name).font(.system(size: 10)).lineLimit(1).frame(width: 84, alignment: .leading)
+            Text(asset.name).font(NativeDesktopTheme.font(11)).lineLimit(1).frame(width: 84, alignment: .leading)
             HStack(spacing: 5) {
                 Button { save(asset) } label: {
                     Image(systemName: savedAssetID == asset.id ? "checkmark" : "tray.and.arrow.down")
@@ -230,7 +230,7 @@ struct NativeLibrarySourceTray: View {
                 Spacer(minLength: 0)
                 Button { model.remove(asset) } label: { Image(systemName: "xmark") }
                     .disabled(saving).accessibilityLabel(asset.name + " 보관함에서 제거")
-            }.font(.system(size: 10)).frame(width: 84)
+            }.font(NativeDesktopTheme.font(11)).frame(width: 84)
         }
     }
     private func sourceIdentityForTesting(_ asset: NativeLibrarySourceAsset) -> String {

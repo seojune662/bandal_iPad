@@ -86,7 +86,7 @@ struct NativePagedMarkdownEditor: View {
             .frame(width: width, height: height)
             .background(NativeDesktopTheme.surface)
             .overlay(alignment: .topTrailing) {
-                Text(String(index + 1)).font(.system(size: 11, design: .monospaced))
+                Text(String(index + 1)).font(NativeDesktopTheme.font(11, design: .monospaced))
                     .foregroundStyle(NativeDesktopTheme.muted).frame(minWidth: 28, minHeight: 28)
                     .background(NativeDesktopTheme.surface.opacity(0.9), in: Capsule())
                     .overlay { Capsule().stroke(NativeDesktopTheme.border, lineWidth: 1) }

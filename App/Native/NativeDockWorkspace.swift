@@ -207,7 +207,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 Color.clear.frame(maxWidth: .infinity).frame(height: headerHeight)
                     .contentShape(Rectangle())
                     .onDrop(of: [NativeDockDragPayload.contentType], delegate: drop(group.id, index: group.tabs.count))
-                Button { focus(group.id); newTabGroupID = group.id } label: { Image(systemName: "plus").font(.system(size: 14)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                Button { focus(group.id); newTabGroupID = group.id } label: { Image(systemName: "plus").font(NativeDesktopTheme.font(14)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .accessibilityLabel("새 탭 열기").accessibilityIdentifier("native-dock-add-" + group.id)
                 .popover(isPresented: Binding(get: { newTabGroupID == group.id }, set: { if !$0 { newTabGroupID = nil } }), arrowEdge: .top) {
@@ -217,7 +217,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     }
                 }
                 Button { tabListGroupID = group.id } label: {
-                    Image(systemName: "chevron.down").font(.system(size: 12)).frame(width: 44, height: 44).contentShape(Rectangle())
+                    Image(systemName: "chevron.down").font(NativeDesktopTheme.font(12)).frame(width: 44, height: 44).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("이 영역의 열린 탭 \(group.tabs.count)개")
                     .accessibilityIdentifier("native-dock-tabs-" + group.id)
                     .popover(isPresented: Binding(get: { tabListGroupID == group.id }, set: { if !$0 { tabListGroupID = nil } }), arrowEdge: .top) {
@@ -244,7 +244,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             .frame(width: max(0, sizing.width - (sizing.showsClose ? 32 : 0)), height: 44).clipped()
             if sizing.showsClose {
                 Button { closeDocuments([document.id]) } label: {
-                    Image(systemName: "xmark").font(.system(size: 10)).frame(width: 32, height: 44).contentShape(Rectangle())
+                    Image(systemName: "xmark").font(NativeDesktopTheme.font(10)).frame(width: 32, height: 44).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(document.title + " 닫기")
                     .accessibilityIdentifier(document.id == navigation.activeID ? "native-close-document" : "native-close-tab-" + document.id)
             }
@@ -415,7 +415,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     if group.tabs.isEmpty { Button("빈 영역 닫기", systemImage: "xmark") { perform { navigation.removeEmptyGroup(group.id) } }.accessibilityIdentifier("native-dock-close-empty") }
                 }
             }
-        } label: { Image(systemName: "rectangle.split.2x1").font(.system(size: 14)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+        } label: { Image(systemName: "rectangle.split.2x1").font(NativeDesktopTheme.font(14)).frame(width: 44, height: 44).contentShape(Rectangle()) }
             .accessibilityLabel("열린 자료와 분할 보기")
             .accessibilityIdentifier(group.id == navigation.focusedGroupID ? "native-open-documents" : "native-dock-layout-" + group.id)
     }
@@ -424,7 +424,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         else {
             VStack(spacing: 14) {
                 NativeBandalMark(size: 32).foregroundStyle(NativeDesktopTheme.muted.opacity(0.5))
-                Text("이 영역에서 새 탭을 여세요").font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted)
+                Text("이 영역에서 새 탭을 여세요").font(NativeDesktopTheme.font(14)).foregroundStyle(NativeDesktopTheme.muted)
                 Button("새 탭 열기", systemImage: "plus") { focus(group.id); newTabGroupID = group.id }.buttonStyle(.bordered).frame(minHeight: 44)
                 Button("빈 영역 닫기", systemImage: "xmark") { perform { navigation.removeEmptyGroup(group.id) } }.buttonStyle(.bordered).frame(minHeight: 44)
                     .accessibilityIdentifier("native-dock-close-empty-" + group.id)
@@ -445,7 +445,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 Label("영역 \((layout.groups.firstIndex { $0.id == (maximizedGroupID ?? layout.focusedGroupID) } ?? 0) + 1) / \(layout.groups.count)", systemImage: "square.grid.2x2")
                     .frame(minHeight: 44).contentShape(Rectangle())
             }.accessibilityIdentifier("native-dock-pane-selector")
-            Text(compact ? "좁은 화면에서는 영역을 선택해 보세요" : "선택한 영역 크게 보기").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
+            Text(compact ? "좁은 화면에서는 영역을 선택해 보세요" : "선택한 영역 크게 보기").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
             Spacer(minLength: 0)
             if !compact { Button("전체 보기") { perform { maximizedGroupID = nil } }.frame(minHeight: 44) }
         }.padding(.horizontal, 12).background(NativeDesktopTheme.surface)

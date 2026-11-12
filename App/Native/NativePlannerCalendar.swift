@@ -40,7 +40,7 @@ struct NativePlannerCalendar: View {
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
                     HStack(spacing: 8) {
-                        Text(month.formatted(.dateTime.year().month(.wide))).font(.system(size: 18, weight: .semibold))
+                        Text(month.formatted(.dateTime.year().month(.wide))).font(NativeDesktopTheme.font(18, weight: .semibold))
                         Spacer()
                         Button("이전 달", systemImage: "chevron.left") { moveMonth(-1) }.buttonStyle(NativeToolIconStyle())
                         Button("오늘") { month = Date(); selectedDay = Date() }.buttonStyle(NativeToolButtonStyle(compact: true))
@@ -85,7 +85,7 @@ struct NativePlannerCalendar: View {
         return HStack(spacing: 0) {
             ForEach(0..<7) { index in
                 let position = (index + calendar.firstWeekday - 1) % 7
-                Text(symbols[position]).font(.system(size: 12, weight: .semibold))
+                Text(symbols[position]).font(NativeDesktopTheme.font(12, weight: .semibold))
                     .foregroundStyle(position == 0 ? Color.red : NativeDesktopTheme.muted).frame(maxWidth: .infinity).padding(.vertical, 8)
             }
         }.background(NativeDesktopTheme.surface).overlay(Rectangle().strokeBorder(NativeDesktopTheme.border))
@@ -97,25 +97,25 @@ struct NativePlannerCalendar: View {
         let external = externalEvents.filter { $0.occurs(on:day,calendar:calendar) }
         return VStack(alignment: .leading, spacing: 4) {
             Button { selectedDay = day } label: {
-                Text(String(calendar.component(.day, from: day))).font(.system(size: 12, design: .monospaced)).frame(width: 28, height: 28)
+                Text(String(calendar.component(.day, from: day))).font(NativeDesktopTheme.font(12, design: .monospaced)).frame(width: 28, height: 28)
                     .foregroundStyle(today ? NativeDesktopTheme.onAccent : outside ? NativeDesktopTheme.muted : NativeDesktopTheme.secondary)
                     .background(today ? NativeDesktopTheme.accent : .clear, in: Circle())
             }.buttonStyle(.plain)
             ForEach(entries.prefix(3)) { task in
                 Button { selectedDay = day; onEdit(task) } label: {
-                    Text(task.title).font(.system(size: 11)).lineLimit(1).strikethrough(task.completed)
+                    Text(task.title).font(NativeDesktopTheme.font(11)).lineLimit(1).strikethrough(task.completed)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4).padding(.vertical, 3)
                         .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 3))
                 }.buttonStyle(.plain)
             }
             ForEach(external.prefix(max(0,3-entries.count))) { event in
                 Button { selectedDay = day; openExternalEvent(event) } label: {
-                    Label(event.title,systemImage:"calendar").font(.system(size:11)).lineLimit(1)
+                    Label(event.title,systemImage:"calendar").font(NativeDesktopTheme.font(11)).lineLimit(1)
                         .frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,4).padding(.vertical,3)
                         .background(NativeDesktopTheme.accentMuted,in:RoundedRectangle(cornerRadius:3))
                 }.buttonStyle(.plain)
             }
-            if entries.count + external.count > 3 { Text("+\(entries.count + external.count - 3)").font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted) }
+            if entries.count + external.count > 3 { Text("+\(entries.count + external.count - 3)").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted) }
             Spacer(minLength: 0)
         }.padding(4).frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
             .background(selected ? NativeDesktopTheme.raised : outside ? NativeDesktopTheme.bgApp : NativeDesktopTheme.surface)
@@ -126,7 +126,7 @@ struct NativePlannerCalendar: View {
     private var agenda: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text(selectedDay.formatted(.dateTime.month().day().weekday(.wide))).font(.system(size: 16, weight: .medium))
+                Text(selectedDay.formatted(.dateTime.month().day().weekday(.wide))).font(NativeDesktopTheme.font(16, weight: .medium))
                 Spacer()
                 Button("일정 추가", systemImage: "plus") { onCreate(selectedDay) }.buttonStyle(NativeToolIconStyle())
             }
@@ -134,13 +134,13 @@ struct NativePlannerCalendar: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     let entries = tasks.filter { $0.occurs(on: selectedDay, calendar: calendar) }
                     let external = externalEvents.filter { $0.occurs(on:selectedDay,calendar:calendar) }
-                    if entries.isEmpty && external.isEmpty { Text("이 날짜에 예정된 일정이 없어요.").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted).padding(.vertical, 24) }
+                    if entries.isEmpty && external.isEmpty { Text("이 날짜에 예정된 일정이 없어요.").font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.muted).padding(.vertical, 24) }
                     ForEach(entries) { task in
                         Button { onEdit(task) } label: {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(task.title).font(.system(size: 13, weight: .medium)).strikethrough(task.completed)
-                                if let course = courses.first(where: { $0.id == task.courseId }) { Text(course.name).font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted) }
-                                if !task.notes.isEmpty { Text(task.notes).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(3) }
+                                Text(task.title).font(NativeDesktopTheme.font(13, weight: .medium)).strikethrough(task.completed)
+                                if let course = courses.first(where: { $0.id == task.courseId }) { Text(course.name).font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted) }
+                                if !task.notes.isEmpty { Text(task.notes).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(3) }
                             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
                                 .background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 6))
                                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(NativeDesktopTheme.border))
@@ -149,9 +149,9 @@ struct NativePlannerCalendar: View {
                     ForEach(external) { event in
                         Button { openExternalEvent(event) } label: {
                             VStack(alignment:.leading,spacing:6) {
-                                Label(event.title,systemImage:"calendar").font(.system(size:13,weight:.medium))
-                                Text(event.calendarTitle).font(.system(size:11)).foregroundStyle(NativeDesktopTheme.muted)
-                                if !event.allDay, let start = event.start { Text(start.formatted(date:.omitted,time:.shortened)).font(.system(size:12)) }
+                                Label(event.title,systemImage:"calendar").font(NativeDesktopTheme.font(13, weight: .medium))
+                                Text(event.calendarTitle).font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted)
+                                if !event.allDay, let start = event.start { Text(start.formatted(date:.omitted,time:.shortened)).font(NativeDesktopTheme.font(12)) }
                             }.padding(12).frame(maxWidth:.infinity,alignment:.leading)
                                 .background(NativeDesktopTheme.accentMuted,in:RoundedRectangle(cornerRadius:6))
                         }.buttonStyle(.plain).accessibilityHint("Apple 캘린더에서 열기")

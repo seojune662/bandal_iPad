@@ -24,7 +24,7 @@ struct NativeCourseManager: View {
                         Section(archived ? "보관한 과목" : "내 과목") {
                             ForEach(values) { course in
                                 HStack {
-                                    Image(systemName:course.archived ? "archivebox" : "books.vertical").foregroundStyle(.secondary)
+                                    Image(systemName:course.archived ? "archivebox" : "books.vertical").foregroundStyle(NativeDesktopTheme.secondary)
                                     VStack(alignment:.leading) {
                                         Text(course.name)
                                         if course.missing { Text("폴더 연결이 필요해요").font(.caption).foregroundStyle(.orange) }

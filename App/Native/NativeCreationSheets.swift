@@ -24,7 +24,7 @@ struct NativeNewNoteSheet: View {
         NavigationStack {
             Form {
                 Section("제목") {
-                    TextField("새 노트", text: $title)
+                    TextField("새 노트", text: $title, prompt: NativeDesktopTheme.prompt("새 노트"))
                         .accessibilityIdentifier("native-new-note-title")
                         .submitLabel(.done)
                         .onSubmit(create)

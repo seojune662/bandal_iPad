@@ -501,12 +501,12 @@ struct NativeBrowserWorkspace: View {
     private var addressBar: some View {
         HStack(spacing: 6) {
             Image(systemName: session.active?.isPrivate == true ? "hand.raised" : session.active?.url.hasPrefix("https:") == true ? "lock" : "globe")
-                .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
+                .font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
             NativeBrowserAddressField(text: $address, focused: $addressFocused, onSubmit: submitAddress, onEscape: { addressFocused = false }, onMove: moveSuggestion)
                 .frame(minWidth: 40, maxWidth: .infinity, minHeight: 32, maxHeight: 32)
             if !addressFocused && abs(session.zoomLevel - session.defaultZoom) > 0.01 {
                 Button("\(session.zoomPercent)%") { perform { try await session.zoom(nil) } }
-                    .font(.system(size: 11).monospacedDigit()).buttonStyle(.plain).frame(minHeight: 32).fixedSize(horizontal: true, vertical: false)
+                    .font(NativeDesktopTheme.font(11).monospacedDigit()).buttonStyle(.plain).frame(minHeight: 32).fixedSize(horizontal: true, vertical: false)
                     .accessibilityLabel("확대율 \(session.zoomPercent)퍼센트, 기본 크기로 복원").accessibilityIdentifier("native-browser-zoom-reset")
             }
         }.padding(.horizontal, 12).frame(height: 32).background(NativeDesktopTheme.bgApp, in: Capsule())
@@ -526,8 +526,8 @@ struct NativeBrowserWorkspace: View {
                             HStack(spacing: 9) {
                                 Image(systemName: item.symbol).frame(width: 16).foregroundStyle(NativeDesktopTheme.muted)
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(item.title).font(.system(size: 13)).lineLimit(1)
-                                    Text(item.source + " · " + NativeBrowserAddress.display(item.url)).font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
+                                    Text(item.title).font(NativeDesktopTheme.font(13)).lineLimit(1)
+                                    Text(item.source + " · " + NativeBrowserAddress.display(item.url)).font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }.padding(.horizontal, 10).frame(minHeight: 50).background(index == suggestionIndex ? NativeDesktopTheme.raised : NativeDesktopTheme.overlay)
                         }.buttonStyle(.plain).accessibilityIdentifier("native-browser-suggestion-\(index)").id(index)
@@ -548,7 +548,7 @@ struct NativeBrowserWorkspace: View {
             HStack(spacing: 6) {
                 if !session.schoolLinks.isEmpty { schoolLinksMenu }
                 ForEach(session.favoriteLinks) { link in
-                    Button { navigate(link.url) } label: { Label(link.title, systemImage: "star").font(.system(size: 11)).lineLimit(1).frame(maxWidth: 170).padding(.horizontal, 8).frame(height: 32) }.buttonStyle(.plain)
+                    Button { navigate(link.url) } label: { Label(link.title, systemImage: "star").font(NativeDesktopTheme.font(11)).lineLimit(1).frame(maxWidth: 170).padding(.horizontal, 8).frame(height: 32) }.buttonStyle(.plain)
                 }
             }.padding(.horizontal, 8)
         }.background(NativeDesktopTheme.surface)
@@ -612,10 +612,10 @@ struct NativeBrowserWorkspace: View {
             }.accessibilityIdentifier("native-browser-private-toggle")
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: session.active?.isPrivate == true ? "hand.raised.fill" : "person.crop.circle.fill").font(.system(size: 17))
+                Image(systemName: session.active?.isPrivate == true ? "hand.raised.fill" : "person.crop.circle.fill").font(NativeDesktopTheme.font(17))
                 if expanded {
-                    Text(session.active?.isPrivate == true ? "시크릿" : session.activeProfileName).font(.system(size: 12)).lineLimit(1)
-                    Image(systemName: "chevron.down").font(.system(size: 8))
+                    Text(session.active?.isPrivate == true ? "시크릿" : session.activeProfileName).font(NativeDesktopTheme.font(12)).lineLimit(1)
+                    Image(systemName: "chevron.down").font(NativeDesktopTheme.font(8))
                 }
             }.padding(.horizontal, expanded ? 10 : 0).frame(minWidth: 44, maxWidth: expanded ? 116 : 44, minHeight: 44)
         }.buttonStyle(.plain)
@@ -627,7 +627,7 @@ struct NativeBrowserWorkspace: View {
             ForEach(session.schoolLinks) { link in
                 Button(link.title) { navigate(link.url) }
             }
-        } label: { Label("학교 사이트", systemImage: "folder").font(.system(size: 11)).frame(minHeight: 32) }
+        } label: { Label("학교 사이트", systemImage: "folder").font(NativeDesktopTheme.font(11)).frame(minHeight: 32) }
             .accessibilityIdentifier("native-browser-school-links")
     }
     private var browserMenu: some View {

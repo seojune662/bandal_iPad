@@ -423,7 +423,7 @@ struct NativeRichTextEditor: UIViewRepresentable {
                 let style = run.styles; var attributes: [NSAttributedString.Key: Any] = [:]
                 let heading = (1...6).first { style.contains("h\($0)") }
                 let size: CGFloat = heading.map { [30, 24, 20, 18, 17, 16][$0 - 1] } ?? 16
-                attributes[.font] = font(size, bold: heading != nil || style.contains("bold") || style.contains("bolditalic") || style.contains("callout") || style.contains("tableheader"), italic: style.contains("italic") || style.contains("bolditalic") || style.contains("math"), mono: style.contains("code") || style.contains("codeblock") || style.contains("table") || parent.sourceMode)
+                attributes[.font] = font(size, bold: heading != nil || style.contains("bold") || style.contains("bolditalic") || style.contains("callout") || style.contains("tableheader"), italic: style.contains("italic") || style.contains("bolditalic") || style.contains("math"), mono: style.contains("code") || style.contains("codeblock") || parent.sourceMode)
                 if style.contains("strike") || style.contains("checked") { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
                 if style.contains("code") || style.contains("codeblock") || style.contains("callout") || style.contains("metadata") { attributes[.backgroundColor] = UIColor.secondarySystemFill }
                 if style.contains("quote") || style.contains("callout") { let p = paragraph.mutableCopy() as! NSMutableParagraphStyle; p.firstLineHeadIndent = 16; p.headIndent = 16; attributes[.paragraphStyle] = p; attributes[.foregroundColor] = UIColor.secondaryLabel }

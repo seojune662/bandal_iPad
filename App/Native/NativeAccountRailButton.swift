@@ -47,9 +47,9 @@ struct NativeAccountRailButton: View {
             HStack(spacing: 12) {
                 avatar(size: 40)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(displayName).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                    Text(displayName).font(NativeDesktopTheme.font(14, weight: .semibold)).lineLimit(1)
                     if !email.isEmpty {
-                        Text(email).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1).truncationMode(.middle)
+                        Text(email).font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1).truncationMode(.middle)
                     }
                 }
             }.padding(.horizontal, 14).padding(.vertical, 12)
@@ -60,14 +60,14 @@ struct NativeAccountRailButton: View {
             item(signingOut ? "로그아웃 중…" : "로그아웃", symbol: "rectangle.portrait.and.arrow.right") { signOut() }
                 .disabled(signingOut).accessibilityIdentifier("native-account-sign-out")
             if let error {
-                Text(error).font(.system(size: 12)).foregroundStyle(.red).padding(.horizontal, 14).padding(.bottom, 10)
+                Text(error).font(NativeDesktopTheme.font(12)).foregroundStyle(.red).padding(.horizontal, 14).padding(.bottom, 10)
             }
         }.frame(width: 272).foregroundStyle(NativeDesktopTheme.text)
             .accessibilityElement(children: .contain).accessibilityIdentifier("native-account-menu")
     }
     private func item(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol).font(.system(size: 14))
+            Label(title, systemImage: symbol).font(NativeDesktopTheme.font(14))
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(.horizontal, 14).contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
@@ -79,7 +79,7 @@ struct NativeAccountRailButton: View {
         } else if signedIn {
             emoji(size)
         } else {
-            Image(systemName: "person.crop.circle").font(.system(size: 16, weight: .regular))
+            Image(systemName: "person.crop.circle").font(NativeDesktopTheme.font(16, weight: .regular))
                 .foregroundStyle(selected ? NativeDesktopTheme.text : NativeDesktopTheme.muted)
         }
     }

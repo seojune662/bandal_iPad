@@ -376,7 +376,7 @@ struct NativeAssistantPanel: View {
                 }.padding(.horizontal,16).padding(.vertical,4)
             }
             messages
-        }.background(Color(uiColor:.systemBackground))
+        }.background(NativeDesktopTheme.bgApp)
             .task { await session.start(); await consumePendingConversation(); consumeAttachments() }
             .onDisappear { session.flushDraft() }
             .onChange(of:attachments) { _,_ in consumeAttachments() }
@@ -396,8 +396,8 @@ struct NativeAssistantPanel: View {
     private var header: some View {
         HStack(spacing:4) {
             VStack(alignment:.leading,spacing:3) {
-                Text(context.title).font(.system(size:16,weight:.semibold)).lineLimit(1)
-                Text(session.conversations.first(where:{ $0.id == session.sessionID })?.title ?? "새 대화").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(context.title).font(NativeDesktopTheme.font(16, weight: .semibold)).lineLimit(1)
+                Text(session.conversations.first(where:{ $0.id == session.sessionID })?.title ?? "새 대화").font(.caption).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1)
             }
             Spacer(minLength:4)
             Menu {
@@ -420,7 +420,7 @@ struct NativeAssistantPanel: View {
             HStack(spacing:3) {
                 ForEach(NativeAssistantMode.primary) { mode in
                     Button { session.draft.mode = mode } label: {
-                        Text(mode.title).font(.system(size:13,weight:session.draft.mode == mode ? .semibold : .regular))
+                        Text(mode.title).font(NativeDesktopTheme.font(13, weight: session.draft.mode == mode ? .semibold : .regular))
                             .padding(.horizontal,11).frame(height:44).contentShape(Rectangle())
                             .background(session.draft.mode == mode ? Color.primary.opacity(0.075) : .clear,in:RoundedRectangle(cornerRadius:12))
                     }.buttonStyle(.plain).accessibilityIdentifier("native-ai-mode-" + mode.rawValue)
@@ -442,9 +442,9 @@ struct NativeAssistantPanel: View {
                 LazyVStack(alignment:.leading,spacing:24) {
                     if session.messages.isEmpty && !session.loading { welcome }
                     ForEach(session.messages) { message in messageRow(message) }
-                    if !session.stream.isEmpty { Text(.init(session.stream)).font(.system(size:15)).lineSpacing(6).textSelection(.enabled).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading) }
+                    if !session.stream.isEmpty { Text(.init(session.stream)).font(NativeDesktopTheme.font(15)).lineSpacing(6).textSelection(.enabled).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading) }
                     if session.running || session.sending {
-                        HStack(spacing:8) { ProgressView().controlSize(.small); Text(session.activity.isEmpty ? "답변을 정리하고 있어요" : session.activity).font(.caption).foregroundStyle(.secondary) }
+                        HStack(spacing:8) { ProgressView().controlSize(.small); Text(session.activity.isEmpty ? "답변을 정리하고 있어요" : session.activity).font(.caption).foregroundStyle(NativeDesktopTheme.secondary) }
                     }
                     Color.clear.frame(height:1).id("bottom")
                 }.frame(width:max(0,viewport.size.width - 36),alignment:.leading).padding(18)
@@ -456,23 +456,23 @@ struct NativeAssistantPanel: View {
         }
     }
     private var welcome: some View {
-        VStack(alignment:.leading,spacing:18) {
-            Image(systemName:"sparkle").font(.system(size:28,weight:.light)).foregroundStyle(.secondary).padding(.top,12)
-            Text("자료에서 시작하는\n나만의 공부").font(.system(size:25,weight:.medium)).tracking(-0.7).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading)
-            Text("문서를 첨부하거나 궁금한 부분을 지목해 보세요. 대화하며 문제와 카드를 만들 수 있어요.").font(.system(size:14)).foregroundStyle(.secondary).lineSpacing(5).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading)
+        // A working panel, not a landing page: one plain title, no hero mark.
+        VStack(alignment:.leading,spacing:14) {
+            Text("자료에서 시작하는 나만의 공부").font(NativeDesktopTheme.font(18, weight: .semibold)).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading).padding(.top,8)
+            Text("문서를 첨부하거나 궁금한 부분을 지목해 보세요. 대화하며 문제와 카드를 만들 수 있어요.").font(NativeDesktopTheme.font(14)).foregroundStyle(NativeDesktopTheme.secondary).lineSpacing(5).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading)
             ForEach(["이 자료의 핵심 개념을 설명해 줘","내가 놓친 부분을 함께 확인해 줘"],id:\.self) { prompt in
                 Button { session.draft.text = prompt } label: {
-                    HStack { Text(prompt).font(.system(size:13)).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading); Spacer(minLength:0); Image(systemName:"arrow.up.left").font(.caption) }.padding(14).background(Color.primary.opacity(0.045),in:RoundedRectangle(cornerRadius:14))
+                    HStack { Text(prompt).font(NativeDesktopTheme.font(13)).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading); Spacer(minLength:0); Image(systemName:"arrow.up.left").font(.caption).foregroundStyle(NativeDesktopTheme.muted) }.padding(14).background(NativeDesktopTheme.surface,in:RoundedRectangle(cornerRadius:10)).overlay(RoundedRectangle(cornerRadius:10).strokeBorder(NativeDesktopTheme.border))
                 }.buttonStyle(.plain)
             }
         }.frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,16)
     }
     private func messageRow(_ message: NativeChatMessage) -> some View {
         VStack(alignment:.leading,spacing:10) {
-            if message.role == "assistant" { Label("반달",systemImage:"sparkle").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
+            if message.role == "assistant" { Label("반달",systemImage:"sparkle").font(.caption.weight(.semibold)).foregroundStyle(NativeDesktopTheme.secondary) }
             ForEach(message.attachments) { attachment in attachmentChip(attachment,removable:false) }
             if !message.text.isEmpty {
-                Text(.init(message.text)).font(.system(size:15)).lineSpacing(6).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
+                Text(.init(message.text)).font(NativeDesktopTheme.font(15)).lineSpacing(6).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
                     .padding(message.role == "user" ? 13 : 0)
                     .background(message.role == "user" ? Color.primary.opacity(0.055) : .clear,in:RoundedRectangle(cornerRadius:17))
                     .frame(maxWidth:.infinity,alignment:message.role == "user" ? .trailing : .leading)
@@ -481,7 +481,7 @@ struct NativeAssistantPanel: View {
                 Button { onOpenDocument(artifact.document) } label: {
                     HStack(spacing:12) {
                         Image(systemName:artifact.mode == "flashcards" ? "rectangle.on.rectangle" : "doc.text").font(.title3)
-                        VStack(alignment:.leading,spacing:4) { Text(artifact.title).font(.system(size:14,weight:.semibold)).lineLimit(2).fixedSize(horizontal:false,vertical:true); Text(artifact.mode == "expected-exam" ? "AI 생성 예상문제" : artifact.mode == "english" ? "영어 읽기 · 표현 저장" : "저장된 학습 자료").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true) }.frame(maxWidth:.infinity,alignment:.leading)
+                        VStack(alignment:.leading,spacing:4) { Text(artifact.title).font(NativeDesktopTheme.font(14, weight: .semibold)).lineLimit(2).fixedSize(horizontal:false,vertical:true); Text(artifact.mode == "expected-exam" ? "AI 생성 예상문제" : artifact.mode == "english" ? "영어 읽기 · 표현 저장" : "저장된 학습 자료").font(.caption).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal:false,vertical:true) }.frame(maxWidth:.infinity,alignment:.leading)
                         Text("열기").font(.caption.weight(.semibold)).fixedSize()
                     }.padding(14).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.045),in:RoundedRectangle(cornerRadius:14))
                 }.buttonStyle(.plain)
@@ -492,11 +492,11 @@ struct NativeAssistantPanel: View {
     private var composer: some View {
         VStack(alignment:.leading,spacing:8) {
             if session.draft.mode == .english {
-                Button { showingArticleImport = true } label: { Label("기사 주소 추가",systemImage:"link").font(.system(size:13,weight:.medium)).frame(minHeight:44) }.buttonStyle(.plain).disabled(session.running || session.sending).accessibilityIdentifier("native-ai-import-article")
+                Button { showingArticleImport = true } label: { Label("기사 주소 추가",systemImage:"link").font(NativeDesktopTheme.font(13, weight: .medium)).frame(minHeight:44) }.buttonStyle(.plain).disabled(session.running || session.sending).accessibilityIdentifier("native-ai-import-article")
             }
             if session.draft.mode.pack != nil {
                 Button { showingOptions = true } label: {
-                    HStack { Text(session.draft.mode.title); Text("· \(session.draft.count)개 · \(session.draft.difficulty)").foregroundStyle(.secondary); Spacer(); Image(systemName:"slider.horizontal.3") }.font(.caption).frame(minHeight:44)
+                    HStack { Text(session.draft.mode.title); Text("· \(session.draft.count)개 · \(session.draft.difficulty)").foregroundStyle(NativeDesktopTheme.secondary); Spacer(); Image(systemName:"slider.horizontal.3") }.font(.caption).frame(minHeight:44)
                 }.buttonStyle(.plain)
             }
             if let document = session.draft.document {
@@ -510,7 +510,7 @@ struct NativeAssistantPanel: View {
             }
             VStack(spacing:4) {
                 TextField("\(session.draft.mode.title == "대화" ? "무엇이 궁금한가요?" : "원하는 내용을 알려 주세요")",text:$session.draft.text,axis:.vertical)
-                    .font(.system(size:15)).lineLimit(2...6).textFieldStyle(.plain).padding(.horizontal,14).padding(.top,13).accessibilityIdentifier("native-chat-input")
+                    .font(NativeDesktopTheme.font(15)).lineLimit(2...6).textFieldStyle(.plain).padding(.horizontal,14).padding(.top,13).accessibilityIdentifier("native-chat-input")
                 HStack(spacing:2) {
                     Menu {
                         if let document = sourceDocument, document.learningTarget?.kind != .overview { Button("현재 문서 첨부") { perform { try await session.pin(document) } } }
@@ -519,25 +519,25 @@ struct NativeAssistantPanel: View {
                     Button(action:onAnnotate) { Image(systemName:"scope").frame(width:44,height:44).contentShape(Rectangle()) }.disabled(!canAnnotate).accessibilityLabel("지목해서 질문").accessibilityIdentifier("native-ai-annotate")
                     Spacer(minLength:0)
                     if !session.configured && !session.loading {
-                        Button("AI 연결") { Task { await session.checkAvailability(); if !session.configured { onOpenSettings() } } }.font(.system(size:13,weight:.semibold)).frame(minHeight:44).padding(.horizontal,8).accessibilityIdentifier("native-ai-connect")
+                        Button("AI 연결") { Task { await session.checkAvailability(); if !session.configured { onOpenSettings() } } }.font(NativeDesktopTheme.font(13, weight: .semibold)).frame(minHeight:44).padding(.horizontal,8).accessibilityIdentifier("native-ai-connect")
                     } else {
                         Button {
                             perform { if session.running { try await session.cancel() } else { try await session.send() } }
                         } label: {
-                            Image(systemName:session.running ? "stop.fill" : "arrow.up").font(.system(size:16,weight:.semibold)).foregroundStyle(Color(uiColor:.systemBackground)).frame(width:34,height:34).background(Color.primary,in:Circle()).frame(width:44,height:44).contentShape(Rectangle())
+                            Image(systemName:session.running ? "stop.fill" : "arrow.up").font(NativeDesktopTheme.font(16, weight: .semibold)).foregroundStyle(Color(uiColor:.systemBackground)).frame(width:34,height:34).background(Color.primary,in:Circle()).frame(width:44,height:44).contentShape(Rectangle())
                         }.disabled(!session.running && (session.loading || session.sending || (session.draft.mode.pack == nil && session.draft.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && session.draft.attachments.isEmpty)))
                             .accessibilityLabel(session.running ? "응답 중지" : "보내기").accessibilityIdentifier("native-chat-send")
                     }
                 }.padding(.horizontal,5).padding(.bottom,4).buttonStyle(.plain)
             }.background(Color.primary.opacity(0.045),in:RoundedRectangle(cornerRadius:20)).overlay(RoundedRectangle(cornerRadius:20).strokeBorder(Color.primary.opacity(0.065)))
             HStack {
-                Text("첨부한 자료를 바탕으로 답해요").font(.system(size:10)).foregroundStyle(.tertiary)
+                Text("첨부한 자료를 바탕으로 답해요").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted)
                 Spacer(minLength:4)
                 Button { provider = session.provider; model = session.model; showingConfiguration = true } label: {
-                    HStack(spacing:4) { Text(session.model.isEmpty || session.model == "default" ? NativeAIProvider(rawValue:session.provider)?.title ?? "AI" : session.model).lineLimit(1); Image(systemName:"chevron.down").font(.system(size:8)) }.font(.system(size:11)).foregroundStyle(.secondary).frame(minHeight:44)
+                    HStack(spacing:4) { Text(session.model.isEmpty || session.model == "default" ? NativeAIProvider(rawValue:session.provider)?.title ?? "AI" : session.model).lineLimit(1); Image(systemName:"chevron.down").font(NativeDesktopTheme.font(8)) }.font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.secondary).frame(minHeight:44)
                 }.buttonStyle(.plain).disabled(session.running || session.loading).accessibilityLabel("AI 모델 설정")
             }
-        }.padding(.horizontal,12).padding(.top,8).background(Color(uiColor:.systemBackground))
+        }.padding(.horizontal,12).padding(.top,8).background(NativeDesktopTheme.bgApp)
     }
     private func attachmentChip(_ attachment: NativeAssistantAttachment, removable: Bool) -> some View {
         HStack(spacing:7) {
@@ -553,7 +553,7 @@ struct NativeAssistantPanel: View {
                 VStack(alignment:.leading,spacing:16) {
                     if let image = attachment.imageInput, let value = image["dataBase64"], let bytes = Data(base64Encoded:value), let uiImage = UIImage(data:bytes) { Image(uiImage:uiImage).resizable().scaledToFit().accessibilityLabel("지목한 영역 이미지").accessibilityIdentifier("native-ai-attachment-preview-image") }
                     if let text = attachment.text { Text(text).textSelection(.enabled).accessibilityIdentifier("native-ai-attachment-preview-text") }
-                    Text(attachment.url ?? attachment.relativePath ?? "선택한 영역").font(.caption).foregroundStyle(.secondary)
+                    Text(attachment.url ?? attachment.relativePath ?? "선택한 영역").font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
                 }.padding()
             }.navigationTitle(attachment.title).navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement:.confirmationAction) { Button("닫기") { preview = nil } } }
         }
@@ -577,7 +577,7 @@ struct NativeAssistantPanel: View {
                 TextField("범위",text:$session.draft.scope)
                 Stepper("\(session.draft.count)개",value:$session.draft.count,in:1...30)
                 Picker("난이도",selection:$session.draft.difficulty) { ForEach(["쉬움","보통","어려움"],id:\.self) { Text($0).tag($0) } }
-                if session.draft.mode == .expectedExam { Text("선택한 범위를 종합한 시험지를 만들고 제출 후 정답과 해설을 확인합니다. 수정 요청은 새 시험지로 저장됩니다.").font(.caption).foregroundStyle(.secondary) }
+                if session.draft.mode == .expectedExam { Text("선택한 범위를 종합한 시험지를 만들고 제출 후 정답과 해설을 확인합니다. 수정 요청은 새 시험지로 저장됩니다.").font(.caption).foregroundStyle(NativeDesktopTheme.secondary) }
             }.navigationTitle("\(session.draft.mode.title) 설정").toolbar { ToolbarItem(placement:.confirmationAction) { Button("완료") { showingOptions = false } } }
         }.presentationDetents([.medium,.large])
     }

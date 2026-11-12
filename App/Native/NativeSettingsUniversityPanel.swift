@@ -72,7 +72,7 @@ struct NativeSettingsUniversityPanel: View {
                     Label(chosen["nameKo"] as? String ?? "내 학교", systemImage: "building.columns").fontWeight(.medium)
                     Button("선택 해제") { persist(["universityId": NSNull(), "customUniversity": NSNull()]) }
                 }
-                TextField("학교 이름 또는 약칭 검색", text: $query).nativeToolField().accessibilityIdentifier("native-settings-university-search")
+                TextField("학교 이름 또는 약칭 검색", text: $query, prompt: NativeDesktopTheme.prompt("학교 이름 또는 약칭 검색")).nativeToolField().accessibilityIdentifier("native-settings-university-search")
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(results.enumerated()), id: \.offset) { _, item in
@@ -86,7 +86,7 @@ struct NativeSettingsUniversityPanel: View {
                     }
                 }.frame(maxHeight: 200)
                 DisclosureGroup("학교 직접 추가") {
-                    TextField("학교 이름", text: $customName).nativeToolField()
+                    TextField("학교 이름", text: $customName, prompt: NativeDesktopTheme.prompt("학교 이름")).nativeToolField()
                     Button("학교 추가") {
                         let id = "custom:" + UUID().uuidString
                         persist(["universityId": id, "customUniversity": ["id": id, "nameKo": customName.trimmingCharacters(in: .whitespacesAndNewlines), "nameEn": "", "domain": "", "aliases": [], "services": [], "verifiedAt": ""]])
@@ -115,8 +115,8 @@ struct NativeSettingsUniversityPanel: View {
                     }
                 }
                 DisclosureGroup("사이트 직접 추가") {
-                    TextField("사이트 이름", text: $label).nativeToolField()
-                    TextField("https://", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().nativeToolField()
+                    TextField("사이트 이름", text: $label, prompt: NativeDesktopTheme.prompt("사이트 이름")).nativeToolField()
+                    TextField("https://", text: $url, prompt: NativeDesktopTheme.prompt("https://")).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().nativeToolField()
                     Picker("종류", selection: $kind) { ForEach([("portal", "학사·포털"), ("lms", "강의실"), ("registration", "수강신청"), ("library", "도서관"), ("mail", "메일"), ("homepage", "홈페이지"), ("community", "커뮤니티"), ("other", "기타")], id: \.0) { Text($0.1).tag($0.0) } }
                     Button("사이트 추가") { add() }.disabled(label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || url.isEmpty)
                 }

@@ -52,7 +52,7 @@ struct NativeSettingsShortcutsPanel: View {
                 Picker("우선권", selection: Binding(get: { settings["shortcutPriority"] as? String ?? "bandal" }, set: { persist(["shortcutPriority": $0]) })) { Text("반달 우선").tag("bandal"); Text("사이트 우선").tag("site") }
             }
             NativeSettingsCard(title: "키 조합", description: "이 기기에서 동작하는 탭·브라우저 명령입니다. ⌘는 mod, ⌥는 alt, ⇧는 shift로 입력합니다.") {
-                TextField("단축키 검색", text: $query).nativeToolField()
+                TextField("단축키 검색", text: $query, prompt: NativeDesktopTheme.prompt("단축키 검색")).nativeToolField()
                 ForEach(matching) { spec in
                     HStack {
                         Text(spec.label); Spacer()
@@ -70,7 +70,7 @@ struct NativeSettingsShortcutsPanel: View {
             .sheet(item: $editing) { spec in
                 NavigationStack {
                     Form {
-                        Section(spec.label) { TextField("mod+shift+b", text: $chord).textInputAutocapitalization(.never).autocorrectionDisabled().font(.body.monospaced()); Text("이미 사용 중인 키 조합을 지정하면 기존 동작은 해당 키에서 해제됩니다.").font(.caption) }
+                        Section(spec.label) { TextField("mod+shift+b", text: $chord, prompt: NativeDesktopTheme.prompt("mod+shift+b")).textInputAutocapitalization(.never).autocorrectionDisabled().font(.body.monospaced()); Text("이미 사용 중인 키 조합을 지정하면 기존 동작은 해당 키에서 해제됩니다.").font(.caption) }
                         Button("저장") { update(spec, raw: chord) }
                         Button("지정 해제", role: .destructive) { update(spec, raw: nil) }
                         Button("이 동작의 기본값") { var next = bindings; next.removeValue(forKey: spec.id); editing = nil; persist(["keybindings": next]) }

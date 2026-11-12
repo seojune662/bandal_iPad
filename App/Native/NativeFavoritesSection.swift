@@ -31,7 +31,7 @@ struct NativeFavoritesSection: View {
                     if let currentDocument, descriptor(currentDocument) != nil {
                         Button("현재 탭 즐겨찾기에 추가", systemImage: "star") { addDocument(currentDocument) }.accessibilityIdentifier("native-favorite-add-current")
                     }
-                } label: { Image(systemName: "plus").font(.system(size: 11)).frame(width: 32, height: 32).contentShape(Rectangle()) }
+                } label: { Image(systemName: "plus").font(NativeDesktopTheme.font(11)).frame(width: 32, height: 32).contentShape(Rectangle()) }
                 .accessibilityLabel("즐겨찾기 추가").accessibilityIdentifier("native-favorite-add-" + courseID)
             }
             if adding { linkForm }
@@ -66,15 +66,15 @@ struct NativeFavoritesSection: View {
                 if ["favorites:changed", "nativeWorkspace:favoritesChanged", "nativeWorkspace:materialRenamed", "nativeWorkspace:materialDeleted"].contains(event.channel) { Task { await reload() } }
             }
             .alert("즐겨찾기 이름", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-                TextField("이름", text: $renamedLabel)
+                TextField("이름", text: $renamedLabel, prompt: NativeDesktopTheme.prompt("이름"))
                 Button("취소", role: .cancel) { renaming = nil }
                 Button("저장") { if let favorite = renaming { mutate("favorites:rename", ["id": favorite.id, "label": renamedLabel]); renaming = nil } }
             }
     }
     private var linkForm: some View {
         VStack(spacing: 8) {
-            TextField("주소 입력", text: $linkURL).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).accessibilityIdentifier("native-favorite-url")
-            TextField("링크 이름", text: $linkLabel).accessibilityIdentifier("native-favorite-name")
+            TextField("주소 입력", text: $linkURL, prompt: NativeDesktopTheme.prompt("주소 입력")).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).accessibilityIdentifier("native-favorite-url")
+            TextField("링크 이름", text: $linkLabel, prompt: NativeDesktopTheme.prompt("링크 이름")).accessibilityIdentifier("native-favorite-name")
             HStack { Button("취소") { adding = false }; Spacer(); Button("추가", action: addLink).disabled(linkURL.isEmpty || linkLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("native-favorite-save") }
         }.font(NativeDesktopTheme.font(12)).textFieldStyle(.roundedBorder).padding(.vertical, 6)
     }

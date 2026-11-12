@@ -42,7 +42,7 @@ private struct NativeLearningSaveWordSheet: View {
         NavigationStack {
             Form {
                 Section("원문") { Text(text).textSelection(.enabled) }
-                Section("저장할 표현") { TextField("원문에 있는 단어나 표현", text: $word); TextField("뜻 · 메모", text: $meaning) }
+                Section("저장할 표현") { TextField("원문에 있는 단어나 표현", text: $word, prompt: NativeDesktopTheme.prompt("원문에 있는 단어나 표현")); TextField("뜻 · 메모", text: $meaning, prompt: NativeDesktopTheme.prompt("뜻 · 메모")) }
                 if let error = model.error { NativeToolError(message: error) }
             }.navigationTitle("표현 저장").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("저장") { save() }.disabled(word.isEmpty || !text.contains(word) || model.busy || model.frozen) } }
@@ -58,12 +58,12 @@ struct NativeLearningWordRow: View {
     @State private var meaning = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Text(word["lemma"] as? String ?? word["surface"] as? String ?? "").font(.headline); Text(word["pronunciation"] as? String ?? "").font(.caption).foregroundStyle(.secondary); Spacer(); statusMenu }
+            HStack { Text(word["lemma"] as? String ?? word["surface"] as? String ?? "").font(.headline); Text(word["pronunciation"] as? String ?? "").font(.caption).foregroundStyle(NativeDesktopTheme.secondary); Spacer(); statusMenu }
             Text(word["meaning"] as? String ?? "").textSelection(.enabled)
-            ForEach(Array(model.rows("occurrences").filter { $0["wordId"] as? String == word["id"] as? String }.enumerated()), id: \.offset) { _, row in Text(row["sentence"] as? String ?? "").font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled) }
+            ForEach(Array(model.rows("occurrences").filter { $0["wordId"] as? String == word["id"] as? String }.enumerated()), id: \.offset) { _, row in Text(row["sentence"] as? String ?? "").font(.subheadline).foregroundStyle(NativeDesktopTheme.secondary).textSelection(.enabled) }
             Button("뜻 편집", systemImage: "pencil") { meaning = word["meaning"] as? String ?? ""; editing = true }.font(.caption)
         }.padding(16).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 10))
-            .alert("표현의 뜻", isPresented: $editing) { TextField("뜻", text: $meaning); Button("취소", role: .cancel) { }; Button("저장") { Task { _ = await model.mutate("learning:updateWord", ["wordId": word["id"] ?? "", "meaning": meaning]) } } }
+            .alert("표현의 뜻", isPresented: $editing) { TextField("뜻", text: $meaning, prompt: NativeDesktopTheme.prompt("뜻")); Button("취소", role: .cancel) { }; Button("저장") { Task { _ = await model.mutate("learning:updateWord", ["wordId": word["id"] ?? "", "meaning": meaning]) } } }
     }
     private var statusMenu: some View {
         Menu { Button("새 표현") { status("new") }; Button("학습 중") { status("learning") }; Button("알고 있어요") { status("known") } } label: { Text(word["status"] as? String == "known" ? "알고 있어요" : word["status"] as? String == "learning" ? "학습 중" : "새 표현").font(.caption) }

@@ -27,9 +27,15 @@ struct NativeCourseSidebar: View {
     private var visible: [NativeCourse] { courses.filter { query.isEmpty || $0.name.localizedStandardContains(query) } }
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("과목").font(NativeDesktopTheme.font(16, weight: .semibold))
-                Spacer()
+            // The 과목/프로젝트 switch above already names this list, so the add
+            // menu sits beside the search field instead of under a second title.
+            HStack(spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                    TextField("과목 찾기", text: $query, prompt: NativeDesktopTheme.prompt("과목 찾기")).textFieldStyle(.plain).accessibilityIdentifier("native-course-search")
+                    if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark") }.accessibilityLabel("검색어 지우기") }
+                }.font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 12).frame(minHeight: 44)
+                    .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 9))
                 Menu {
                     Button("새 과목 만들기", systemImage: "plus") { onCreate() }.accessibilityIdentifier("native-new-course")
                     Button("폴더에서 추가", systemImage: "folder.badge.plus") { onManage() }
@@ -37,13 +43,7 @@ struct NativeCourseSidebar: View {
                     Button("보관된 과목 관리", systemImage: "archivebox") { onManage() }
                 } label: { Image(systemName: "plus").frame(width: 44, height: 44).contentShape(Rectangle()) }
                 .accessibilityLabel("과목 추가").accessibilityIdentifier("native-course-add-menu")
-            }.padding(.horizontal, 12)
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                TextField("과목 찾기", text: $query).textFieldStyle(.plain).accessibilityIdentifier("native-course-search")
-                if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark") }.accessibilityLabel("검색어 지우기") }
-            }.font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 12).frame(minHeight: 44)
-                .background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 9)).padding(.horizontal, 12).padding(.bottom, 12)
+            }.padding(.leading, 12).padding(.trailing, 4).padding(.bottom, 12)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     if let error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red).padding(8) }
@@ -69,7 +69,7 @@ struct NativeCourseSidebar: View {
             .task { await loadGroups() }
             .onReceive(store.events) { event in if event.channel == "courses:changed" { Task { await loadGroups() } } }
             .alert(editing?.title ?? "이름 변경", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
-                TextField("이름", text: $draft)
+                TextField("이름", text: $draft, prompt: NativeDesktopTheme.prompt("이름"))
                 Button("취소", role: .cancel) { editing = nil }
                 Button("저장") { saveEdit() }
             }
@@ -84,7 +84,7 @@ struct NativeCourseSidebar: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 Button { toggle(course.id, in: &collapsedCourses) } label: {
-                    Image(systemName: contains(course.id, in: collapsedCourses) ? "chevron.right" : "chevron.down").font(.system(size: 10)).frame(width: 44, height: 44)
+                    Image(systemName: contains(course.id, in: collapsedCourses) ? "chevron.right" : "chevron.down").font(NativeDesktopTheme.font(10)).frame(width: 44, height: 44)
                 }.accessibilityLabel(course.name + (contains(course.id, in: collapsedCourses) ? " 펼치기" : " 접기")).accessibilityIdentifier("native-course-expand-" + course.id)
                 Button {
                     if contains(course.id, in: collapsedCourses) { toggle(course.id, in: &collapsedCourses) }
@@ -94,7 +94,7 @@ struct NativeCourseSidebar: View {
                         Image(systemName: "folder.fill").foregroundStyle(color(course.color))
                         Text(course.name).lineLimit(1)
                         Spacer(minLength: 0)
-                        if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
+                        if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(11)).foregroundStyle(.orange) }
                     }.frame(minHeight: 44).contentShape(Rectangle())
                 }.accessibilityIdentifier("native-course-" + course.id)
                 Menu { courseMenu(course) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel(course.name + " 과목 메뉴")

@@ -195,12 +195,12 @@ struct NativeMarkdownWorkspace: View {
             else if case .failure(let error) = result { copyMessage = error.localizedDescription }
         }
         .alert("수식 편집", isPresented: $formulaPrompt) {
-            TextField("LaTeX", text: $formula).textInputAutocapitalization(.never).autocorrectionDisabled()
+            TextField("LaTeX", text: $formula, prompt: NativeDesktopTheme.prompt("LaTeX")).textInputAutocapitalization(.never).autocorrectionDisabled()
             Button("적용") { session.applyFormat?("replace-math:" + formula) }
             Button("취소", role: .cancel) {}
         }
         .alert("링크 주소", isPresented: $linkPrompt) {
-            TextField("https://example.com", text: $linkAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
+            TextField("https://example.com", text: $linkAddress, prompt: NativeDesktopTheme.prompt("https://example.com")).textInputAutocapitalization(.never).autocorrectionDisabled()
             Button(editingLink ? "적용" : "삽입") { session.applyFormat?("link:" + linkAddress) }.disabled(linkAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             Button("취소", role: .cancel) {}
         }
@@ -239,8 +239,8 @@ struct NativeMarkdownWorkspace: View {
                 ForEach([("본문", "paragraph"), ("제목 1", "h1"), ("제목 2", "h2"), ("제목 3", "h3"), ("굵게", "bold"), ("기울임", "italic"), ("취소선", "strike"), ("글머리 목록", "bullet"), ("번호 목록", "number"), ("할 일 목록", "task"), ("인용", "quote"), ("링크", "link"), ("이미지", "image"), ("인라인 코드", "code"), ("코드 블록", "codeblock")].prefix(max(0, Int((geometry.size.width - 12) / 42))), id: \.1) { item in
                     Button { session.applyFormat?(item.1) } label: {
                         Group {
-                            if item.1.hasPrefix("h") { Text(item.1.uppercased()).font(.system(size: 13, weight: .medium)) }
-                            else { Image(systemName: formatSymbol(item.1)).font(.system(size: 14)) }
+                            if item.1.hasPrefix("h") { Text(item.1.uppercased()).font(NativeDesktopTheme.font(13, weight: .medium)) }
+                            else { Image(systemName: formatSymbol(item.1)).font(NativeDesktopTheme.font(14)) }
                         }.frame(width: 40, height: 44).contentShape(Rectangle())
                             .background(activeFormats.contains(item.1) ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 5))
                     }.buttonStyle(.plain).accessibilityAddTraits(activeFormats.contains(item.1) ? [.isSelected] : []).accessibilityLabel(item.1 == "link" && activeFormats.contains("link") ? "링크 해제" : item.0).accessibilityIdentifier("native-markdown-format-" + item.1)
@@ -316,7 +316,7 @@ struct NativeMarkdownWorkspace: View {
                         .accessibilityIdentifier("native-markdown-page-choice-\(index + 1)")
                 }
                 if !note.appendix.isEmpty { Button("연결 제외된 필기") { session.prepareForFlush?(); showAppendix = true } }
-            } label: { Text("\(pageIndex + 1) / \(note.pages.count)").font(.system(size: 11, design: .monospaced)).fixedSize().frame(minWidth: 44, minHeight: 44) }
+            } label: { Text("\(pageIndex + 1) / \(note.pages.count)").font(NativeDesktopTheme.font(11, design: .monospaced)).fixedSize().frame(minWidth: 44, minHeight: 44) }
                 .accessibilityLabel("페이지 필기 이동").accessibilityIdentifier("native-markdown-page-picker")
             NativeChromeButton(title: "나란히 열기", symbol: "rectangle.split.2x1") { openPageSource(note) }
                 .accessibilityIdentifier("native-markdown-page-open-source")

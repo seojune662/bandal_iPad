@@ -15,7 +15,7 @@ struct NativeLearningArtifactView: View {
                 if artifact["generationMode"] as? String == "expected-exam" {
                     VStack(alignment: .leading, spacing: 6) {
                         Label("AI 생성 예상문제", systemImage: "sparkles").font(.subheadline.weight(.medium))
-                        Text([artifact["difficulty"] as? String, (artifact["questionCount"] as? Int).map { "\($0)문항" }, artifact["scope"] as? String].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                        Text([artifact["difficulty"] as? String, (artifact["questionCount"] as? Int).map { "\($0)문항" }, artifact["scope"] as? String].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
                     }
                 }
                 if kind == "summary" { Text(LocalizedStringKey(artifact["markdown"] as? String ?? "")).textSelection(.enabled).lineSpacing(5) }
@@ -25,7 +25,7 @@ struct NativeLearningArtifactView: View {
                 if !refs.isEmpty {
                     Divider(); Text("원문 근거").font(.headline)
                     ForEach(Array(refs.enumerated()), id: \.offset) { index, source in
-                        Button { onOpenSource(source) } label: { VStack(alignment: .leading, spacing: 6) { Label("원문 \(index + 1)", systemImage: "arrow.up.right.square"); Text(source["quote"] as? String ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(4) }.frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain)
+                        Button { onOpenSource(source) } label: { VStack(alignment: .leading, spacing: 6) { Label("원문 \(index + 1)", systemImage: "arrow.up.right.square"); Text(source["quote"] as? String ?? "").font(.caption).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(4) }.frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain)
                     }
                 }
             }.padding(28).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
@@ -40,7 +40,7 @@ struct NativeLearningArtifactView: View {
                     Text(card["front"] as? String ?? "").font(.title3).textSelection(.enabled)
                     if revealed.contains(id) {
                         Divider(); Text(card["back"] as? String ?? "").textSelection(.enabled)
-                        if rated.contains(id) { Label("복습을 저장했어요", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary) }
+                        if rated.contains(id) { Label("복습을 저장했어요", systemImage: "checkmark.circle").font(.caption).foregroundStyle(NativeDesktopTheme.secondary) }
                         else { HStack { rating("다시", "again", id); rating("어려워요", "hard", id); rating("알겠어요", "good", id) }.buttonStyle(.bordered) }
                     } else { Button("정답 보기") { revealed.insert(id) }.buttonStyle(.bordered) }
                 }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 12))
@@ -52,14 +52,14 @@ struct NativeLearningArtifactView: View {
     }
     private var quiz: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack { Text(model.completed ? "풀이 완료" : model.saved ? "답안 저장됨" : "답안 저장 중…").font(.caption).foregroundStyle(.secondary); Spacer(); if model.completed { Button("다시 풀기") { model.retryQuiz() } } }
+            HStack { Text(model.completed ? "풀이 완료" : model.saved ? "답안 저장됨" : "답안 저장 중…").font(.caption).foregroundStyle(NativeDesktopTheme.secondary); Spacer(); if model.completed { Button("다시 풀기") { model.retryQuiz() } } }
             ForEach(Array((artifact["questions"] as? [[String: Any]] ?? []).enumerated()), id: \.offset) { index, question in NativeLearningQuizQuestion(model: model, question: question, number: index + 1, requiresSubmission: isExam) }
             if model.completed { Text("점수 \((model.attempt?["score"] as? NSNumber)?.intValue ?? 0) / \((model.attempt?["total"] as? NSNumber)?.intValue ?? 0)").font(.headline) }
             else if isExam && !model.submitted {
                 Button("답안 제출", systemImage: "checkmark.circle") { Task { await model.submitExam() } }
                     .buttonStyle(.borderedProminent).accessibilityIdentifier("native-learning-submit-exam")
             } else {
-                if isExam { Text("제출한 답안을 확인하고 서술형을 자기 점검해 주세요.").font(.subheadline).foregroundStyle(.secondary) }
+                if isExam { Text("제출한 답안을 확인하고 서술형을 자기 점검해 주세요.").font(.subheadline).foregroundStyle(NativeDesktopTheme.secondary) }
                 Button("풀이 마치기", systemImage: "checkmark.circle") { Task { await model.finishQuiz() } }.buttonStyle(.borderedProminent).accessibilityIdentifier("native-learning-finish-quiz")
             }
         }
@@ -99,7 +99,7 @@ private struct NativeLearningQuizQuestion: View {
             let raw = question["answer"] as? String ?? ""
             let solution = (question["options"] as? [[String: String]] ?? []).first { $0["id"] == raw }?["text"] ?? raw
             Text("정답: " + solution).fontWeight(.medium)
-            Text(question["explanation"] as? String ?? "").font(.subheadline).foregroundStyle(.secondary)
+            Text(question["explanation"] as? String ?? "").font(.subheadline).foregroundStyle(NativeDesktopTheme.secondary)
             if type == "short-answer" && !model.completed {
                 HStack { Button { model.answer(id, text: model.answers[id] ?? "", check: false) } label: { Label("더 공부할게요", systemImage: model.selfChecks[id] == false ? "checkmark.circle.fill" : "circle") }; Button { model.answer(id, text: model.answers[id] ?? "", check: true) } label: { Label("맞았어요", systemImage: model.selfChecks[id] == true ? "checkmark.circle.fill" : "circle") } }.buttonStyle(.bordered)
             }

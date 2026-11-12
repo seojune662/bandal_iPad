@@ -9,7 +9,7 @@ struct NativeBrowserFindBar: View {
             TextField("페이지에서 찾기", text: Binding(get: { session.findState.query }, set: { session.setFindQuery($0) }))
                 .textFieldStyle(.plain).focused($focused).submitLabel(.search)
                 .onSubmit { step(true) }.accessibilityIdentifier("native-browser-find")
-            Text(result).font(.system(size: 12).monospacedDigit()).foregroundStyle(NativeDesktopTheme.muted)
+            Text(result).font(NativeDesktopTheme.font(12).monospacedDigit()).foregroundStyle(NativeDesktopTheme.muted)
                 .fixedSize().accessibilityIdentifier("native-browser-find-count")
             Button("이전 결과", systemImage: "chevron.up") { step(false) }
                 .disabled(session.findState.query.isEmpty || session.findState.count == 0).accessibilityIdentifier("native-browser-find-previous")
@@ -41,18 +41,18 @@ struct NativeBrowserStartPage: View {
                 VStack(spacing: 24) {
                     VStack(spacing: 12) {
                         Image(systemName: session.active?.isPrivate == true ? "hand.raised.fill" : "magnifyingglass")
-                            .font(.system(size: 36, weight: .light)).foregroundStyle(NativeDesktopTheme.muted)
+                            .font(NativeDesktopTheme.font(36, weight: .light)).foregroundStyle(NativeDesktopTheme.muted)
                         Text(session.active?.isPrivate == true ? "개인정보 보호 브라우징" : "새 탭")
-                            .font(.system(size: 25, weight: .medium))
+                            .font(NativeDesktopTheme.font(25, weight: .medium))
                         if session.active?.isPrivate == true {
                             Text("이 탭의 방문 기록과 열린 주소는 저장하지 않습니다.")
-                                .font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
+                                .font(NativeDesktopTheme.font(13)).foregroundStyle(NativeDesktopTheme.secondary)
                         }
                     }.multilineTextAlignment(.center)
                     HStack(spacing: 12) {
                         Image(systemName: "magnifyingglass").foregroundStyle(NativeDesktopTheme.muted)
-                        TextField("검색 또는 웹사이트 주소", text: $query)
-                            .textFieldStyle(.plain).font(.system(size: 15)).focused($focused)
+                        TextField("검색 또는 웹사이트 주소", text: $query, prompt: NativeDesktopTheme.prompt("검색 또는 웹사이트 주소"))
+                            .textFieldStyle(.plain).font(NativeDesktopTheme.font(15)).focused($focused)
                             .keyboardType(.webSearch).textInputAutocapitalization(.never).autocorrectionDisabled()
                             .submitLabel(.go).onSubmit(submit).accessibilityIdentifier("native-browser-new-tab-search")
                         Button("이동", systemImage: "arrow.right") { submit() }
@@ -94,7 +94,7 @@ struct NativeBrowserHistoryPanel: View {
                     Button { dismiss(); navigate(row.url) } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(NativeBrowserAddress.title(row.title, url: row.url)).lineLimit(2)
-                            Text(row.url).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            Text(row.url).font(.caption).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1)
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
                     }
                 }
@@ -143,7 +143,7 @@ struct NativeBrowserDownloadsPanel: View {
                 ForEach(session.visibleDownloads) { item in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .top) {
-                            Image(systemName: "doc").foregroundStyle(.secondary)
+                            Image(systemName: "doc").foregroundStyle(NativeDesktopTheme.secondary)
                             Text(item.fileName).font(.headline).lineLimit(2)
                             Spacer(minLength: 0)
                             if item.state != "progressing" { Button("목록에서 지우기", systemImage: "xmark") { action(item, "dismiss") }.buttonStyle(NativeBrowserIconStyle()) }
@@ -151,7 +151,7 @@ struct NativeBrowserDownloadsPanel: View {
                         if item.state == "progressing" {
                             ProgressView(value: item.total > 0 ? min(1, Double(item.received) / Double(item.total)) : nil)
                         }
-                        Text(item.status + byteCount(item)).font(.caption).foregroundStyle(.secondary)
+                        Text(item.status + byteCount(item)).font(.caption).foregroundStyle(NativeDesktopTheme.secondary)
                         if let error = item.error, !error.isEmpty { Text(error).font(.caption).foregroundStyle(.red) }
                         actions(item)
                     }.padding(.vertical, 6)
@@ -176,13 +176,13 @@ struct NativeBrowserDownloadsPanel: View {
                 Button("파일에 저장") { action(item, "saveAs") }
                 if let title = item.retryTitle { Button(title) { action(item, "retry") } }
             } else if let title = item.retryTitle { Button(title) { action(item, "retry") } }
-        }.buttonStyle(.borderless).font(.system(size: 13, weight: .medium)).frame(minHeight: 36)
+        }.buttonStyle(.borderless).font(NativeDesktopTheme.font(13, weight: .medium)).frame(minHeight: 36)
     }
 }
 
 struct NativeBrowserIconStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.labelStyle(.iconOnly).font(.system(size: 14)).frame(width: 44, height: 44)
+        configuration.label.labelStyle(.iconOnly).font(NativeDesktopTheme.font(14)).frame(width: 44, height: 44)
             .contentShape(Rectangle()).background(configuration.isPressed ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 8))
     }
 }
