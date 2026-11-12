@@ -74,8 +74,9 @@ extension View {
 /// The same two vector silhouettes and pivot coordinates as the desktop mark.
 struct NativeBandalMark: View {
   /// The desktop mark's motions: `periodic` turns for 2 s and rests for 6 s; `loop` turns on and on,
-  /// one even turn every 4 s, for the one mark a screen is built around (the empty home).
-  enum Motion { case periodic, loop }
+  /// one even turn every 4 s, for the one mark a screen is built around (the empty home); `intro`
+  /// turns once as it appears (onboarding's welcome).
+  enum Motion { case periodic, loop, intro }
   let size: CGFloat
   var motion = Motion.periodic
   @Environment(\.accessibilityReduceMotion) private var reducedMotion
@@ -85,7 +86,7 @@ struct NativeBandalMark: View {
     ZStack {
       ForEach(Array(NativeBandalGeometry.shared.shapes.enumerated()), id: \.offset) {
         index, shape in
-        NativeBandalSilhouette(shape: shape, index: index, progress: progress, eased: motion == .periodic).fill(.foreground)
+        NativeBandalSilhouette(shape: shape, index: index, progress: progress, eased: motion != .loop).fill(.foreground)
       }
     }.frame(width: size, height: size).accessibilityHidden(true)
       .task(id: scenePhase == .active && !reducedMotion) {
@@ -93,6 +94,11 @@ struct NativeBandalMark: View {
         guard scenePhase == .active && !reducedMotion else { return }
         if motion == .loop {
           withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) { progress = 1 }
+          return
+        }
+        if motion == .intro {
+          try? await Task.sleep(for: .milliseconds(300))
+          withAnimation(.linear(duration: 2)) { progress = 1 }
           return
         }
         do {

@@ -73,7 +73,7 @@ struct NativeCourseSidebar: View {
                     ForEach(projects, content: projectRow)
                     if courses.isEmpty && catalog.projects.allSatisfy({ $0.deletedAt != nil }) {
                         VStack(spacing: 12) {
-                            NativeBandalMark(size: 44).foregroundStyle(NativeDesktopTheme.muted.opacity(0.4))
+                            NativeBandalMark(size: 44).foregroundStyle(NativeDecorMarkStyle())
                             Text("첫 폴더를 만들어보세요").font(NativeDesktopTheme.font(13))
                             Button("기존 폴더 연결", systemImage: "folder.badge.plus") { adding = .manage }.buttonStyle(.bordered)
                             Button("새 폴더 만들기") { adding = .course }.accessibilityIdentifier("native-new-course-empty")

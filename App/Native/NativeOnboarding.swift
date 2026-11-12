@@ -187,7 +187,8 @@ struct NativeOnboarding: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous).fill(NativeDesktopTheme.bgApp).frame(width: 80, height: 80)
                 .overlay { RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(NativeDesktopTheme.border) }
                 .shadow(color: .black.opacity(0.08), radius: 6, x: 4, y: 6)
-                .overlay { Image(systemName: "moon").font(.system(size: 36)) }.accessibilityHidden(true)
+                // The app icon's mark, in the decor's colours, turning once as the welcome opens.
+                .overlay { NativeBandalMark(size: 58, motion: .intro).foregroundStyle(NativeDecorMarkStyle()) }.accessibilityHidden(true)
             heading("반달에 오신 걸 환영해요", Text("필기 · 자료 · AI를 한곳에서 이어 쓰는 공부 노트"))
             VStack(alignment: .leading, spacing: 10) {
                 Text("언어").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary).frame(minHeight: 18)
