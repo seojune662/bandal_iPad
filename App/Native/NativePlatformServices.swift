@@ -260,6 +260,7 @@ struct NativePresentationAnchor: UIViewControllerRepresentable {
         }
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
+            NativeInputTrace.install(in: view.window)
             services?.attach(self)
         }
     }

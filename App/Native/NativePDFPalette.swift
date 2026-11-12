@@ -53,14 +53,17 @@ struct NativePDFPaletteLayer: View {
     var body: some View {
         GeometryReader { geometry in
             if !host.suspended, host.entries.count == 1, let entry = host.entries.values.first {
-                let origin = geometry.frame(in: .global).origin, middle = entry.frame.midX - origin.x
-                // Centred on the page area and kept inside it, clear of the thumbnails button at its left
-                // (and as far from the right, to stay centred): with both side panels open the pill
-                // compacts rather than spilling over them or pushing that button down.
-                let half = max(0, min(entry.frame.width / 2 - NativePDFFloatingPalette.sideReserve, min(middle, geometry.size.width - middle) - 8))
-                NativePDFFloatingPalette(model: entry.model, onFrame: { host.paletteFrame = $0 }).frame(width: half * 2)
+                let origin = geometry.frame(in: .global).origin
+                // The pill has the page area's width, less the thumbnails button at its left and a margin at its
+                // right: it never spills over the side panels and never pushes that button down. With room to
+                // spare it sits on the page's centre; short of room it keeps to the right of the button.
+                let left = entry.frame.minX - origin.x + NativePDFFloatingPalette.leadingReserve
+                let span = max(0, entry.frame.width - NativePDFFloatingPalette.leadingReserve - NativePDFFloatingPalette.trailingReserve)
+                let spare = max(0, span - host.paletteFrame.width) / 2
+                let toPageCentre = min(spare, (NativePDFFloatingPalette.leadingReserve - NativePDFFloatingPalette.trailingReserve) / 2)
+                NativePDFFloatingPalette(model: entry.model, onFrame: { if host.paletteFrame != $0 { host.paletteFrame = $0 } }).frame(width: span)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .offset(x: middle - half, y: entry.frame.minY - origin.y + entry.top)
+                    .offset(x: left - (host.paletteFrame.isEmpty ? 0 : toPageCentre), y: entry.frame.minY - origin.y + entry.top)
             }
         }.onChange(of: covered, initial: true) { _, value in host.suspended = value; if value { host.paletteFrame = .zero } }
     }
@@ -75,32 +78,51 @@ struct NativePDFFloatingPalette: View {
     @AppStorage("native.pdf.paletteCollapsed") private var collapsed = false
     /// Its gap below the tab strip and its height: the 34 pt row and 5 pt above and below.
     static let top: CGFloat = 14, height: CGFloat = 44
-    /// What the pill leaves free at each side of the page area: the thumbnails button and a gap.
-    static let sideReserve = NativePDFViewButton.leading + NativePDFViewButton.width + 8
-    /// Narrower and narrower rows, tried in order: the colours give way first, then the tools.
-    /// (tools shown in their strip, colours shown in theirs; nil shows every colour.)
-    private static let stages: [(tools: CGFloat, colors: Int?)] = [(5.5, nil), (5.5, 3), (3.5, 3), (3.5, 2), (2.5, 2), (1.5, 1)]
+    /// What the pill leaves free of the page area: the thumbnails button and a gap at the left, a margin at the right.
+    static let leadingReserve = NativePDFViewButton.leading + NativePDFViewButton.width + 8
+    static let trailingReserve: CGFloat = 8
+    /// Narrower and narrower rows, tried in order: the colours give way first, then the tools. The tool strip
+    /// never goes under two and a half cells (the chosen tool and the next one in view); a pane narrower than
+    /// that scrolls the whole row instead. (tools shown in their strip, colours in theirs; nil shows every colour.)
+    static let stages: [(tools: CGFloat, colors: Int?)] = [(5.5, nil), (5.5, 3), (4.5, 3), (3.5, 3), (3.5, 2), (2.5, 2), (2.5, 1)]
+    /// The pill's own padding at its two ends.
+    private static let inset: CGFloat = 8
+    /// The first stage whose row fits `width` (the pill's whole width), or nil when none does.
+    static func stage(fitting width: CGFloat, slots: Int) -> (tools: CGFloat, colors: Int?)? {
+        stages.first { NativePDFPaletteQuickControls.width(tools: $0.tools, colors: $0.colors, slots: slots) + inset * 2 <= width }
+    }
     var body: some View {
+        // The row takes its shape from the room it is given, read here before the pill is built: a pill asked
+        // for its own width answers with the row it already drew, and a row too wide for the room never narrowed.
+        GeometryReader { proxy in
+            pill(offered: proxy.size.width).frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .frame(height: Self.height)
+        .foregroundStyle(NativeDesktopTheme.text).buttonStyle(.plain)
+        .disabled(model.isLoading || model.isBusy || model.errorMessage != nil)
+    }
+    private func pill(offered: CGFloat) -> some View {
         Group {
             if collapsed { mini } else {
-                // Hug the row when it fits; shrink the colours, then the tools, each into a strip that slides;
-                // only when even that does not fit does the whole row scroll.
-                ViewThatFits(in: .horizontal) {
-                    ForEach(Array(Self.stages.enumerated()), id: \.offset) { _, stage in
-                        NativePDFPaletteQuickControls(model: model, collapse: { collapsed = true }, shownTools: stage.tools, shownColors: stage.colors)
+                // One row, whose strips widen and narrow with the room: its buttons keep their identity through
+                // every change of shape, so a tool's open options stay where they are. (Choosing among several
+                // ready-made rows rebuilt the buttons, and their options with them, each time the choice changed.)
+                let slots = (model.usesColorSlots ? model.colorSlots : model.palette.colors(for: model.penKind)).count
+                Group {
+                    if let stage = Self.stage(fitting: offered, slots: slots) {
+                        NativePDFPaletteQuickControls(model: model, collapse: { model.showStyle = false; collapsed = true }, shownTools: stage.tools, shownColors: stage.colors)
                             .fixedSize(horizontal: true, vertical: false)
+                    } else {
+                        // Too narrow for any of them: the whole row scrolls, with every tool in it (no second scroller inside).
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            NativePDFPaletteQuickControls(model: model, collapse: { model.showStyle = false; collapsed = true }, slidingTools: false).fixedSize(horizontal: true, vertical: false)
+                                .padding(.vertical, 5)
+                        }.padding(.vertical, -5).frame(width: max(0, offered - Self.inset * 2)).accessibilityIdentifier("native-pdf-palette-scroll")
                     }
-                    // Too narrow for the pill: the whole row scrolls, with every tool in it (no second scroller inside).
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        NativePDFPaletteQuickControls(model: model, collapse: { collapsed = true }, slidingTools: false).fixedSize(horizontal: true, vertical: false)
-                            .padding(.vertical, 5)
-                    }.padding(.vertical, -5).accessibilityIdentifier("native-pdf-palette-scroll")
-                }.padding(.horizontal, 8)
+                }.padding(.horizontal, Self.inset)
             }
         }.padding(.vertical, 5).bandalGlass(in: Capsule())
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onFrame?($0) }
-        .foregroundStyle(NativeDesktopTheme.text).buttonStyle(.plain)
-        .disabled(model.isLoading || model.isBusy || model.errorMessage != nil)
     }
     private var mini: some View {
         Button { collapsed = false } label: {
@@ -129,6 +151,22 @@ struct NativePDFPaletteQuickControls: View {
     /// How many swatches show before the rest slide; nil shows them all.
     var shownColors: Int? = nil
     private static let spacing: CGFloat = 4
+    private var slotCount: Int { (model.usesColorSlots ? model.colorSlots : model.palette.colors(for: model.penKind)).count }
+    /// The row's width for a tool strip `tools` cells wide and `colors` swatches in view (nil: all `slots` of them),
+    /// with the collapse button. It adds up the same cells, dividers and gaps `body` lays out.
+    static func width(tools: CGFloat, colors: Int?, slots: Int) -> CGFloat {
+        let cell = NativePDFPaletteLook.cell, divider: CGFloat = 1 + 4 * 2, swatch: CGFloat = 30, dot: CGFloat = 26
+        let strip = cell * tools + spacing * tools.rounded(.down)
+        // history · tools · colours · three thickness dots · collapse, with a divider between each two.
+        let fixed = cell * 2 + strip + dot * 3 + cell + divider * 4
+        if let colors, colors < slots {
+            // One child: the sliding swatches (with 12 pt of the next one showing) and ＋.
+            let group = swatch * CGFloat(colors) + spacing * CGFloat(max(0, colors - 1)) + 12 + spacing + swatch
+            return fixed + group + spacing * 11
+        }
+        // Every swatch and ＋ are children of the row themselves.
+        return fixed + swatch * CGFloat(slots + 1) + spacing * CGFloat(slots + 11)
+    }
     @State private var moreColorsLeft = false
     @State private var moreColorsRight = false
     @State private var moreLeft = false
@@ -141,7 +179,7 @@ struct NativePDFPaletteQuickControls: View {
             divider
             if slidingTools { toolStrip } else { HStack(spacing: Self.spacing) { toolButtons } }
             divider
-            if let shownColors, slidingTools { colorStrip(shownColors) } else { colors }
+            if let shownColors, slidingTools, shownColors < slotCount { colorStrip(shownColors) } else { colors }
             divider
             widths
             if let collapse {

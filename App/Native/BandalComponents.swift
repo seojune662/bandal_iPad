@@ -102,8 +102,12 @@ private struct BandalDeferredPopover<Body: View>: ViewModifier {
         return content
             .background { BandalPopoverPresenter(isPresented: presented, edge: arrowEdge, dims: dims, environment: environment) { body().onAppear { appeared = true } } }
             .onChange(of: isPresented, initial: true) { _, wanted in
+                if wanted { NativeInputTrace.record("popover.wanted") }
                 guard wanted else { shown = false; appeared = false; return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { if isPresented { shown = true } }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    if !isPresented { NativeInputTrace.record("popover.withdrawn", "the binding went false within 50 ms of asking") }
+                    if isPresented { shown = true }
+                }
                 // Still not on screen after the menu has surely closed: ask once more.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                     guard isPresented, !appeared else { return }
@@ -684,20 +688,22 @@ private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
         var dims = true
         private var attempts = 0
         func adaptivePresentationStyle(for controller: UIPresentationController, traitCollection: UITraitCollection) -> UIModalPresentationStyle { .none }
-        func presentationControllerDidDismiss(_ controller: UIPresentationController) { host = nil; close() }
+        func presentationControllerDidDismiss(_ controller: UIPresentationController) { NativeInputTrace.record("popover.dismissed", "by the system (outside tap or adaptation)"); host = nil; close() }
         func sync(_ anchor: UIView) {
             guard wanted else {
                 attempts = 0
-                if let host { self.host = nil; host.dismiss(animated: true) }
+                if let host { NativeInputTrace.record("popover.close", "binding went false"); self.host = nil; host.dismiss(animated: true) }
                 return
             }
             if let host { host.rootView = root; return }
             // The anchor may not be in a window yet, or a menu may still be closing over the presenter: ask again shortly.
             guard anchor.window != nil, let presenter = BandalPopoverAnchor.controller(for: anchor), presenter.presentedViewController == nil else {
+                if NativeInputTrace.isEnabled {
+                    let controller = BandalPopoverAnchor.controller(for: anchor)
+                    NativeInputTrace.record("popover.deferred", "attempt=\(attempts + 1) inWindow=\(anchor.window == nil ? 0 : 1) presenter=\(controller.map { String(describing: type(of: $0)).prefix(40) } ?? "nil") busyWith=\(controller?.presentedViewController.map { String(describing: type(of: $0)).prefix(48) + ($0.isBeingDismissed ? "[dismissing]" : "") } ?? "none")")
+                }
                 attempts += 1
                 if attempts < 12 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak anchor] in if let self, let anchor, self.host == nil { self.sync(anchor) } } }
-                // Never leave the binding claiming a popover that will not appear: callers gate input on it.
-                else { attempts = 0; wanted = false; let close = close; DispatchQueue.main.async { close() } }
                 return
             }
             attempts = 0
@@ -712,6 +718,10 @@ private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
                 popover.delegate = self
             }
             self.host = host
+            if NativeInputTrace.isEnabled {
+                let frame = anchor.convert(anchor.bounds, to: nil)
+                NativeInputTrace.record("popover.present", String(format: "anchor=(%.0f,%.0f %.0fx%.0f) presenter=%@", frame.minX, frame.minY, frame.width, frame.height, String(String(describing: type(of: presenter)).prefix(40))))
+            }
             // The system rounds and clips a popover's content (about 26 pt); the card draws its own corners (14–34).
             // It also casts its own shadow, a dark rectangle the size of the whole popover, wider than the card: the card's shadow is the only one.
             presenter.present(host, animated: true) { [weak host] in
@@ -735,12 +745,11 @@ private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
         coordinator.root = AnyView(content().environment(\.self, environment))
         coordinator.sync(anchor)
     }
-    /// The anchor leaves (its toolbar re-laid out, the palette moved between window and pane): the popover goes
-    /// with it, and so must the binding, or its owner keeps waiting for a dismissal that already happened.
+    /// The anchor leaves (its toolbar re-laid out, the palette changing shape or moving between window and pane):
+    /// the popover goes with it, and the binding is left alone, so the anchor that replaces it opens the popover
+    /// again. Clearing the binding here closed the pen settings whenever a choice inside them re-laid the palette.
     static func dismantleUIView(_ anchor: UIView, coordinator: Coordinator) {
-        let shown = coordinator.host != nil || coordinator.wanted
         coordinator.host?.dismiss(animated: false); coordinator.host = nil
-        if shown { let close = coordinator.close; DispatchQueue.main.async { close() } }
     }
 }
 

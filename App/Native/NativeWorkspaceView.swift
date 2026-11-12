@@ -125,7 +125,7 @@ struct NativeWorkspaceView: View {
 
     private func toggleWindowsOverview() {
         if windowsOverviewOpen { windowsOverviewOpen = false; return }
-        guard !busy, navigation.currentWindowRef != nil else { return }
+        guard !refused("toggleWindowsOverview"), navigation.currentWindowRef != nil else { return }
         busy = true
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         Task { @MainActor in
@@ -140,7 +140,7 @@ struct NativeWorkspaceView: View {
     }
 
     private func changeWindow(_ change: @escaping () -> Void) {
-        guard !busy else { return }
+        guard !refused("changeWindow") else { return }
         busy = true
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         Task { @MainActor in
@@ -156,7 +156,7 @@ struct NativeWorkspaceView: View {
     }
 
     private func closeWindow(_ ref: NativeWorkspaceWindowRef) {
-        guard !busy, let close = navigation.prepareWindowClose(ref) else { return }
+        guard !refused("closeWindow"), let close = navigation.prepareWindowClose(ref) else { return }
         busy = true
         Task { @MainActor in
             defer { finishWorkspaceTransition() }
@@ -270,8 +270,8 @@ struct NativeWorkspaceView: View {
             .overlay {
                 if chrome.leftPinned {
                     NativeDockRailResizer(side: .left, width: Binding(get: { chrome.leftWidth }, set: { courseRailWidth = $0 }), maximum: min(360, geometry.size.width - 48 - chrome.aiWidth - chrome.rightWidth - minimum - 3))
-                        .frame(width: 44, height: geometry.size.height)
-                        .position(x: 48 + chrome.leftWidth + 0.5, y: geometry.size.height / 2)
+                        .frame(width: NativeDockRailResizer.hitWidth, height: geometry.size.height)
+                        .position(x: NativeDockRailResizer.center(seam: 48 + chrome.leftWidth + 0.5, side: .left), y: geometry.size.height / 2)
                 }
             }
             .overlay(alignment: .leading) {
@@ -279,7 +279,7 @@ struct NativeWorkspaceView: View {
                     HStack(spacing: 0) {
                         courseSidebar.frame(width: min(320, geometry.size.width - 48))
                             // Over the paper, not the wallpaper: carry the window's stretch of the backdrop along, so the glass matches the pinned panel.
-                            .background { NativeBackdropUnderlay(windowSize: geometry.size, leadingInset: NativeDesktopTheme.navigationWidth) }
+                            .background { NativeBackdropUnderlay(windowSize: geometry.size, safeArea: geometry.safeAreaInsets, leadingInset: NativeDesktopTheme.navigationWidth) }
                             .mask { Rectangle().padding(.vertical, -60) }
                             .nativeWorkspacePreviewExcluded(occludesContent: true)
                             .overlay(alignment: .trailing) { railDivider }
@@ -303,7 +303,7 @@ struct NativeWorkspaceView: View {
                         .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
                         .background(NativeGlass.panel)
                         // The drawer may float over the paper; the window's own stretch of backdrop keeps its glass the pinned panel's.
-                        .background { NativeBackdropUnderlay(windowSize: geometry.size, alignment: .trailing) }
+                        .background { NativeBackdropUnderlay(windowSize: geometry.size, safeArea: geometry.safeAreaInsets) }
                         .mask { Rectangle().padding(.vertical, -60) }
                         .overlay(alignment: .leading) { if rightVisible && !chrome.rightPinned { railDivider } }
                         // Off the window's edge while closed, and opaque on the way: a fade would show the wallpaper through the glass.
@@ -317,8 +317,8 @@ struct NativeWorkspaceView: View {
             .overlay {
                 if chrome.rightPinned {
                     NativeDockRailResizer(side: .right, width: Binding(get: { chrome.rightWidth }, set: { materialsRailWidth = max(320, $0) }), maximum: min(520, geometry.size.width - 48 - chrome.leftWidth - chrome.aiWidth - minimum - 3), resetWidth: 360)
-                        .frame(width: 44, height: geometry.size.height)
-                        .position(x: geometry.size.width - chrome.rightWidth - 0.5, y: geometry.size.height / 2)
+                        .frame(width: NativeDockRailResizer.hitWidth, height: geometry.size.height)
+                        .position(x: NativeDockRailResizer.center(seam: geometry.size.width - chrome.rightWidth - 0.5, side: .right), y: geometry.size.height / 2)
                 }
             }
             // The PDF palette floats over the side panels; under a drawer, or beside another pane (whose bar it would cover), it stays inside its pane.
@@ -411,6 +411,9 @@ struct NativeWorkspaceView: View {
         .overlay { NativeLongPressDimLayer() }
         .background(NativeWorkspaceKeyboardBridge(store: store))
         .background(NativePresentationAnchor(services: services).allowsHitTesting(false))
+        .onAppear { NativeInputTrace.start(root: store.root) }
+        .onChange(of: busy) { _, value in NativeInputTrace.record("workspace.busy", value ? "on" : "off") }
+        .onChange(of: store.isApplyingExternalChanges) { _, value in NativeInputTrace.record("workspace.externalMutation", value ? "on (whole window disabled)" : "off") }
         .bandalToast(Binding(get: { store.errorMessage }, set: { store.errorMessage = $0 }))
         .bandalToast($shareNotice, symbol: "checkmark.circle.fill")
         .modifier(NativeReferralHost(referral: store.referral, ready: restored && onboarding == .closed, openSettings: openSettings))
@@ -846,7 +849,7 @@ struct NativeWorkspaceView: View {
         }
     }
     private func openNewTab(_ action: NativeNewTabAction, _ groupID: String) {
-        guard !busy else { return }; busy = true
+        guard !refused("openNewTab") else { return }; busy = true
         // AI as a tab takes the whole pane; the side panel would show the same conversation twice.
         if action == .assistant { setRail(.ai, open: false, width: windowWidth) }
         let context = workspaceContext
@@ -1042,7 +1045,7 @@ struct NativeWorkspaceView: View {
             return
         }
         if document.kind == "learning-home" { setCourseRail(true, width: windowWidth); return }
-        guard !busy else { return }; busy = true
+        guard !refused("openInGroup") else { return }; busy = true
         let current = workspaceContext
         let target = navigation.captureTarget(groupID: groupID)
         let preserve = preservingWorkspace || document.learningTarget != nil || current?.courseID == document.courseID || current?.linkedCourseID == document.courseID
@@ -1091,7 +1094,7 @@ struct NativeWorkspaceView: View {
         changeWorkspace(.course(course))
     }
     private func changeWorkspace(_ context: NativeWorkspaceContext) {
-        guard !busy else { return }; busy = true
+        guard !refused("changeWorkspace") else { return }; busy = true
         restoreInspectorAfterAnnotation = false; annotation.cancel()
         Task { @MainActor in
             defer { finishWorkspaceTransition() }
@@ -1157,6 +1160,11 @@ struct NativeWorkspaceView: View {
         }
     }
 
+    /// A request that arrives while another transition runs is dropped; the trace says which one.
+    private func refused(_ request: String) -> Bool {
+        if busy { NativeInputTrace.record("workspace.dropped", request) } else { NativeInputTrace.record("workspace.request", request) }
+        return busy
+    }
     private func finishWorkspaceTransition() {
         busy = false
         if pendingContextRefresh { refreshWorkspaceContext() }
@@ -1172,7 +1180,7 @@ struct NativeWorkspaceView: View {
         if !background, navigation.target(containing: child.id)?.ref == navigation.currentWindowRef { section = .library; auxiliary = nil; learningHome = false }
     }
     private func closeDocuments(_ documentIDs: [String]) {
-        guard !busy else { return }
+        guard !refused("closeDocuments") else { return }
         let windowRef = navigation.currentWindowRef
         let current = Set(navigation.groups.flatMap(\.tabs))
         var seen = Set<String>()
@@ -1222,7 +1230,7 @@ struct NativeWorkspaceView: View {
         navigation.select(id, in: groupID); compactCourseRail = false; compactMaterialsRail = false; saveNavigation()
     }
     private func transition(_ action: @escaping @MainActor () -> Void) {
-        guard !busy else { return }
+        guard !refused("transition") else { return }
         restoreInspectorAfterAnnotation = false; annotation.cancel()
         busy = true
         Task { @MainActor in

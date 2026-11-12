@@ -100,7 +100,8 @@ struct NativePDFWorkspace: View {
                         }
                         .overlay(alignment: .top) {
                             if showsPalette, paletteHost?.floats(tabID) != true {
-                                NativePDFFloatingPalette(model: model, onFrame: { panePaletteFrame = $0 }).padding(.horizontal, NativePDFFloatingPalette.sideReserve).padding(.top, paletteTop)
+                                NativePDFFloatingPalette(model: model, onFrame: { panePaletteFrame = $0 })
+                                    .padding(.leading, NativePDFFloatingPalette.leadingReserve).padding(.trailing, NativePDFFloatingPalette.trailingReserve).padding(.top, paletteTop)
                             }
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bodyFrame = $0; registerPalette() }
@@ -529,6 +530,7 @@ final class NativePDFWorkspaceModel {
                 try await store.invokePrivate(channel, request)
             }
             host = native; native.attach(to: container)
+            if NativeInputTrace.isEnabled { native.onDiagnostic = { event, code in Task { @MainActor in NativeInputTrace.record("pdf." + event, code) } } }
             native.setPresentation(blocked: false, inputBlocked: true, overlays: [])
             native.emit = { [weak self] channel, value in
                 guard channel == "pdfNative:event", let event = value as? [String: Any] else { return }
@@ -1563,6 +1565,7 @@ final class NativePDFWorkspaceModel {
         }
     }
     private func restoreInput() {
+        NativeInputTrace.change("pdf.gate", "busy=\(isBusy ? 1 : 0) mutating=\(materialMutating ? 1 : 0) error=\(blockedForError ? 1 : 0) closing=\(closing == nil ? 0 : 1) annotation=\(showAnnotationEditor ? 1 : 0) loading=\(isLoading ? 1 : 0) visible=\(visible ? 1 : 0)")
         host?.setPresentation(blocked: false, inputBlocked: isBusy || materialMutating || blockedForError || closing != nil || showAnnotationEditor, overlays: [])
         textInput?.view.isEditable = !(isBusy || errorMessage != nil)
     }

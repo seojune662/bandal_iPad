@@ -135,8 +135,6 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         tapPaneControl("native-pdf-pages", pane: a)
         expectPanePage(2, pane: a); expectPanePage(1, pane: b)
         capture("One PDF in two panes with independent page and undo state")
-        app.buttons["native-section-learning"].tap()
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "native-learning-home").firstMatch.waitForExistence(timeout: 10))
         app.terminate(); app.launchArguments = arguments(reset: false); app.launch()
         XCTAssertTrue(a.waitForExistence(timeout: 25)); XCTAssertTrue(b.waitForExistence(timeout: 25))
         expectPaneInk(2, pane: a); expectPaneInk(2, pane: b)
@@ -160,10 +158,13 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         app.launchArguments = arguments(reset: true)
         app.launch()
         createCourse("Folder A", app: app)
-        // Ink is not asserted here: on current simulators the synthetic Pencil dispatch does not
-        // land (testMultiplePDFs… fails at its first stroke too); pinch and close still exercise input.
         createPDF("A Notes", app: app)
         capture("card tabs · PDF gutter")
+        // The files panel is open here, which is exactly when the page used to be dead: the panel's decorative
+        // backdrop, laid out at the window's size, took every touch over most of the page column.
+        tapControl("native-pdf-tool-pen", app: app)
+        stroke(app, from: .init(dx: 0.35, dy: 0.35), to: .init(dx: 0.6, dy: 0.45))
+        expectInk(1, app: app)
         createCourse("Folder B", app: app)
         for _ in 0..<3 {
             courseRow("Folder A", app: app).tap()
@@ -173,8 +174,11 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         }
         courseRow("Folder A", app: app).tap()
         switchTab("A Notes", app: app)
-        // XCUITest's pinch and synthetic Pencil do not reach PDFKit on current simulators, so assert the
-        // state they depend on: the host must have released its input block after every switch.
+        expectInk(1, app: app)
+        tapControl("native-pdf-tool-pen", app: app)
+        stroke(app, from: .init(dx: 0.35, dy: 0.6), to: .init(dx: 0.6, dy: 0.7))
+        expectInk(2, app: app)
+        // The host must also have released its own input block after every switch.
         let body = app.otherElements["bandal-native-pdf-body"]
         XCTAssertTrue(body.waitForExistence(timeout: 10))
         let live = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@ AND value CONTAINS %@", "hostInputBlocked=0", "nativeInput=1"), object: body)
@@ -205,11 +209,25 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         XCTAssertTrue(item.waitForExistence(timeout: 15))
         if id.hasPrefix("native-pdf-tool-"), item.isSelected { return }
         let scroll = pane.scrollViews["native-pdf-tool-scroll"]
-        if !item.isHittable, scroll.exists { scroll.swipeRight(); scroll.swipeRight(); for _ in 0..<5 where !item.isHittable { scroll.swipeLeft() } }
+        if !item.isHittable { scroll.slide(toShow: item) }
         let row = pane.scrollViews["native-pdf-palette-scroll"]
-        if !item.isHittable, row.exists { row.swipeRight(); row.swipeRight(); for _ in 0..<5 where !item.isHittable { row.swipeLeft() } }
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: item)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed); item.tap()
+        if !item.isHittable { row.slide(toShow: item) }
+        // Beside another pane, the accessibility hit test can answer with the neighbour's row, whose clipped cells
+        // still report frames under this pane: once the control is enabled and inside its own strip, tap it where it is.
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: item)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, pane.debugDescription)
+        if item.isHittable { item.tap(); return }
+        let strip = row.exists ? row.frame : scroll.exists ? scroll.frame : pane.frame
+        if !strip.contains(CGPoint(x: item.frame.midX, y: item.frame.midY)) {
+            // Slide by frames, since the hit test cannot be trusted here.
+            let source = row.exists ? row : scroll
+            for _ in 0..<16 where !strip.insetBy(dx: 12, dy: 0).contains(CGPoint(x: item.frame.midX, y: item.frame.midY)) {
+                let start = source.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5))
+                start.press(forDuration: 0.05, thenDragTo: start.withOffset(.init(dx: item.frame.midX < strip.midX ? 38 : -38, dy: 0)), withVelocity: .slow, thenHoldForDuration: 0.15)
+            }
+        }
+        XCTAssertTrue(strip.contains(CGPoint(x: item.frame.midX, y: item.frame.midY)), "\(id) is not inside its pane's palette")
+        item.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap()
     }
     @MainActor private func paneStroke(_ pane: XCUIElement, from: CGVector, to: CGVector) {
         let body = pane.otherElements["native-pdf-workspace"]
@@ -258,11 +276,12 @@ final class NativePDFDocumentFlowTests: XCTestCase {
     @MainActor private func switchTab(_ title: String, app: XCUIApplication) {
         let item = tab(title, app: app)
         XCTAssertTrue(item.waitForExistence(timeout: 15), app.debugDescription)
-        if !item.isHittable {
-            let tabScroll = app.scrollViews.containing(.button, identifier: item.identifier).firstMatch
-            if tabScroll.exists { tabScroll.swipeRight(); for _ in 0..<3 where !item.isHittable { tabScroll.swipeLeft() } }
-        }
-        XCTAssertTrue(item.isHittable, app.debugDescription); item.tap()
+        guard !item.isHittable else { item.tap(); return }
+        // A tab the strip has no room for is in the list of open tabs (the ⌄ after ＋).
+        let list = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-tabs-")).firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5), app.debugDescription); list.tap()
+        let row = app.buttons["native-dock-tab-list-select-" + String(item.identifier.dropFirst("native-document-tab-".count))]
+        XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription); row.tap()
     }
     @MainActor private func chooseLayout(_ preset: String, app: XCUIApplication) {
         app.openNativeDockLayoutMenu()
@@ -300,9 +319,9 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         XCTAssertTrue(item.waitForExistence(timeout: 15), app.debugDescription)
         if identifier.hasPrefix("native-pdf-tool-"), item.isSelected { return }
         let tools = app.scrollViews["native-pdf-tool-scroll"]
-        if !item.isHittable, tools.exists { tools.swipeRight(); tools.swipeRight(); for _ in 0..<4 where !item.isHittable { tools.swipeLeft() } }
+        if !item.isHittable { tools.slide(toShow: item) }
         let row = app.scrollViews["native-pdf-palette-scroll"]
-        if !item.isHittable, row.exists { row.swipeRight(); row.swipeRight(); for _ in 0..<4 where !item.isHittable { row.swipeLeft() } }
+        if !item.isHittable { row.slide(toShow: item) }
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: item)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription); item.tap()
     }

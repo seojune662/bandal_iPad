@@ -14,6 +14,7 @@ enum NativeDockDragPayload {
         return provider
     }
     static func trace(_ message: String) {
+        if NativeInputTrace.isEnabled { Task { @MainActor in NativeInputTrace.record("dock.drag", message) } }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--native-ui-testing") { NSLog("[bandal.dock] %@", message) }
         #endif
@@ -70,9 +71,9 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
 
     /// Figma 129:1460: the home screen (one pane, nothing open) has no tab strip.
     private func isHome(_ group: NativeDockGroup) -> Bool { navigation.groups.count == 1 && group.tabs.isEmpty }
-    private static var windowed: Bool { NativeDockHeaderMetrics.windowed }
+    private static var topEdge: NativeDockTopEdge { NativeDockHeaderMetrics.topEdge }
     private func contentFrame(_ pane: NativeDockPaneFrame, _ metrics: NativeDockStripMetrics) -> CGRect {
-        isHome(pane.group) ? pane.frame : NativeDockHeaderMetrics.contentFrame(for: pane.frame, controlsHeight: chromeMode.showsTabs ? metrics.total : 0, windowed: Self.windowed)
+        isHome(pane.group) ? pane.frame : NativeDockHeaderMetrics.contentFrame(for: pane.frame, controlsHeight: chromeMode.showsTabs ? metrics.total : 0, topEdge: Self.topEdge)
     }
     var body: some View {
         dockBody.onReceive(store.events) { event in
@@ -139,7 +140,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     }
                     ForEach(geometry.dividers) { divider in
                         NativeDockDivider(divider: divider, wide: metrics == .columns,
-                            topInset: metrics == .columns && chromeMode.showsTabs ? NativeDockHeaderMetrics.height(for: divider.frame, controlsHeight: metrics.total, windowed: Self.windowed) : 0,
+                            topInset: metrics == .columns && chromeMode.showsTabs ? NativeDockHeaderMetrics.height(for: divider.frame, controlsHeight: metrics.total, topEdge: Self.topEdge) : 0,
                             grip: Self.gripCenter(divider, in: geometry), change: { navigation.resize(divider.id, fraction: $0) }, persist: persist)
                             .frame(width: divider.hitFrame.width, height: divider.hitFrame.height)
                             .position(x: divider.frame.midX, y: divider.frame.midY)
@@ -168,8 +169,9 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 }
             } else { empty() }
         }
-        .onChange(of: navigation.currentWindowRef) { _, _ in drag.end(); maximizedGroupID = nil; newTabGroupID = nil; tabListGroupID = nil }
-        .onChange(of: chromeMode) { _, _ in drag.end(); newTabGroupID = nil; tabListGroupID = nil }
+        .onChange(of: navigation.currentWindowRef) { _, _ in NativeInputTrace.record("dock.reset", "window changed"); drag.end(); maximizedGroupID = nil; newTabGroupID = nil; tabListGroupID = nil }
+        .onChange(of: chromeMode) { _, _ in NativeInputTrace.record("dock.reset", "chrome mode changed"); drag.end(); newTabGroupID = nil; tabListGroupID = nil }
+        .onChange(of: newTabGroupID) { old, new in NativeInputTrace.record("dock.newTabGroup", "\(old == nil ? "nil" : "set")→\(new == nil ? "nil" : "set")") }
         .allowsHitTesting(!covered).accessibilityHidden(covered)
     }
 
@@ -209,8 +211,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             || document.learningTarget != nil || ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased())
     }
     static func projectDocuments(_ documents: [NativeDocumentReference], geometry: NativeDockGeometry, layout: NativeDockLayout,
-                                 bounds: CGRect, headerHeight: CGFloat = NativeDockStripMetrics.single.total, windowed: Bool? = nil) -> [VisibleDocument] {
-        let windowed = windowed ?? Self.windowed
+                                 bounds: CGRect, headerHeight: CGFloat = NativeDockStripMetrics.single.total, topEdge: NativeDockTopEdge? = nil) -> [VisibleDocument] {
+        let topEdge = topEdge ?? Self.topEdge
         // Compact mode hides other groups without ending their editor session.
         // Rotation or maximizing a pane must not race an asynchronous draft flush.
         let projected = layout.geometry(in: bounds)
@@ -218,7 +220,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             guard let document = documents.first(where: { $0.id == original.group.activeID }) else { return nil }
             let visible = geometry.panes.first { $0.id == original.id }
             let frame = visible?.frame ?? CGRect(x: -10000, y: -10000, width: max(280, original.frame.width), height: max(220, original.frame.height))
-            let inset = NativeDockHeaderMetrics.height(for: visible?.frame ?? original.frame, controlsHeight: headerHeight, windowed: windowed)
+            let inset = NativeDockHeaderMetrics.height(for: visible?.frame ?? original.frame, controlsHeight: headerHeight, topEdge: topEdge)
             return VisibleDocument(document: document, groupID: original.id,
                 frame: CGRect(x: frame.minX, y: frame.minY + inset, width: frame.width, height: max(0, frame.height - inset)), visible: visible != nil)
         }
@@ -228,7 +230,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         // receive UIKit input. PDF retains its existing checkpoint path.
         for document in documents where retainsEditor(document) && !activeIDs.contains(document.id) {
             let original = projected.panes.first { $0.group.tabs.contains(document.id) }
-            let inset = NativeDockHeaderMetrics.height(for: original?.frame ?? bounds, controlsHeight: headerHeight, windowed: windowed)
+            let inset = NativeDockHeaderMetrics.height(for: original?.frame ?? bounds, controlsHeight: headerHeight, topEdge: topEdge)
             result.append(VisibleDocument(document: document, groupID: original?.id ?? "",
                 frame: CGRect(x: -10000, y: -10000, width: max(280, original?.frame.width ?? bounds.width),
                               height: max(220, (original?.frame.height ?? bounds.height) - inset)), visible: false))
@@ -242,8 +244,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             if chromeMode.showsTabs {
                 // Out of sight on the home screen, yet still the anchor of the new-tab menu for VoiceOver, keyboards and tests.
-                if isHome(pane.group) { addButton(pane.group, metrics: metrics, visible: false).padding(.top, NativeDockHeaderMetrics.topPadding(for: pane.frame, windowed: Self.windowed)) }
-                else { tabs(pane.group, metrics: metrics, topPadding: NativeDockHeaderMetrics.topPadding(for: pane.frame, windowed: Self.windowed), corner: corner) }
+                if isHome(pane.group) { addButton(pane.group, metrics: metrics, visible: false).padding(.top, NativeDockHeaderMetrics.topPadding(for: pane.frame, topEdge: Self.topEdge)) }
+                else { tabs(pane.group, metrics: metrics, topPadding: NativeDockHeaderMetrics.topPadding(for: pane.frame, topEdge: Self.topEdge), corner: corner) }
             }
             Spacer(minLength: 0)
         }
@@ -290,8 +292,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         return (metrics.padding + before, sizing.width(of: index))
     }
     // MARK: Card
-    static var cardInset: CGFloat { 6 }
-    static var cardRadius: CGFloat { 12 }
+    static var cardInset: CGFloat { NativeDockCard.inset }
+    static var cardRadius: CGFloat { NativeDockCard.radius }
     /// The paper inside a pane's content area: in from the sides and bottom, flush with the strip on top.
     static func cardFrame(_ content: CGRect) -> CGRect {
         CGRect(x: content.minX + cardInset, y: content.minY, width: max(0, content.width - cardInset * 2), height: max(0, content.height - cardInset))
@@ -300,7 +302,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     @ViewBuilder private func paneSurface(_ pane: NativeDockPaneFrame, metrics: NativeDockStripMetrics, focused: Bool, corner: Bool) -> some View {
         if !isHome(pane.group) {
             let content = contentFrame(pane, metrics), card = Self.cardFrame(content).offsetBy(dx: -pane.frame.minX, dy: -pane.frame.minY)
-            let top = NativeDockHeaderMetrics.topPadding(for: pane.frame, windowed: Self.windowed)
+            let top = NativeDockHeaderMetrics.topPadding(for: pane.frame, topEdge: Self.topEdge)
             let span = chromeMode.showsTabs ? selectedTabSpan(pane.group, metrics: metrics, width: pane.frame.width, corner: corner) : nil
             let accent = Color(uiColor: decor.palette.accent(dark: scheme == .dark))
             ZStack(alignment: .topLeading) {
@@ -378,7 +380,10 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     }
     /// ＋ opens the new-tab menu; a long press opens the split and layout menu the design keeps out of the strip.
     private func addButton(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, visible: Bool = true) -> some View {
-        Button { focus(group.id); newTabGroupID = group.id } label: {
+        Button {
+            NativeInputTrace.record("dock.plus", "tapped activeCourse=\(navigation.activeCourseID == nil ? 0 : 1)")
+            focus(group.id); newTabGroupID = group.id
+        } label: {
             if visible {
                 Image(systemName: "plus").font(.system(size: metrics.plus)).frame(width: metrics.plus + 1).padding(.leading, metrics.gap).padding(.trailing, 3)
                     .frame(minWidth: 44).frame(height: metrics.height).contentShape(Rectangle())
@@ -716,14 +721,19 @@ private struct NativeDockDropSurface: UIViewRepresentable {
         let drag = drag
         view.releaseIfStale = { guard drag.isStale else { return false }; NativeDockDragPayload.trace("surface.stale"); drag.end(); return true }
     }
-    /// Covers the pane only while a tab drag runs. A real touch that finds the drag already over (its end
-    /// callback lost) clears it and passes through, instead of leaving the editor beneath dead to touch.
+    /// Covers the pane only while a tab drag runs, and only for the drag: a drop is hit-tested with the drag's own
+    /// event, never with a touch event. Touches always pass through to the editor beneath, so a drag whose end was
+    /// never reported (iPadOS took the finger to move the window) cannot leave the pane dead; the first touch
+    /// after such a drag also clears it.
     final class Surface: UIView {
         var acceptsTouches = false
         var releaseIfStale: () -> Bool = { false }
         override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
             guard acceptsTouches else { return false }
-            if event?.type == .touches, releaseIfStale() { acceptsTouches = false; return false }
+            if event?.type == .touches {
+                if releaseIfStale() { acceptsTouches = false }
+                return false
+            }
             return super.point(inside: point, with: event)
         }
     }
@@ -893,6 +903,12 @@ private struct NativeDockDraggableTab: UIViewRepresentable {
             NativeDockDragPayload.trace("source.end operation=\(operation.rawValue)")
             owner.drag.end()
         }
+        // A lift that never becomes a drag (the finger lifts, or iPadOS takes the touch for itself) ends here, not in `didEndWith`.
+        func dragInteraction(_ interaction: UIDragInteraction, item: UIDragItem, willAnimateCancelWith animator: UIDragAnimating) {
+            NativeDockDragPayload.trace("source.cancel")
+            owner.drag.end()
+        }
+        func dragInteraction(_ interaction: UIDragInteraction, sessionWillBegin session: UIDragSession) { NativeDockDragPayload.trace("source.willBegin") }
         func dragInteraction(_ interaction: UIDragInteraction, sessionIsRestrictedToDraggingApplication session: UIDragSession) -> Bool { true }
         func dragInteraction(_ interaction: UIDragInteraction, sessionAllowsMoveOperation session: UIDragSession) -> Bool { true }
     }

@@ -49,7 +49,7 @@ final class NativeRecordingSummaryUITests: XCTestCase {
     @MainActor private func startRecording(_ app: XCUIApplication) {
         let record = app.buttons["native-pdf-record"]
         XCTAssertTrue(record.waitForExistence(timeout: 10), app.debugDescription)
-        for _ in 0..<3 where !record.isHittable { app.scrollViews["native-pdf-tool-scroll"].swipeLeft() }
+        app.scrollViews["native-pdf-tool-scroll"].slide(toShow: record)
         record.tap()
         // The microphone permission alert belongs to the system.
         let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.buttons.element(boundBy: 1)

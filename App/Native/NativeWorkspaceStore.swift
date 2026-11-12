@@ -645,8 +645,14 @@ final class NativeWorkspaceStore {
                 let revision = self.documentRevision
                 let entries = self.flushers.sorted { $0.value.id < $1.value.id }
                 for entry in entries where self.flushers[entry.key] != nil {
+                    let started = ProcessInfo.processInfo.systemUptime
+                    var failed = false
                     do { if bounded { try await Self.settle(entry.value.flush) } else { try await entry.value.flush() } }
-                    catch { if firstError == nil { firstError = error } }
+                    catch { failed = true; if firstError == nil { firstError = error } }
+                    let elapsed = (ProcessInfo.processInfo.systemUptime - started) * 1000
+                    if failed || elapsed > 50 {
+                        NativeInputTrace.record("flush.editor", String(format: "kind=%@ ms=%.0f failed=%d bounded=%d editors=%d", entry.value.document?.kind ?? "unknown", elapsed, failed ? 1 : 0, bounded ? 1 : 0, entries.count))
+                    }
                 }
                 if revision == self.documentRevision { break }
             }
@@ -661,15 +667,14 @@ final class NativeWorkspaceStore {
     /// switch folders, close tabs or close windows.
     static func settle(within seconds: Double = 4, _ work: @escaping @MainActor () async throws -> Void) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let once = DesktopDialogCompletion<Result<Void, Error>> { continuation.resume(with: $0) }
+            var settled = false
+            let once = DesktopDialogCompletion<Result<Void, Error>> { settled = true; continuation.resume(with: $0) }
             Task { @MainActor in
                 do { try await work(); once.finish(.success(())) } catch { once.finish(.failure(error)) }
             }
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(seconds))
-                #if DEBUG
-                print("[bandal.flush] an editor flush overran \(seconds)s; continuing the transition")
-                #endif
+                if !settled { NativeInputTrace.record("flush.overrun", String(format: "an editor's flush took over %.0f s; the transition goes on without it", seconds)) }
                 once.finish(.success(()))
             }
         }

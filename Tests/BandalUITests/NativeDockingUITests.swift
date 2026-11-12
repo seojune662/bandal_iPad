@@ -19,7 +19,8 @@ final class NativeDockingUITests: XCTestCase {
         let leftRail = app.otherElements["native-course-rail-resizer"]
         let rightRail = app.otherElements["native-materials-rail-resizer"]
         XCTAssertTrue(leftRail.waitForExistence(timeout: 10)); XCTAssertTrue(rightRail.exists)
-        XCTAssertGreaterThanOrEqual(leftRail.frame.width, 44)
+        // The handle keeps to the panel's edge and the gap before the document: it must not cover the page.
+        XCTAssertGreaterThanOrEqual(leftRail.frame.width, 24)
         leftRail.doubleTap(); rightRail.doubleTap()
         let leftX = leftRail.frame.midX, rightX = rightRail.frame.midX
         let leftStart = leftRail.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
@@ -130,6 +131,22 @@ final class NativeDockingUITests: XCTestCase {
     }
 }
 
+
+extension XCUIElement {
+    /// Slides this strip (the PDF palette's tool or colour strip, or its whole row) by slow drags until `item`
+    /// can be tapped. A swipe throws a strip only two or three cells wide straight past the cell wanted; a drag
+    /// goes as far as the item is away, at least a cell and never out of the strip.
+    @MainActor func slide(toShow item: XCUIElement, cell: CGFloat = 38, tries: Int = 16) {
+        guard exists else { return }
+        for _ in 0..<tries where !item.isHittable {
+            // Content left of the strip's middle comes in by dragging right, and the other way round.
+            let away = item.frame.midX - frame.midX, reach = max(cell, min(abs(away), frame.width * 0.45))
+            let step = away < 0 ? reach : -reach
+            let start = coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(.init(dx: step, dy: 0)), withVelocity: .slow, thenHoldForDuration: 0.15)
+        }
+    }
+}
 
 extension XCUIApplication {
     /// The design has no split button in the strip: the layout menu is a long press on a strip's ＋.

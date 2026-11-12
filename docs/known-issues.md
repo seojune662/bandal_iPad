@@ -75,6 +75,19 @@ persists `page=1` (save-side again in the merged config) by capturing the trace.
 
 ## 2. Cross-pane tab drag is aborted by re-render churn
 
+> **Resolved 2026-11-12. The suspected cause below (re-render churn) was wrong.** With the input trace
+> (`--native-input-trace`, `NativeInputTrace.swift`) the failing drag shows `source.begin` and nothing after,
+> exactly as recorded here, and the app's window leaving full screen (1376×1032 → 1201×865 at a new origin):
+> iPadOS 26 takes a drag that starts in the top 32 pt of a full-screen window as a drag of the window itself,
+> even when it starts on a tab. The tab's lift had begun, its end was never reported, and the drop surfaces stayed
+> active over every pane. Measured on 26.5 by pressing one tab at several heights: y = 20…32 moves the window,
+> y = 36 does not.
+>
+> Fix: in full screen on iPadOS 26 the strip sits 24 pt below the top edge (`NativeDockTopEdge.systemBand`), so
+> the whole tab pill lies under that band; the drop surface passes every touch through and only catches the
+> drag's own events, so a drag that ends unreported can no longer leave a pane dead. The rest of this section is
+> kept as the record of the investigation.
+
 **Symptom.** Dragging a tab from one pane and dropping it onto another pane
 (`aTab.press(forDuration:1, thenDragTo: markdown…)`) frequently fails to merge:
 the drop never registers and the `merged` wait times out. Rate: ~0% failure on
