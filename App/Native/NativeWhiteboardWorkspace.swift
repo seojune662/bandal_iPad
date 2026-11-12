@@ -54,14 +54,32 @@ struct NativeWhiteboardWorkspace: View {
     }
     private var tools: some View {
         HStack(spacing: 4) {
-            ForEach([("pen", "pencil.tip", "펜"), ("highlighter", "highlighter", "형광펜"), ("eraser", "eraser", "지우개")], id: \.0) { item in
-                Button { model.chooseTool(item.0) } label: { Image(systemName: item.1).frame(width: 44, height: 44).foregroundStyle(model.tool == item.0 ? Color.white : .primary).background(model.tool == item.0 ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 8)) }.accessibilityLabel(item.2).accessibilityIdentifier("native-whiteboard-tool-" + item.0)
+            // The PDF palette's icons and its chosen-tool look, so a board and a page read as the same tools.
+            ForEach([("pen", "PDFIconPen", "펜"), ("highlighter", "PDFIconHighlighter", "형광펜"), ("eraser", "PDFIconEraser", "지우개")], id: \.0) { item in
+                Button { model.chooseTool(item.0) } label: {
+                    Image(item.1).foregroundStyle(NativePDFPaletteLook.icon).frame(width: 34, height: 34)
+                        .background(model.tool == item.0 ? NativePDFPaletteLook.chosen : .clear, in: RoundedRectangle(cornerRadius: 10))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }.accessibilityLabel(item.2).accessibilityIdentifier("native-whiteboard-tool-" + item.0)
+                    .accessibilityAddTraits(model.tool == item.0 ? .isSelected : [])
             }
             Menu {
-                ForEach(["ink", "blue", "red", "green", "orange", "yellow", "violet"], id: \.self) { value in Button(value) { model.chooseColor(value) } }
+                ForEach(["ink", "blue", "red", "green", "orange", "yellow", "violet"], id: \.self) { value in
+                    Button { model.chooseColor(value) } label: {
+                        if model.color == value { Label(NativePDFPaletteLook.colorName(value), systemImage: "checkmark") } else { Text(NativePDFPaletteLook.colorName(value)) }
+                    }
+                }
                 Divider()
-                Button("가늘게") { model.setWidth(0.002) }; Button("보통") { model.setWidth(0.004) }; Button("굵게") { model.setWidth(0.008) }
-            } label: { Image(systemName: "slider.horizontal.3").frame(width: 44, height: 44) }.accessibilityLabel("필기 스타일").accessibilityIdentifier("native-whiteboard-style").accessibilityValue("drawings=\(model.count) pending=\(model.pending)").accessibilityHint(model.pending > 0 ? "필기 저장 중" : "모든 필기 저장됨")
+                ForEach([("가늘게", 0.002), ("보통", 0.004), ("굵게", 0.008)], id: \.0) { label, value in
+                    Button { model.setWidth(value) } label: {
+                        if abs(model.width - value) < 0.0005 { Label(label, systemImage: "checkmark") } else { Text(label) }
+                    }
+                }
+            } label: {
+                // The current colour on the button, as the PDF palette shows its swatch.
+                Circle().fill(NativePDFPaletteLook.swatch(model.color)).frame(width: 18, height: 18)
+                    .overlay(Circle().strokeBorder(NativePDFPaletteLook.ring, lineWidth: 2).padding(-4)).frame(width: 44, height: 44)
+            }.accessibilityLabel("필기 스타일").accessibilityIdentifier("native-whiteboard-style").accessibilityValue("drawings=\(model.count) pending=\(model.pending)").accessibilityHint(model.pending > 0 ? "필기 저장 중" : "모든 필기 저장됨")
             Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward").frame(width: 44, height: 44) }.disabled(!model.canUndo).accessibilityLabel("되돌리기").accessibilityIdentifier("native-whiteboard-undo")
             Button { model.redo() } label: { Image(systemName: "arrow.uturn.forward").frame(width: 44, height: 44) }.disabled(!model.canRedo).accessibilityLabel("다시 실행").accessibilityIdentifier("native-whiteboard-redo")
         }.buttonStyle(.borderless).disabled(model.loading || model.blocked || model.error != nil)
@@ -102,7 +120,8 @@ final class NativeWhiteboardModel: ObservableObject {
     private var operationTask: Task<Void, Error>?
     private var rows: [[String: Any]] = [], media: [String: UIImage] = [:], board: [String: Any] = [:]
     private var pageGeometries: [String: [String: Any]] = [:]
-    private var width = 0.003, retired = false, closing = false, mutating = false, writesSuspended = false
+    @Published private(set) var width = 0.003
+    private var retired = false, closing = false, mutating = false, writesSuspended = false
     private var events: AnyCancellable?
     private var undoStack: [NativeWhiteboardHistoryEntry] = [], redoStack: [NativeWhiteboardHistoryEntry] = [], completed = Set<String>()
     private var strokePages: [String: Int] = [:]

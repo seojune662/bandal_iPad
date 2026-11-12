@@ -53,10 +53,10 @@ private final class BandalShareModel: ObservableObject {
             let value = try await Task.detached(priority: .userInitiated) { try inbox.readCatalog() }.value
             catalog = value
             courseID = value.courses.first?.id ?? ""
-            if value.courses.isEmpty { errorMessage = "반달에서 과목을 만든 뒤 다시 공유해 주세요." }
+            if value.courses.isEmpty { errorMessage = "반달에서 폴더를 만든 뒤 다시 공유해 주세요." }
             if itemCount == 0 { errorMessage = "가져올 파일이나 텍스트가 없습니다." }
             if itemCount > BandalShareInbox.maximumItems { errorMessage = "한 번에 최대 20개까지 공유할 수 있습니다." }
-        } catch { errorMessage = "반달 앱을 한 번 열어 과목과 폴더 목록을 준비한 뒤 다시 공유해 주세요." }
+        } catch { errorMessage = "반달 앱을 한 번 열어 폴더 목록을 준비한 뒤 다시 공유해 주세요." }
     }
 
     func cancel() { context?.cancelRequest(withError: NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)) }
@@ -188,18 +188,18 @@ private struct BandalShareView: View {
                     ContentUnavailableView {
                         Label("공유 자료를 보관했어요", systemImage: "checkmark.circle.fill")
                     } description: {
-                        Text("반달을 열면 선택한 과목과 폴더에 추가됩니다.")
+                        Text("반달을 열면 선택한 폴더에 추가됩니다.")
                     } actions: { Button("완료") { model.finish() }.buttonStyle(.borderedProminent) }
                 } else {
                     Form {
                         Section("저장 위치") {
-                            Picker("과목", selection: $model.courseID) {
+                            Picker("폴더", selection: $model.courseID) {
                                 ForEach(model.catalog?.courses ?? []) { course in Text(course.name).tag(course.id) }
                             }
                             .accessibilityIdentifier("bandal-share-course")
                             .onChange(of: model.courseID) { _, _ in model.folderPath = "" }
                             Picker("폴더", selection: $model.folderPath) {
-                                Text("과목 최상위").tag("")
+                                Text("폴더 최상위").tag("")
                                 ForEach(model.selectedCourse?.folders ?? [], id: \.self) { Text($0).tag($0) }
                             }
                             .accessibilityIdentifier("bandal-share-folder")

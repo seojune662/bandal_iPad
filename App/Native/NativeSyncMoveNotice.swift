@@ -21,10 +21,7 @@ struct NativeSyncMoveNotice: View {
                 .background(.regularMaterial, in: Capsule())
                 .padding(.bottom, 24)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-                .task(id: shown.t) {
-                    try? await Task.sleep(for: .seconds(8))
-                    if self.shown?.t == shown.t { withAnimation { self.shown = nil } }
-                }
+                // It carries an action: it stays until it is answered or closed (VoiceOver and Switch Control users included).
             }
         }
         .task { if let status = try? await store.invoke("cloudSync:status", [:]) as? [String: Any] { tell(status) } }
@@ -39,6 +36,8 @@ struct NativeSyncMoveNotice: View {
               let t = (moved["t"] as? NSNumber)?.int64Value, !Self.told.contains(t) else { return }
         Self.told.insert(t)
         let account = (moved["account"] as? String).map { "(\($0))" } ?? ""
-        withAnimation { shown = ("\(moved["device"] as? String ?? "")에서 \(CloudSyncService.name(kind))\(account)로 옮겼어요. 이 iPad도 옮길까요?", t) }
+        let device = (moved["device"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? NativeAppLocale.string("다른 기기", Locale.current)
+        let format = NativeAppLocale.string("%@에서 %@로 옮겼어요. 이 iPad도 옮길까요?", Locale.current)
+        withAnimation { shown = (String(format: format, device, CloudSyncService.name(kind) + account), t) }
     }
 }

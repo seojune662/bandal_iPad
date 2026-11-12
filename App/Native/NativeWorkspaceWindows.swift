@@ -8,7 +8,7 @@ enum NativeWorkspaceChromeMode: String, Codable, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .all: "모두 표시"
-        case .tabsHidden: "탭 줄만 숨기기"
+        case .tabsHidden: "탭만 숨김"
         case .toolsHidden: "탭·일반 도구 숨김"
         }
     }

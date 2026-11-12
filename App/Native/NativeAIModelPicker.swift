@@ -72,7 +72,7 @@ struct NativeAIModelPill: View {
     private static let popoverWidth: CGFloat = 300
 
     static func label(_ catalog: NativeAIModelCatalog, model: String, effort: String?) -> String {
-        guard model != "default", catalog.contains(model) else { return "Auto" }
+        guard model != "default", catalog.contains(model) else { return NativeAppLocale.string("자동", Locale.current) }
         return catalog.label(model) + " · " + (effort ?? "medium")
     }
 
@@ -82,7 +82,7 @@ struct NativeAIModelPill: View {
         Button { open.toggle() } label: {
             HStack(spacing: 9) {
                 Group { if let chosen { Circle().fill(NativeAIModelLook.color(chosen)) } else { NativeAIModelLook.autoDot } }.frame(width: capsule ? 8 : 7, height: capsule ? 8 : 7)
-                Text(verbatim: chosen?.label ?? "Auto").font(.system(size: capsule ? 14 : 13, weight: .medium))
+                Group { if let chosen { Text(verbatim: chosen.label) } else { Text("자동") } }.font(.system(size: capsule ? 14 : 13, weight: .medium))
                     .foregroundStyle(capsule ? NativeDesktopTheme.text : NativeDesktopTheme.secondary).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.secondary)
             }

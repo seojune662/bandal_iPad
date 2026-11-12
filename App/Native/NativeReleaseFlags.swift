@@ -19,4 +19,7 @@ enum NativeReleaseFlags {
     /// Review 2.5.4 rejected 1.0.0 (5) for declaring it). Recording stops and saves when the
     /// app leaves the foreground.
     static let showsRecording = true
+    /// Rows and switches the design draws for features that are not built (note moves between folders, offline copies,
+    /// voice input, handwriting to text, Japanese, connected services…). Off: a control that can only say "준비 중" is not shown.
+    static let showsUnbuiltFeatures = false
 }

@@ -2,6 +2,9 @@ import SwiftUI
 
 struct NativeCourseManager: View {
     var store: NativeWorkspaceStore
+    /// Folders kept from AI study (projects) that were archived, with their names; restored by id.
+    var archivedProjects: [(id: String, name: String)] = []
+    var restoreProject: (String) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @State private var courses: [ManagedCourse] = []
     @State private var renamingID: String?
@@ -16,7 +19,7 @@ struct NativeCourseManager: View {
     }
     var body: some View {
         VStack(alignment:.leading,spacing:4) {
-            if let error { Text(error).font(.system(size:11)).foregroundStyle(.red).fixedSize(horizontal:false,vertical:true) }
+            if let error { NativeInlineError(message: error) }
             ScrollView {
                 VStack(alignment:.leading,spacing:0) {
                     ForEach([false,true],id:\.self) { archived in
@@ -24,12 +27,17 @@ struct NativeCourseManager: View {
                         if !values.isEmpty {
                             BandalSectionHeader(archived ? "보관한 폴더" : "내 폴더").padding(.horizontal,8).padding(.top,4)
                             ForEach(values) { course in row(course) }
+                            if archived { archivedProjectRows }
                         }
+                    }
+                    if !courses.contains(where: \.archived), !archivedProjects.isEmpty {
+                        BandalSectionHeader("보관한 폴더").padding(.horizontal,8).padding(.top,4)
+                        archivedProjectRows
                     }
                 }
             }.frame(maxHeight:360).fixedSize(horizontal:false,vertical:true)
             BandalMenuDivider()
-            BandalMenuRow("기존 폴더 연결",symbol:"folder.badge.plus",detail:"보관한 폴더는 파일과 필기를 그대로 두고 목록에서만 숨겨요") {
+            BandalMenuRow("기존 폴더 연결",symbol:"folder.badge.plus",detail:"파일 앱의 폴더를 그대로 반달 폴더로 써요") {
                 change {
                     guard let folder = try await store.invoke("courses:pickFolder") as? [String:Any], let path = folder["path"] as? String else { return }
                     let result = try await store.invoke("courses:addFromFolder",["folderPath":path,"name":folder["name"] as? String ?? "연결한 폴더","color":"blue"]) as? [String:Any]
@@ -42,9 +50,20 @@ struct NativeCourseManager: View {
         .task { await load() }
         .accessibilityElement(children:.contain).accessibilityIdentifier("native-course-manager")
     }
+    @ViewBuilder private var archivedProjectRows: some View {
+        ForEach(archivedProjects, id: \.id) { project in
+            HStack(spacing:8) {
+                Image(systemName:"archivebox").font(.system(size:12)).foregroundStyle(NativeDesktopTheme.muted).frame(width:18)
+                Text(verbatim: project.name).lineLimit(1)
+                Spacer(minLength:4)
+                Button("다시 꺼내기") { restoreProject(project.id) }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.accent).frame(minHeight:44)
+                    .accessibilityIdentifier("native-manager-restore-" + project.id)
+            }.font(.system(size:BandalMetrics.bodySize)).padding(.horizontal,8).frame(minHeight:BandalMetrics.rowHeight)
+        }
+    }
     private func row(_ course: ManagedCourse) -> some View {
         HStack(spacing:8) {
-            Image(systemName:course.archived ? "archivebox" : "books.vertical").font(.system(size:12)).foregroundStyle(NativeDesktopTheme.muted).frame(width:18)
+            Image(systemName:course.archived ? "archivebox" : "folder.fill").font(.system(size:12)).foregroundStyle(course.archived ? NativeDesktopTheme.muted : NativeFolderColor.color(course.color)).frame(width:18)
             VStack(alignment:.leading,spacing:1) {
                 BandalInlineEditor(text:course.name,isEditing:.editing(course.id,in:$renamingID),identifier:"native-manager-rename") { name in
                     change { _ = try await store.invoke("courses:rename",["courseId":course.id,"name":name]) }
@@ -55,10 +74,10 @@ struct NativeCourseManager: View {
             Menu {
                 Button("이름 변경",systemImage:"pencil") { renamingID = course.id }
                 if course.missing { Button("폴더 다시 연결",systemImage:"folder.badge.questionmark") { relink(course) } }
-                Button(course.archived ? "자료실에 다시 표시" : "폴더 보관",systemImage:course.archived ? "tray.and.arrow.up" : "archivebox") {
+                Button(course.archived ? "다시 꺼내기" : "폴더 보관",systemImage:course.archived ? "tray.and.arrow.up" : "archivebox") {
                     change { _ = try await store.invoke("courses:archive",["courseId":course.id,"archived":!course.archived]) }
                 }
-            } label: { Image(systemName:"ellipsis").frame(width:32,height:BandalMetrics.rowHeight).contentShape(Rectangle()) }
+            } label: { Image(systemName:"ellipsis").frame(width:44,height:max(44, BandalMetrics.rowHeight)).contentShape(Rectangle()) }
             .accessibilityLabel(course.name + " 관리")
         }.font(.system(size:BandalMetrics.bodySize)).padding(.horizontal,8).frame(minHeight:BandalMetrics.rowHeight)
     }

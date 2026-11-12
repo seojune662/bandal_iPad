@@ -133,7 +133,7 @@ final class NativeSettingsParityUITests: XCTestCase {
         XCTAssertTrue(iCloud.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(iCloud.value as? String, "0")
         XCTAssertTrue(app.buttons["native-sync-link-folder"].exists, "연결한 폴더")
-        XCTAssertFalse(app.switches["native-sync-cellular"].isEnabled, "준비 중")
+        XCTAssertFalse(app.switches["native-sync-cellular"].exists, "Unbuilt settings are not shown")
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS '로그인하면'")).firstMatch.exists)
         capture("Sync settings, off")
         app.openNativeSettingsMore()

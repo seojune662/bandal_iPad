@@ -155,12 +155,14 @@ struct NativePlannerTaskDetail: View {
     let course: NativeCourse?
     let setStatus: (String) -> Void
     let delete: () -> Void
+    /// 수정 was only on the card's long press; the popover offers it too.
+    var edit: (() -> Void)? = nil
     @State private var confirmingDelete = false
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(task.title).font(.system(size: 20, weight: .bold)).fixedSize(horizontal: false, vertical: true).frame(minHeight: 28)
             if let course {
-                row("과목") {
+                row("폴더") {
                     Circle().fill(course.tint).frame(width: 8, height: 8)
                     Text(course.name).lineLimit(1)
                 }
@@ -177,6 +179,12 @@ struct NativePlannerTaskDetail: View {
                 Text(task.notes).font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.vertical, 12)
                     .background(NativePlannerPalette.tool, in: RoundedRectangle(cornerRadius: 14))
+            }
+            if let edit {
+                Button(action: edit) {
+                    Text("수정").font(.system(size: 16, weight: .semibold)).foregroundStyle(NativeDesktopTheme.text)
+                        .frame(maxWidth: .infinity, minHeight: 48).background(NativePlannerPalette.tool, in: RoundedRectangle(cornerRadius: 14))
+                }.buttonStyle(.plain).accessibilityIdentifier("native-task-detail-edit")
             }
             Button { confirmingDelete = true } label: {
                 Text("할 일 삭제").font(.system(size: 16, weight: .semibold)).foregroundStyle(NativePlannerPalette.urgent)

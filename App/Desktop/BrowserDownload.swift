@@ -117,7 +117,7 @@ final class DesktopBrowserDownload: NSObject, WKDownloadDelegate {
     }
     func retry() async throws {
         if state == "completed" {
-            guard !isChangingTransfer else { throw DesktopBrowserError.unavailable("과목 자료에 저장하고 있습니다. 잠시 기다려 주세요.") }
+            guard !isChangingTransfer else { throw DesktopBrowserError.unavailable("폴더에 저장하고 있습니다. 잠시 기다려 주세요.") }
             guard relPath == nil else { return }
             guard let destination, courseID != nil, let callback = host?.onDownload else { throw DesktopBrowserError.unavailable("자료 저장을 다시 시작할 수 없습니다.") }
             savingMaterial = true; publish()
@@ -164,7 +164,7 @@ final class DesktopBrowserDownload: NSObject, WKDownloadDelegate {
         defer { savingMaterial = false; publish() }
         do { relPath = try await callback(file, courseID); failureReason = nil }
         catch {
-            failureReason = "파일은 보관했지만 과목에 추가하지 못했습니다: \(error.localizedDescription)"
+            failureReason = "파일은 보관했지만 폴더에 추가하지 못했습니다: \(error.localizedDescription)"
             throw error
         }
     }

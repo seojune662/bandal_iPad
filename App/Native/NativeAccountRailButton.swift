@@ -44,8 +44,10 @@ struct NativeAccountRailButton: View {
 
     var body: some View {
         Button { error = nil; showingHelp = false; inviting = false; showingMenu.toggle() } label: {
+            // A 36 pt avatar in the rail's 44 pt cell, like every other rail button.
             railAvatar
                 .frame(width: 36, height: 36)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
             .accessibilityLabel(signedIn ? "계정: " + displayName : "로그인").accessibilityIdentifier("native-section-account")

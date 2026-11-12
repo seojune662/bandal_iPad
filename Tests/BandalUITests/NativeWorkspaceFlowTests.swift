@@ -315,7 +315,7 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         app.buttons["native-create-course"].tap()
         let reason = app.staticTexts["membership-reason"]
         XCTAssertTrue(reason.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(reason.label, "무료로는 이 iPad에서 과목을 1개까지 만들 수 있어요.")
+        XCTAssertEqual(reason.label, "무료로는 이 iPad에서 폴더를 1개까지 만들 수 있어요.")
         attachScreenshot(app, name: "Membership after a second course")
         app.buttons["membership-close"].tap()
         XCTAssertFalse(app.staticTexts["bandal-toast"].waitForExistence(timeout: 2))

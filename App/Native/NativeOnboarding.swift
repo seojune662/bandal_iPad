@@ -187,11 +187,13 @@ struct NativeOnboarding: View {
                         languageRow(NativeAppLocale.korean, name: "한국어", other: "Korean")
                         divider
                         languageRow(NativeAppLocale.english, name: "English", other: english ? "English" : "영어")
-                        divider
-                        // No Japanese table yet: the row is drawn and waits.
-                        BandalChoiceRow(title: "日本語", detail: english ? "Japanese" : "일본어", showsDivider: false) {}
-                            .overlay(alignment: .trailing) { Text("준비 중").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted).padding(.trailing, 16) }
-                            .allowsHitTesting(false).accessibilityIdentifier("native-onboarding-language-ja")
+                        if NativeReleaseFlags.showsUnbuiltFeatures {
+                            divider
+                            // No Japanese table yet: the row is drawn and waits.
+                            BandalChoiceRow(title: "日本語", detail: english ? "Japanese" : "일본어", showsDivider: false) {}
+                                .overlay(alignment: .trailing) { Text("준비 중").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted).padding(.trailing, 16) }
+                                .allowsHitTesting(false).accessibilityIdentifier("native-onboarding-language-ja")
+                        }
                     }
                     .padding(.vertical, 1)
                 }
@@ -272,7 +274,7 @@ struct NativeOnboarding: View {
     /// What this run put in the sidebar; without a school (an invite link went straight to its step), where to find the choices later.
     private var doneLine: Text {
         guard let school else { return Text("언어와 학교는 설정에서 언제든 바꿀 수 있어요.") }
-        return school.links.isEmpty ? Text("\(name(school)) · 링크는 사이드바에서 AI로 찾을 수 있어요") : Text("\(name(school)) 바로가기 \(school.links.count)개를 사이드바에 넣었어요")
+        return school.links.isEmpty ? Text("\(name(school)) · 링크는 사이드바에서 AI로 찾을 수 있어요") : Text("\(name(school)) 바로가기 \(min(NativeHomeSites.schoolLimit, school.links.count))개를 사이드바에 넣었어요")
     }
     private func name(_ school: School) -> String { english ? school.nameEn ?? school.name : school.name }
 

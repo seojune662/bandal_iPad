@@ -31,7 +31,7 @@ final class FreeTierTests: XCTestCase {
     func testOneCourseIsFreeAndOnlyLiveOnesCount() throws {
         XCTAssertNil(refused("courses:create"))
         let first = try course("수학")
-        XCTAssertEqual(refused("courses:create"), "무료로는 이 iPad에서 과목을 1개까지 만들 수 있어요.")
+        XCTAssertEqual(refused("courses:create"), "무료로는 이 iPad에서 폴더를 1개까지 만들 수 있어요.")
         XCTAssertNotNil(refused("courses:addFromFolder", ["folderPath": "/tmp", "name": "폴더"]))
         XCTAssertNotNil(refused("learning:create", ["name": "영어", "placement": "standalone"]))
         XCTAssertNotNil(refused("learning:create", ["name": "영어"]))

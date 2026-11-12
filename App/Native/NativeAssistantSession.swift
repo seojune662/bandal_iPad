@@ -307,6 +307,8 @@ final class NativeAssistantSession: ObservableObject {
         else { _ = try await store.invoke("chat:cancel",identity) }
         try await open(); restoreAttempt()
     }
+    /// A sent request that failed can be put back in the composer; nothing else can.
+    var canRestoreAttempt: Bool { lastAttempt != nil && draft.text.isEmpty }
     func restoreAttempt() { if let lastAttempt, draft.text.isEmpty { draft = lastAttempt; draft.studyRunID = nil; draft.studyBinding = nil } }
     func loadCatalog() async {
         #if DEBUG
@@ -432,5 +434,5 @@ struct NativeAIModelCatalog {
     var providers: [String] { models.reduce(into: []) { if !$0.contains($1.provider) { $0.append($1.provider) } } }
     func contains(_ id: String) -> Bool { models.contains { $0.id == id } }
     /// What the composer shows: the model's name, or Auto for anything else (old BYOK names included).
-    func label(_ id: String) -> String { models.first { $0.id == id }?.label ?? "Auto" }
+    func label(_ id: String) -> String { models.first { $0.id == id }?.label ?? NativeAppLocale.string("자동", Locale.current) }
 }

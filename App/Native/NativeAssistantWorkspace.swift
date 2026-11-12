@@ -143,14 +143,18 @@ struct NativeAssistantPanel: View {
         if let error = session.error {
             HStack(alignment:.top,spacing:8) {
                 Image(systemName:"exclamationmark.circle").foregroundStyle(.orange)
-                Text(error).font(.caption).foregroundStyle(NativeDesktopTheme.text).frame(maxWidth:.infinity,alignment:.leading)
+                BandalText(error).font(.caption).foregroundStyle(NativeDesktopTheme.text).frame(maxWidth:.infinity,alignment:.leading)
                 if session.errorCode == "TASK_CAP_REACHED" || session.errorCode == "BUDGET_EXHAUSTED" && AIUsage.shared.plan == "pro" {
                     AICreditButton(opensOnLimit:true,identifier:"native-ai-task-cap-credit").font(.caption).frame(minHeight:44)
                 }
                 if session.errorCode == "TASK_CAP_REACHED" {
-                    Button("Auto로 바꾸기") { perform { try await session.configure(model:"default",effort:nil); session.error = nil } }.font(.caption).frame(minHeight:44)
+                    Button("자동으로 바꾸기") { perform { try await session.configure(model:"default",effort:nil); session.error = nil } }.font(.caption).frame(minHeight:44)
                 }
-                Button("초안 복원") { session.restoreAttempt(); session.error = nil }.font(.caption).frame(minHeight:44)
+                if session.canRestoreAttempt {
+                    Button("초안 복원") { session.restoreAttempt(); session.error = nil }.font(.caption).frame(minHeight:44)
+                }
+                Button { session.error = nil } label: { Image(systemName:"xmark").font(.system(size:11,weight:.semibold)).frame(width:44,height:44).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary).accessibilityLabel("닫기").accessibilityIdentifier("native-ai-error-dismiss")
             }.padding(.horizontal,18).padding(.vertical,4).frame(maxWidth:isTab ? Self.tabColumn : nil)
         }
     }
@@ -191,7 +195,7 @@ struct NativeAssistantPanel: View {
         VStack(spacing:12) {
             NativeAssistantTile(look:look)
             welcomeTitle
-            Text("지금 노트와 과목 자료를 참고해서 답해요").font(.system(size:14)).assistantLine(14).foregroundStyle(NativeDesktopTheme.secondary).multilineTextAlignment(.center)
+            Text("지금 노트와 폴더 자료를 참고해서 답해요").font(.system(size:14)).assistantLine(14).foregroundStyle(NativeDesktopTheme.secondary).multilineTextAlignment(.center)
             if !isTyping {
                 // Figma draws these at 0.7 of the F1 pill (9.8 pt text): 13 pt text in a 34 pt pill reads at the panel's size.
                 VStack(spacing:6) {
@@ -409,8 +413,10 @@ struct NativeAssistantPanel: View {
             TextField("",text:$session.draft.text,prompt:Text(LocalizedStringKey(session.draft.mode.title == "대화" ? "무엇이든 물어보세요" : "원하는 내용을 알려 주세요")).foregroundStyle(NativeDesktopTheme.muted),axis:.vertical)
                 .font(.system(size:isTab ? 16 : 15)).foregroundStyle(NativeDesktopTheme.text).tint(NativeDesktopTheme.accent).lineLimit(1...6).textFieldStyle(.plain).accessibilityIdentifier("native-chat-input")
             // Voice input has no feature behind it yet (owner's decision 2).
-            Button { toast = "음성 입력은 준비 중이에요" } label: { Image(systemName:"mic").font(.system(size:isTab ? 18 : 17)).foregroundStyle(NativeDesktopTheme.secondary).assistantHitArea(4) }
-                .buttonStyle(NativeAssistantButtonStyle()).accessibilityLabel("음성 입력 (준비 중)").accessibilityIdentifier("native-ai-voice")
+            if NativeReleaseFlags.showsUnbuiltFeatures {
+                Button { toast = "음성 입력은 준비 중이에요" } label: { Image(systemName:"mic").font(.system(size:isTab ? 18 : 17)).foregroundStyle(NativeDesktopTheme.secondary).assistantHitArea(4) }
+                    .buttonStyle(NativeAssistantButtonStyle()).accessibilityLabel("음성 입력 (준비 중)").accessibilityIdentifier("native-ai-voice")
+            }
             sendButton
         }.padding(.horizontal,isTab ? 20 : 14).padding(.vertical,isTab ? 12 : 10)
             .background(NativeDesktopTheme.bgApp,in:shape).overlay { shape.strokeBorder(NativeDesktopTheme.border,lineWidth:1) }
@@ -437,7 +443,7 @@ struct NativeAssistantPanel: View {
                 Image(systemName:"arrowtriangle.up.circle.fill").font(.system(size:isTab ? 30 : 26)).foregroundStyle(isTab ? NativeDesktopTheme.text : NativeDesktopTheme.accent)
                     .opacity(blocked && !isTab ? 0.35 : 1).frame(height:isTab ? 36 : 31)
             }
-        }.buttonStyle(NativeAssistantButtonStyle()).disabled(!session.running && blocked)
+        }.assistantHitArea(8).buttonStyle(NativeAssistantButtonStyle()).disabled(!session.running && blocked)
             .accessibilityLabel(session.running ? "응답 중지" : "보내기").accessibilityIdentifier("native-chat-send")
             .bandalPopover(isPresented:$showingSignIn,arrowEdge:.bottom,width:264) { signInPrompt }
     }

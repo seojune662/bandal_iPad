@@ -41,7 +41,7 @@ final class NativeAssistantService {
         }
         if channel == "chat:cancel" || channel == "chat:close" {
             if let turn = turns[session] {
-                guard turn.course == course else { throw DesktopRuntimeError("대화와 과목이 일치하지 않습니다.") }
+                guard turn.course == course else { throw DesktopRuntimeError("대화와 폴더가 일치하지 않습니다.") }
                 turn.task?.cancel(); _ = try await ai.handle(channel:"native:aiCancel",request:["provider":turn.provider,"requestId":turn.requestID])
                 await turn.task?.value
             }

@@ -103,7 +103,7 @@ struct NativeSettingsSyncPanel: View {
     /// The status card's four parts.
     private var summary: (symbol: String, tint: Color, title: String, detail: String) {
         let place = CloudSyncService.name(provider)
-        guard on else { return ("icloud.slash", NativeDesktopTheme.muted, "동기화 꺼짐", "켜면 같은 계정의 기기끼리 과목과 자료를 맞춰요") }
+        guard on else { return ("icloud.slash", NativeDesktopTheme.muted, "동기화 꺼짐", "켜면 같은 계정의 기기끼리 폴더와 자료를 맞춰요") }
         switch phase {
         case "idle": return ("checkmark.circle.fill", NativeSettingsRowMetrics.green, "모두 동기화됨", (relative ?? "방금 전") + " · " + place)
         case "paused", "error": return ("exclamationmark.circle.fill", phase == "error" ? NativeSettingsRowMetrics.red : .orange, phaseText, status["message"] as? String ?? place)
@@ -124,12 +124,10 @@ struct NativeSettingsSyncPanel: View {
                 .disabled(!on || phase == "paused" || phase == "syncing").accessibilityIdentifier("native-sync-now")
         }.padding(21).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(NativeDesktopTheme.border))
         // 준비 중: syncing over cellular is the system's switch, and every document already has its copy on this iPad.
-        NativeSettingsGroup(description: "셀룰러 데이터 · 오프라인 설정은 준비 중이에요.") {
+        NativeSettingsGroup {
             asking(NativeSettingsToggle(title: "iCloud 동기화", isOn: Binding(get: { provider == "icloud" }, set: { value in
                 if !value { offConfirmation = true } else if on { openDetail(); beginMove("icloud") } else { turnOn("icloud") }
             })).accessibilityIdentifier("native-sync-icloud"))
-            NativeSettingsToggle(title: "셀룰러 데이터 사용", isOn: .constant(false)).disabled(true).accessibilityIdentifier("native-sync-cellular")
-            NativeSettingsToggle(title: "오프라인에서도 열기", note: "기기에 사본을 저장해요", isOn: .constant(true)).disabled(true).accessibilityIdentifier("native-sync-offline")
             notes
         }
         NativeSettingsGroup(title: "연결한 폴더") {
@@ -139,7 +137,7 @@ struct NativeSettingsSyncPanel: View {
                     Button { unlinking = id } label: { Text("연결 해제").foregroundStyle(NativeSettingsRowMetrics.red) }.frame(height: 31).accessibilityIdentifier("native-sync-unlink-" + id)
                         // The course is put away, as 과목 보관 does: its folder and its notes stay.
                         .bandalConfirm("폴더 연결을 해제할까요?", isPresented: Binding(get: { unlinking == id }, set: { if !$0, unlinking == id { unlinking = nil } }),
-                                       message: "과목을 보관해 목록에서 빼요. 폴더의 파일은 그대로 남아요.", action: "연결 해제", destructive: true, identifier: "native-sync-unlink-confirm") {
+                                       message: "폴더를 보관해 목록에서 빼요. 파일은 그대로 남아요.", action: "연결 해제", destructive: true, identifier: "native-sync-unlink-confirm") {
                             run { try await store.flushDocuments(); _ = try await store.invoke("courses:archive", ["courseId": id, "archived": true]); await loadLinked() }
                         }
                 }
@@ -147,7 +145,7 @@ struct NativeSettingsSyncPanel: View {
             NativeSettingsActionRow(title: "＋ 폴더 연결") {
                 run {
                     guard let folder = try await store.invoke("courses:pickFolder") as? [String: Any], let path = folder["path"] as? String else { return }
-                    let result = try await store.invoke("courses:addFromFolder", ["folderPath": path, "name": folder["name"] as? String ?? "연결한 과목", "color": "blue"]) as? [String: Any]
+                    let result = try await store.invoke("courses:addFromFolder", ["folderPath": path, "name": folder["name"] as? String ?? "연결한 폴더", "color": "blue"]) as? [String: Any]
                     if result?["status"] as? String == "failed" { throw DesktopRuntimeError(result?["reason"] as? String ?? "폴더를 연결하지 못했습니다.") }
                     await loadLinked()
                 }
@@ -163,7 +161,7 @@ struct NativeSettingsSyncPanel: View {
 
     /// 동기화 › 더 보기.
     @ViewBuilder private var details: some View {
-        NativeSettingsGroup(title: "동기화", description: "같은 Apple ID 또는 Google 계정의 기기끼리 과목과 자료를 맞춰요.") {
+        NativeSettingsGroup(title: "동기화", description: "같은 Apple ID 또는 Google 계정의 기기끼리 폴더와 자료를 맞춰요.") {
             asking(Picker("동기화", selection: Binding(get: { on ? provider : "off" }, set: { $0 == "off" ? (offConfirmation = true) : on ? beginMove($0) : turnOn($0) })) {
                 Text("끔").tag("off")
                 Text("iCloud").tag("icloud")
@@ -186,7 +184,7 @@ struct NativeSettingsSyncPanel: View {
                         run { status = try await invoke("cloudSync:setDeviceName", ["name": deviceName]); notice = "기기 이름을 바꿨어요." }
                     }
             }
-            Text("과목·PDF·필기·텍스트 노트가 동기화돼요. 하이라이트·화이트보드·연결 폴더 과목은 빠져요.").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
+            Text("폴더·PDF·필기·텍스트 노트가 동기화돼요. 하이라이트·화이트보드·연결한 폴더는 빠져요.").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
         }
         if status["previousProfile"] as? Bool == true {
             NativeSettingsGroup(title: "이전 자료", description: "클라우드 자료를 가져오기 전에 이 iPad에 있던 자료로 돌아갑니다. 동기화는 꺼집니다.") {
@@ -254,7 +252,7 @@ struct NativeSettingsSyncPanel: View {
 
     private var startMessage: String {
         let local = preview?["local"] as? [String: Any] ?? [:]
-        return "이 iPad의 과목 \(local["courses"] as? Int ?? 0)개와 자료 \(local["documents"] as? Int ?? 0)개(\(Self.bytes(local["bytes"])))를 \(CloudSyncService.name(shown))에 올립니다."
+        return "이 iPad의 폴더 \(local["courses"] as? Int ?? 0)개와 자료 \(local["documents"] as? Int ?? 0)개(\(Self.bytes(local["bytes"])))를 \(CloudSyncService.name(shown))에 올립니다."
     }
 
     private var offMessage: String {
@@ -316,8 +314,8 @@ struct NativeSettingsSyncPanel: View {
         let name = CloudSyncService.name(target)
         if let plan = prepared["plan"] as? String {
             let local = prepared["local"] as? [String: Any] ?? [:], cloud = prepared["cloud"] as? [String: Any] ?? [:]
-            Text(plan == "upload" ? "이 iPad의 과목 \(local["courses"] as? Int ?? 0)개, 자료 \(local["documents"] as? Int ?? 0)개를 \(name)로 옮깁니다. 다 올리면 \(CloudSyncService.name(provider)) 연결을 끊어요."
-                 : "\(name)에 이미 과목 \(cloud["courses"] as? Int ?? 0)개가 있어요. 같은 자료는 다시 올리지 않고, 이 iPad에만 있거나 바뀐 것만 올려 합칩니다. 다 맞추면 \(CloudSyncService.name(provider)) 연결을 끊어요.")
+            Text(plan == "upload" ? "이 iPad의 폴더 \(local["courses"] as? Int ?? 0)개, 자료 \(local["documents"] as? Int ?? 0)개를 \(name)로 옮깁니다. 다 올리면 \(CloudSyncService.name(provider)) 연결을 끊어요."
+                 : "\(name)에 이미 폴더 \(cloud["courses"] as? Int ?? 0)개가 있어요. 같은 자료는 다시 올리지 않고, 이 iPad에만 있거나 바뀐 것만 올려 합칩니다. 다 맞추면 \(CloudSyncService.name(provider)) 연결을 끊어요.")
                 .accessibilityIdentifier("native-sync-move-plan")
             if oneStep, plan == "upload" {
                 // Another device moved there, yet it looks empty: another Google account, or iCloud still coming down.
@@ -440,7 +438,7 @@ struct NativeSyncConnectSheet: View {
             if let unfinished { Text("‘\(unfinished)’에서 처음 올리다 멈춘 폴더라 합치기나 가져오기만 할 수 있어요.").font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
             if !pairs.isEmpty {
                 BandalMenuDivider()
-                Text("이름이 같은 과목 \(pairs.count)개 · 켜면 하나로 합쳐요").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary)
+                Text("이름이 같은 폴더 \(pairs.count)개 · 켜면 하나로 합쳐요").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary)
                 ForEach(pairs.indices, id: \.self) { index in
                     let pair = pairs[index], remote = pair["remote"] as? String ?? ""
                     // A course this iPad shared with this root before is always joined.
@@ -451,11 +449,11 @@ struct NativeSyncConnectSheet: View {
             BandalMenuDivider()
             BandalMenuRow("합치기", detail: "두 쪽 자료를 모두 유지 (권장)", checked: mode == "merge") { mode = "merge" }
             if unfinished == nil {
-                BandalMenuRow("이 iPad 자료로 덮어쓰기", detail: "클라우드에만 있는 과목 \(deletes.courses)개·자료 \(deletes.documents)개·필기 \(deletes.ink)개가 다른 기기에서도 지워져요", checked: mode == "overwrite") { mode = "overwrite" }
+                BandalMenuRow("이 iPad 자료로 덮어쓰기", detail: "클라우드에만 있는 폴더 \(deletes.courses)개·자료 \(deletes.documents)개·필기 \(deletes.ink)개가 다른 기기에서도 지워져요", checked: mode == "overwrite") { mode = "overwrite" }
             }
             BandalMenuRow("클라우드 자료 가져오기", detail: "이 iPad 자료는 따로 보관하고 클라우드로 시작", checked: mode == "import") { mode = "import" }
             if confirming {
-                Text(mode == "overwrite" ? "다른 기기에서 과목 \(deletes.courses)개, 자료 \(deletes.documents)개, 필기 \(deletes.ink)개가 지워져요. 파일은 \(place)에 남아요." : "새 프로필에서 클라우드 자료로 시작해요. 지금 자료는 보관되고 설정 › 동기화에서 돌아올 수 있어요.")
+                Text(mode == "overwrite" ? "다른 기기에서 폴더 \(deletes.courses)개, 자료 \(deletes.documents)개, 필기 \(deletes.ink)개가 지워져요. 파일은 \(place)에 남아요." : "새 프로필에서 클라우드 자료로 시작해요. 지금 자료는 보관되고 설정 › 동기화에서 돌아올 수 있어요.")
                     .font(.system(size: 12)).foregroundStyle(mode == "overwrite" ? .red : NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true)
             }
             HStack {
@@ -492,6 +490,6 @@ struct NativeSyncConnectSheet: View {
 
     private static func summary(_ value: Any?) -> String {
         let value = value as? [String: Any] ?? [:]
-        return "과목 \(value["courses"] as? Int ?? 0) · 자료 \(value["documents"] as? Int ?? 0) (\(NativeSettingsSyncPanel.bytes(value["bytes"])))"
+        return "폴더 \(value["courses"] as? Int ?? 0) · 자료 \(value["documents"] as? Int ?? 0) (\(NativeSettingsSyncPanel.bytes(value["bytes"])))"
     }
 }

@@ -36,7 +36,7 @@ struct NativeUnifiedSearchResults: View {
     /// Trimmed, two characters or more.
     let query: String
     let scope: NativeWorkspaceContext?
-    /// 이 과목만. The chip itself sits in the panel's title row, clear of the floating pen palette.
+    /// 이 폴더만. The chip itself sits in the panel's title row, clear of the floating pen palette.
     let courseOnly: Bool
     static let debounce = Duration.milliseconds(300), sectionPreview = 5
     @State private var response: NativeUnifiedSearchResponse?
@@ -57,9 +57,14 @@ struct NativeUnifiedSearchResults: View {
                         .padding(.horizontal, 6).padding(.bottom, 6).accessibilityIdentifier("native-search-indexing")
                 }
                 if let failure { Text(failure).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(6) }
-                else if let response, answered == query {
-                    if response.isEmpty { Text("결과 없음").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(6).accessibilityIdentifier("native-search-empty") }
-                    ForEach(response.sections) { section in if !section.groups.isEmpty { self.section(section) } }
+                else {
+                    // While a new query is on its way the previous results stay, dimmed, under a spinner.
+                    if answered != query { ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(8).accessibilityIdentifier("native-search-loading") }
+                    if let response {
+                        if response.isEmpty && answered == query { Text("결과 없음").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(6).accessibilityIdentifier("native-search-empty") }
+                        ForEach(response.sections) { section in if !section.groups.isEmpty { self.section(section) } }
+                            .opacity(answered == query ? 1 : 0.45)
+                    }
                 }
             }.padding(.horizontal, 6).padding(.bottom, 16)
         }
@@ -187,7 +192,7 @@ struct NativeSearchScopeChip: View {
         Button { courseOnly.toggle() } label: {
             HStack(spacing: 4) {
                 if courseOnly { Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)) }
-                Text("이 과목만").font(.system(size: 12, weight: .medium))
+                Text("이 폴더만").font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(courseOnly ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
             .padding(.horizontal, 10).frame(height: 28)

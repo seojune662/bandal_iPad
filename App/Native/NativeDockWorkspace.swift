@@ -272,8 +272,9 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 addButton(group, metrics: metrics)
                 if showsList {
                     Button { tabListGroupID = group.id } label: {
+                        // 44 wide to touch; the glyph keeps its place right after ＋.
                         Image(systemName: "chevron.down").font(.system(size: 13)).frame(width: 15).padding(.leading, 3).padding(.trailing, 6)
-                            .frame(height: metrics.height).contentShape(Rectangle())
+                            .frame(minWidth: 44, alignment: .leading).frame(height: metrics.height).contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityLabel("이 영역의 열린 탭 \(group.tabs.count)개")
                         .accessibilityIdentifier("native-dock-tabs-" + group.id)
                         .popover(isPresented: Binding(get: { tabListGroupID == group.id }, set: { if !$0 { tabListGroupID = nil } }), arrowEdge: .top) {
@@ -307,7 +308,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         Button { focus(group.id); newTabGroupID = group.id } label: {
             if visible {
                 Image(systemName: "plus").font(.system(size: metrics.plus)).frame(width: metrics.plus + 1).padding(.leading, metrics.gap).padding(.trailing, 3)
-                    .frame(height: metrics.height).contentShape(Rectangle())
+                    .frame(minWidth: 44).frame(height: metrics.height).contentShape(Rectangle())
             } else { Color.clear.frame(width: 44, height: 44).contentShape(Rectangle()) }
         }
         .buttonStyle(.plain)

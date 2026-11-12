@@ -7,7 +7,7 @@ extension DesktopBrowserHost {
         let address = try PublicArticleClient.validateURL(expectedURL)
         guard let page = pages[tabID], page.courseID == courseID, !page.webView.isLoading,
               let current = page.webView.url, try PublicArticleClient.validateURL(current.absoluteString) == address else {
-            throw DesktopBrowserError.unavailable("이 과목에 연결된 현재 원문 탭을 확인할 수 없습니다.")
+            throw DesktopBrowserError.unavailable("이 폴더에 연결된 현재 원문 탭을 확인할 수 없습니다.")
         }
         let document = page.state["authDocumentId"] as? String, ownership = page.ownershipRevision
         let resolved = try await resolve(address.host!.trimmingCharacters(in: CharacterSet(charactersIn: "[]")))

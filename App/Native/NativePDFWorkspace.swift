@@ -36,11 +36,11 @@ struct NativePDFWorkspace: View {
     }
     /// The thumbnails button sits at the page area's left, in the palette's row when the pill leaves room for it, otherwise under it.
     private var viewButtonTop: CGFloat {
-        let room = paletteFrame.isEmpty || paletteFrame.minX - bodyFrame.minX >= NativePDFViewButton.leading + NativePDFViewButton.size + 8
+        let room = paletteFrame.isEmpty || paletteFrame.minX - bodyFrame.minX >= NativePDFViewButton.leading + NativePDFViewButton.width + 8
         return room ? paletteTop + (NativePDFFloatingPalette.height - NativePDFViewButton.size) / 2 : belowPalette
     }
     /// The bars in the band under the palette keep clear of the thumbnails button only when it sits in that band.
-    private var bandSideInset: CGFloat { viewButtonTop == belowPalette ? NativePDFViewButton.leading + NativePDFViewButton.size + 8 : 16 }
+    private var bandSideInset: CGFloat { viewButtonTop == belowPalette ? NativePDFViewButton.leading + NativePDFViewButton.width + 8 : 16 }
     /// The window draws the palette above the side panels; this pane only says where its page area is.
     private func registerPalette() {
         guard let paletteHost else { return }

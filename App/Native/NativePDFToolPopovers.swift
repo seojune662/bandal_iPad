@@ -240,9 +240,10 @@ struct NativePDFHighlighterOptions: View {
         NativePDFToolPopover(model: model) {
             NativePDFPopoverTitle("형광펜")
             HStack(spacing: 4) {
-                ForEach(NativePDFPaletteStyle.highlighterSwatches, id: \.color) { swatch in
-                    NativePDFColorCell(color: NativeDesktopTheme.adaptive(swatch.hex, swatch.hex).opacity(0.7), chosen: model.color == swatch.color) { model.chooseColor(swatch.color) }
-                        .accessibilityLabel(NativePDFPaletteLook.colorName(swatch.color) + " 색상").accessibilityIdentifier("native-pdf-color-" + swatch.color)
+                // The same colours as the palette's highlighter slots, drawn the way the page draws them.
+                ForEach(model.colorSlots, id: \.self) { name in
+                    NativePDFColorCell(color: NativePDFPaletteLook.uiColor(name).opacity(0.7), chosen: model.color == name) { model.chooseColor(name) }
+                        .accessibilityLabel(NativePDFPaletteLook.colorName(name) + " 색상").accessibilityIdentifier("native-pdf-color-" + name)
                 }
             }
             NativePDFWidthSlider(model: model)
@@ -250,7 +251,9 @@ struct NativePDFHighlighterOptions: View {
             NativePDFOptionToggle(title: "곧게 긋기", id: "native-pdf-highlighter-straight", isOn: model.palette.highlighterStraight) { model.setHighlighterStraight($0) }
             // The highlighter always blends under the text. Drawing over it needs a second blend mode in the ink
             // renderer and a stored flag the desktop reads: the switch is drawn, on, and says 준비 중.
-            NativePDFOptionToggle(title: "글자 아래로 깔기", id: "native-pdf-highlighter-under-text", isOn: true) { _ in model.paletteNotice = "글자 위로 긋기는 준비 중이에요" }
+            if NativeReleaseFlags.showsUnbuiltFeatures {
+                NativePDFOptionToggle(title: "글자 아래로 깔기", id: "native-pdf-highlighter-under-text", isOn: true) { _ in model.paletteNotice = "글자 위로 긋기는 준비 중이에요" }
+            }
         }
     }
 }

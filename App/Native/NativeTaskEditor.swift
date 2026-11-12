@@ -79,7 +79,7 @@ struct NativeTaskEditor: View {
                         .background(NativePlannerPalette.paper, in: RoundedRectangle(cornerRadius: 14))
                         .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(NativeDesktopTheme.border) }
                         .accessibilityIdentifier("native-task-title")
-                    if !courses.isEmpty { section("과목") { courseChips } }
+                    if !courses.isEmpty { section("폴더") { courseChips } }
                     section("마감", detail: dueDetail) { dueStrip }
                     details
                     if expanded != "notes" { notesDisclosure }
@@ -106,7 +106,7 @@ struct NativeTaskEditor: View {
             HStack(spacing: 8) {
                 ForEach(courses) { course in
                     NativePlannerChip(title: course.name, tint: course.tint, selected: courseID == course.id, inset: 13) { courseID = courseID == course.id ? "" : course.id }
-                        .accessibilityLabel("과목 " + course.name).accessibilityIdentifier("native-task-course-" + course.id)
+                        .accessibilityLabel("폴더 " + course.name).accessibilityIdentifier("native-task-course-" + course.id)
                 }
             }.frame(height: 36)
         }
@@ -177,14 +177,16 @@ struct NativeTaskEditor: View {
                 NativePlannerStatusSwitch(statuses: task == nil ? ["todo", "in-progress"] : NativePlannerTask.statuses, selection: $status,
                                           identifierPrefix: "native-task-editor-status-", compact: true)
             }.padding(.horizontal, 16).frame(height: 58)
-            separator
-            // 준비 중: the synced task record has no field for a linked note yet.
-            BandalSettingRow(title: "노트 연결", size: 15) {
-                HStack(spacing: 6) {
-                    Text("준비 중").font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.secondary)
-                    Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
-                }
-            }.padding(.horizontal, 16).frame(height: 47).opacity(0.5).accessibilityElement(children: .combine).accessibilityIdentifier("native-task-link-note")
+            if NativeReleaseFlags.showsUnbuiltFeatures {
+                separator
+                // 준비 중: the synced task record has no field for a linked note yet.
+                BandalSettingRow(title: "노트 연결", size: 15) {
+                    HStack(spacing: 6) {
+                        Text("준비 중").font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.secondary)
+                        Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
+                    }
+                }.padding(.horizontal, 16).frame(height: 47).opacity(0.5).accessibilityElement(children: .combine).accessibilityIdentifier("native-task-link-note")
+            }
             if expanded == "notes" {
                 separator
                 TextField("메모", text: $notes, axis: .vertical).font(.system(size: 15)).lineLimit(1...4).textFieldStyle(.plain)

@@ -68,8 +68,8 @@ struct NativeSettingsSystemPanels: View {
                 if !selectedCalendars.isEmpty { Button("캘린더 연결 해제", role: .destructive) { run { _ = try await store.invokePrivate("nativeSettings:disconnectCalendar"); await reload() } } }
             }
             NativeSettingsGroup(title: "반달 일정 내보내기", description: ".ics 파일로 저장하거나 공유해요.") {
-                Button("모든 과목 일정 내보내기", systemImage: "square.and.arrow.up") { run { _ = try await store.invokePrivate("nativeSettings:exportCalendar") } }
-                if let course = store.selectedCourseID { Button("현재 과목 일정 내보내기") { run { _ = try await store.invokePrivate("nativeSettings:exportCalendar", ["courseId": course]) } } }
+                Button("모든 폴더 일정 내보내기", systemImage: "square.and.arrow.up") { run { _ = try await store.invokePrivate("nativeSettings:exportCalendar") } }
+                if let course = store.selectedCourseID { Button("현재 폴더 일정 내보내기") { run { _ = try await store.invokePrivate("nativeSettings:exportCalendar", ["courseId": course]) } } }
         }
     }
     }

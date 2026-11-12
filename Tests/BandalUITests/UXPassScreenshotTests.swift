@@ -61,7 +61,7 @@ final class UXPassScreenshotTests: XCTestCase {
             create.tap(); app.buttons["새 폴더"].firstMatch.tap(); sleep(1); attach(app, "17 새 폴더")
             dismiss(app)
         }
-        app.buttons["native-course-add-menu"].press(forDuration: 1); app.buttons["보관된 폴더 관리"].firstMatch.tap(); sleep(1); attach(app, "18 과목 관리")
+        app.buttons["native-course-add-menu"].press(forDuration: 1); app.buttons["폴더 관리"].firstMatch.tap(); sleep(1); attach(app, "18 폴더 관리")
         dismiss(app)
         app.buttons["native-section-planner"].tap()
         let add = app.buttons["native-task-add"]

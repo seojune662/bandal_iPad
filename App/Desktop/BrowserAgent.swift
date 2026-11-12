@@ -87,7 +87,7 @@ extension DesktopBrowserHost {
             while pages[tabID] == nil && Date() < deadline { try await Task.sleep(for: .milliseconds(100)) }
             if let page = pages[tabID] { try await waitForPage(page) }
         }
-        guard let page = pages[tabID], page.courseID == courseID, !page.isPrivate else { throw DesktopBrowserError.unavailable("이 과목의 일반 브라우저 탭만 사용할 수 있습니다.") }
+        guard let page = pages[tabID], page.courseID == courseID, !page.isPrivate else { throw DesktopBrowserError.unavailable("이 폴더의 일반 브라우저 탭만 사용할 수 있습니다.") }
         if page.isSuspended { _ = page.webView; try await waitForPage(page) }
         let generation = agentGeneration(page), url = page.state["url"] as? String ?? "about:blank"
         guard !page.webView.isLoading || tool == "stop" else { throw DesktopBrowserError.unavailable("페이지를 불러오는 중입니다. 완료된 뒤 다시 살펴봐 주세요.") }
@@ -132,7 +132,7 @@ extension DesktopBrowserHost {
             }
         }
         if tool == "attachFile" {
-            guard input["courseId"] as? String == courseID, let read = onAgentAttachment else { throw DesktopBrowserError.unavailable("이 과목 자료만 첨부할 수 있습니다.") }
+            guard input["courseId"] as? String == courseID, let read = onAgentAttachment else { throw DesktopBrowserError.unavailable("이 폴더 자료만 첨부할 수 있습니다.") }
             let relative = try Self.string(input, "relPath", limit: 8192)
             let file = try await read(courseID, relative)
             guard file.data.count <= 25 * 1024 * 1024, !file.name.isEmpty, file.name == (file.name as NSString).lastPathComponent, !file.name.contains("\\") else { throw DesktopBrowserError.unavailable("에이전트는 25MB 이하 파일을 첨부할 수 있습니다. 더 큰 파일은 직접 선택해 주세요.") }
