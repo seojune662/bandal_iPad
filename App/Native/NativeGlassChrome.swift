@@ -185,6 +185,11 @@ enum NativeGlass {
 /// neighbouring hues never pass through grey. An iPad app cannot see the home-screen wallpaper behind
 /// its window, so this is the window's own wallpaper.
 struct NativeWorkspaceBackdrop: View {
+    /// Set to draw, in a view of any size, one stretch of a `window`-sized backdrop: the stretch whose
+    /// top-leading corner lies at `origin` in that backdrop. The mesh's control points are moved, not the view,
+    /// so nothing is laid out beyond this view's own frame.
+    var window: CGSize? = nil
+    var origin = CGPoint.zero
     @Environment(\.nativeDecor) private var decor
     @Environment(\.colorScheme) private var scheme
     /// The middle column and row bow a little, so the blend reads as light falling rather than a grid.
@@ -193,15 +198,29 @@ struct NativeWorkspaceBackdrop: View {
         [0, 0.45], [0.42, 0.56], [1, 0.4],
         [0, 1], [0.6, 1], [1, 1],
     ]
+    /// The window's points as this view's: a mesh is unchanged by moving and scaling all of its control points
+    /// together, so the part of it that falls inside the view is exactly the window's stretch.
+    static func points(window: CGSize, origin: CGPoint, size: CGSize) -> [SIMD2<Float>] {
+        guard size.width > 0, size.height > 0 else { return points }
+        return points.map { point in
+            SIMD2(Float((CGFloat(point.x) * window.width - origin.x) / size.width), Float((CGFloat(point.y) * window.height - origin.y) / size.height))
+        }
+    }
     var body: some View {
-        MeshGradient(width: 3, height: 3, points: Self.points, colors: decor.palette.mesh(dark: scheme == .dark, saturation: decor.saturation),
+        if let window {
+            GeometryReader { proxy in mesh(Self.points(window: window, origin: origin, size: proxy.size)) }.accessibilityHidden(true)
+        } else {
+            mesh(Self.points).ignoresSafeArea().accessibilityHidden(true)
+        }
+    }
+    private func mesh(_ points: [SIMD2<Float>]) -> some View {
+        MeshGradient(width: 3, height: 3, points: points, colors: decor.palette.mesh(dark: scheme == .dark, saturation: decor.saturation),
                      colorSpace: .perceptual)
             .overlay {
                 // Grain: a fine tile of noise keeps the blend from banding and gives the glass something to catch.
                 Image(uiImage: NativeGrain.tile).resizable(resizingMode: .tile)
                     .blendMode(.overlay).opacity(0.08 + 0.16 * decor.intensity)
             }
-            .ignoresSafeArea().accessibilityHidden(true)
     }
 }
 
@@ -275,17 +294,31 @@ enum NativeGrain {
     }()
 }
 
-/// The backdrop as it sits behind a drawer that floats over the paper: the window's mesh, laid out at
-/// the window's size and shifted so the drawer shows the same stretch of it a pinned panel would.
+/// The backdrop as it sits behind a panel that may float over the paper: the panel's own stretch of the window's
+/// mesh, so its glass looks the same floating as pinned.
+///
+/// It is exactly the panel's size (and 60 pt more above and below, under the status area and the home indicator).
+/// It used to be the whole window-sized backdrop laid out behind the panel and hidden by the panel's mask: hidden,
+/// but still there, it took every touch over most of the centre pane while the right panel was open, and read to
+/// UI tests as covering the tabs and the page beside the panel.
 struct NativeBackdropUnderlay: View {
+    /// The window's size and the insets its content keeps clear of: the backdrop runs under those too.
     let windowSize: CGSize
-    var alignment: Alignment = .leading
+    var safeArea = EdgeInsets()
     var leadingInset: CGFloat = 0
+    private static let reach: CGFloat = 60
     var body: some View {
-        NativeWorkspaceBackdrop().frame(width: windowSize.width, height: windowSize.height)
-            .offset(x: -leadingInset)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-            .accessibilityHidden(true)
+        GeometryReader { proxy in
+            let window = CGSize(width: windowSize.width + safeArea.leading + safeArea.trailing, height: windowSize.height + safeArea.top + safeArea.bottom)
+            // The stretch the window-sized backdrop showed here: centred on the panel, moved by the drawer's inset.
+            let origin = CGPoint(x: (windowSize.width - proxy.size.width) / 2 + leadingInset + safeArea.leading,
+                                 y: (windowSize.height - proxy.size.height) / 2 + safeArea.top - Self.reach)
+            NativeWorkspaceBackdrop(window: window, origin: origin)
+                .frame(width: proxy.size.width, height: proxy.size.height + Self.reach * 2)
+                .offset(y: -Self.reach)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

@@ -77,7 +77,10 @@ final class NativeDockTabSizingUITests: XCTestCase {
         XCTAssertFalse(values.isEmpty)
         guard let first = values.first else { return }
         let strip = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-tab-strip-")).firstMatch
-        XCTAssertTrue(strip.exists); XCTAssertEqual(strip.frame.height, 52, accuracy: 1, "Full screen, a strip at the window top has no clearance above it")
+        // Full screen: flush with the top before iPadOS 26; from 26 on, 24 pt under the band the system drags the window by.
+        var expected: CGFloat = 52
+        if #available(iOS 26, *) { expected = 76 }
+        XCTAssertTrue(strip.exists); XCTAssertEqual(strip.frame.height, expected, accuracy: 1, "A strip at the top of a full-screen window keeps clear of the system's drag band, and of nothing else")
         let add = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
         for tab in values {
             if uniform { XCTAssertEqual(tab.frame.width, first.frame.width, accuracy: 1) }

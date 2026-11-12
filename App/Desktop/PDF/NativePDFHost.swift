@@ -91,6 +91,9 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
     }
     func setPresentation(blocked: Bool, inputBlocked: Bool, overlays: [CGRect]) {
         if (blocked || inputBlocked) && !(hostOccluded || hostInputBlocked) { flush() }
+        if hostOccluded != blocked || hostInputBlocked != inputBlocked {
+            onDiagnostic("nativePDF.presentation", "occluded=\(blocked ? 1 : 0) inputBlocked=\(inputBlocked ? 1 : 0)")
+        }
         hostOccluded = blocked; hostInputBlocked = inputBlocked; hostOverlays = overlays
         layout()
     }
@@ -512,6 +515,9 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
         let sourceView = shell as UIView? ?? container
         for (identifier, item) in documents {
             let hidden = hostOccluded || replacingGenerations[identifier] != nil || occludedSurfaces.contains(identifier) || !visibleSurfaces.contains(identifier)
+            if item.pdfView.isHidden != hidden || item.pdfView.isUserInteractionEnabled != (!hidden && !hostInputBlocked) {
+                onDiagnostic("nativePDF.layout", "hidden=\(hidden ? 1 : 0) input=\(!hidden && !hostInputBlocked ? 1 : 0) inWindow=\(item.pdfView.window == nil ? 0 : 1)")
+            }
             item.pdfView.isHidden = hidden
             item.pdfView.accessibilityElementsHidden = hidden
             item.pdfView.accessibilityIdentifier = hidden ? nil : "bandal-native-pdf-body"

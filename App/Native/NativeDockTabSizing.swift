@@ -20,8 +20,30 @@ struct NativeDockStripMetrics: Equatable {
     var closeZone: CGFloat { 6 + close + 1 + tabPadding }
 }
 
-/// iPadOS moves a window by its top edge. A pane at the top of a window that is not
-/// full screen keeps its strip below that edge; full screen, the strip starts at the top (Figma 129:1596).
+/// The paper card inside a pane's content area: in from the sides and bottom by `inset`, with `radius` corners.
+/// The strip of glass that leaves between a side panel and the card is where a panel's resize handle may reach.
+enum NativeDockCard {
+    static let inset: CGFloat = 6, radius: CGFloat = 12
+}
+
+/// How far a pane at the window's top keeps its tab strip below the top edge.
+///
+/// iPadOS takes a drag that starts along the top of a window as a drag of the window itself, even when it starts
+/// on one of our tabs: the tab's own drag then never ends and the window leaves its place. In a window that is
+/// not full screen the strip has always kept 16 pt below that edge. iPadOS 26 does the same in full screen: there
+/// a drag that starts in the top 32 pt (`systemDragBand`, measured on 26.5) pulls the app out of full screen.
+struct NativeDockTopEdge: Equatable {
+    let clearance: CGFloat
+    /// Full screen before iPadOS 26: nothing above the strip claims touches (Figma 129:1596).
+    static let flush = NativeDockTopEdge(clearance: 0)
+    /// A window that is not full screen.
+    static let window = NativeDockTopEdge(clearance: 16)
+    /// Full screen on iPadOS 26: the whole tab pill, which sits 10 pt inside its row, lies under the system's band.
+    static let systemBand = NativeDockTopEdge(clearance: 24)
+    /// The depth of the band iPadOS 26 drags a full-screen window by.
+    static let systemDragBand: CGFloat = 32
+}
+
 enum NativeDockHeaderMetrics {
     /// Read while laying out: entering or leaving full screen resizes the window, which lays the dock out again.
     @MainActor static var windowed: Bool {
@@ -31,14 +53,20 @@ enum NativeDockHeaderMetrics {
             return abs(window.width - screen.width) > 1 || abs(window.height - screen.height) > 1
         }
     }
-    static func topPadding(for paneFrame: CGRect, windowed: Bool) -> CGFloat {
-        windowed && abs(paneFrame.minY) < 0.5 ? 16 : 0
+    /// The top edge the window has now.
+    @MainActor static var topEdge: NativeDockTopEdge {
+        if windowed { return .window }
+        if #available(iOS 26, *) { return .systemBand }
+        return .flush
     }
-    static func height(for paneFrame: CGRect, controlsHeight: CGFloat = NativeDockStripMetrics.single.total, windowed: Bool) -> CGFloat {
-        controlsHeight + topPadding(for: paneFrame, windowed: windowed)
+    static func topPadding(for paneFrame: CGRect, topEdge: NativeDockTopEdge) -> CGFloat {
+        abs(paneFrame.minY) < 0.5 ? topEdge.clearance : 0
     }
-    static func contentFrame(for paneFrame: CGRect, controlsHeight: CGFloat = NativeDockStripMetrics.single.total, windowed: Bool) -> CGRect {
-        let header = height(for: paneFrame, controlsHeight: controlsHeight, windowed: windowed)
+    static func height(for paneFrame: CGRect, controlsHeight: CGFloat = NativeDockStripMetrics.single.total, topEdge: NativeDockTopEdge) -> CGFloat {
+        controlsHeight + topPadding(for: paneFrame, topEdge: topEdge)
+    }
+    static func contentFrame(for paneFrame: CGRect, controlsHeight: CGFloat = NativeDockStripMetrics.single.total, topEdge: NativeDockTopEdge) -> CGRect {
+        let header = height(for: paneFrame, controlsHeight: controlsHeight, topEdge: topEdge)
         return CGRect(x: paneFrame.minX, y: paneFrame.minY + header,
                       width: paneFrame.width, height: max(0, paneFrame.height - header))
     }

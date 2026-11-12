@@ -30,7 +30,7 @@ struct NativeWorkspaceWindowControls: View {
     static let height: CGFloat = 40
     /// Centred on the tab strip's row: (51 − 40) / 2 below the strip's top, which a window that is not full screen moves down.
     static var top: CGFloat {
-        NativeDockHeaderMetrics.topPadding(for: .zero, windowed: NativeDockHeaderMetrics.windowed) + (NativeDockStripMetrics.single.height - height) / 2
+        NativeDockHeaderMetrics.topPadding(for: .zero, topEdge: NativeDockHeaderMetrics.topEdge) + (NativeDockStripMetrics.single.height - height) / 2
     }
     /// The right panel starts under the group, with the same 9 pt gap as before the group was centred.
     static var inspectorTop: CGFloat { top + height + 9 }

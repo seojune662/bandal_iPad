@@ -3,20 +3,42 @@ import UIKit
 @testable import Bandal
 
 final class NativeDockTabSizingTests: XCTestCase {
+    /// A side panel's resize handle takes touches over the panel's edge and the glass between the panel and the
+    /// document's card, never over the card: a stroke or a pinch that begins at the page's edge belongs to the page.
+    func testRailResizeHandlesStopShortOfTheDocumentCard() {
+        let window: CGFloat = 1376, left: CGFloat = 240, right: CGFloat = 361
+        // Left panel: its seam is the 1 pt divider at 48 + width; the centre pane starts right after it.
+        let leftSeam = 48 + left + 0.5, paneStart = 48 + left + 1
+        let leftHandle = NativeDockRailResizer.center(seam: leftSeam, side: .left)
+        XCTAssertLessThanOrEqual(leftHandle + NativeDockRailResizer.hitWidth / 2, paneStart + NativeDockCard.inset)
+        XCTAssertLessThan(leftHandle - NativeDockRailResizer.hitWidth / 2, leftSeam, "It still covers the seam and the panel's edge")
+        // Right panel, mirrored.
+        let rightSeam = window - right - 0.5, paneEnd = window - right - 1
+        let rightHandle = NativeDockRailResizer.center(seam: rightSeam, side: .right)
+        XCTAssertGreaterThanOrEqual(rightHandle - NativeDockRailResizer.hitWidth / 2, paneEnd - NativeDockCard.inset)
+        XCTAssertGreaterThan(rightHandle + NativeDockRailResizer.hitWidth / 2, rightSeam)
+        XCTAssertGreaterThanOrEqual(NativeDockRailResizer.hitWidth, 24, "Wide enough to grab along the whole edge")
+    }
     func testOnlyWindowTopHeadersOfAWindowedSceneMoveControlsBelowSystemDragRegion() {
         let upper = CGRect(x: 0, y: 0, width: 500, height: 400)
         let lower = CGRect(x: 0, y: 408, width: 500, height: 400)
         let belowSelector = CGRect(x: 0, y: 44, width: 500, height: 700)
-        XCTAssertEqual(NativeDockHeaderMetrics.height(for: upper, windowed: true), 68)
-        XCTAssertEqual(NativeDockHeaderMetrics.topPadding(for: upper, windowed: true), 16)
-        XCTAssertEqual(NativeDockHeaderMetrics.height(for: upper, windowed: false), 52, "Full screen, the strip starts at the top as in Figma")
-        XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, windowed: true), 52)
-        XCTAssertEqual(NativeDockHeaderMetrics.height(for: belowSelector, windowed: true), 52)
-        XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, controlsHeight: NativeDockStripMetrics.stacked.total, windowed: true), 49)
-        for windowed in [true, false] {
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: upper, topEdge: .window), 68)
+        XCTAssertEqual(NativeDockHeaderMetrics.topPadding(for: upper, topEdge: .window), 16)
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: upper, topEdge: .flush), 52, "Full screen, the strip starts at the top as in Figma")
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, topEdge: .window), 52)
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: belowSelector, topEdge: .window), 52)
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, controlsHeight: NativeDockStripMetrics.stacked.total, topEdge: .window), 49)
+        // Full screen on iPadOS 26: the strip keeps under the band the system drags the window by, pill and all.
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: upper, topEdge: .systemBand), 76)
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, topEdge: .systemBand), 52)
+        let strip = NativeDockStripMetrics.single
+        XCTAssertGreaterThanOrEqual(NativeDockTopEdge.systemBand.clearance + (strip.height - strip.pillHeight) / 2, NativeDockTopEdge.systemDragBand,
+                                    "The tab pill starts below the top 32 pt, where a drag would move the window instead of the tab")
+        for windowed in [NativeDockTopEdge.window, .flush, .systemBand] {
             for pane in [upper, lower, belowSelector] {
-                let content = NativeDockHeaderMetrics.contentFrame(for: pane, windowed: windowed)
-                XCTAssertEqual(content.minY, pane.minY + NativeDockHeaderMetrics.height(for: pane, windowed: windowed))
+                let content = NativeDockHeaderMetrics.contentFrame(for: pane, topEdge: windowed)
+                XCTAssertEqual(content.minY, pane.minY + NativeDockHeaderMetrics.height(for: pane, topEdge: windowed))
                 XCTAssertEqual(content.maxY, pane.maxY)
                 XCTAssertEqual(content.width, pane.width)
             }
