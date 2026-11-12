@@ -140,7 +140,8 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
         return value
     }
     var drawingStyle: [String: Any] {
-        var style: [String: Any] = ["color": color, "width": tool == "highlighter" ? max(0.014, width * 4) : tool == "brush" ? width * NativePDFPaletteStyle.brushWidthScale : width,
+        var style: [String: Any] = ["color": color, "width": tool == "highlighter" ? max(0.014, width * 4) : tool == "brush" ? width * NativePDFPaletteStyle.brushWidthScale
+                                        : tool == "pen" ? width * NativePDFPaletteStyle.penWidthScale : width,
                                     "opacity": tool == "highlighter" ? min(opacity, 0.34) : opacity]
         if tool == "ballpoint" { style["fixedWidth"] = true }
         return style

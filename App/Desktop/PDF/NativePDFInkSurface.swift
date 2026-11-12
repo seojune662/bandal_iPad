@@ -70,6 +70,8 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         var brush = false
         /// 형광펜 곧게 긋기: every sample keeps the height of the first one.
         var straighten = false
+        /// The geometry new strokes are saved with: 4 for the plain 펜 (the first pen's even line), 5 otherwise.
+        var inkVersion = 5
     }
     var tool = Tool() { didSet { if tool != oldValue { finishMeasuredStroke(); reviewBackdropDependency() } } }
     var retainedInkEnabled = false { didSet { if oldValue != retainedInkEnabled { retainedModelDirty = true; schedulePreview() } } }
@@ -732,7 +734,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         if tool.name == "highlighter", !prepareRetainedScene(), !navigationDisplayActive, prepareBackdrop() == nil, !asynchronousEditDisplayActive {
             onDiagnostic?("highlighter.backdrop.unavailable"); return
         }
-        active = touch; startTime = touch.timestamp; strokeTool = tool; strokeInkVersion = 5; previewGeometry.reset()
+        active = touch; startTime = touch.timestamp; strokeTool = tool; strokeInkVersion = tool.name == "pen" && tool.inkVersion == 4 ? 4 : 5; previewGeometry.reset()
         inputSequence &+= 1
         let beganAt = CACurrentMediaTime()
         contactTimings[inputSequence] = ContactTiming(beganAt: beganAt)

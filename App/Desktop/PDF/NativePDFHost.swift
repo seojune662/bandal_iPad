@@ -1207,7 +1207,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             nextTool = .init(name: name, drawAndHold: value["drawAndHold"] as? Bool ?? true, style: style, lassoBox: value["lassoMode"] as? String == "box",
                              eraserRadius: radius.isFinite && radius > 0 && radius <= 0.1 ? radius : 0.005,
                              partialErase: value["eraserMode"] as? String == "partial",
-                             brush: value["brush"] as? Bool == true, straighten: value["straighten"] as? Bool == true)
+                             brush: value["brush"] as? Bool == true, straighten: value["straighten"] as? Bool == true,
+                             inkVersion: (value["inkVersion"] as? NSNumber)?.intValue == 4 ? 4 : 5)
         }
         let epoch: Int?
         if request["objectSceneEpoch"] != nil {

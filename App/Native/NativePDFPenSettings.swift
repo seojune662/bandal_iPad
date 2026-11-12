@@ -29,7 +29,7 @@ struct NativePDFPenSettings: View {
         }
     }
     /// The preview's 4 pt line is step 5 of 12 (0.003 of the page width).
-    private var previewWidth: CGFloat { min(24, max(1.5, model.width * (model.tool == "brush" ? NativePDFPaletteStyle.brushWidthScale : 1) * 4 / 0.003)) }
+    private var previewWidth: CGFloat { min(24, max(1.5, model.width * (model.tool == "brush" ? NativePDFPaletteStyle.brushWidthScale : model.tool == "pen" ? NativePDFPaletteStyle.penWidthScale : 1) * 4 / 0.003)) }
     private var colors: some View {
         let slots = model.colorSlots, missing = NativePDFWorkspaceModel.colors.filter { !slots.contains($0.name) }
         return ScrollView(.horizontal, showsIndicators: false) {

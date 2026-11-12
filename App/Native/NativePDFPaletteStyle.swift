@@ -43,6 +43,8 @@ enum NativePDFPaletteStyle {
                                                         "highlighter": ["yellow", "green", "blue", "violet"], "tape": ["yellow", "blue", "red", "violet"]]
     /// 붓 draws wider than its step: the brush pressure curve spends most of a stroke below the chosen width.
     static let brushWidthScale = 1.6
+    /// 펜 saves V4 ink, whose typical writing width (0.42 + 0.20 p) is about 0.8 of V5's: the same step draws as thick as before.
+    static let penWidthScale = 1.25
     /// The highlighter popover's five swatches (Figma 259:8883) and the ink colour each one draws with.
     static let highlighterSwatches: [(color: String, hex: UInt32)] = [("yellow", 0xf5d547), ("green", 0x8bd98b), ("blue", 0x8ec3f5), ("red", 0xf5a3c7), ("ink", 0xc9c9ce)]
     static let eraserModes = ["stroke", "partial"]

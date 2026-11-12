@@ -696,7 +696,9 @@ final class NativePDFWorkspaceModel {
                 let epoch = self.sceneEpoch
                 payload.merge(["nativeInkErase": true, "loading": false, "active": true,
                     "annotations": self.annotations, "tool": ["name": self.isPenLike ? "pen" : self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled, "lassoMode": self.lassoMode,
-                        "brush": self.tool == "brush", "straighten": self.tool == "highlighter" && self.palette.highlighterStraight,
+                        // 펜 draws the first pen's ink (V4: a gentle pressure swell, no speed thinning or end taper);
+                        // 볼펜 and 붓 keep V5.
+                        "brush": self.tool == "brush", "inkVersion": self.tool == "pen" ? 4 : 5, "straighten": self.tool == "highlighter" && self.palette.highlighterStraight,
                         // 형광펜만 지우기 is a filter the editor applies, so the editor's eraser handles the contact (as it does for 부분).
                         "eraserRadius": self.palette.eraserRadius, "eraserMode": self.palette.eraserHighlighterOnly ? "partial" : self.palette.eraserMode], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
                 do { _ = try await self.call("snapshot", payload) }
