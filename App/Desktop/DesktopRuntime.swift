@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 import os
 
 /// A serial Swift storage engine. SQLite transactions, file publication and
@@ -26,6 +27,11 @@ final class DesktopRuntime: @unchecked Sendable {
     private var sync: NativeSyncRepository?
     private var search: NativeSearchRepository?
     private var indexingCourses = Set<String>()
+    private var handwriting: NativeHandwritingRepository?
+    private var unifiedSearch: NativeUnifiedSearchRepository?
+    /// When each course's text index was last compared with its folder.
+    private var searchRefreshed: [String:Date] = [:]
+    private var handwritingState = HandwritingState()
     private var learning: NativeLearningRepository?
     private var whiteboards: NativeWhiteboardRepository?
     private var initialization: Task<Void,Error>?
@@ -63,6 +69,12 @@ final class DesktopRuntime: @unchecked Sendable {
             self.recordings = NativeRecordingRepository(context:context)
             self.preferences = NativePreferencesRepository(context:context)
             self.search = try NativeSearchRepository(context:context)
+            // Search is an extra: a failure to prepare its tables must not keep documents from opening.
+            do {
+                self.handwriting = try NativeHandwritingRepository(context:context,pdf:pdf)
+                self.unifiedSearch = try NativeUnifiedSearchRepository(context:context)
+            } catch { self.log.record("search.index.unavailable",code:(error as? DesktopRuntimeError)?.code) }
+            self.handwritingState.enabled = (try? self.preferences?.settings())?["handwritingSearch"] as? Bool != false
             let learning = NativeLearningRepository(context:context)
             self.learning = learning
             // Interrupted-run recovery walks every course folder; it runs after the UI is ready.
@@ -137,7 +149,23 @@ final class DesktopRuntime: @unchecked Sendable {
         case "nativeBrowser:shortcuts": return NativeBrowserShortcuts.resolve(try preferences?.settings() ?? [:])
         case "nativeRuntime:workspaceReady": workspaceSession = try NativeValue.string(request["workspaceSessionId"],"작업 공간"); watches.removeAll(); snapshots.removeAll(); return NativeValue.ok
         case "nativeRuntime:workspaceReset": watches.removeAll(); snapshots.removeAll(); return NativeValue.ok
-        case "nativeRuntime:recoverDeferred": try learning?.recoverInterruptedRuns(); return NativeValue.ok
+        case "nativeRuntime:recoverDeferred":
+            try learning?.recoverInterruptedRuns()
+            // Notes written before this build, or synced in while the app was closed, are read in the background.
+            scheduleHandwriting(after:handwritingTiming.launch); return NativeValue.ok
+        case "handwriting:status": return handwritingStatus
+        case "search:unified":
+            let course = request["courseId"] as? String
+            guard var result = try unifiedSearch?.query(text:try NativeValue.string(request["query"],"검색어"),courseID:course) else { return nil }
+            result["handwritingIndexing"] = handwritingState.running
+            refreshSearchIndexes(course)
+            return result
+        case "search:document":
+            let course = try NativeValue.string(request["courseId"],"과목")
+            let result = try unifiedSearch?.document(courseID:course,relativePath:try NativeValue.string(request["relPath"],"자료"),text:request["query"] as? String ?? "")
+            // A PDF opened before its text was extracted gets it now; `search:changed` repeats the search.
+            refreshSearchIndexes(course)
+            return result
         case "nativeRuntime:active": active = request["active"] as? Bool == true; if active { poll() }; return NativeValue.ok
         case "pdf:openPageNote":
             guard let context, let pdf else { throw DesktopRuntimeError("PDF 저장소가 준비되지 않았습니다.") }
@@ -161,12 +189,28 @@ final class DesktopRuntime: @unchecked Sendable {
             return NativeValue.ok
         default:break
         }
-        if let result = try library?.handle(channel,request) { return result }
-        if let result = try pdfPages?.handle(channel,request) { return result }
-        if let result = try pdf?.handle(channel:channel,request) { return result }
+        if let result = try library?.handle(channel,request) {
+            if channel == "materials:delete", let course = request["courseId"] as? String, let path = request["relPath"] as? String {
+                try handwriting?.forget(courseID:course,relativePath:path)
+                scheduleHandwriting(after:0)
+            } else if ["materials:import","materials:importShared","materials:duplicate","materials:adoptFile","courses:restore","courses:relink"].contains(channel) {
+                // A file that comes back, or a course that does, brings its ink pages with it.
+                scheduleHandwriting(after:handwritingTiming.debounce)
+            }
+            return result
+        }
+        if let result = try pdfPages?.handle(channel,request) {
+            // Moving or deleting pages renumbers their ink.
+            if ["pdf:restructure","pdf:restorePages"].contains(channel) { scheduleHandwriting(after:handwritingTiming.debounce) }
+            return result
+        }
+        if let result = try pdf?.handle(channel:channel,request) { try inkChanged(channel,request,result); return result }
         if let result = try planner?.handle(channel,request) { return result }
         if let result = try recordings?.handle(channel,request) { return result }
-        if let result = try preferences?.handle(channel,request) { return result }
+        if let result = try preferences?.handle(channel,request) {
+            if channel == "settings:set" || channel == "settings:reset" { try handwritingSettingChanged(result) }
+            return result
+        }
         if let result = try chat?.handle(channel == "nativeChat:open" ? "chat:open" : channel,request) { return result }
         if let result = try sync?.handle(channel,request) { return result }
         if let result = try learning?.handle(channel,request) { return result }
@@ -205,6 +249,138 @@ final class DesktopRuntime: @unchecked Sendable {
             }
         } catch { log.record("search.pdf.unavailable",code:(error as? DesktopRuntimeError)?.code) }
     }
+    /// The query above reads the index as it is. Folders are compared and new PDFs extracted afterwards,
+    /// one course per queue turn so a save never waits behind a whole library; `search:changed` re-runs the query.
+    private func refreshSearchIndexes(_ course: String?) {
+        let courses = course.map { [$0] } ?? ((try? context?.query("SELECT id FROM courses WHERE deleted_at IS NULL"))?.compactMap { $0["id"] as? String } ?? [])
+        for course in courses where Date().timeIntervalSince(searchRefreshed[course] ?? .distantPast) > 15 {
+            searchRefreshed[course] = Date()
+            queue.async { [weak self] in
+                guard let self, let search = self.search, let db = self.context?.db else { return }
+                let changes = db.totalChanges
+                do { try search.refresh(courseID:course) } catch { self.log.record("search.refresh.skipped",code:(error as? DesktopRuntimeError)?.code); return }
+                if db.totalChanges != changes { self.onEmit?("search:changed",["courseId":course]) }
+                self.schedulePDFSearch(course)
+            }
+        }
+    }
+
+    // MARK: Handwriting index
+
+    private struct HandwritingState {
+        var enabled = true
+        var due: DispatchWorkItem?
+        var running = false
+        /// Ink changed while a pass was running: plan again when it ends.
+        var again = false
+        var done = 0, total = 0
+        var emitted = ""
+        /// Pages that could not be read this session (a missing or replaced original). Retried on the next launch.
+        var skipped = Set<String>()
+        var lastInk = Date.distantPast
+    }
+    /// `debounce`: after the pen lifts; a new stroke restarts it. `idle`: the same wait in Low Power Mode.
+    var handwritingTiming = (debounce: 2.0, launch: 5.0, idle: 30.0)
+    private var handwritingStatus: [String:Any] {
+        ["enabled":handwritingState.enabled,"active":handwritingState.running,"done":handwritingState.done,"total":handwritingState.total]
+    }
+    private func emitHandwritingProgress() {
+        let state = "\(handwritingState.enabled):\(handwritingState.running):\(handwritingState.done):\(handwritingState.total)"
+        guard state != handwritingState.emitted else { return }
+        handwritingState.emitted = state; onEmit?("handwriting:progress",handwritingStatus)
+    }
+    private func inkChanged(_ channel: String,_ request: [String:Any],_ result: Any) throws {
+        guard handwritingState.enabled, ["drawings:create","drawings:update","drawings:replace","drawings:delete"].contains(channel) else { return }
+        handwritingState.lastInk = Date()
+        if channel == "drawings:update" || channel == "drawings:replace" {
+            let value = result as? [String:Any], drawing = value?["after"] as? [String:Any] ?? value
+            if let course = drawing?["courseId"] as? String, let path = drawing?["relPath"] as? String, let page = drawing?["page"] as? Int {
+                try handwriting?.invalidate(courseID:course,relativePath:path,page:page)
+            }
+        }
+        scheduleHandwriting(after:handwritingTiming.debounce)
+    }
+    private func handwritingSettingChanged(_ settings: Any) throws {
+        let enabled = (settings as? [String:Any])?["handwritingSearch"] as? Bool != false
+        guard enabled != handwritingState.enabled else { return }
+        handwritingState.enabled = enabled
+        if enabled { scheduleHandwriting(after:0); return }
+        handwritingState.due?.cancel(); handwritingState.due = nil
+        handwritingState.done = 0; handwritingState.total = 0
+        try handwriting?.clear()
+        emitHandwritingProgress()
+    }
+    /// Storage queue only. Each call restarts the wait, so recognition follows the last change.
+    private func scheduleHandwriting(after delay: TimeInterval) {
+        guard handwritingState.enabled, handwriting != nil else { return }
+        handwritingState.due?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.startHandwriting() }
+        handwritingState.due = work
+        queue.asyncAfter(deadline:.now()+delay,execute:work)
+    }
+    /// Seconds still to wait: a document is opening, or the pen was down too recently.
+    private var handwritingWait: TimeInterval {
+        let quiet = ProcessInfo.processInfo.isLowPowerModeEnabled ? handwritingTiming.idle : handwritingTiming.debounce
+        return max(isForegroundBusy ? 1 : 0, quiet - Date().timeIntervalSince(handwritingState.lastInk))
+    }
+    private func startHandwriting() {
+        handwritingState.due = nil
+        guard handwritingState.enabled, let handwriting else { return }
+        if handwritingState.running { handwritingState.again = true; return }
+        let wait = handwritingWait
+        if wait > 0 { scheduleHandwriting(after:wait); return }
+        do {
+            let plan = try handwriting.plan()
+            let jobs = plan.jobs.filter { !handwritingState.skipped.contains($0.key + ":" + $0.digest) }
+            handwritingState.total = plan.total - (plan.jobs.count - jobs.count)
+            handwritingState.done = handwritingState.total - jobs.count
+            handwritingState.running = !jobs.isEmpty; handwritingState.again = false
+            emitHandwritingProgress()
+            guard !jobs.isEmpty else { return }
+            Task.detached(priority:.utility) { [weak self] in
+                await self?.recognizeHandwriting(jobs)
+                guard let self else { return }
+                _ = try? await self.onQueue {
+                    self.handwritingState.running = false
+                    self.emitHandwritingProgress()
+                    if self.handwritingState.again { self.scheduleHandwriting(after:0) }
+                }
+            }
+        } catch {
+            log.record("handwriting.plan.failed",code:(error as? DesktopRuntimeError)?.code)
+            // A busy database now is not a reason to stay unindexed until the next stroke.
+            scheduleHandwriting(after:handwritingTiming.idle)
+        }
+    }
+    /// One page at a time on a utility task. Only the short reads and writes run on the storage queue.
+    private func recognizeHandwriting(_ jobs: [NativeHandwritingJob]) async {
+        var opened: (url: URL, document: PDFDocument)?
+        for job in jobs {
+            while let wait = try? await onQueue({ self.handwritingWait }), wait > 0 { try? await Task.sleep(for:.seconds(wait)) }
+            do {
+                guard let source = try await onQueue({ self.handwritingState.enabled ? try self.handwriting?.source(job) : nil }) else { return }
+                var lines: [NativeHandwritingLine]?
+                if !source.unchanged {
+                    if opened?.url != source.url { opened = PDFDocument(url:source.url).map { (source.url,$0) } }
+                    // An original that cannot be opened right now is skipped, not recorded as a page without writing.
+                    guard let size = opened.flatMap({ NativeHandwritingRecognizer.pageSize(of:$0.document,page:job.page) }) else { throw DesktopRuntimeError("PDF page is unavailable",code:"NOT_FOUND") }
+                    let started = ProcessInfo.processInfo.systemUptime
+                    lines = try NativeHandwritingRecognizer.lines(rows:source.rows,pageSize:size)
+                    DesktopSignpost.benchmark("handwriting.page",startedAt:started)
+                }
+                let recognized = lines
+                try await onQueue {
+                    guard self.handwritingState.enabled, try self.handwriting?.commit(job,inkKey:source.inkKey,lines:recognized) == true else { self.handwritingState.again = true; return }
+                    self.handwritingState.done += 1
+                    self.emitHandwritingProgress()
+                }
+            } catch {
+                log.record("handwriting.page.skipped",code:(error as? DesktopRuntimeError)?.code)
+                // Skipped for this session while its ink stays as it is; an edit makes it a new job.
+                _ = try? await onQueue { self.handwritingState.skipped.insert(job.key + ":" + job.digest); self.handwritingState.total = max(self.handwritingState.done,self.handwritingState.total - 1) }
+            }
+        }
+    }
     private func poll() {
         guard active else { return }
         for course in Set(watches.values) {
@@ -220,6 +396,9 @@ final class DesktopRuntime: @unchecked Sendable {
     func withSyncStorage<T>(_ work: @escaping (NativeRepositoryContext, NativeLibraryRepository) throws -> T) async throws -> T {
         try await onQueue {
             guard let context = self.context, let library = self.library else { throw DesktopRuntimeError("자료 저장소를 시작하지 못했습니다.") }
+            let changes = context.db.totalChanges
+            // Ink pulled from another device is recognised here too: each device builds its own index.
+            defer { if context.db.totalChanges != changes { self.scheduleHandwriting(after:self.handwritingTiming.debounce) } }
             return try work(context, library)
         }
     }

@@ -109,6 +109,27 @@ struct NativeSettingsToggle: View {
     }
 }
 
+/// 일반 › 손글씨 검색. While existing notes are being read, the row says how far it is.
+struct NativeHandwritingSearchToggle: View {
+    var store: NativeWorkspaceStore
+    @Binding var isOn: Bool
+    @State private var progress: (done: Int, total: Int)?
+    @Environment(\.locale) private var locale
+    var body: some View {
+        NativeSettingsToggle(title: "손글씨 검색",
+                             note: progress.map { String(format: NativeAppLocale.string("손글씨 색인 중 %lld / %lld 페이지", locale), $0.done, $0.total) },
+                             isOn: $isOn)
+            .accessibilityIdentifier("native-settings-handwriting-search")
+            .task { receive(try? await store.invoke("handwriting:status")) }
+            .onReceive(store.events) { event in if event.channel == "handwriting:progress" { receive(event.payload) } }
+    }
+    private func receive(_ payload: Any?) {
+        guard let value = payload as? [String: Any], value["active"] as? Bool == true, value["enabled"] as? Bool != false,
+              let done = value["done"] as? Int, let total = value["total"] as? Int else { progress = nil; return }
+        progress = (done, total)
+    }
+}
+
 /// The row that ends a page: what the design leaves out of the page lives on the page it opens.
 struct NativeSettingsMoreRow: View {
     let action: () -> Void
@@ -210,6 +231,9 @@ struct NativeSettingsSections: View {
                             }
                         }
                     }
+            }
+            NativeSettingsGroup(title: "검색") {
+                NativeHandwritingSearchToggle(store: store, isOn: boolean("handwritingSearch", fallback: true))
             }
             NativeSettingsGroup {
                 Button { pickingLocale = true } label: {

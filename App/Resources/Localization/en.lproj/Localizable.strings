@@ -130,6 +130,29 @@
 "첫 화면" = "Home";
 "할 일 목록" = "Task list";
 
+/* ===== BEGIN handwriting search (seojune662/handwriting-index) ===== */
+"손글씨 검색" = "Handwriting search";
+"손글씨 색인 중 %lld / %lld 페이지" = "Indexing handwriting: %lld of %lld pages";
+/* ===== END handwriting search ===== */
+
+/* ===== BEGIN unified search (seojune662/unified-search) ===== */
+"%lld곳" = "%lld matches";
+"결과 없음" = "No results";
+"대화" = "Chats";
+"손글씨" = "Handwriting";
+"손글씨 색인 중이라 일부 결과가 빠질 수 있어요" = "Handwriting is still being indexed, so some results may be missing";
+"이 과목만" = "This course only";
+"자료" = "Materials";
+"자료·손글씨·대화 검색" = "Search materials, handwriting and chats";
+/* ===== END unified search ===== */
+
+/* ===== BEGIN search inside a document (seojune662/document-search) ===== */
+"문서에서 찾기" = "Find in document";
+"일치 %lld곳" = "%lld matches";
+"찾기" = "Find";
+"찾기 닫기" = "Close find";
+/* ===== END search inside a document ===== */
+
 /* ===== App strings (extracted) ===== */
 "%@ 개인정보 처리방침" = "%@ privacy policy";
 "%@ 전송에 동의함" = "Consent to send to %@ given";

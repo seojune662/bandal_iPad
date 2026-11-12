@@ -88,10 +88,17 @@ struct NativeRailSearchField: View {
     let prompt: String
     @Binding var text: String
     let identifier: String
+    /// Esc empties the field while it has focus.
+    var escapeClears = false
+    @Environment(\.locale) private var locale
     var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(NativeGlass.fieldGlyph).frame(width: 16)
-            TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(NativeGlass.fieldPrompt)).textFieldStyle(.plain).foregroundStyle(NativeDesktopTheme.text).accessibilityIdentifier(identifier)
+            if escapeClears {
+                NativeSearchTextField(text: $text, placeholder: NativeAppLocale.string(prompt, locale), identifier: identifier, fontSize: 12, onEscape: { text = "" })
+            } else {
+                TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(NativeGlass.fieldPrompt)).textFieldStyle(.plain).foregroundStyle(NativeDesktopTheme.text).accessibilityIdentifier(identifier)
+            }
             if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(NativeGlass.fieldGlyph) }.buttonStyle(.plain).accessibilityLabel("검색어 지우기") }
         }.font(NativeDesktopTheme.font(12))
             .padding(.leading, 9).padding(.trailing, 8).frame(height: 34)

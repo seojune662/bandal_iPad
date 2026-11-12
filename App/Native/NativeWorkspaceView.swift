@@ -1259,6 +1259,21 @@ struct NativeWorkspaceView: View {
         if event.channel == "nativeWorkspace:openBrowserURL", let payload = event.payload as? [String: Any], let url = payload["url"] as? String {
             openBrowserURL(url, destination: payload["nativeWorkspaceTarget"] as? NativeWorkspaceTarget ?? navigation.captureTarget()); return
         }
+        if event.channel == "nativeWorkspace:openConversation", let value = event.payload as? [String: Any],
+           let course = value["courseId"] as? String, let conversation = value["conversationId"] as? String, let listed = store.courses.first(where: { $0.id == course }) {
+            // A conversation belongs to the course or project space it was held in.
+            Task { @MainActor in
+                let context: NativeWorkspaceContext
+                if let root = value["rootRelPath"] as? String, let project = try? await NativeWorkspaceContext.loadProject(store: store, binding: .init(courseID: course, rootRelPath: root)) { context = project }
+                else if let current = workspaceContext, current.courseID == course, current.kind != .project { context = current }
+                else { context = .course(listed) }
+                store.pendingAssistantMessageIDs[context.id] = value["messageId"] as? String
+                store.pendingAssistantConversationIDs[context.id] = conversation
+                if workspaceContext?.id != context.id { changeWorkspace(context) }
+                openAIRail()
+            }
+            return
+        }
         if event.channel == "nativeWorkspace:openDocument", let value = event.payload as? [String: Any],
            let course = value["courseId"] as? String, let path = value["relPath"] as? String {
             let document = NativeDocumentReference(courseID: course, relativePath: path, title: value["title"] as? String ?? (path as NSString).lastPathComponent, kind: value["kind"] as? String ?? "pdf")
@@ -1289,6 +1304,7 @@ struct NativeWorkspaceView: View {
                             var preferences = NativePDFWorkspacePreferences.load(root: store.root, documentID: opened.id)
                             preferences.pendingPage = page
                             preferences.save(root: store.root, documentID: opened.id)
+                            if let highlight = value["highlight"] as? [String: Any] { store.pendingPDFHighlights[opened.id] = highlight.merging(["page": page]) { _, new in new } }
                         }
                         store.events.send(.init(channel: "nativeWorkspace:goToPage", payload: ["courseId": course, "relPath": path, "page": page, "tabID": opened.id]))
                     }

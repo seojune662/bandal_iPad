@@ -17,6 +17,8 @@ struct NativeAssistantPanel: View {
     var surface = Color(uiColor: .systemBackground)
     var style = NativeAssistantStyle.panel
     @State private var toast: String?
+    /// The message a search result opened: scrolled to and tinted for a moment.
+    @State private var revealedMessageID: String?
     @AppStorage(NativeAIPreferences.showsSourcesKey) private var showsSources = true
     /// The note the user removed from the composer: it is not attached again on its own.
     @State private var detachedDocumentID: String?
@@ -172,7 +174,15 @@ struct NativeAssistantPanel: View {
                         }
                     }.frame(width:column,alignment:.leading).padding(.top,top).padding(.bottom,bottom).frame(maxWidth:.infinity)
                 }.scrollDismissesKeyboard(.interactively)
-                    .onChange(of:session.messages.count) { _,_ in withAnimation { proxy.scrollTo("bottom",anchor:.bottom) } }
+                    .onChange(of:session.messages.count) { _,_ in if revealedMessageID == nil { withAnimation { proxy.scrollTo("bottom",anchor:.bottom) } } }
+                    .task(id:revealedMessageID) {
+                        guard let id = revealedMessageID else { return }
+                        // The lazy stack lays the row out a turn after the conversation loads.
+                        try? await Task.sleep(for:.milliseconds(80))
+                        withAnimation { proxy.scrollTo(id,anchor:.center) }
+                        try? await Task.sleep(for:.seconds(1.2))
+                        if !Task.isCancelled, revealedMessageID == id { withAnimation(.easeOut(duration:0.3)) { revealedMessageID = nil } }
+                    }
             }
         }
     }
@@ -229,6 +239,8 @@ struct NativeAssistantPanel: View {
             if isLastAnswer, !message.text.isEmpty, !session.running { actions(message) }
             if message.interrupted { Button("요청 다시 준비") { session.restoreAttempt() }.font(.caption).frame(minHeight:44) }
         }.frame(maxWidth:.infinity,alignment:isUser ? .trailing : .leading)
+            .padding(6).background(revealedMessageID == message.id ? NativeUnifiedSearchResults.matchTint.opacity(0.35) : .clear,in:RoundedRectangle(cornerRadius:10)).padding(-6)
+            .accessibilityIdentifier("native-assistant-message-" + message.id)
     }
     private func bubble(_ text: String) -> some View {
         Text(.init(text)).font(.system(size:look.text)).assistantLine(look.text,look.lineHeight).foregroundStyle(NativeDesktopTheme.onAccent)
@@ -467,8 +479,10 @@ struct NativeAssistantPanel: View {
     }
     private func consumePendingConversation() async {
         guard session.ready, let id = store.pendingAssistantConversationIDs[context.id] else { return }
-        await session.selectID(id)
+        if session.sessionID != id { await session.selectID(id) }
         if store.pendingAssistantConversationIDs[context.id] == id { store.pendingAssistantConversationIDs.removeValue(forKey:context.id) }
+        // Opened from a search result: show the message that matched.
+        if let message = store.pendingAssistantMessageIDs.removeValue(forKey:context.id), session.messages.contains(where:{ $0.id == message }) { revealedMessageID = message }
     }
     /// A request from outside the panel: attach, fill the composer, send. Text the user was typing is kept (the prompt goes after it).
     private func consumePendingRequest() {

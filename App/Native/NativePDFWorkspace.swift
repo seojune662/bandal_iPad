@@ -13,6 +13,7 @@ struct NativePDFWorkspace: View {
     @Environment(\.nativeWorkspaceTopInset) private var topInset
     @Environment(\.nativePDFPaletteHost) private var paletteHost
     @State private var bodyFrame = CGRect.zero
+    @AppStorage("native.pdf.paletteCollapsed") private var paletteCollapsed = false
     private let tabID: String
     private var showsPalette: Bool { visible && model.assistantAnnotation == nil && (chromeMode == .toolsHidden || model.toolsExpanded) }
     /// Where the palette starts. With the tabs hidden the window buttons sit over this pane's corner: start below them.
@@ -90,7 +91,14 @@ struct NativePDFWorkspace: View {
                                 NativePDFViewButton(model: model).padding(.trailing, NativePDFViewButton.trailing).padding(.top, belowPalette)
                             }
                         }
-                        .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model).padding(.top, belowPalette) } }
+                        // 문서에서 찾기 takes the band under the palette, clear of the thumbnails button; a recording bar moves below it.
+                        .overlay(alignment: .top) {
+                            if visible, model.search.isPresented {
+                                NativePDFSearchBar(search: model.search).padding(.horizontal, 8).frame(height: NativePDFViewButton.size).bandalGlass(in: Capsule())
+                                    .padding(.horizontal, NativePDFViewButton.trailing + NativePDFViewButton.size + 8).padding(.top, belowPalette)
+                            }
+                        }
+                        .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model).padding(.top, belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0)) } }
                         .overlay { if visible { NativePDFCommentAnchor(model: model) } }
                         .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame) } }
                     if model.showAnnotations && visible {
@@ -111,6 +119,8 @@ struct NativePDFWorkspace: View {
             }
         }
         .onChange(of: visible, initial: true) { _, value in model.setVisible(value) }
+        // ⌘F: find in this document.
+        .background { if visible { Button("") { model.find() }.keyboardShortcut("f", modifiers: .command).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true) } }
         .onChange(of: showsPalette, initial: true) { _, _ in registerPalette() }
         .onChange(of: paletteTop) { _, _ in registerPalette() }
         .onDisappear { paletteHost?.entries[tabID] = nil }
@@ -750,6 +760,7 @@ final class NativePDFWorkspaceModel {
                     clearSelection(); showPasteMenu(at: point, page: number)
                 } else if !inside { clearSelection() }
             }
+        case "find": search.present()
         case "selectionFrame":
             guard hasSelectionMenu, let x = payload["x"] as? Double, let y = payload["y"] as? Double,
                   let width = payload["width"] as? Double, let height = payload["height"] as? Double else { selectionFrame = nil; return }
@@ -952,6 +963,31 @@ final class NativePDFWorkspaceModel {
         stored.save(root: store.root, documentID: document.id, defaults: defaults)
         preferences.pendingPage = nil; preferences.viewport = stored.viewport
         if pendingPageToAcknowledge == requested { pendingPageToAcknowledge = nil }
+        if let highlight = store.pendingPDFHighlights.removeValue(forKey: document.id), highlight["page"] as? Int == requested { flash(highlight, page: requested) }
+    }
+    #if DEBUG
+    /// A UI test needs longer than a second to find the mark.
+    private static let searchFlashSeconds: Double = NativeSearchUITestFixture.requested ? 5 : 1
+    #else
+    private static let searchFlashSeconds: Double = 1
+    #endif
+    /// A search result just opened this page: its match is centred and marked for a second.
+    /// Text is found again in the page itself; a handwritten line brings its recognised box.
+    private func flash(_ highlight: [String: Any], page: Int) {
+        Task { @MainActor in
+            do {
+                var mark: [String: Any] = ["page": page, "current": true]
+                if let box = highlight["box"] as? [Double], box.count == 4 { mark["rects"] = [box]; mark["handwriting"] = true }
+                else if let query = highlight["query"] as? String,
+                        let found = (try await call("textMatches", ["page": page, "query": query]) as? [String: Any])?["matches"] as? [[[Double]]], let first = found.first { mark["rects"] = first }
+                guard let rects = mark["rects"] as? [[Double]], let first = rects.first, !retired else { return }
+                _ = try await call("navigate", ["page": page, "progress": min(1, max(0, first[1] + first[3] / 2))])
+                _ = try await call("searchMarks", ["marks": [mark]])
+                try await Task.sleep(for: .seconds(Self.searchFlashSeconds))
+                // Back to the marks of this document's own search, or to none.
+                if !retired { await search.mark(navigate: false) }
+            } catch { /* The page is open; only the momentary mark is missing. */ }
+        }
     }
     private func updateStyle() {
         savePreferences()
@@ -2080,7 +2116,21 @@ final class NativePDFWorkspaceModel {
         Task { do { _ = try await call("navigate", ["zoom": min(4, max(0.4, value))]) } catch { fail(error) } }
     }
     func fitPage() { Task { do { _ = try await call("navigate", ["zoom": 1.0]) } catch { fail(error) } } }
-    func find() { Task { do { _ = try await call("find") } catch { fail(error) } } }
+    func find() { search.present() }
+    /// Search inside this document. The viewer's bar and the thumbnails' field share it.
+    @ObservationIgnored private(set) lazy var search: NativePDFDocumentSearch = {
+        let search = NativePDFDocumentSearch()
+        search.lookup = { [weak self] query in
+            guard let self else { return [:] }
+            return try await self.store.invoke("search:document", ["courseId": self.document.courseID, "relPath": self.document.relativePath, "query": query]) as? [String: Any] ?? [:]
+        }
+        search.host = { [weak self] command, request in
+            guard let self, self.opened, !self.retired else { return [String: Any]() }
+            return try await self.call(command, request)
+        }
+        search.currentPage = { [weak self] in self?.page ?? 1 }
+        return search
+    }()
     func exportPDF() {
         guard !isLoading, !isBusy, errorMessage == nil else { return }
         isBusy = true; host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
@@ -2425,6 +2475,8 @@ final class NativePDFWorkspaceModel {
         aiNoteNotice = "노트에 넣었어요"
     }
     private func receiveStoreEvent(_ event: NativeWorkspaceEvent) {
+        // This document's text was extracted, or its handwriting read, while its search is showing.
+        if event.channel == "search:changed" || event.channel == "handwriting:progress" { search.update(refresh: true); return }
         guard let payload = event.payload as? [String: Any], payload["courseId"] as? String == document.courseID,
               let path = (payload["fromRelPath"] ?? payload["relPath"]) as? String,
               path == document.relativePath || payload["isDirectory"] as? Bool == true && document.relativePath.hasPrefix(path + "/") else { return }
@@ -2490,4 +2542,8 @@ private final class NativePDFBodyController: UIViewController {
         mediaDrop = drop
     }
     override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); model.layout(view.bounds) }
+    /// ⌘F while the page itself has the keyboard (after writing or scrolling in this pane). The SwiftUI
+    /// shortcut answers when focus is elsewhere; with two PDFs side by side this one goes to the pane in use.
+    override var keyCommands: [UIKeyCommand]? { [UIKeyCommand(input: "f", modifierFlags: .command, action: #selector(findInDocument))] }
+    @objc private func findInDocument() { model.find() }
 }
