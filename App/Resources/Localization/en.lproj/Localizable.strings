@@ -285,7 +285,6 @@
 "공식 문서와 변경 사항을 확인하세요." = "Read the official docs and what's new.";
 "공정 이용 안내" = "Fair use policy";
 "과목" = "Course";
-"과목 그룹 만들기" = "New course group";
 "과목 보관" = "Archive course";
 "과목 선택" = "Choose course";
 "과목 이름" = "Course name";
@@ -308,13 +307,6 @@
 "굵기" = "Thickness";
 "굵기 %lld" = "Thickness %lld";
 "균형" = "Balanced";
-"그룹 삭제" = "Delete group";
-"그룹 안의 과목은 그대로 남아요." = "The courses in the group stay.";
-"그룹 없음" = "No group";
-"그룹 이름" = "Group name";
-"그룹 이름 변경" = "Rename group";
-"그룹으로 이동" = "Move to group";
-"그룹을 삭제할까요?" = "Delete this group?";
 "그린 뒤 유지하여 도형 정리" = "Draw and hold to tidy shapes";
 "글" = "Articles";
 "글꼴과 밀도" = "Font and density";
@@ -607,7 +599,6 @@
 "새 개인정보 보호 탭" = "New private tab";
 "새 과목" = "New course";
 "새 과목 만들기" = "New course";
-"새 그룹" = "New group";
 "새 노트" = "New note";
 "새 노트 쓰기" = "Write new note";
 "새 녹음" = "New recording";
@@ -1300,7 +1291,6 @@
 /* 과목·프로젝트 → 폴더 */
 "폴더 찾기" = "Find folders";
 "폴더 추가" = "Add folder";
-"그룹 만들기" = "New group";
 "보관된 폴더 관리" = "Manage archived folders";
 "삭제한 폴더 보기" = "Show deleted folders";
 "삭제한 폴더 숨기기" = "Hide deleted folders";
@@ -1310,7 +1300,6 @@
 "폴더를 보관할까요?" = "Archive this folder?";
 "파일과 즐겨찾기는 유지되고 보관된 폴더 관리에서 다시 꺼낼 수 있어요." = "Files and favorites are kept, and you can bring it back from Manage Archived Folders.";
 "폴더 보관" = "Archive folder";
-"그룹 안의 폴더는 그대로 남아요." = "The folders in the group stay.";
 "폴더" = "Folders";
 "폴더를 선택하세요" = "Choose a folder";
 "보관한 폴더" = "Archived folders";
@@ -1419,3 +1408,15 @@
 "모노" = "Mono";
 "친구를 초대하고 AI 100회 받기" = "Invite friends, get 100 AI uses";
 "친구가 로그인하고 첫 폴더를 만들면 둘 다 받아요" = "You both get them when your friend signs in and creates their first folder";
+"폴더 삭제" = "Delete folder";
+"하위 폴더 만들기" = "New subfolder";
+"맨 위로" = "To top level";
+"최근 삭제" = "Recently deleted";
+"영구 삭제" = "Delete permanently";
+"하위 폴더" = "Subfolder";
+"폴더를 삭제할까요?" = "Delete this folder?";
+"영구 삭제할까요?" = "Delete permanently?";
+"이미 파일 선택 창이 열려 있어요." = "A file picker is already open.";
+"이미 공유 창이 열려 있어요." = "A share sheet is already open.";
+"안에 있던 폴더와 파일까지 지워지고 되돌릴 수 없어요. 파일 앱에서 연결한 폴더는 반달에서만 빠지고 원본은 남아요." = "The folders and files inside are deleted too and can't be recovered. A folder linked from Files is only removed from Bandal; the original stays.";
+"안의 폴더·파일과 즐겨찾기는 유지되고 폴더 관리에서 다시 꺼낼 수 있어요." = "Its folders, files and favorites stay, and you can bring it back from Manage Folders.";

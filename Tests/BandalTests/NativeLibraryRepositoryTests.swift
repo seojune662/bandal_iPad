@@ -21,7 +21,7 @@ final class NativeLibraryRepositoryTests: XCTestCase {
         let original = try Data(contentsOf: context.materialURL(courseID: id, relativePath: relative))
         let before = try context.query("SELECT * FROM courses WHERE id=?", [id]).first!
         let reopened = try NativeRepositoryContext(root: root, legacyRoot: root.appendingPathComponent("Legacy"))
-        XCTAssertEqual((try reopened.query("SELECT COUNT(*) AS n FROM migrations").first?["n"] as? NSNumber)?.intValue, 37)
+        XCTAssertEqual((try reopened.query("SELECT COUNT(*) AS n FROM migrations").first?["n"] as? NSNumber)?.intValue, 38)
         XCTAssertEqual(try reopened.query("SELECT id FROM courses WHERE id=?", [id]).first?["id"] as? String, id)
         XCTAssertEqual(try reopened.query("SELECT created_at FROM courses WHERE id=?", [id]).first?["created_at"] as? String, before["created_at"] as? String)
         XCTAssertEqual(try Data(contentsOf: reopened.materialURL(courseID: id, relativePath: relative)), original)
@@ -120,16 +120,58 @@ final class NativeLibraryRepositoryTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
         XCTAssertTrue(try reopened.query("SELECT * FROM material_path_intents").isEmpty)
     }
-    func testGroupRemovalNeverDeletesCourseAndCourseRenameKeepsFolder() throws {
+    func testCourseRenameKeepsFolder() throws {
         let id = try course(), originalFolder = try context.courseFolder(id)
-        let group = try XCTUnwrap(call("courseGroups:create", ["name": "가을 학기"]) as? [String: Any]), groupID = try XCTUnwrap(group["id"] as? String)
-        _ = try call("courses:organize", ["courseId": id, "groupId": groupID, "beforeCourseId": NSNull()])
-        _ = try call("courseGroups:delete", ["groupId": groupID])
         _ = try call("courses:rename", ["courseId": id, "name": "이름만 변경"])
         XCTAssertEqual(try context.courseFolder(id), originalFolder)
         let list = try XCTUnwrap(call("courses:list") as? [[String: Any]])
         XCTAssertEqual(list.first?["name"] as? String, "이름만 변경")
-        XCTAssertTrue(list.first?["groupId"] is NSNull)
+        XCTAssertTrue(list.first?["parentId"] is NSNull)
+    }
+    private func child(of parent: String, _ name: String) throws -> String {
+        let result = try XCTUnwrap(call("courses:create", ["name": name, "color": "green", "parentId": parent]) as? [String: Any])
+        return try XCTUnwrap(result["id"] as? String)
+    }
+    private func parentID(_ id: String) throws -> String? { try context.query("SELECT parent_id FROM courses WHERE id=?", [id]).first?["parent_id"] as? String }
+    func testNestedFoldersKeepTheirOwnDirectoriesAndRejectCycles() throws {
+        let top = try course(), inner = try child(of: top, "안쪽"), deepest = try child(of: inner, "가장 안쪽")
+        XCTAssertEqual(try parentID(inner), top); XCTAssertEqual(try parentID(deepest), inner)
+        // Each folder has its own directory; the parent's files never list the child's.
+        XCTAssertNotEqual(try context.courseFolder(inner).deletingLastPathComponent(), try context.courseFolder(top))
+        XCTAssertThrowsError(try call("courses:move", ["courseId": top, "parentId": deepest]))
+        XCTAssertThrowsError(try call("courses:move", ["courseId": top, "parentId": top]))
+        _ = try call("courses:move", ["courseId": deepest, "parentId": NSNull()])
+        XCTAssertNil(try parentID(deepest))
+        _ = try call("courses:move", ["courseId": deepest, "parentId": top])
+        XCTAssertEqual(try parentID(deepest), top)
+        XCTAssertTrue(try context.query("PRAGMA foreign_key_check").isEmpty)
+    }
+    func testDeletingAFolderTrashesItsSubtreeAndRestoreBringsItBack() throws {
+        let top = try course(), inner = try child(of: top, "안쪽"), deepest = try child(of: inner, "가장 안쪽"), relative = try note(deepest)
+        let separately = try child(of: top, "따로 삭제"), file = try context.materialURL(courseID: deepest, relativePath: relative)
+        _ = try call("courses:delete", ["courseId": separately])
+        Thread.sleep(forTimeInterval: 0.01)
+        _ = try call("courses:delete", ["courseId": top])
+        XCTAssertTrue(try XCTUnwrap(call("courses:list") as? [[String: Any]]).isEmpty)
+        let deleted = try XCTUnwrap(call("courses:list", ["includeDeleted": true]) as? [[String: Any]])
+        XCTAssertEqual(Set(deleted.compactMap { $0["id"] as? String }), [top, inner, deepest, separately])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path), "최근 삭제 keeps the files")
+        _ = try call("courses:restore", ["courseId": top])
+        let live = Set(try XCTUnwrap(call("courses:list") as? [[String: Any]]).compactMap { $0["id"] as? String })
+        XCTAssertEqual(live, [top, inner, deepest], "a folder deleted on its own earlier stays in 최근 삭제")
+        // Restoring a child whose parent stays deleted brings it back at the top level.
+        _ = try call("courses:delete", ["courseId": top])
+        _ = try call("courses:restore", ["courseId": inner])
+        XCTAssertNil(try parentID(inner))
+    }
+    func testPurgeRemovesDeletedSubtree() throws {
+        let top = try course(), inner = try child(of: top, "안쪽")
+        let folder = try context.courseFolder(inner)
+        _ = try call("courses:delete", ["courseId": top])
+        _ = try call("courses:purge", ["courseId": top])
+        XCTAssertTrue(try context.query("SELECT id FROM courses WHERE id IN (?,?)", [top, inner]).isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        XCTAssertTrue(try context.query("PRAGMA foreign_key_check").isEmpty)
     }
     func testUnicodeEquivalentPathsAndNestedDuplicateNamesDoNotCrash() throws {
         let id = try course(), nfc = "보존할 노트.md", nfd = nfc.decomposedStringWithCanonicalMapping

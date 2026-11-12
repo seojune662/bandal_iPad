@@ -832,5 +832,21 @@ enum NativeDatabaseMigrations {
             ALTER TABLE whiteboards ADD COLUMN added_at INTEGER
             """#,
         ]),
+        // Folders nest inside folders; the one-level course groups they replace are retired. Group rows
+        // stay (tombstoned) so an older device's sync record still finds the table.
+        Migration(version: 38, name: "nested-folders", statements: [
+            #"""
+            ALTER TABLE courses ADD COLUMN parent_id TEXT REFERENCES courses(id)
+            """#,
+            #"""
+            CREATE INDEX IF NOT EXISTS idx_courses_parent ON courses (parent_id, sort_order) WHERE deleted_at IS NULL
+            """#,
+            #"""
+            UPDATE courses SET group_id=NULL WHERE group_id IS NOT NULL
+            """#,
+            #"""
+            UPDATE course_groups SET deleted_at=COALESCE(deleted_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE deleted_at IS NULL
+            """#,
+        ]),
     ]
 }

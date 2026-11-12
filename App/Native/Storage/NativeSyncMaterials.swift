@@ -11,7 +11,7 @@ final class NativeSyncMaterials {
         let materials = try context.query("SELECT * FROM materials_index")
         for course in try context.query("SELECT * FROM courses ORDER BY created_at,id") {
             let id = course["id"] as! String
-            let payload: [String: Any] = ["id": id, "name": course["name"]!, "color": course["color"]!, "desktop": ["archived": (course["archived"] as? NSNumber)?.boolValue ?? false, "sortOrder": course["sort_order"] ?? 0, "groupID": course["group_id"] ?? NSNull(), "workspaceKind": course["workspace_kind"] ?? "course", "createdAt": course["created_at"]!]]
+            let payload: [String: Any] = ["id": id, "name": course["name"]!, "color": course["color"]!, "desktop": ["archived": (course["archived"] as? NSNumber)?.boolValue ?? false, "sortOrder": course["sort_order"] ?? 0, "parentID": course["parent_id"] ?? NSNull(), "workspaceKind": course["workspace_kind"] ?? "course", "createdAt": course["created_at"]!]]
             let deleted = !(course["deleted_at"] is NSNull)
             result.records.append(F.record(id: "course:\(id)", kind: "course", payload: payload, deleted: deleted)); result.sources["course:\(id)"] = ["folder": course["folder_path"]!]
             if deleted { continue }
@@ -62,9 +62,13 @@ final class NativeSyncMaterials {
             guard record["id"] as? String == "course:\(id)", let name = p["name"] as? String, !name.isEmpty, UUID(uuidString: id) != nil else { throw C.validation("Invalid course payload") }
             let old = try context.query("SELECT * FROM courses WHERE id=?", [id]).first, desktop = p["desktop"] as? [String: Any] ?? [:]
             let folder = old?["folder_path"] as? String ?? context.root.appendingPathComponent("Courses/Synced/\(id)").path
-            let row: [String: Any] = ["id": id, "name": name, "slug": old?["slug"] ?? "synced-\(id)", "color": p["color"] ?? "green", "folder_path": folder, "source": old?["source"] ?? "managed", "workspace_kind": desktop["workspaceKind"] ?? old?["workspace_kind"] ?? "course", "group_id": desktop["groupID"] ?? old?["group_id"] ?? NSNull(), "archived": desktop["archived"] as? Bool == true ? 1 : 0, "sort_order": desktop["sortOrder"] ?? old?["sort_order"] ?? 0, "created_at": old?["created_at"] ?? desktop["createdAt"] ?? now, "updated_at": now, "deleted_at": deleted]
+            let row: [String: Any] = ["id": id, "name": name, "slug": old?["slug"] ?? "synced-\(id)", "color": p["color"] ?? "green", "folder_path": folder, "source": old?["source"] ?? "managed", "workspace_kind": desktop["workspaceKind"] ?? old?["workspace_kind"] ?? "course", "group_id": NSNull(), "archived": desktop["archived"] as? Bool == true ? 1 : 0, "sort_order": desktop["sortOrder"] ?? old?["sort_order"] ?? 0, "created_at": old?["created_at"] ?? desktop["createdAt"] ?? now, "updated_at": now, "deleted_at": deleted]
+            // An older device sends no parent; a parent that has not arrived yet leaves the folder at the top level.
+            let parent = desktop.keys.contains("parentID") ? desktop["parentID"] as? String : old?["parent_id"] as? String
             return NativeSyncPlan(source: ["folder": folder], courseID: id, apply: { [context] in
                 if old == nil { try context.files.createDirectory(atPath: folder, withIntermediateDirectories: true) }
+                var row = row
+                if let parent, parent != id, !(try context.query("SELECT id FROM courses WHERE id=?", [parent]).isEmpty) { row["parent_id"] = parent } else { row["parent_id"] = NSNull() }
                 try F.upsert(context, table: "courses", values: row)
             })
         }

@@ -41,7 +41,8 @@ final class DesktopBookmarkImportService: NSObject, UIDocumentPickerDelegate {
     }
 
     private func pickHTML() async throws -> URL? {
-        guard selection == nil, let presenter, presenter.presentedViewController == nil else { throw DesktopRuntimeError("열린 파일 선택 창을 먼저 닫아 주세요.") }
+        guard selection == nil else { throw DesktopRuntimeError("이미 파일 선택 창이 열려 있어요.") }
+        guard let presenter = await presenter?.readyPresenter(), selection == nil else { throw DesktopRuntimeError("열린 창을 닫은 뒤 다시 시도해 주세요.") }
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.html], asCopy: true)
         picker.allowsMultipleSelection = false; picker.delegate = self
         return try await withCheckedThrowingContinuation { pending in

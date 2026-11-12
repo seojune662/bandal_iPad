@@ -79,16 +79,20 @@ struct NativePDFWorkspace: View {
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     if model.showPages && visible {
-                        NativePDFPagesPanel(model: model).padding(.top, pagesPanelTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 128 : 160)
+                        NativePDFPagesPanel(model: model).padding(.top, pagesPanelTop).background(NativeGlass.gutter).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 128 : 160)
                         Divider()
                     }
                     ZStack {
-                        NativePDFBody(model: model, visible: visible).accessibilityIdentifier(visible ? "native-pdf-workspace" : "").allowsHitTesting(!model.showStyle)
+                        // No hit-test gate on the tool popover: its own dimming view takes the outside tap, and a gate that
+                        // outlived its popover (anchor gone, palette collapsed) left the page dead to pan, zoom and Pencil.
+                        NativePDFBody(model: model, visible: visible).accessibilityIdentifier(visible ? "native-pdf-workspace" : "")
                             .nativeWorkspacePreviewSurface(id: tabID, capture: { try await model.workspacePreview() })
                         if model.isLoading {
                             ProgressView("문서 여는 중…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                         }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // Around the pages: a soft wash of the decor over the paper; the pages themselves stay white.
+                        .background(NativeGlass.gutter)
                         .overlay {
                             if model.assistantAnnotation != nil, model.assistantRegionMode {
                                 NativeAnnotationRegionOverlay(selected: model.captureAssistantViewport)
@@ -96,7 +100,7 @@ struct NativePDFWorkspace: View {
                         }
                         .overlay(alignment: .top) {
                             if showsPalette, paletteHost?.floats(tabID) != true {
-                                NativePDFFloatingPalette(model: model, onFrame: { panePaletteFrame = $0 }).padding(.horizontal, 8).padding(.top, paletteTop)
+                                NativePDFFloatingPalette(model: model, onFrame: { panePaletteFrame = $0 }).padding(.horizontal, NativePDFFloatingPalette.sideReserve).padding(.top, paletteTop)
                             }
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bodyFrame = $0; registerPalette() }
@@ -275,7 +279,7 @@ final class NativePDFWorkspaceModel {
     var color = "ink"
     var width = NativePDFPenPreset.pen.width
     /// A tool's popover. Closing it also closes the twelve steps opened from its size cells, so the palette's dots do not reopen them.
-    var showStyle = false { didSet { if showStyle != oldValue { restoreInput(); if !showStyle { editingWidthSlot = nil } } } }
+    var showStyle = false { didSet { if showStyle != oldValue, !showStyle { editingWidthSlot = nil } } }
     /// Workspace-wide colour and thickness slots and eraser settings.
     private(set) var palette = NativePDFPalettePreferences()
     /// The slot whose twelve-step thickness bar is open.
@@ -286,6 +290,9 @@ final class NativePDFWorkspaceModel {
     var isPenLike: Bool { NativePDFPenPreset.kinds.contains(tool) }
     /// Tools whose button opens a popover on a second tap.
     var hasToolOptions: Bool { isInkTool || ["eraser", "lasso", "tape"].contains(tool) }
+    /// Only these tools carry the options popover in the palette (`NativePDFQuickControls.tool`); asking for it
+    /// with any other tool, or with the tools folded away, would raise a flag nothing on screen can lower.
+    var hasStylePopover: Bool { toolsExpanded && (isPenLike || ["highlighter", "eraser", "lasso", "tape"].contains(tool)) }
     /// The pen type the palette's one 펜 button returns to (펜 "pen", 볼펜 "ballpoint" or 붓 "brush").
     private(set) var penKind = "pen"
     /// The palette's 펜 button: picks the last pen type, or opens its settings when already chosen.
@@ -826,7 +833,7 @@ final class NativePDFWorkspaceModel {
             switch payload["action"] as? String {
             case "switchEraser": chooseTool(tool == "eraser" ? previousTool : "eraser"); pencilEraser = tool == "eraser"
             case "switchPrevious": chooseTool(previousTool)
-            case "showColorPalette": showStyle = true
+            case "showColorPalette": if hasStylePopover { showStyle = true }
             default: break
             }
         case "deactivate":
@@ -871,7 +878,7 @@ final class NativePDFWorkspaceModel {
             palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.tapeColor = next }
             return
         }
-        if color == next { showStyle = true; return }
+        if color == next { if hasStylePopover { showStyle = true }; return }
         color = next; rememberActiveStyle(); updateStyle()
     }
     /// A slot tap selects its thickness; tapping the selected slot opens its twelve steps.
@@ -1556,7 +1563,7 @@ final class NativePDFWorkspaceModel {
         }
     }
     private func restoreInput() {
-        host?.setPresentation(blocked: false, inputBlocked: isBusy || materialMutating || blockedForError || closing != nil || showAnnotationEditor || showStyle, overlays: [])
+        host?.setPresentation(blocked: false, inputBlocked: isBusy || materialMutating || blockedForError || closing != nil || showAnnotationEditor, overlays: [])
         textInput?.view.isEditable = !(isBusy || errorMessage != nil)
     }
     func deleteSelection() { guard !isBusy else { return }; performObjectEdit("delete", values: selectedRows) }

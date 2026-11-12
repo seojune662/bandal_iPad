@@ -10,12 +10,22 @@ struct NativeCourseManager: View {
     @State private var renamingID: String?
     @State private var busy = false
     @State private var error: String?
+    @State private var purging: ManagedCourse?
     private struct ManagedCourse: Decodable, Identifiable {
         let id: String
         let name: String
         let color: String
         let archived: Bool
         let missing: Bool
+        var parentId: String? = nil
+        var deletedAt: String? = nil
+    }
+    /// 최근 삭제 lists what was deleted, each folder once: one deleted along with its parent is inside that row.
+    private var deleted: [ManagedCourse] {
+        courses.filter { course in
+            guard let stamp = course.deletedAt else { return false }
+            return !courses.contains { $0.id == course.parentId && $0.deletedAt == stamp }
+        }
     }
     var body: some View {
         VStack(alignment:.leading,spacing:4) {
@@ -23,16 +33,20 @@ struct NativeCourseManager: View {
             ScrollView {
                 VStack(alignment:.leading,spacing:0) {
                     ForEach([false,true],id:\.self) { archived in
-                        let values = courses.filter { $0.archived == archived }
+                        let values = courses.filter { $0.archived == archived && $0.deletedAt == nil }
                         if !values.isEmpty {
                             BandalSectionHeader(archived ? "보관한 폴더" : "내 폴더").padding(.horizontal,8).padding(.top,4)
                             ForEach(values) { course in row(course) }
                             if archived { archivedProjectRows }
                         }
                     }
-                    if !courses.contains(where: \.archived), !archivedProjects.isEmpty {
+                    if !courses.contains(where: { $0.archived && $0.deletedAt == nil }), !archivedProjects.isEmpty {
                         BandalSectionHeader("보관한 폴더").padding(.horizontal,8).padding(.top,4)
                         archivedProjectRows
+                    }
+                    if !deleted.isEmpty {
+                        BandalSectionHeader("최근 삭제").padding(.horizontal,8).padding(.top,4)
+                        ForEach(deleted) { course in deletedRow(course) }
                     }
                 }
             }.frame(maxHeight:360).fixedSize(horizontal:false,vertical:true)
@@ -48,6 +62,10 @@ struct NativeCourseManager: View {
         .disabled(busy)
         .overlay { if busy { ProgressView() } }
         .task { await load() }
+        .bandalConfirm("영구 삭제할까요?", isPresented: Binding(get: { purging != nil }, set: { if !$0 { DispatchQueue.main.async { purging = nil } } }),
+                       message: "안에 있던 폴더와 파일까지 지워지고 되돌릴 수 없어요. 파일 앱에서 연결한 폴더는 반달에서만 빠지고 원본은 남아요.", action: "영구 삭제", destructive: true) {
+            if let course = purging { change { _ = try await store.invoke("courses:purge",["courseId":course.id]) } }
+        }
         .accessibilityElement(children:.contain).accessibilityIdentifier("native-course-manager")
     }
     @ViewBuilder private var archivedProjectRows: some View {
@@ -61,9 +79,22 @@ struct NativeCourseManager: View {
             }.font(.system(size:BandalMetrics.bodySize)).padding(.horizontal,8).frame(minHeight:BandalMetrics.rowHeight)
         }
     }
+    private func deletedRow(_ course: ManagedCourse) -> some View {
+        HStack(spacing:8) {
+            NativeFolderChip(color: course.color, size: 14).opacity(0.5).frame(width:18)
+            Text(verbatim: course.name).lineLimit(1).foregroundStyle(NativeDesktopTheme.secondary)
+            Spacer(minLength:4)
+            Button("복원") { change { _ = try await store.invoke("courses:restore",["courseId":course.id]) } }
+                .buttonStyle(.plain).foregroundStyle(NativeGlass.accent).frame(minHeight:44).accessibilityIdentifier("native-manager-restore-course-" + course.id)
+            Menu {
+                Button("영구 삭제",systemImage:"trash",role:.destructive) { purging = course }
+            } label: { Image(systemName:"ellipsis").frame(width:44,height:max(44, BandalMetrics.rowHeight)).contentShape(Rectangle()) }
+            .accessibilityLabel(course.name + " 삭제 관리")
+        }.font(.system(size:BandalMetrics.bodySize)).padding(.horizontal,8).frame(minHeight:BandalMetrics.rowHeight)
+    }
     private func row(_ course: ManagedCourse) -> some View {
         HStack(spacing:8) {
-            Image(systemName:course.archived ? "archivebox" : "folder.fill").font(.system(size:12)).foregroundStyle(course.archived ? NativeDesktopTheme.muted : NativeFolderColor.color(course.color)).frame(width:18)
+            Group { if course.archived { Image(systemName:"archivebox").font(.system(size:12)).foregroundStyle(NativeDesktopTheme.muted) } else { NativeFolderChip(color: course.color, size: 14) } }.frame(width:18)
             VStack(alignment:.leading,spacing:1) {
                 BandalInlineEditor(text:course.name,isEditing:.editing(course.id,in:$renamingID),identifier:"native-manager-rename") { name in
                     change { _ = try await store.invoke("courses:rename",["courseId":course.id,"name":name]) }
@@ -82,7 +113,7 @@ struct NativeCourseManager: View {
         }.font(.system(size:BandalMetrics.bodySize)).padding(.horizontal,8).frame(minHeight:BandalMetrics.rowHeight)
     }
     private func load() async {
-        do { courses = try NativeToolJSON.decode(await store.invoke("courses:list",["includeArchived":true])); error = nil }
+        do { courses = try NativeToolJSON.decode(await store.invoke("courses:list",["includeArchived":true,"includeDeleted":true])); error = nil }
         catch { self.error = error.localizedDescription }
     }
     private func change(_ operation: @escaping @MainActor () async throws -> Void) {

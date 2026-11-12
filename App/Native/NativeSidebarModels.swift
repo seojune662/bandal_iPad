@@ -1,19 +1,5 @@
 import Foundation
 
-struct NativeSidebarCourse: Decodable, Identifiable {
-    let id: String
-    let name: String
-    let color: String
-    let workspaceKind: String?
-    let groupId: String?
-    let missing: Bool?
-}
-
-struct NativeSidebarCourseGroup: Decodable, Identifiable {
-    let id: String
-    let name: String
-}
-
 struct NativeSidebarFavorite: Identifiable {
     let id: String
     let courseID: String?

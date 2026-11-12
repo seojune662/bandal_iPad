@@ -567,7 +567,7 @@ final class NativeWorkspaceStore {
             for waiter in waiters { waiter.resume() }
         }
         for (token, entry) in flushers { joinExternalMutation(token, entry: entry) }
-        try await flushDocuments()
+        try await flushDocuments(bounded: false)
         externalWritesSuspended = true
         for entry in externalParticipants.values { entry.suspendWrites?() }
         let result: Any
@@ -629,17 +629,23 @@ final class NativeWorkspaceStore {
         return open
     }
 
-    func flushDocuments() async throws {
+    /// `bounded`: a transition (folder switch, closing a tab) stops waiting for an editor that overruns;
+    /// an external mutation, which rewrites files under the editors, waits for every write.
+    func flushDocuments(bounded: Bool = true) async throws {
         markDocumentChanged()
-        if let activeFlush { return try await activeFlush.value }
+        if let activeFlush, bounded { return try await activeFlush.value }
+        // An unbounded caller never rides on a bounded pass that may have stopped waiting early.
+        while let running = activeFlush { _ = try? await running.value }
         let task = Task { @MainActor in
             defer { self.activeFlush = nil }
             var firstError: Error?
-            while true {
+            // A few passes catch a stroke that lands mid-flush; an editor whose own flush marks a change
+            // must not turn this into a loop that keeps every transition (and its `busy`) waiting.
+            for _ in 0..<4 {
                 let revision = self.documentRevision
                 let entries = self.flushers.sorted { $0.value.id < $1.value.id }
                 for entry in entries where self.flushers[entry.key] != nil {
-                    do { try await entry.value.flush() }
+                    do { if bounded { try await Self.settle(entry.value.flush) } else { try await entry.value.flush() } }
                     catch { if firstError == nil { firstError = error } }
                 }
                 if revision == self.documentRevision { break }
@@ -648,6 +654,25 @@ final class NativeWorkspaceStore {
         }
         activeFlush = task
         try await task.value
+    }
+
+    /// Waits for one editor's flush, but no longer than `seconds`. The save keeps running when it overruns;
+    /// only the transition stops waiting, so one wedged editor cannot leave the whole window refusing to
+    /// switch folders, close tabs or close windows.
+    static func settle(within seconds: Double = 4, _ work: @escaping @MainActor () async throws -> Void) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let once = DesktopDialogCompletion<Result<Void, Error>> { continuation.resume(with: $0) }
+            Task { @MainActor in
+                do { try await work(); once.finish(.success(())) } catch { once.finish(.failure(error)) }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(seconds))
+                #if DEBUG
+                print("[bandal.flush] an editor flush overran \(seconds)s; continuing the transition")
+                #endif
+                once.finish(.success(()))
+            }
+        }
     }
 
     private func currentCourse() async throws -> String {

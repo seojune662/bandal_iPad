@@ -5,7 +5,9 @@ struct NativeCourse: Codable, Hashable, Identifiable {
     var name: String
     var color: String
     var workspaceKind: String? = nil
-    var groupId: String? = nil
+    /// The folder this one sits in; nil at the top level.
+    var parentId: String? = nil
+    var deletedAt: String? = nil
     var missing: Bool? = nil
 }
 

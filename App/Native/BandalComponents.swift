@@ -57,9 +57,9 @@ extension View {
                     Spacer()
                     Button { isPresented.wrappedValue = false; perform() } label: { BandalText(actionTitle) }
                         .font(.system(size: BandalMetrics.bodySize, weight: .semibold))
-                        .foregroundStyle(destructive ? Color.red : NativeDesktopTheme.onAccent)
+                        .foregroundStyle(destructive ? Color.red : Color.white)
                         .padding(.horizontal, 12).frame(minHeight: 32)
-                        .background(destructive ? Color.red.opacity(0.12) : NativeDesktopTheme.accent, in: RoundedRectangle(cornerRadius: BandalMetrics.radiusSmall))
+                        .background(destructive ? AnyShapeStyle(Color.red.opacity(0.12)) : AnyShapeStyle(NativeGlass.accent), in: RoundedRectangle(cornerRadius: BandalMetrics.radiusSmall))
                         .buttonStyle(.plain).accessibilityIdentifier(identifier ?? "bandal-confirm")
                 }
             }
@@ -696,6 +696,8 @@ private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
             guard anchor.window != nil, let presenter = BandalPopoverAnchor.controller(for: anchor), presenter.presentedViewController == nil else {
                 attempts += 1
                 if attempts < 12 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak anchor] in if let self, let anchor, self.host == nil { self.sync(anchor) } } }
+                // Never leave the binding claiming a popover that will not appear: callers gate input on it.
+                else { attempts = 0; wanted = false; let close = close; DispatchQueue.main.async { close() } }
                 return
             }
             attempts = 0
@@ -733,7 +735,13 @@ private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
         coordinator.root = AnyView(content().environment(\.self, environment))
         coordinator.sync(anchor)
     }
-    static func dismantleUIView(_ anchor: UIView, coordinator: Coordinator) { coordinator.host?.dismiss(animated: false); coordinator.host = nil }
+    /// The anchor leaves (its toolbar re-laid out, the palette moved between window and pane): the popover goes
+    /// with it, and so must the binding, or its owner keeps waiting for a dismissal that already happened.
+    static func dismantleUIView(_ anchor: UIView, coordinator: Coordinator) {
+        let shown = coordinator.host != nil || coordinator.wanted
+        coordinator.host?.dismiss(animated: false); coordinator.host = nil
+        if shown { let close = coordinator.close; DispatchQueue.main.async { close() } }
+    }
 }
 
 enum BandalPopoverAnchor {

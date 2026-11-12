@@ -18,18 +18,46 @@ struct NativeCourseSidebar: View {
     @StateObject private var catalog = NativeLearningCatalog()
     @State private var deletingProject: NativeLearningSummary?
     @AppStorage("native.desktop.collapsedCourses") private var collapsedCourses = "[]"
-    @AppStorage("native.desktop.collapsedCourseGroups") private var collapsedGroups = "[]"
-    @State private var groups: [NativeSidebarCourseGroup] = []
     @State private var query = ""
     @State private var renamingID: String?
     /// What the + button's popover shows.
     @State private var adding: Adding?
-    private enum Adding: Identifiable { case course, group, manage; var id: Self { self } }
+    private enum Adding: Hashable, Identifiable {
+        case course, manage
+        /// A new folder inside the one with this id.
+        case subfolder(String)
+        var id: Self { self }
+        var isForm: Bool { if case .manage = self { false } else { true } }
+    }
     @State private var archiveCourse: NativeCourse?
-    @State private var deletingGroup: NativeSidebarCourseGroup?
+    @State private var deletingCourse: NativeCourse?
     @State private var busy = false
     @State private var error: String?
     private var courses: [NativeCourse] { store.courses.filter { $0.workspaceKind != "study-space" } }
+    /// The folders inside `id`, in their order; a folder whose parent is not listed (archived, deleted) sits at the top.
+    private func children(of id: String?) -> [NativeCourse] {
+        courses.filter { course in
+            guard let parent = course.parentId, courses.contains(where: { $0.id == parent }) else { return id == nil }
+            return parent == id
+        }
+    }
+    /// The tree as rows, depth first, skipping what a collapsed folder holds.
+    private var tree: [(course: NativeCourse, depth: Int)] {
+        var rows: [(NativeCourse, Int)] = [], seen = Set<String>()
+        func walk(_ parent: String?, _ depth: Int) {
+            for course in children(of: parent) where seen.insert(course.id).inserted {
+                rows.append((course, depth))
+                if !contains(course.id, in: collapsedCourses) { walk(course.id, depth + 1) }
+            }
+        }
+        walk(nil, 0)
+        return rows
+    }
+    private func descendants(of id: String) -> Set<String> {
+        var result = Set<String>(), queue = [id]
+        while let next = queue.popLast() { for child in courses where child.parentId == next && result.insert(child.id).inserted { queue.append(child.id) } }
+        return result
+    }
     private var visible: [NativeCourse] { courses.filter { query.isEmpty || $0.name.localizedStandardContains(query) } }
     /// Projects keep one order (by name), so a row never moves because its contents changed.
     private var projects: [NativeLearningSummary] {
@@ -42,84 +70,84 @@ struct NativeCourseSidebar: View {
             HStack(spacing: 3) {
                 NativeRailSearchField(prompt: "폴더 찾기", text: $query, identifier: "native-course-search")
                     // 새 폴더 (Figma 129:3309): under the search field, 16 in from its left edge.
-                    .bandalPopover(isPresented: Binding(get: { adding == .course }, set: { if !$0, adding == .course { adding = nil } }),
+                    .bandalPopover(isPresented: Binding(get: { adding?.isForm == true }, set: { if !$0, adding?.isForm == true { adding = nil } }),
                                    at: .bottomLeading, offset: CGSize(width: 196, height: -11), width: 360, radius: 24, padding: 0) {
-                        NativeNewCourseForm(cancel: { adding = nil }) { name, color in
+                        let parent: NativeCourse? = if case .subfolder(let id) = adding { courses.first { $0.id == id } } else { nil }
+                        NativeNewCourseForm(parentName: parent?.name, cancel: { adding = nil }) { name, color in
                             try await onCreate(name); adding = nil
-                            if color != "blue", let id = store.selectedCourseID { mutate("courses:setColor", ["courseId": id, "color": color]) }
+                            guard let id = store.selectedCourseID else { return }
+                            if let parent { mutate("courses:move", ["courseId": id, "parentId": parent.id]) }
+                            if color != "blue" { mutate("courses:setColor", ["courseId": id, "color": color]) }
                         }
                     }
                 // ＋ makes a folder; the rarer actions are on its long-press and in each folder's ⋯ menu.
                 Button { adding = .course } label: { Image(systemName: "plus").font(.system(size: 16)).foregroundStyle(NativeGlass.panelIcon).frame(width: 44, height: 34).contentShape(Rectangle()) }
                     .buttonStyle(.plain).accessibilityLabel("폴더 추가").accessibilityIdentifier("native-course-add-menu")
                     .contextMenu {
-                        Button("그룹 만들기", systemImage: "folder") { adding = .group }
                         Button("폴더 관리", systemImage: "folder.badge.gearshape") { adding = .manage }
                     }
-                    .bandalPopover(isPresented: Binding(get: { adding == .group || adding == .manage }, set: { if !$0, adding != .course { adding = nil } }), width: adding == .manage ? 340 : 280) { addingContent }
+                    .bandalPopover(isPresented: Binding(get: { adding == .manage }, set: { if !$0, adding == .manage { adding = nil } }), width: 340) { addingContent }
             }.padding(.leading, 12).padding(.trailing, 9).padding(.bottom, 6)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if let message = error ?? catalog.error { NativeInlineError(message: message).padding(8) }
-                    if !query.isEmpty { ForEach(visible, content: courseRow) }
-                    else {
-                        ForEach(groups) { group in
-                            groupHeading(group)
-                            if !contains(group.id, in: collapsedGroups) { ForEach(courses.filter { $0.groupId == group.id }, content: courseRow) }
-                        }
-                        ForEach(courses.filter { course in course.groupId == nil || !groups.contains { $0.id == course.groupId } }, content: courseRow)
-                    }
+                    if !query.isEmpty { ForEach(visible) { courseRow($0, depth: 0) } }
+                    else { ForEach(tree, id: \.course.id) { row in courseRow(row.course, depth: row.depth) } }
                     ForEach(projects, content: projectRow)
                     // Not while projects are still loading: a projects-only list would flash this first.
                     if courses.isEmpty && !catalog.loading && catalog.projects.allSatisfy({ $0.deletedAt != nil }) {
                         VStack(spacing: 12) {
                             NativeBandalMark(size: 44).foregroundStyle(NativeDecorMarkStyle())
                             Text("첫 폴더를 만들어보세요").font(NativeDesktopTheme.font(13))
-                            Button("새 폴더 만들기") { adding = .course }.buttonStyle(.borderedProminent).accessibilityIdentifier("native-new-course-empty")
-                            Button("기존 폴더 연결", systemImage: "folder.badge.plus") { adding = .manage }.buttonStyle(.bordered)
+                            Button("새 폴더 만들기") { adding = .course }.buttonStyle(NativeThemedButtonStyle(prominent: true)).accessibilityIdentifier("native-new-course-empty")
+                            Button("기존 폴더 연결", systemImage: "folder.badge.plus") { adding = .manage }.buttonStyle(NativeThemedButtonStyle())
                         }.frame(maxWidth: .infinity).padding(.top, 32)
                     } else if !query.isEmpty && visible.isEmpty && projects.isEmpty { Text("일치하는 폴더가 없어요").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted).padding() }
                 }.padding(.horizontal, 8).padding(.bottom, 16)
             }
         }.disabled(busy)
-            .task { await loadGroups() }
             .task { await catalog.reload(store) }
             .onReceive(store.events) { event in
-                if event.channel == "courses:changed" { Task { await loadGroups() } }
                 if ["learning:changed", "courses:changed"].contains(event.channel) { Task { await catalog.reload(store) } }
             }
             .onReceive(NotificationCenter.default.publisher(for: NativeHomeTab.newCourse)) { _ in adding = .course }
     }
-    /// The chosen course: 13 Medium on a 38 pt pill with its chevron and ⋯. The others: a 16 pt folder and 14 pt name, their menu on a long-press.
-    private func courseRow(_ course: NativeCourse) -> some View {
+    /// One folder: a colour chip and its name, 14 pt whether chosen or not (the chosen one is medium on a pill).
+    /// A folder holding folders, or the chosen one (its favourites), has a chevron; nested folders step in 14 pt a level.
+    private func courseRow(_ course: NativeCourse, depth: Int) -> some View {
         // A project inside this folder selects its own row, not this one.
         let selected = store.selectedCourseID == course.id && (selectedContextID?.hasPrefix("project:") != true), collapsed = contains(course.id, in: collapsedCourses)
+        let nested = query.isEmpty && !children(of: course.id).isEmpty, indent = CGFloat(min(depth, 6)) * 14
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
-                if selected {
-                    Button { toggle(course.id, in: &collapsedCourses) } label: {
-                        Image(systemName: collapsed ? "chevron.right" : "chevron.down").font(.system(size: 13)).foregroundStyle(NativeGlass.panelIcon).frame(width: 30, height: 38).padding(.leading, 4).contentShape(Rectangle())
-                    }.accessibilityLabel(course.name + (collapsed ? " 펼치기" : " 접기")).accessibilityIdentifier("native-course-expand-" + course.id)
-                }
+                Group {
+                    if selected || nested {
+                        Button { toggle(course.id, in: &collapsedCourses) } label: {
+                            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(NativeGlass.panelIcon)
+                                .rotationEffect(.degrees(collapsed ? 0 : 90)).animation(.snappy(duration: 0.18), value: collapsed)
+                                .frame(width: 30, height: 38).contentShape(Rectangle())
+                        }.accessibilityLabel(course.name + (collapsed ? " 펼치기" : " 접기")).accessibilityIdentifier("native-course-expand-" + course.id)
+                    } else { Color.clear.frame(width: 30, height: 38) }
+                }.padding(.leading, 4 + indent)
                 if renamingID == course.id {
-                    HStack(spacing: 6) {
-                        Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeFolderColor.color(course.color)).frame(width: 20)
-                        BandalInlineEditor(text: course.name, isEditing: renaming(course.id), font: NativeDesktopTheme.font(13, weight: .medium), identifier: "native-course-rename") { name in
+                    HStack(spacing: 8) {
+                        NativeFolderChip(color: course.color, selected: selected).frame(width: 22)
+                        BandalInlineEditor(text: course.name, isEditing: renaming(course.id), font: NativeDesktopTheme.font(14, weight: .medium), identifier: "native-course-rename") { name in
                             mutate("courses:rename", ["courseId": course.id, "name": name])
                         }
-                    }.padding(.leading, selected ? 0 : 34).frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                    }.frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
                 } else {
                 Button {
-                    if collapsed { toggle(course.id, in: &collapsedCourses) }
+                    if collapsed, selected { toggle(course.id, in: &collapsedCourses) }
                     onSelect(course.id)
                 } label: {
-                    HStack(spacing: selected ? 6 : 8) {
-                        Image(systemName: "folder.fill").font(.system(size: selected ? 14 : 16)).foregroundStyle(NativeFolderColor.color(course.color)).frame(width: selected ? 20 : 22)
-                        Text(course.name).font(NativeDesktopTheme.font(selected ? 13 : 14, weight: selected ? .medium : .regular)).foregroundStyle(selected ? NativeGlass.icon : NativeDesktopTheme.text).lineLimit(1)
+                    HStack(spacing: 8) {
+                        NativeFolderChip(color: course.color, selected: selected).frame(width: 22)
+                        Text(course.name).font(NativeDesktopTheme.font(14, weight: selected ? .medium : .regular)).foregroundStyle(selected ? NativeGlass.icon : NativeDesktopTheme.text).lineLimit(1)
                         Spacer(minLength: 0)
                         if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
-                    }.padding(.leading, selected ? 0 : 34).padding(.trailing, selected ? 0 : 8).frame(height: 38).contentShape(Rectangle())
-                }.accessibilityIdentifier("native-course-" + course.id)
+                    }.padding(.trailing, selected ? 0 : 8).frame(height: 38).contentShape(Rectangle())
+                }.accessibilityIdentifier("native-course-" + course.id).accessibilityAddTraits(selected ? .isSelected : [])
                     .contextMenu { courseMenu(course) }
                 }
                 if selected {
@@ -137,24 +165,51 @@ struct NativeCourseSidebar: View {
                     return true
                 }
                 .bandalConfirm("폴더를 보관할까요?", isPresented: Binding(get: { archiveCourse?.id == course.id }, set: { if !$0 { archiveCourse = nil } }),
-                               message: "파일과 즐겨찾기는 유지되고 보관된 폴더 관리에서 다시 꺼낼 수 있어요.", action: "보관") {
+                               message: "안의 폴더·파일과 즐겨찾기는 유지되고 폴더 관리에서 다시 꺼낼 수 있어요.", action: "보관") {
                     mutate("courses:archive", ["courseId": course.id, "archived": true])
+                }
+                .bandalConfirm("폴더를 삭제할까요?", isPresented: Binding(get: { deletingCourse?.id == course.id }, set: { if !$0 { deletingCourse = nil } }),
+                               message: deleteMessage(course), action: "삭제", destructive: true, identifier: "native-course-delete-confirm") {
+                    mutate("courses:delete", ["courseId": course.id])
                 }
             if selected && !collapsed {
                 NativeFavoritesSection(store: store, courseID: course.id, currentDocument: navigation.active, descriptor: descriptor, documentByID: navigation.document, onOpen: onOpenFavorite)
+                    .padding(.leading, indent)
             }
         }
+    }
+    private func deleteMessage(_ course: NativeCourse) -> String {
+        let inside = descendants(of: course.id).count
+        return (inside > 0 ? "안에 있는 폴더 \(inside)개와 " : "") + "파일이 최근 삭제로 옮겨져요. 폴더 관리 › 최근 삭제에서 복원할 수 있어요."
+    }
+    /// Where 폴더로 이동 can put a folder: the top level, or any folder not inside it.
+    @ViewBuilder private func moveMenu(_ course: NativeCourse) -> some View {
+        let blocked = descendants(of: course.id).union([course.id])
+        Menu("폴더로 이동", systemImage: "arrow.turn.down.right") {
+            if course.parentId != nil { Button("맨 위로", systemImage: "arrow.up.to.line") { mutate("courses:move", ["courseId": course.id, "parentId": NSNull()]) } }
+            ForEach(allRows.filter { !blocked.contains($0.course.id) && $0.course.id != course.parentId }, id: \.course.id) { row in
+                Button { mutate("courses:move", ["courseId": course.id, "parentId": row.course.id]) } label: {
+                    Text(verbatim: String(repeating: "    ", count: row.depth) + row.course.name)
+                }
+            }
+        }
+    }
+    /// The whole tree, collapsed folders included (the move menu offers every folder).
+    private var allRows: [(course: NativeCourse, depth: Int)] {
+        var rows: [(NativeCourse, Int)] = [], seen = Set<String>()
+        func walk(_ parent: String?, _ depth: Int) { for course in children(of: parent) where seen.insert(course.id).inserted { rows.append((course, depth)); walk(course.id, depth + 1) } }
+        walk(nil, 0)
+        return rows
     }
     @ViewBuilder private func courseMenu(_ course: NativeCourse) -> some View {
         // The long-press menu as Figma 129:3094 draws it: tiles on top, the move and the pending row, then what the design does not show.
         ControlGroup {
             Button("이름 변경", systemImage: "pencil") { renamingID = course.id }
-            Button("폴더 보관", systemImage: "archivebox", role: .destructive) { archiveCourse = course }
+            Button("폴더 보관", systemImage: "archivebox") { archiveCourse = course }
+            Button("폴더 삭제", systemImage: "trash", role: .destructive) { deletingCourse = course }
         }
-        Menu("그룹으로 이동", systemImage: "folder") {
-            Button("그룹 없음") { mutate("courses:organize", ["courseId": course.id, "groupId": NSNull()]) }
-            ForEach(groups) { group in Button(group.name) { mutate("courses:organize", ["courseId": course.id, "groupId": group.id]) } }
-        }
+        Button("하위 폴더 만들기", systemImage: "folder.badge.plus") { adding = .subfolder(course.id) }.accessibilityIdentifier("native-course-add-subfolder")
+        moveMenu(course)
         Divider()
         Menu("색상", systemImage: "circle.fill") {
             ForEach(NativeFolderColor.all, id: \.name) { item in
@@ -171,38 +226,14 @@ struct NativeCourseSidebar: View {
                 }
             }
         }
-        Button("그룹 만들기", systemImage: "folder") { adding = .group }
         Button("폴더 관리", systemImage: "folder.badge.gearshape") { adding = .manage }
-    }
-    private func groupHeading(_ group: NativeSidebarCourseGroup) -> some View {
-        HStack {
-            if renamingID == group.id {
-                BandalInlineEditor(text: group.name, isEditing: renaming(group.id), font: NativeDesktopTheme.font(12, weight: .medium), identifier: "native-group-rename") { name in
-                    mutate("courseGroups:rename", ["groupId": group.id, "name": name])
-                }.frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-            } else {
-                Button { toggle(group.id, in: &collapsedGroups) } label: { Label(group.name, systemImage: contains(group.id, in: collapsedGroups) ? "chevron.right" : "chevron.down").frame(maxWidth: .infinity, minHeight: 32, alignment: .leading).contentShape(Rectangle()) }
-            }
-            Menu {
-                Button("그룹 이름 변경") { renamingID = group.id }
-                Button("그룹 삭제", role: .destructive) { deletingGroup = group }
-            } label: { Image(systemName: "ellipsis").frame(width: 44, height: 36).contentShape(Rectangle()) }.accessibilityLabel(group.name + " 그룹 메뉴")
-        }.buttonStyle(.plain).font(NativeDesktopTheme.font(12, weight: .medium)).foregroundStyle(NativeDesktopTheme.muted).padding(.leading, 8)
-            .bandalConfirm("그룹을 삭제할까요?", isPresented: Binding(get: { deletingGroup?.id == group.id }, set: { if !$0 { deletingGroup = nil } }),
-                           message: "그룹 안의 폴더는 그대로 남아요.", action: "그룹 삭제", destructive: true) {
-                mutate("courseGroups:delete", ["groupId": group.id])
-            }
     }
     @ViewBuilder private var addingContent: some View {
         switch adding {
-        case .group:
-            BandalTextEntry(title: "새 그룹", prompt: "그룹 이름", actionTitle: "만들기", identifier: "native-group-name") { name in
-                adding = nil; mutate("courseGroups:create", ["name": name])
-            }
         case .manage: NativeCourseManager(store: store, archivedProjects: deletedProjects.map { ($0.id, $0.displayName(courses: store.courses)) }) { id in
             if let project = deletedProjects.first(where: { $0.id == id }) { mutateProject("learning:restore", project) }
         }
-        case .course, nil: EmptyView()
+        case .course, .subfolder, nil: EmptyView()
         }
     }
     /// A project (study space) is a folder like any other: the same row, the same ⋯ menu; it opens its own workspace.
@@ -212,13 +243,13 @@ struct NativeCourseSidebar: View {
         return HStack(spacing: 0) {
             if renamingID == project.id {
                 HStack(spacing: 8) {
-                    Image(systemName: "folder.fill").font(.system(size: 16)).foregroundStyle(tint).frame(width: 22)
+                    NativeFolderChip(tint: tint, selected: selected).frame(width: 22)
                     BandalInlineEditor(text: project.name, isEditing: renaming(project.id), font: NativeDesktopTheme.font(14), identifier: "native-project-rename") { renameProject(project, to: $0) }
                 }.padding(.leading, 34).frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
             } else {
                 Button { onOpenProject(context) } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "folder.fill").font(.system(size: 16)).foregroundStyle(tint).frame(width: 22)
+                        NativeFolderChip(tint: tint, selected: selected).frame(width: 22)
                         Text(context.title).font(NativeDesktopTheme.font(14, weight: selected ? .medium : .regular)).foregroundStyle(selected ? NativeGlass.icon : NativeDesktopTheme.text).lineLimit(1)
                         Spacer(minLength: 0)
                         if project.dueCardCount > 0 { Text("\(project.dueCardCount)").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted) }
@@ -270,13 +301,9 @@ struct NativeCourseSidebar: View {
         guard !busy else { return }; busy = true; error = nil
         Task { @MainActor in
             defer { busy = false }
-            do { try await store.flushDocuments(); _ = try await store.invoke(channel, request); await loadGroups() }
+            do { try await store.flushDocuments(); _ = try await store.invoke(channel, request) }
             catch { self.error = error.localizedDescription }
         }
-    }
-    private func loadGroups() async {
-        do { let loaded: [NativeSidebarCourseGroup] = try NativeToolJSON.decode(try await store.invoke("courseGroups:list")); if !Task.isCancelled { groups = loaded } }
-        catch { self.error = error.localizedDescription }
     }
     private func contains(_ id: String, in raw: String) -> Bool { (try? JSONDecoder().decode(Set<String>.self, from: Data(raw.utf8)))?.contains(id) == true }
     private func toggle(_ id: String, in raw: inout String) {
@@ -288,6 +315,8 @@ struct NativeCourseSidebar: View {
 
 /// 새 과목 (Figma 129:3309): 취소 · 만들기 on top, the name, a colour, and where linked folders live.
 private struct NativeNewCourseForm: View {
+    /// Set when the folder is made inside another one.
+    var parentName: String? = nil
     let cancel: () -> Void
     let create: @MainActor (String, String) async throws -> Void
     @State private var name = ""
@@ -300,12 +329,15 @@ private struct NativeNewCourseForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack {
-                BandalText("새 폴더").fontWeight(.semibold).foregroundStyle(NativeDesktopTheme.text)
+                VStack(spacing: 1) {
+                    BandalText(parentName == nil ? "새 폴더" : "하위 폴더").fontWeight(.semibold).foregroundStyle(NativeDesktopTheme.text)
+                    if let parentName { Text(verbatim: parentName).font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1) }
+                }
                 HStack {
                     Button(action: cancel) { BandalText("취소") }.accessibilityIdentifier("native-course-cancel")
                     Spacer()
                     Button(action: submit) { BandalText("만들기").fontWeight(.semibold) }.disabled(!ready).opacity(ready ? 1 : 0.35).accessibilityIdentifier("native-create-course")
-                }.foregroundStyle(NativeDesktopTheme.accent)
+                }.foregroundStyle(NativeGlass.accent)
             }.font(.system(size: 17)).buttonStyle(.plain).padding(.horizontal, 20).frame(height: 52)
             VStack(alignment: .leading, spacing: 14) {
                 TextField("폴더 이름", text: $name).font(.system(size: 17)).textFieldStyle(.plain).focused($focused).onSubmit(submit).disabled(busy)
@@ -317,7 +349,7 @@ private struct NativeNewCourseForm: View {
                     ForEach(Self.colors, id: \.0) { value, tint in
                         Button { color = value } label: {
                             Circle().fill(tint).frame(width: 20, height: 20).frame(width: 30, height: 30)
-                                .overlay { if color == value { Circle().strokeBorder(NativeDesktopTheme.accent, lineWidth: 2) } }
+                                .overlay { if color == value { Circle().strokeBorder(NativeGlass.accent, lineWidth: 2) } }
                                 .contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityLabel(NativeFolderColor.label(value)).accessibilityAddTraits(color == value ? .isSelected : [])
                             .accessibilityIdentifier("native-course-color-" + value)
@@ -355,6 +387,52 @@ enum NativeFolderColor {
         case "gray": NativeDesktopTheme.secondary
         default: NativeDesktopTheme.adaptive(0x3b6fe0, 0x5a8af0)
         }
+    }
+}
+
+/// A folder's mark: a small rounded chip in its colour, lit from above, instead of a folder glyph.
+/// The chosen folder's chip lifts a little.
+struct NativeFolderChip: View {
+    let tint: Color
+    var selected = false
+    var size: CGFloat = 16
+    init(tint: Color, selected: Bool = false, size: CGFloat = 16) { self.tint = tint; self.selected = selected; self.size = size }
+    init(color: String, selected: Bool = false, size: CGFloat = 16) { self.init(tint: NativeFolderColor.color(color), selected: selected, size: size) }
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: size * 0.32, style: .continuous)
+        ZStack {
+            shape.fill(tint)
+            // Light from the top: a soft sheen over the upper half and a bright 1 pt lip.
+            shape.fill(LinearGradient(colors: [.white.opacity(0.38), .white.opacity(0.05), .black.opacity(0.08)], startPoint: .top, endPoint: .bottom))
+            shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0)], startPoint: .top, endPoint: .center), lineWidth: 1)
+            // The tab of a folder, drawn as a notch of light along the top-left.
+            Capsule().fill(.white.opacity(0.55)).frame(width: size * 0.38, height: max(1.5, size * 0.11)).offset(x: -size * 0.16, y: -size * 0.27)
+        }
+        .frame(width: size, height: size * 0.86)
+        .shadow(color: tint.opacity(selected ? 0.45 : 0.25), radius: selected ? 3 : 1.5, y: selected ? 1.5 : 0.5)
+        .accessibilityHidden(true)
+    }
+}
+
+/// A button on a glass panel or the empty workspace in the decor's colours: `prominent` fills it with the
+/// accent (white label), otherwise a soft accent wash with an accent label.
+struct NativeThemedButtonStyle: ButtonStyle {
+    var prominent = false
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(NativeDesktopTheme.font(14, weight: .semibold))
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(prominent ? AnyShapeStyle(Color.white) : AnyShapeStyle(NativeGlass.accent))
+            .padding(.horizontal, 16).frame(minHeight: 40)
+            .background {
+                Capsule().fill(prominent ? AnyShapeStyle(NativeGlass.accent) : AnyShapeStyle(NativeGlass.accentSoft))
+                    .overlay { if prominent { Capsule().fill(LinearGradient(colors: [.white.opacity(0.22), .clear], startPoint: .top, endPoint: .bottom)) } }
+                    .shadow(color: .black.opacity(prominent ? 0.12 : 0), radius: 6, y: 2)
+            }
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.snappy(duration: 0.15), value: configuration.isPressed)
+            .contentShape(Capsule())
     }
 }
 
