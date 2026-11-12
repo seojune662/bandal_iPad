@@ -79,7 +79,7 @@ struct NativePDFWorkspace: View {
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     if model.showPages && visible {
-                        NativePDFPagesPanel(model: model).padding(.top, pagesPanelTop).background(NativeGlass.gutter).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 128 : 160)
+                        NativePDFPagesPanel(model: model).padding(.top, pagesPanelTop).frame(width: geometry.size.width < 700 ? 128 : 160)
                         Divider()
                     }
                     ZStack {
@@ -90,9 +90,8 @@ struct NativePDFWorkspace: View {
                         if model.isLoading {
                             ProgressView("문서 여는 중…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                         }
+                    // Around the pages, and under the thumbnails beside them, the card's own tone shows; the pages stay white.
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                        // Around the pages: a soft wash of the decor over the paper; the pages themselves stay white.
-                        .background(NativeGlass.gutter)
                         .overlay {
                             if model.assistantAnnotation != nil, model.assistantRegionMode {
                                 NativeAnnotationRegionOverlay(selected: model.captureAssistantViewport)

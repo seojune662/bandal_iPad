@@ -17,7 +17,8 @@ final class NativeAssistantSourcesUITests: XCTestCase {
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Sources")
         app.buttons["native-create-course"].tap()
         let note = app.buttons["native-home-new-note"]
-        XCTAssertTrue(note.waitForExistence(timeout: 15), app.debugDescription); note.tap()
+        // The fixture's answer cites 새 노트.pdf, so the note takes that name rather than the dated default.
+        XCTAssertTrue(note.waitForExistence(timeout: 15), app.debugDescription); note.tap(); app.confirmNewNote(title: "새 노트")
         XCTAssertTrue(app.buttons["native-pdf-tool-pen"].waitForExistence(timeout: 20), app.debugDescription)
         // A second page, so the chip's page has somewhere to go.
         app.buttons["native-pdf-pages"].tap()

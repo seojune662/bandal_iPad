@@ -26,7 +26,7 @@ final class FigmaMenusScreenshotTests: XCTestCase {
         let plus = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
         XCTAssertTrue(plus.waitForExistence(timeout: 10), app.debugDescription); plus.tap()
         let note = app.buttons["native-new-tab-new-whiteboard"]
-        XCTAssertTrue(note.waitForExistence(timeout: 10), app.debugDescription); note.tap(); sleep(4)
+        XCTAssertTrue(note.waitForExistence(timeout: 10), app.debugDescription); note.tap(); app.confirmNewNote(); sleep(4)
         plus.tap(); sleep(1); attach(app, "new tab \(appearance)")
         app.closeBandalPopover()
 

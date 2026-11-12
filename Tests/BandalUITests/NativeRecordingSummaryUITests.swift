@@ -42,7 +42,7 @@ final class NativeRecordingSummaryUITests: XCTestCase {
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Lecture")
         app.buttons["native-create-course"].tap()
         let note = app.buttons["native-home-new-note"]
-        XCTAssertTrue(note.waitForExistence(timeout: 15), app.debugDescription); note.tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 15), app.debugDescription); note.tap(); app.confirmNewNote()
         XCTAssertTrue(app.buttons["native-pdf-tool-pen"].waitForExistence(timeout: 20), app.debugDescription)
         return app
     }

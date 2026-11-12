@@ -29,13 +29,14 @@ final class NativeDockTabSizingTests: XCTestCase {
         XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, topEdge: .window), 52)
         XCTAssertEqual(NativeDockHeaderMetrics.height(for: belowSelector, topEdge: .window), 52)
         XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, controlsHeight: NativeDockStripMetrics.stacked.total, topEdge: .window), 49)
-        // Full screen on iPadOS 26: the strip keeps under the band the system drags the window by, pill and all.
-        XCTAssertEqual(NativeDockHeaderMetrics.height(for: upper, topEdge: .systemBand), 76)
-        XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, topEdge: .systemBand), 52)
+        // Full screen on iPadOS 26: the strip starts under the status bar, and the whole tab pill under the band
+        // the system drags the window by.
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: upper, topEdge: .statusBar), 76)
+        XCTAssertEqual(NativeDockHeaderMetrics.height(for: lower, topEdge: .statusBar), 52)
         let strip = NativeDockStripMetrics.single
-        XCTAssertGreaterThanOrEqual(NativeDockTopEdge.systemBand.clearance + (strip.height - strip.pillHeight) / 2, NativeDockTopEdge.systemDragBand,
+        XCTAssertGreaterThanOrEqual(NativeDockTopEdge.statusBar.clearance + (strip.height - strip.pillHeight) / 2, NativeDockTopEdge.systemDragBand,
                                     "The tab pill starts below the top 32 pt, where a drag would move the window instead of the tab")
-        for windowed in [NativeDockTopEdge.window, .flush, .systemBand] {
+        for windowed in [NativeDockTopEdge.window, .flush, .statusBar] {
             for pane in [upper, lower, belowSelector] {
                 let content = NativeDockHeaderMetrics.contentFrame(for: pane, topEdge: windowed)
                 XCTAssertEqual(content.minY, pane.minY + NativeDockHeaderMetrics.height(for: pane, topEdge: windowed))

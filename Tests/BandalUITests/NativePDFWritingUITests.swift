@@ -177,6 +177,9 @@ final class NativePDFWritingUITests: XCTestCase {
         app.buttons["native-pdf-text-fill-yellow"].tap()
         app.sliders["native-pdf-text-width"].adjust(toNormalizedSliderPosition: 0.55)
         app.buttons["native-pdf-text-format-close"].tap()
+        // Typing the size must not hide the box: it stays in the page area, clear of the palette and the keyboard.
+        XCTAssertGreaterThan(editor.frame.minY, app.buttons["native-pdf-undo"].frame.maxY, "The text box is not under the palette")
+        XCTAssertLessThan(editor.frame.maxY, app.keyboards.firstMatch.frame.minY, "The text box is above the keyboard")
         let oneLine = editor.frame.height
         editor.tap(); editor.typeText("한글 필기와 Swift\n색상과 서식을 저장합니다")
         XCTAssertGreaterThan(editor.frame.height, oneLine * 1.6, "The live box grows with the second line instead of clipping it")

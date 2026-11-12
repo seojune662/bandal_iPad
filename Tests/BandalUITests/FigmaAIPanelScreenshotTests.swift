@@ -67,7 +67,7 @@ final class FigmaAIPanelScreenshotTests: XCTestCase {
 
     @MainActor private func openNoteAndPanel(_ app: XCUIApplication) {
         let note = app.buttons["native-home-new-note"]
-        XCTAssertTrue(note.waitForExistence(timeout: 15), app.debugDescription); note.tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 15), app.debugDescription); note.tap(); app.confirmNewNote()
         XCTAssertTrue(app.buttons["native-pdf-tool-pen"].waitForExistence(timeout: 20), app.debugDescription)
         let toggle = app.buttons["native-ai-rail-toggle"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 10), app.debugDescription)

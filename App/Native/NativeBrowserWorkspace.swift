@@ -374,9 +374,10 @@ struct NativeBrowserWorkspace: View {
                     .padding(.trailing, chromeMode == .toolsHidden ? controlInset : 0)
                     .padding(.top, chromeMode == .toolsHidden ? topInset : 0)
             }
-            page
+            // The address row above sits on the card's tone; the page area is paper until the site paints it.
+            page.frame(maxWidth: .infinity, maxHeight: .infinity).background(NativeGlass.paper)
                 .padding(.top, chromeMode == .toolsHidden && annotationRequest == nil ? (controlInset > 0 ? topInset + 44 : topInset) : 0)
-        }.background(NativeGlass.paper).foregroundStyle(NativeDesktopTheme.text)
+        }.foregroundStyle(NativeDesktopTheme.text)
         .nativeWorkspacePreviewSurface(id: "browser-private-" + (session.workspaceID ?? "global"), privateContent: { session.active?.isPrivate == true })
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { workspaceHeight = $0 }
         .task { await session.start(); updateAddress() }
@@ -489,8 +490,8 @@ struct NativeBrowserWorkspace: View {
                 if width >= 400 { profileMenu(expanded: width >= 850) }
                 browserMenu
             }
-        }.buttonStyle(NativeBrowserIconStyle()).padding(.horizontal, 4).background(NativeDesktopTheme.surface)
-            .overlay(alignment: .bottom) { NativeDesktopTheme.border.frame(height: 1) }
+        }.buttonStyle(NativeBrowserIconStyle()).padding(.horizontal, 4)
+            .overlay(alignment: .bottom) { NativeGlass.hairline.frame(height: 1) }
             .overlay(alignment: .bottom) {
                 if session.active?.loading == true {
                     ProgressView(value: session.active?.progress ?? 0).tint(NativeDesktopTheme.accent).frame(height: 2)
@@ -551,7 +552,7 @@ struct NativeBrowserWorkspace: View {
                     Button { navigate(link.url) } label: { Label(link.title, systemImage: "star").font(.system(size: 11)).lineLimit(1).frame(maxWidth: 170).padding(.horizontal, 8).frame(height: 32) }.buttonStyle(.plain)
                 }
             }.padding(.horizontal, 8)
-        }.background(NativeDesktopTheme.surface)
+        }.overlay(alignment: .bottom) { NativeGlass.hairline.frame(height: 1) }
     }
     @ViewBuilder private var page: some View {
         if session.activeID != nil {

@@ -97,7 +97,7 @@ struct NativeHomeTab: View {
     }
     private func tile(_ title: String, _ symbol: String?, height: CGFloat, icon: Color, chip: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let chip { NativeFolderChip(color: chip, size: 24).frame(height: 26) }
+            if let chip { NativeFolderGlyph(color: chip, size: 28).frame(height: 26) }
             else if let symbol { Image(systemName: symbol).font(.system(size: 22)).foregroundStyle(icon).frame(height: 26) }
             Text(title).font(NativeDesktopTheme.font(14, weight: .medium)).lineLimit(1)
         }.padding(16).frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading).contentShape(Rectangle())

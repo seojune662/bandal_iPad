@@ -44,6 +44,9 @@ struct NativeNewTabMenu: View {
     let onClose: () -> Void
     @State private var query = ""
     @State private var highlighted = 0
+    /// The highlight is a keyboard's or pointer's cursor. Under a finger every row looks the same: a row
+    /// already shaded when the menu opens read as a different kind of row.
+    @State private var showsHighlight = false
     private enum Focus { case menu, search }
     @FocusState private var focus: Focus?
     @Environment(\.locale) private var locale
@@ -56,9 +59,9 @@ struct NativeNewTabMenu: View {
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                Button { activate(item) } label: { row(item, selected: highlighted == index, first: index == 0, last: index == items.count - 1) }
+                Button { activate(item) } label: { row(item, selected: showsHighlight && highlighted == index, first: index == 0, last: index == items.count - 1) }
                     .buttonStyle(.plain).accessibilityIdentifier("native-new-tab-" + item.id)
-                    .onHover { if $0 { highlighted = index } }
+                    .onHover { if $0 { highlighted = index; showsHighlight = true } }
                     .overlay { if item.id == Self.browserID { searchLine(item) } }
             }
         }
@@ -69,10 +72,10 @@ struct NativeNewTabMenu: View {
         // The first typed character starts the search and hands the focus to the field.
         .onKeyPress(phases: .down) { press in
             guard focus == .menu, press.modifiers.subtracting(.shift).isEmpty, let first = press.characters.first, first.isLetter || first.isNumber else { return .ignored }
-            query += press.characters; focus = .search
+            query += press.characters; focus = .search; showsHighlight = true
             return .handled
         }
-        .onChange(of: query) { _, _ in highlighted = items.count > 1 && !query.isEmpty ? 1 : 0 }
+        .onChange(of: query) { _, _ in highlighted = items.count > 1 && !query.isEmpty ? 1 : 0; if !query.isEmpty { showsHighlight = true } }
         // The preferred document starts highlighted, so Enter makes it.
         .onAppear {
             let preferred = UserDefaults.standard.string(forKey: NativeLocalPreferences.newDocumentKind) == "markdown" ? "new-note" : "new-whiteboard"
@@ -111,7 +114,12 @@ struct NativeNewTabMenu: View {
             Spacer(minLength: 0)
         }.padding(.horizontal, 16).frame(height: 55)
     }
-    private func move(_ step: Int) -> KeyPress.Result { highlighted = min(max(0, highlighted + step), items.count - 1); return .handled }
+    private func move(_ step: Int) -> KeyPress.Result {
+        // The first arrow press shows the cursor where Enter already pointed; the next ones move it.
+        if showsHighlight { highlighted = min(max(0, highlighted + step), items.count - 1) }
+        showsHighlight = true
+        return .handled
+    }
     private func activate(_ item: NativeNewTabCatalog.Item) { onClose(); onAction(item.action) }
     private func activateHighlighted() { if items.indices.contains(highlighted) { activate(items[highlighted]) } }
 }

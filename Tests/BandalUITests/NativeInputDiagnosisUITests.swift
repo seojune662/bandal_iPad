@@ -86,8 +86,29 @@ final class NativeInputDiagnosisUITests: XCTestCase {
     @MainActor func testR9TabDragAndTheWindow() { tabDrag(extra: []) }
     /// R9c: how deep the band is that iPadOS drags a full-screen window by: the same tab pressed at several heights.
     /// (Measured on 26.5: 32 pt. Leaves the app windowed in between and restores full screen each time.)
-    @MainActor func testR9cTopBandDepth() {
+    @MainActor func testR9cTopBandDepth() { bandDepth(extra: []) }
+    /// R9j: does a drag that stays inside the band (sideways, as when reordering) or leaves it at a shallow
+    /// angle also move the window, or only one that goes down? (Measured on 26.5: every one of them moves it.
+    /// Deferring system gestures on the top edge, and a recognizer on the tab that the window's own must wait
+    /// for, changed nothing either; both were tried and taken out again.)
+    @MainActor func testR9jDirectionsOutOfTheBand() {
         let app = launch(fixturePencil: false)
+        openNote("Trace Band", app: app)
+        let tab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-document-tab-", "Trace Band")).firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 10))
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        for (name, dx, dy, hold) in [("sideways after a hold", 260.0, 0.0, 1.0), ("sideways at once", 260.0, 0.0, 0.05), ("shallow down-right", 300.0, 120.0, 1.0), ("straight down", 0.0, 300.0, 1.0)] {
+            let frame = tab.frame
+            let start = origin.withOffset(.init(dx: frame.midX, dy: 20))
+            start.press(forDuration: hold, thenDragTo: origin.withOffset(.init(dx: frame.midX + dx, dy: 20 + dy)), withVelocity: .slow, thenHoldForDuration: 0.5)
+            sleep(2)
+            let window = app.windows.firstMatch.frame
+            print("[DIAG] R9j \(name): window after \(window) \(window.width < 1370 ? "LEFT FULL SCREEN" : "stayed full screen")")
+            ensureFullScreen(app); sleep(1)
+        }
+    }
+    @MainActor private func bandDepth(extra: [String]) {
+        let app = launch(fixturePencil: false, extra: extra)
         openNote("Trace Band", app: app)
         let tab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-document-tab-", "Trace Band")).firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 10))
@@ -125,6 +146,30 @@ final class NativeInputDiagnosisUITests: XCTestCase {
         // A tap near the top makes the trace log the window's bounds against the screen's.
         tap(app, x: 200, y: 30, label: "R9 top-left probe")
     }
+    /// R11: a note in a tab: the editor's frame, whether the accessibility hit test finds it, and the whole
+    /// element tree, to look up what the snapshot believes lies over the editor's centre. (`tap()` on an
+    /// element whose centre it thinks is covered lands somewhere else in it, with no failure.)
+    @MainActor func testR11WhatCoversAnEditorsCentre() {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "--native-input-trace"]
+        app.launch()
+        let menu = app.buttons["native-course-add-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 25)); menu.tap()
+        let name = app.textFields["native-course-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Cover")
+        app.buttons["native-create-course"].tap()
+        let create = app.buttons["native-library-create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 15)); create.tap(); app.buttons["새 마크다운"].tap()
+        let title = app.textFields["native-name-input"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Cover"); app.buttons["만들기"].tap()
+        let editor = app.textViews["native-markdown-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 20), app.debugDescription); sleep(2)
+        print("[DIAG] R11 editor frame=\(editor.frame) hittable=\(editor.isHittable)")
+        print("[DIAG] R11 tree begin\n" + app.debugDescription + "\n[DIAG] R11 tree end")
+        editor.tap(); sleep(1)
+    }
+
     /// R10: four mixed tabs in one strip (the tab-sizing test's start): each tab's frame, whether the accessibility
     /// hit test finds it, and where a real tap on it lands.
     @MainActor func testR10MixedTabsHitTesting() {
@@ -142,7 +187,7 @@ final class NativeInputDiagnosisUITests: XCTestCase {
         for action in ["new-browser", "new-note", "chat", "new-whiteboard"] {
             plus.tap()
             let item = app.buttons["native-new-tab-" + action]
-            if item.waitForExistence(timeout: 5) { item.tap() } else { print("[DIAG] R10 menu item \(action) missing") }
+            if item.waitForExistence(timeout: 5) { item.tap(); if action == "new-whiteboard" { app.confirmNewNote() } } else { print("[DIAG] R10 menu item \(action) missing") }
             sleep(3)
         }
         let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-")).allElementsBoundByIndex

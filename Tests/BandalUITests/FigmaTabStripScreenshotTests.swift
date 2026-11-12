@@ -40,7 +40,9 @@ final class FigmaTabStripScreenshotTests: XCTestCase {
         let add = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 10)); add.tap()
         let item = app.buttons["native-new-tab-" + action]
-        XCTAssertTrue(item.waitForExistence(timeout: 15), app.debugDescription); item.tap(); sleep(3)
+        XCTAssertTrue(item.waitForExistence(timeout: 15), app.debugDescription); item.tap()
+        if action == "new-whiteboard" { app.confirmNewNote() }
+        sleep(3)
     }
     @MainActor private func attach(_ app: XCUIApplication, _ name: String) {
         // A landscape capture of the whole screen comes out rotated and cropped; the window does not.

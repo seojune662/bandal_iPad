@@ -149,6 +149,14 @@ extension XCUIElement {
 }
 
 extension XCUIApplication {
+    /// 새 노트 asks for its paper first (＋ › 노트, the home screen's 새 노트): this keeps the sheet's answers,
+    /// types `title` when one is given, and makes the note.
+    @MainActor func confirmNewNote(title: String? = nil, file: StaticString = #filePath, line: UInt = #line) {
+        let create = buttons["native-new-note-create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 10), debugDescription, file: file, line: line)
+        if let title { let field = textFields["native-new-note-title"]; field.tap(); field.typeText(title) }
+        create.tap()
+    }
     /// The design has no split button in the strip: the layout menu is a long press on a strip's ＋.
     @MainActor func openNativeDockLayoutMenu() {
         let add = buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch

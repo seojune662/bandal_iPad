@@ -375,6 +375,7 @@
 "다른 앱으로 보내기" = "Send to another app";
 "다른 영역과 합치기" = "Merge with another pane";
 "다른 영역으로 이동" = "Move to another pane";
+"다른 윈도우로 이동" = "Move to another window";
 "다시 만들 수 있는 임시 파일만 지워요." = "Only temporary files that can be made again are removed.";
 "다시 만들기" = "Recreate";
 "다시 불러오기" = "Reload";
@@ -467,6 +468,7 @@
 "모두 가리기" = "Cover all";
 "모두 보기" = "Reveal all";
 "모두 지우기" = "Clear all";
+"모눈" = "Grid";
 "모든 과목 일정 내보내기" = "Export schedule for all courses";
 "모든 과목의 AI 대화가 지워져요. 노트와 자료는 그대로예요." = "AI chats in every course are deleted. Notes and materials stay.";
 "모든 단축키를 기본값으로 되돌릴까요?" = "Reset all shortcuts to their defaults?";
@@ -562,6 +564,7 @@
 "비우기" = "Clear";
 "빈 배경" = "Blank";
 "빈 영역 닫기" = "Close empty pane";
+"빈 종이" = "Blank";
 "사각형" = "Rectangle";
 "사본 적용" = "Apply copy";
 "사본으로 보관" = "Keep as copy";
@@ -610,6 +613,7 @@
 "새 브라우저 페이지에서 사용할 기본값입니다." = "Defaults for new browser pages.";
 "새 브라우저 프로필" = "New browser profile";
 "새 자막을 자동으로 따라가기" = "Follow new captions automatically";
+"새 윈도우" = "New window";
 "새 창" = "New window";
 "새 탭" = "New tab";
 "새 탭 기본 문서" = "Default document for new tabs";
@@ -684,6 +688,7 @@
 "실행 취소" = "Undo";
 "아래로" = "Down";
 "아래로 이동" = "Move down";
+"아래로 분할" = "Split below";
 "아래에 페이지 추가" = "Add page below";
 "아래에 행 추가" = "Add row below";
 "아직 미리보기 없음" = "No preview yet";
@@ -719,6 +724,7 @@
 "열린 자료와 분할 보기" = "Open materials and split view";
 "열린 탭 %lld개" = "Open tabs: %lld";
 "열린 탭 검색" = "Search open tabs";
+"열려 있던 탭만 닫혀요. 파일은 폴더에 그대로 있어요." = "Only its open tabs close. Your files stay in the folder.";
 "영어 이어읽기" = "Continue reading in English";
 "영어 읽기 · 표현 저장" = "English reading · saved phrases";
 "영역" = "Area";
@@ -732,6 +738,8 @@
 "오른쪽 위젯" = "Right-side widgets";
 "오른쪽 정렬" = "Align right";
 "오른쪽 탭 모두 닫기" = "Close all tabs to the right";
+"오른쪽으로 분할" = "Split right";
+"오른쪽으로 옮기기" = "Move right";
 "오른쪽 패널 접기" = "Collapse right panel";
 "오른쪽 패널 펼치기" = "Expand right panel";
 "오른쪽에 분할 복제" = "Duplicate in split on the right";
@@ -745,6 +753,7 @@
 "완료로 표시" = "Mark as complete";
 "외부 AI 사이트" = "External AI sites";
 "왼쪽" = "Left";
+"왼쪽으로 옮기기" = "Move left";
 "왼쪽 +로 과목을 만들거나 폴더를 연결하고, 자료 목록에서 PDF·이미지·영상을 가져오세요." = "Use + on the left to create a course or link a folder, then import PDFs, images and videos from the materials list.";
 "왼쪽 정렬" = "Align left";
 "요청 다시 준비" = "Prepare request again";
@@ -770,6 +779,7 @@
 "윈도우 관리" = "Manage windows";
 "윈도우 관리 닫기" = "Close window manager";
 "윈도우 닫기" = "Close window";
+"윈도우를 지울까요?" = "Delete this window?";
 "음성 모델" = "Speech model";
 "응답 중지" = "Stop response";
 "이 iPad" = "This iPad";
@@ -896,6 +906,7 @@
 "제출한 답안을 확인하고 서술형을 자기 점검해 주세요." = "Review your submitted answers and self-check the written responses.";
 "좁은 화면에서는 영역을 선택해 보세요" = "On a narrow screen, pick a pane to view";
 "종류" = "Type";
+"종이" = "Paper";
 "좌우로 밀어 폴더를 탐색하세요" = "Swipe left or right to browse folders";
 "주석 · 10 pt" = "Caption · 10 pt";
 "주석 닫기" = "Close annotations";

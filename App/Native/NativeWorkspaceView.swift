@@ -7,6 +7,8 @@ struct NativeWorkspaceView: View {
     @StateObject private var navigation = NativeWorkspaceNavigation()
     @StateObject private var previews = NativeWorkspacePreviewController()
     @State private var windowsOverviewOpen = false
+    /// The pane a new handwriting note was asked for; set while the 새 노트 sheet is up.
+    @State private var newNoteGroupID: String?
     @State private var pdfPalette = NativePDFPaletteHost()
     @StateObject private var services: NativePlatformServices
     @ObservedObject private var annotation: NativeAnnotationCoordinator
@@ -139,7 +141,19 @@ struct NativeWorkspaceView: View {
         }
     }
 
-    private func changeWindow(_ change: @escaping () -> Void) {
+    /// The folder's windows as the sidebar lists them. Choosing or adding one there also leaves a tool screen,
+    /// settings or the study board: the window asked for is the one on screen afterwards.
+    private var sidebarWindowActions: NativeSidebarWindowActions {
+        let scope = navigation.currentWindowRef?.workspaceID ?? ""
+        return .init(
+            select: { id in changeWindow(reveal: true) { _ = navigation.selectWindow(.init(workspaceID: scope, windowID: id)) } },
+            add: { changeWindow(reveal: true) { _ = navigation.createWindow() } },
+            rename: { id, name in persistWindowMetadata { _ = navigation.renameWindow(.init(workspaceID: scope, windowID: id), name: name) } },
+            move: { id, index in persistWindowMetadata { _ = navigation.moveWindow(.init(workspaceID: scope, windowID: id), to: index) } },
+            close: { closeWindow(.init(workspaceID: scope, windowID: $0)) })
+    }
+
+    private func changeWindow(reveal: Bool = false, _ change: @escaping () -> Void) {
         guard !refused("changeWindow") else { return }
         busy = true
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -151,6 +165,7 @@ struct NativeWorkspaceView: View {
                 try navigation.performPersistedChange(to: navigationURL, change)
                 syncNavigationInstances()
                 windowsOverviewOpen = false
+                if reveal { section = .library; auxiliary = nil; learningHome = false; boardOverlayOpen = false }
             } catch { store.errorMessage = error.localizedDescription }
         }
     }
@@ -341,6 +356,9 @@ struct NativeWorkspaceView: View {
             }
             .overlay(alignment: .bottom) { NativeSyncMoveNotice(store: store) { openSettings("sync") } }
             .overlay { NativeDocumentPreviewLayer(store: store) }
+            // 새 노트: over the whole window, as the desktop app shows it; a tap outside or Esc cancels.
+            .overlay { newNoteLayer(width: geometry.size.width) }
+            .animation(.easeOut(duration: 0.16), value: newNoteGroupID != nil)
             // @AppStorage writes reach the view outside withAnimation's transaction,
             // so the slide is keyed on what is visible rather than on the toggles.
             // The left slot counts as one: the home sidebar and AI trade places at once, only opening and folding slide.
@@ -400,7 +418,7 @@ struct NativeWorkspaceView: View {
         .foregroundStyle(NativeDesktopTheme.text)
         .background(NativeWorkspaceBackdrop())
         // The decor reaches every glass region from here, so the settings slider repaints the window as it moves.
-        .environment(\.nativeDecor, NativeDecor(palette: .named(decorPalette), intensity: min(max(decorIntensity, 0), 1)))
+        .environment(\.nativeDecor, NativeDecor(palette: .named(decorPalette), intensity: NativeDecor.clamp(decorIntensity)))
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         // Controls take the decor's accent (모노 keeps black and white).
         .tint(Color(uiColor: UIColor { [decorPalette] traits in NativeDecorPalette.named(decorPalette).accent(dark: traits.userInterfaceStyle == .dark) }))
@@ -720,7 +738,8 @@ struct NativeWorkspaceView: View {
             }
     }
     /// Icon centres at 29 / 80 / 128 below the status bar: 44 pt buttons, the home button 3 pt further from the next.
-    private static let railSpacing: CGFloat = 4, railTop: CGFloat = 7
+    private static let railSpacing: CGFloat = 4
+    private static var railTop: CGFloat { 7 + NativeDockHeaderMetrics.statusBand }
     /// A lit rail button with no panel beside it.
     private static let railSelected = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.12) : UIColor.white.withAlphaComponent(0.85) })
     private var courseSidebar: some View {
@@ -733,9 +752,10 @@ struct NativeWorkspaceView: View {
             NativeCourseSidebar(store: store, navigation: navigation, settings: workspaceSettings, onSelect: changeCourse,
                 onCreate: createCourse, onOpenSettings: openSettings,
                 onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb, descriptor: favoriteDescriptor, onOpenFavorite: openFavorite,
-                selectedContextID: workspaceContext?.id, onOpenProject: changeWorkspace)
+                selectedContextID: workspaceContext?.id, onOpenProject: changeWorkspace, windowActions: sidebarWindowActions)
                 .padding(.top, 12)
-        }.background(NativeGlass.panel)
+        // The glass runs to the top edge; what is on it starts under the status bar.
+        }.padding(.top, NativeDockHeaderMetrics.statusBand).background(NativeGlass.panel)
     }
     private func toggleAcademicBoard() {
         transition {
@@ -853,7 +873,33 @@ struct NativeWorkspaceView: View {
             catch { store.errorMessage = error.localizedDescription }
         }
     }
+    /// Its own function, not written out in `workspaceChrome`: that expression is already near what the type
+    /// checker gets through in a Release archive.
+    @ViewBuilder private func newNoteLayer(width: CGFloat) -> some View {
+        if let groupID = newNoteGroupID {
+            ZStack {
+                Color.black.opacity(0.28).ignoresSafeArea().onTapGesture { newNoteGroupID = nil }.accessibilityHidden(true)
+                NativeNewNoteSheet(cancel: { newNoteGroupID = nil }) { options in
+                    newNoteGroupID = nil
+                    openNewTab(.note, groupID, note: options)
+                }
+                .padding(24).frame(width: min(440, width - 32))
+                .background(NativeGlass.sheet, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(NativeGlass.rim) }
+                .shadow(color: .black.opacity(0.22), radius: 30, y: 14)
+                .accessibilityElement(children: .contain).accessibilityAddTraits(.isModal).accessibilityIdentifier("native-new-note-sheet")
+            }.transition(.opacity)
+        }
+    }
     private func openNewTab(_ action: NativeNewTabAction, _ groupID: String) {
+        // A handwriting note starts with its paper: the sheet asks first, then comes back with the answer.
+        if action == .note {
+            guard !refused("openNewTab") else { return }
+            newNoteGroupID = groupID; return
+        }
+        openNewTab(action, groupID, note: nil)
+    }
+    private func openNewTab(_ action: NativeNewTabAction, _ groupID: String, note: NativeNewNoteOptions?) {
         guard !refused("openNewTab") else { return }; busy = true
         // AI as a tab takes the whole pane; the side panel would show the same conversation twice.
         if action == .assistant { setRail(.ai, open: false, width: windowWidth) }
@@ -870,7 +916,8 @@ struct NativeWorkspaceView: View {
                 case .markdown(let title): document = try await store.createMarkdown(title: title ?? ((workspaceSettings["tabs"] as? [String: Any])?["markdownTitlePrefix"] as? String ?? "새 마크다운"), courseID: courseID, parentPath: context?.rootRelPath ?? "")
                 case .note:
                     // Notes are PDF notes, like the desktop: same paper, same palette, same sync.
-                    document = try await store.createNote(title: "새 노트", paper: NativePaper.lines.rawValue, orientation: "portrait", courseID: courseID, parentPath: context?.rootRelPath ?? "")
+                    let note = note ?? NativeNewNoteOptions(title: NativeNewNoteOptions.defaultTitle())
+                    document = try await store.createNote(title: note.title, paper: note.paper.rawValue, orientation: note.orientation, courseID: courseID, parentPath: context?.rootRelPath ?? "")
                 case .browser(let url):
                     document = .init(courseID: courseID, relativePath: UUID().uuidString, title: "브라우저", kind: "browser")
                     if let url { store.pendingBrowserURLs[document.relativePath] = url }
@@ -936,7 +983,7 @@ struct NativeWorkspaceView: View {
                     .environment(\.nativeWorkspaceTarget, navigation.captureTarget())
                     .id(context.id)
             } else { noWorkspacePlaceholder }
-        }
+        }.padding(.top, NativeDockHeaderMetrics.statusBand)
     }
     private var noWorkspacePlaceholder: some View {
         VStack(spacing: 12) {

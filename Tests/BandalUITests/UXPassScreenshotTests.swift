@@ -58,7 +58,7 @@ final class UXPassScreenshotTests: XCTestCase {
         if create.waitForExistence(timeout: 15) {
             create.tap(); app.buttons["새 노트"].firstMatch.tap(); sleep(1); attach(app, "16 새 노트")
             dismiss(app)
-            create.tap(); app.buttons["새 폴더"].firstMatch.tap(); sleep(1); attach(app, "17 새 폴더")
+            create.tap(); app.buttons["새 하위 폴더"].firstMatch.tap(); sleep(1); attach(app, "17 새 폴더")
             dismiss(app)
         }
         app.buttons["native-course-add-menu"].press(forDuration: 1); app.buttons["폴더 관리"].firstMatch.tap(); sleep(1); attach(app, "18 폴더 관리")

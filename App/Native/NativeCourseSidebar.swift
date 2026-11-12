@@ -15,6 +15,8 @@ struct NativeCourseSidebar: View {
     /// Projects (study spaces) are folders in the same list; one opens as its own workspace.
     var selectedContextID: String? = nil
     var onOpenProject: (NativeWorkspaceContext) -> Void = { _ in }
+    /// Set to list the chosen folder's windows under it.
+    var windowActions: NativeSidebarWindowActions? = nil
     @StateObject private var catalog = NativeLearningCatalog()
     @State private var deletingProject: NativeLearningSummary?
     @AppStorage("native.desktop.collapsedCourses") private var collapsedCourses = "[]"
@@ -112,8 +114,9 @@ struct NativeCourseSidebar: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NativeHomeTab.newCourse)) { _ in adding = .course }
     }
-    /// One folder: a colour chip and its name, 14 pt whether chosen or not (the chosen one is medium on a pill).
-    /// A folder holding folders, or the chosen one (its favourites), has a chevron; nested folders step in 14 pt a level.
+    /// One folder: its glyph and name, 14 pt whether chosen or not (the chosen one is medium on a pill).
+    /// A folder holding folders, or the chosen one (its favourites), has a chevron; nested folders step in 14 pt
+    /// a level, each level under a guide line that comes down from its parent's chevron.
     private func courseRow(_ course: NativeCourse, depth: Int) -> some View {
         // A project inside this folder selects its own row, not this one.
         let selected = store.selectedCourseID == course.id && (selectedContextID?.hasPrefix("project:") != true), collapsed = contains(course.id, in: collapsedCourses)
@@ -131,7 +134,7 @@ struct NativeCourseSidebar: View {
                 }.padding(.leading, 4 + indent)
                 if renamingID == course.id {
                     HStack(spacing: 8) {
-                        NativeFolderChip(color: course.color, selected: selected).frame(width: 22)
+                        NativeFolderGlyph(color: course.color, selected: selected).frame(width: 22)
                         BandalInlineEditor(text: course.name, isEditing: renaming(course.id), font: NativeDesktopTheme.font(14, weight: .medium), identifier: "native-course-rename") { name in
                             mutate("courses:rename", ["courseId": course.id, "name": name])
                         }
@@ -142,7 +145,7 @@ struct NativeCourseSidebar: View {
                     onSelect(course.id)
                 } label: {
                     HStack(spacing: 8) {
-                        NativeFolderChip(color: course.color, selected: selected).frame(width: 22)
+                        NativeFolderGlyph(color: course.color, selected: selected).frame(width: 22)
                         Text(course.name).font(NativeDesktopTheme.font(14, weight: selected ? .medium : .regular)).foregroundStyle(selected ? NativeGlass.icon : NativeDesktopTheme.text).lineLimit(1)
                         Spacer(minLength: 0)
                         if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
@@ -173,9 +176,20 @@ struct NativeCourseSidebar: View {
                     mutate("courses:delete", ["courseId": course.id])
                 }
             if selected && !collapsed {
+                // The folder's windows first, then its favourites. Only this folder's: the list is the open workspace's.
+                if let windowActions, let ref = navigation.currentWindowRef, ref.workspaceID == "course:" + course.id {
+                    NativeSidebarWindowsSection(windows: navigation.windows, activeID: ref.windowID,
+                        titles: { id in (navigation.window(.init(workspaceID: ref.workspaceID, windowID: id))?.layout.groups ?? []).compactMap { navigation.document($0.activeID)?.title } },
+                        tabCount: { id in navigation.documents(in: .init(workspaceID: ref.workspaceID, windowID: id)).count },
+                        actions: windowActions)
+                        .padding(.leading, indent)
+                }
                 NativeFavoritesSection(store: store, courseID: course.id, currentDocument: navigation.active, descriptor: descriptor, documentByID: navigation.document, onOpen: onOpenFavorite)
                     .padding(.leading, indent)
             }
+        }
+        .background(alignment: .leading) {
+            if query.isEmpty { ForEach(0..<min(depth, 6), id: \.self) { level in NativeGlass.treeGuide.frame(width: 1).padding(.leading, 19 + CGFloat(level) * 14).allowsHitTesting(false) } }
         }
     }
     private func deleteMessage(_ course: NativeCourse) -> String {
@@ -243,13 +257,13 @@ struct NativeCourseSidebar: View {
         return HStack(spacing: 0) {
             if renamingID == project.id {
                 HStack(spacing: 8) {
-                    NativeFolderChip(tint: tint, selected: selected).frame(width: 22)
+                    NativeFolderGlyph(tint: tint, selected: selected).frame(width: 22)
                     BandalInlineEditor(text: project.name, isEditing: renaming(project.id), font: NativeDesktopTheme.font(14), identifier: "native-project-rename") { renameProject(project, to: $0) }
                 }.padding(.leading, 34).frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
             } else {
                 Button { onOpenProject(context) } label: {
                     HStack(spacing: 8) {
-                        NativeFolderChip(tint: tint, selected: selected).frame(width: 22)
+                        NativeFolderGlyph(tint: tint, selected: selected).frame(width: 22)
                         Text(context.title).font(NativeDesktopTheme.font(14, weight: selected ? .medium : .regular)).foregroundStyle(selected ? NativeGlass.icon : NativeDesktopTheme.text).lineLimit(1)
                         Spacer(minLength: 0)
                         if project.dueCardCount > 0 { Text("\(project.dueCardCount)").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted) }
@@ -390,27 +404,46 @@ enum NativeFolderColor {
     }
 }
 
-/// A folder's mark: a small rounded chip in its colour, lit from above, instead of a folder glyph.
-/// The chosen folder's chip lifts a little.
-struct NativeFolderChip: View {
+/// A folder's mark, as the desktop app draws it: the outline of a folder with a short bar of the folder's
+/// colour inside, low on the left. The outline is the row's own ink (darker on the chosen row); only the bar is coloured.
+struct NativeFolderGlyph: View {
     let tint: Color
     var selected = false
-    var size: CGFloat = 16
-    init(tint: Color, selected: Bool = false, size: CGFloat = 16) { self.tint = tint; self.selected = selected; self.size = size }
-    init(color: String, selected: Bool = false, size: CGFloat = 16) { self.init(tint: NativeFolderColor.color(color), selected: selected, size: size) }
+    /// The glyph's width; it is four fifths as tall.
+    var size: CGFloat = 20
+    init(tint: Color, selected: Bool = false, size: CGFloat = 20) { self.tint = tint; self.selected = selected; self.size = size }
+    init(color: String, selected: Bool = false, size: CGFloat = 20) { self.init(tint: NativeFolderColor.color(color), selected: selected, size: size) }
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: size * 0.32, style: .continuous)
-        ZStack {
-            shape.fill(tint)
-            // Light from the top: a soft sheen over the upper half and a bright 1 pt lip.
-            shape.fill(LinearGradient(colors: [.white.opacity(0.38), .white.opacity(0.05), .black.opacity(0.08)], startPoint: .top, endPoint: .bottom))
-            shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0)], startPoint: .top, endPoint: .center), lineWidth: 1)
-            // The tab of a folder, drawn as a notch of light along the top-left.
-            Capsule().fill(.white.opacity(0.55)).frame(width: size * 0.38, height: max(1.5, size * 0.11)).offset(x: -size * 0.16, y: -size * 0.27)
-        }
-        .frame(width: size, height: size * 0.86)
-        .shadow(color: tint.opacity(selected ? 0.45 : 0.25), radius: selected ? 3 : 1.5, y: selected ? 1.5 : 0.5)
-        .accessibilityHidden(true)
+        let height = (size * 0.8).rounded(), line = max(1.2, size * 0.075)
+        NativeFolderOutline().stroke(selected ? NativeGlass.icon : NativeGlass.panelIcon, style: StrokeStyle(lineWidth: line, lineCap: .round, lineJoin: .round))
+            .padding(line / 2)
+            .overlay(alignment: .bottomLeading) {
+                Capsule().fill(tint).frame(width: size * 0.36, height: max(2, size * 0.11))
+                    .padding(.leading, size * 0.2).padding(.bottom, height * 0.2)
+            }
+            .frame(width: size, height: height)
+            .accessibilityHidden(true)
+    }
+}
+/// A folder seen from the front: a rounded body with its tab at the top left, sloping down into the top edge.
+struct NativeFolderOutline: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, h = rect.height, r = min(w, h) * 0.2
+        let tabWidth = w * 0.44, tabHeight = h * 0.17, slope = h * 0.17
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY - r))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX + tabWidth - slope, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX + tabWidth, y: rect.minY + tabHeight))
+        path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY + tabHeight))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + tabHeight + r), control: CGPoint(x: rect.maxX, y: rect.minY + tabHeight))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX - r, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - r), control: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
 

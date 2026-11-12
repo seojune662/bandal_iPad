@@ -129,7 +129,7 @@ struct NativeOnboarding: View {
         .ignoresSafeArea(.container)
         .background { NativeOnboardingSurface() }
         // Onboarding lies over the workspace; it hands the decor down itself, so the 색 step repaints as it changes.
-        .environment(\.nativeDecor, NativeDecor(palette: .named(decorPalette), intensity: min(max(decorIntensity, 0), 1)))
+        .environment(\.nativeDecor, NativeDecor(palette: .named(decorPalette), intensity: NativeDecor.clamp(decorIntensity)))
         .foregroundStyle(NativeDesktopTheme.text).tint(NativeDesktopTheme.accent)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: step)
         // An invite link opened the app: its code goes into the invite step's field.

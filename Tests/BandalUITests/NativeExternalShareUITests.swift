@@ -24,7 +24,7 @@ final class NativeExternalShareUITests: XCTestCase {
         app.buttons["native-library-view-menu"].tap()
         let list = app.buttons["native-library-view-list"]
         if list.exists { list.tap() } else { app.buttons["목록"].tap() }
-        app.buttons["native-library-create"].tap(); app.buttons["새 폴더"].tap()
+        app.buttons["native-library-create"].tap(); app.buttons["새 하위 폴더"].tap()
         let folderName = app.textFields["native-name-input"]
         XCTAssertTrue(folderName.waitForExistence(timeout: 5)); folderName.tap(); folderName.typeText("Shared Photos")
         app.buttons["만들기"].tap()
