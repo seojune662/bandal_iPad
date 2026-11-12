@@ -194,6 +194,46 @@ struct NativeWorkspaceBackdrop: View {
     }
 }
 
+/// A small window drawn with the decor: rail, panel and a page, over the backdrop. Onboarding shows it
+/// while the palette is chosen, so the choice is seen on something like the app before the app opens.
+struct NativeDecorPreview: View {
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        HStack(spacing: 0) {
+            VStack(spacing: 10) {
+                ForEach(0..<4, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: 5).fill(index == 0 ? AnyShapeStyle(NativeGlass.selection) : AnyShapeStyle(.clear))
+                        .overlay { Circle().fill(NativeGlass.icon.opacity(0.55)).frame(width: 9, height: 9) }
+                        .frame(width: 22, height: 22)
+                }
+                Spacer()
+            }.padding(.top, 14).frame(width: 40).frame(maxHeight: .infinity).background(NativeGlass.rail)
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(0..<5, id: \.self) { index in
+                    HStack(spacing: 7) {
+                        RoundedRectangle(cornerRadius: 2).fill(NativeGlass.panelIcon.opacity(0.5)).frame(width: 10, height: 9)
+                        Capsule().fill(NativeGlass.panelIcon.opacity(0.35)).frame(width: [70, 54, 82, 60, 46][index], height: 6)
+                    }
+                    .padding(.horizontal, 7).frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+                    .background(index == 1 ? AnyShapeStyle(NativeGlass.selection) : AnyShapeStyle(.clear), in: RoundedRectangle(cornerRadius: 6))
+                }
+                Spacer()
+            }.padding(.top, 14).padding(.horizontal, 8).frame(width: 150).frame(maxHeight: .infinity).background(NativeGlass.panel)
+            VStack(alignment: .leading, spacing: 9) {
+                Capsule().fill(NativeDesktopTheme.text.opacity(0.75)).frame(width: 120, height: 9)
+                ForEach(0..<5, id: \.self) { index in
+                    Capsule().fill(NativeDesktopTheme.muted.opacity(0.35)).frame(width: [210, 190, 220, 160, 200][index], height: 6)
+                }
+                Spacer()
+            }.padding(18).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).background(NativeGlass.paper)
+        }
+        .background { NativeWorkspaceBackdrop() }
+        .clipShape(shape).overlay { shape.strokeBorder(NativeGlass.hairline, lineWidth: 1) }
+        .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+        .accessibilityHidden(true)
+    }
+}
+
 /// A 128 pt tile of grey noise, made once.
 enum NativeGrain {
     static let tile: UIImage = {
@@ -283,9 +323,10 @@ struct NativeDecorSettingsGroup: View {
     }
 }
 
-private struct NativeDecorSwatches: View {
+struct NativeDecorSwatches: View {
     @Binding var selection: String
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.locale) private var locale
     private static let points: [SIMD2<Float>] = (0..<3).flatMap { row in (0..<3).map { SIMD2(Float($0) / 2, Float(row) / 2) } }
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -294,17 +335,17 @@ private struct NativeDecorSwatches: View {
                     let chosen = palette.id == selection
                     Button { selection = palette.id } label: {
                         VStack(spacing: 6) {
-                            // The palette as the window wears it at full strength, so the swatches are told apart.
-                            MeshGradient(width: 3, height: 3, points: Self.points, colors: palette.mesh(dark: scheme == .dark, saturation: 1.8), colorSpace: .perceptual)
+                            // The palette's daylight mesh at full strength in either mode: a dark mesh this small reads as mud.
+                            MeshGradient(width: 3, height: 3, points: Self.points, colors: palette.mesh(dark: false, saturation: 2), colorSpace: .perceptual)
                                 .frame(width: 36, height: 36).clipShape(Circle())
                                 .overlay { Circle().strokeBorder(NativeGlass.hairline, lineWidth: 1) }
                                 .padding(3)
                                 .overlay { if chosen { Circle().strokeBorder(Color(uiColor: palette.accent(dark: scheme == .dark)), lineWidth: 2) } }
-                            Text(palette.title).font(NativeDesktopTheme.font(12, weight: chosen ? .semibold : .regular))
+                            Text(verbatim: NativeAppLocale.string(palette.title, locale)).font(NativeDesktopTheme.font(12, weight: chosen ? .semibold : .regular))
                                 .foregroundStyle(chosen ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
                         }.frame(minWidth: 44).contentShape(Rectangle())
                     }.buttonStyle(.plain)
-                        .accessibilityLabel(palette.title).accessibilityAddTraits(chosen ? .isSelected : [])
+                        .accessibilityLabel(NativeAppLocale.string(palette.title, locale)).accessibilityAddTraits(chosen ? .isSelected : [])
                         .accessibilityIdentifier("native-settings-decor-" + palette.id)
                 }
             }
@@ -314,7 +355,7 @@ private struct NativeDecorSwatches: View {
 
 /// 은은하게 … 선명하게: a 200 pt bar filled with the palette's own accent, with a knob that follows the finger.
 /// It clicks at each quarter, and VoiceOver steps it by tenths.
-private struct NativeDecorIntensitySlider: View {
+struct NativeDecorIntensitySlider: View {
     @Binding var value: Double
     let palette: NativeDecorPalette
     @Environment(\.colorScheme) private var scheme
