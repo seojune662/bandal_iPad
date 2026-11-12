@@ -35,9 +35,12 @@ final class FigmaOnboardingScreenshotTests: XCTestCase {
         XCTAssertTrue(skip.waitForExistence(timeout: 10), app.debugDescription)
         sleep(1); attach(app, prefix + "2b invite")
         skip.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["native-referral-invite"].waitForExistence(timeout: 10), app.debugDescription)
+        sleep(1); attach(app, prefix + "2c share")
+        next.tap()
         XCTAssertTrue(app.buttons["native-onboarding-finish"].waitForExistence(timeout: 10), app.debugDescription)
         sleep(1); attach(app, prefix + "3")
-        if english { app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-language-ko-KR"].tap() }
+        if english { app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-language-ko-KR"].tap() }
     }
 
     @MainActor private func picker(_ appearance: String) {

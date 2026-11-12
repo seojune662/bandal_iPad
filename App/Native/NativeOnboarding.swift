@@ -96,7 +96,7 @@ struct NativeOnboardingButton: View {
 struct NativeOnboarding: View {
     var store: NativeWorkspaceStore
     let finish: () -> Void
-    private enum Step: Int, CaseIterable { case language, school, decor, invite, done }
+    private enum Step: Int, CaseIterable { case language, school, decor, invite, share, done }
     @AppStorage(NativeAppLocale.key) private var language = NativeAppLocale.korean
     @State private var step = Step.language
     @AppStorage(NativeDecor.paletteKey) private var decorPalette = NativeDecorPalette.default.id
@@ -117,6 +117,7 @@ struct NativeOnboarding: View {
                 case .school: schoolStep
                 case .decor: decorStep
                 case .invite: inviteStep
+                case .share: shareStep
                 case .done: doneStep
                 }
             }
@@ -268,14 +269,26 @@ struct NativeOnboarding: View {
             heading("초대 코드가 있나요?", nil)
             NativeReferralCodeEntry(referral: store.referral, large: true)
             if store.referral.applied {
-                primaryButton("다음", label: "다음 단계", identifier: "native-onboarding-next") { step = .done }
+                primaryButton("다음", label: "다음 단계", identifier: "native-onboarding-next") { step = .share }
             } else {
-                Button { store.referral.withdraw(); step = .done } label: {
+                Button { store.referral.withdraw(); step = .share } label: {
                     Text("없어요, 건너뛰기").font(.system(size: 15, weight: .medium)).foregroundStyle(NativeDesktopTheme.secondary)
                         .frame(minWidth: 220, minHeight: 48).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("native-referral-skip")
             }
+        }
+    }
+
+    /// 친구 초대: the other side of the invitation. Signed in, this account's code to copy or share and what
+    /// it has brought; signed out, the sign-in that gives it a code. Either way 다음 goes on without it.
+    private var shareStep: some View {
+        VStack(spacing: 24) {
+            heading("친구를 초대하고 AI 100회 받기", Text("친구가 로그인하고 첫 폴더를 만들면 둘 다 받아요"))
+            BandalChoiceCard {
+                NativeReferralInvite(store: store, showsTitle: false).padding(16)
+            }
+            primaryButton("다음", label: "다음 단계", identifier: "native-onboarding-next") { step = .done }
         }
     }
 
