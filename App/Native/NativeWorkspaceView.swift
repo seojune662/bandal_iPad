@@ -197,7 +197,8 @@ struct NativeWorkspaceView: View {
     }
 
 
-    var body: some View {
+    // Split from `body`: as one expression it exceeds the type checker's time limit in Release archives.
+    private var workspaceChrome: some View {
         GeometryReader { geometry in
             let chrome = chromeLayout(width: geometry.size.width)
             // AI chat stays on screen while annotating so the document does not jump sideways.
@@ -414,6 +415,10 @@ struct NativeWorkspaceView: View {
         .onAppear { NativeInputTrace.start(root: store.root) }
         .onChange(of: busy) { _, value in NativeInputTrace.record("workspace.busy", value ? "on" : "off") }
         .onChange(of: store.isApplyingExternalChanges) { _, value in NativeInputTrace.record("workspace.externalMutation", value ? "on (whole window disabled)" : "off") }
+    }
+
+    var body: some View {
+        workspaceChrome
         .bandalToast(Binding(get: { store.errorMessage }, set: { store.errorMessage = $0 }))
         .bandalToast($shareNotice, symbol: "checkmark.circle.fill")
         .modifier(NativeReferralHost(referral: store.referral, ready: restored && onboarding == .closed, openSettings: openSettings))
