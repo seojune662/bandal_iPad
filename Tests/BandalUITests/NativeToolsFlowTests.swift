@@ -72,7 +72,7 @@ final class NativeToolsFlowTests: XCTestCase {
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap(); course.typeText("Board course")
         app.buttons["native-create-course"].tap()
-        XCTAssertTrue(app.buttons["Board course 과목 메뉴"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["Board course 폴더 메뉴"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["native-section-planner"].tap()
         let list = app.buttons["native-planner-board"]
         XCTAssertTrue(list.waitForExistence(timeout: 10)); list.tap()

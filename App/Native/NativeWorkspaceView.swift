@@ -23,7 +23,6 @@ struct NativeWorkspaceView: View {
     @AppStorage("native.desktop.materialsRail") private var materialsRailOpen = true
     @AppStorage("native.desktop.courseRailWidth") private var courseRailWidth = 240.0
     @AppStorage("native.inspector.width") private var materialsRailWidth = 360.0
-    @AppStorage("native.home.section") private var leftPanel: NativeHomeSection = .courses
     @AppStorage("native.desktop.aiRail") private var aiRailOpen = false
     /// The sidebar was open when AI took its slot, and comes back when AI closes.
     @State private var windowWidth: CGFloat = 1200
@@ -703,15 +702,12 @@ struct NativeWorkspaceView: View {
                 .overlay(alignment: .trailing) {
                     NativeSidebarSectionHandle(limit: $shortcutsLimit, current: shortcutsHeight, content: shortcutContentHeight).padding(.trailing, 10)
                 }.zIndex(1)
-            NativeHomeSectionPicker(selection: $leftPanel)
-            switch leftPanel {
-            case .courses:
-                NativeCourseSidebar(store: store, navigation: navigation, settings: workspaceSettings, onSelect: changeCourse,
-                    onCreate: createCourse, onOpenSettings: openSettings,
-                    onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb, descriptor: favoriteDescriptor, onOpenFavorite: openFavorite)
-            case .projects:
-                NativeProjectSidebar(store: store, selectedID: workspaceContext?.id, onOpen: changeWorkspace)
-            }
+            // 과목 and 프로젝트 are one list of folders.
+            NativeCourseSidebar(store: store, navigation: navigation, settings: workspaceSettings, onSelect: changeCourse,
+                onCreate: createCourse, onOpenSettings: openSettings,
+                onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb, descriptor: favoriteDescriptor, onOpenFavorite: openFavorite,
+                selectedContextID: workspaceContext?.id, onOpenProject: changeWorkspace)
+                .padding(.top, 12)
         }.background(NativeGlass.panel)
     }
     private func toggleAcademicBoard() {
@@ -841,7 +837,7 @@ struct NativeWorkspaceView: View {
             defer { finishWorkspaceTransition() }
             do {
                 try await store.flushDocuments()
-                guard let courseID else { throw DesktopRuntimeError("먼저 과목을 만들거나 선택해 주세요.") }
+                guard let courseID else { throw DesktopRuntimeError("먼저 폴더를 만들거나 선택해 주세요.") }
                 let document: NativeDocumentReference
                 switch action {
                 case .markdown(let title): document = try await store.createMarkdown(title: title ?? ((workspaceSettings["tabs"] as? [String: Any])?["markdownTitlePrefix"] as? String ?? "새 마크다운"), courseID: courseID, parentPath: context?.rootRelPath ?? "")
@@ -926,7 +922,7 @@ struct NativeWorkspaceView: View {
     private var noWorkspacePlaceholder: some View {
         VStack(spacing: 12) {
             Image(systemName: "folder").font(.largeTitle).foregroundStyle(NativeDesktopTheme.muted)
-            Text("과목이나 프로젝트를 선택하세요").font(NativeDesktopTheme.font(14))
+            Text("폴더를 선택하세요").font(NativeDesktopTheme.font(14))
             Text("자료와 AI 대화를 한 공간에서 이어가세요.").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1012,7 +1008,7 @@ struct NativeWorkspaceView: View {
         defer { finishWorkspaceTransition() }
         try await store.createCourse(name: name)
         if let course = store.courses.first(where: { $0.id == store.selectedCourseID }) { navigation.activateWorkspace(.course(course)) }
-        section = .library; auxiliary = nil; learningHome = false; leftPanel = .courses; compactCourseRail = false; compactMaterialsRail = false
+        section = .library; auxiliary = nil; learningHome = false; compactCourseRail = false; compactMaterialsRail = false
         try navigation.save(to: navigationURL)
     }
 
@@ -1029,7 +1025,7 @@ struct NativeWorkspaceView: View {
             openAIRail()
             return
         }
-        if document.kind == "learning-home" { leftPanel = .projects; setCourseRail(true, width: windowWidth); return }
+        if document.kind == "learning-home" { setCourseRail(true, width: windowWidth); return }
         guard !busy else { return }; busy = true
         let current = workspaceContext
         let target = navigation.captureTarget(groupID: groupID)
@@ -1090,7 +1086,6 @@ struct NativeWorkspaceView: View {
                 await store.selectCourse(context.courseID)
                 guard store.selectedCourseID == context.courseID else { return }
                 navigation.activateWorkspace(context)
-                leftPanel = context.kind == .project ? .projects : .courses
                 section = .library; auxiliary = nil; learningHome = false; compactCourseRail = false
                 try navigation.save(to: navigationURL)
             } catch { store.errorMessage = error.localizedDescription }
@@ -1118,11 +1113,10 @@ struct NativeWorkspaceView: View {
                 await store.selectCourse(context.courseID)
                 guard store.selectedCourseID == context.courseID else { return }
                 navigation.activateWorkspace(context)
-                leftPanel = context.kind == .project ? .projects : .courses
             } else {
                 try await store.clearCourseSelection()
                 navigation.deactivateWorkspace()
-                leftPanel = .projects; setCourseRail(true, width: windowWidth)
+                setCourseRail(true, width: windowWidth)
             }
         } catch { store.errorMessage = error.localizedDescription }
     }

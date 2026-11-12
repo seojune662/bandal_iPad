@@ -28,11 +28,11 @@ struct NativeWorkspaceContext: Codable, Hashable, Identifiable {
         guard let raw = snapshot["binding"] as? [String: Any], let course = raw["courseId"] as? String,
               let root = raw["rootRelPath"] as? String, let project = snapshot["projectId"] as? String else { return nil }
         return .init(kind: .project, courseID: course, projectID: project, rootRelPath: root,
-                     title: snapshot["name"] as? String ?? "프로젝트", linkedCourseID: snapshot["linkedCourseId"] as? String)
+                     title: snapshot["name"] as? String ?? "폴더", linkedCourseID: snapshot["linkedCourseId"] as? String)
     }
     @MainActor static func loadProject(store: NativeWorkspaceStore, binding: NativeLearningBinding) async throws -> Self {
         let snapshot = try await store.invoke("learning:get", ["binding": binding.request]) as? [String: Any] ?? [:]
-        guard let context = project(snapshot: snapshot) else { throw DesktopRuntimeError("프로젝트를 불러오지 못했습니다.") }
+        guard let context = project(snapshot: snapshot) else { throw DesktopRuntimeError("폴더를 불러오지 못했습니다.") }
         return context
     }
     func contains(path: String) -> Bool { rootRelPath.isEmpty || path == rootRelPath || path.hasPrefix(rootRelPath + "/") }

@@ -7,7 +7,7 @@ struct NativeDockRailResizer: View {
     let maximum: Double
     var resetWidth: Double? = nil
     @State private var initial: Double?
-    private var title: String { side == .left ? "과목 사이드바 폭 조절" : "자료 사이드바 폭 조절" }
+    private var title: String { side == .left ? "폴더 사이드바 폭 조절" : "자료 사이드바 폭 조절" }
     var body: some View {
         Color.clear
             .overlay { Capsule().fill(NativeDesktopTheme.muted.opacity(initial == nil ? 0 : 0.8)).frame(width: 3, height: 32) }

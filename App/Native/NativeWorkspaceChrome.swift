@@ -1,11 +1,5 @@
 import SwiftUI
 
-enum NativeHomeSection: String, CaseIterable, Identifiable {
-    case courses, projects
-    var id: String { rawValue }
-    var title: String { self == .courses ? "과목" : "프로젝트" }
-}
-
 /// Uses the scene's available width, never the physical screen, so Stage Manager
 /// and Split View have the same behavior as rotation on a full-screen iPad.
 /// Columns, left to right: navigation, courses, AI chat, editor, materials.
@@ -59,29 +53,6 @@ struct NativeWorkspaceChromeLayout: Equatable {
     }
 }
 
-
-struct NativeHomeSectionPicker: View {
-    @Binding var selection: NativeHomeSection
-    var body: some View {
-        HStack(spacing: 18) {
-            ForEach(NativeHomeSection.allCases) { section in
-                Button { selection = section } label: {
-                    Text(section.title).font(NativeDesktopTheme.font(13, weight: selection == section ? .semibold : .regular))
-                        .foregroundStyle(selection == section ? NativeGlass.icon : NativeGlass.panelTertiary)
-                        .frame(height: 39)
-                        .overlay(alignment: .bottom) {
-                            if selection == section { RoundedRectangle(cornerRadius: 1).fill(NativeGlass.icon).frame(height: 2).padding(.horizontal, -1) }
-                        }
-                        .contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityIdentifier("native-home-" + section.rawValue)
-                    .accessibilityAddTraits(selection == section ? .isSelected : [])
-            }
-            Spacer(minLength: 0)
-        }.padding(.horizontal, 16).padding(.bottom, 1)
-            .overlay(alignment: .bottom) { NativeGlass.hairline.frame(height: 1) }
-            .padding(.bottom, 11)
-    }
-}
 
 /// Search field shared by the course and project rails and the files panel.
 struct NativeRailSearchField: View {

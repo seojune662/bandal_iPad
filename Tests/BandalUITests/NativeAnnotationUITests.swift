@@ -125,8 +125,7 @@ final class NativeAnnotationUITests: XCTestCase {
         app.launch()
         let home = app.buttons["native-section-library"]
         XCTAssertTrue(home.waitForExistence(timeout: 25), app.debugDescription)
-        if !app.buttons["native-home-courses"].isHittable { home.tap() }
-        app.buttons["native-home-courses"].tap()
+        if !app.buttons["native-course-add-menu"].isHittable { home.tap() }
         app.buttons["native-course-add-menu"].tap()
         let name = app.textFields["native-course-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText(title)

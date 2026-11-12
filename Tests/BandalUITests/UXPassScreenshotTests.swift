@@ -14,12 +14,12 @@ final class UXPassScreenshotTests: XCTestCase {
         attach(app, "01 새 과목")
         app.buttons["native-create-course"].tap()
         sleep(2); attach(app, "02 레일·사이드바")
-        let menu = app.buttons["Linear Algebra 과목 메뉴"].firstMatch
+        let menu = app.buttons["Linear Algebra 폴더 메뉴"].firstMatch
         if menu.waitForExistence(timeout: 5) {
             menu.tap(); app.buttons["이름 변경"].firstMatch.tap(); sleep(1)
             attach(app, "03 과목 이름 변경")
             if app.buttons["취소"].exists { app.buttons["취소"].firstMatch.tap() } else { app.textFields.firstMatch.typeKey(.escape, modifierFlags: []) }
-            sleep(1); menu.tap(); app.buttons["과목 보관"].firstMatch.tap(); sleep(1)
+            sleep(1); menu.tap(); app.buttons["폴더 보관"].firstMatch.tap(); sleep(1)
             attach(app, "04 과목 보관 확인")
         }
     }
@@ -61,7 +61,7 @@ final class UXPassScreenshotTests: XCTestCase {
             create.tap(); app.buttons["새 폴더"].firstMatch.tap(); sleep(1); attach(app, "17 새 폴더")
             dismiss(app)
         }
-        app.buttons["native-course-add-menu"].press(forDuration: 1); app.buttons["보관된 과목 관리"].firstMatch.tap(); sleep(1); attach(app, "18 과목 관리")
+        app.buttons["native-course-add-menu"].press(forDuration: 1); app.buttons["보관된 폴더 관리"].firstMatch.tap(); sleep(1); attach(app, "18 과목 관리")
         dismiss(app)
         app.buttons["native-section-planner"].tap()
         let add = app.buttons["native-task-add"]

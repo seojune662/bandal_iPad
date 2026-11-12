@@ -19,20 +19,20 @@ final class NativeInlineEditingUITests: XCTestCase {
         // Esc does not reach a first responder while the software keyboard is up.
         // Enter commits, in place: no alert or sheet.
         rename(app, from: "Linear Algebra", typing: "Calculus", submit: "\n")
-        XCTAssertTrue(app.buttons["Calculus 과목 메뉴"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["Calculus 폴더 메뉴"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.alerts.firstMatch.exists)
 
-        app.buttons["Calculus 과목 메뉴"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["과목 보관"].firstMatch.waitForExistence(timeout: 5)); app.buttons["과목 보관"].firstMatch.tap()
+        app.buttons["Calculus 폴더 메뉴"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["폴더 보관"].firstMatch.waitForExistence(timeout: 5)); app.buttons["폴더 보관"].firstMatch.tap()
         let confirm = app.buttons["bandal-confirm"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.sheets.firstMatch.exists, "Anchored popover, not an action sheet")
         confirm.tap()
-        XCTAssertTrue(waitForAbsence(app.buttons["Calculus 과목 메뉴"]), app.debugDescription)
+        XCTAssertTrue(waitForAbsence(app.buttons["Calculus 폴더 메뉴"]), app.debugDescription)
     }
 
     @MainActor private func rename(_ app: XCUIApplication, from old: String, typing name: String, submit: String) {
-        let menu = app.buttons[old + " 과목 메뉴"].firstMatch
+        let menu = app.buttons[old + " 폴더 메뉴"].firstMatch
         XCTAssertTrue(menu.waitForExistence(timeout: 10), app.debugDescription); menu.tap()
         let item = app.buttons["이름 변경"].firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 5), app.debugDescription); item.tap()

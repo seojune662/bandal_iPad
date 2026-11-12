@@ -124,7 +124,7 @@ struct NativeLibraryView: View {
         Menu {
             Button("새 노트", systemImage: "pencil.tip.crop.circle.badge.plus") { beginCreation(.ink) }
             Button("새 마크다운", systemImage: "doc.badge.plus") { beginCreation(.markdown) }
-            Button("새 폴더", systemImage: "folder.badge.plus") { beginCreation(.folder) }
+            Button("새 하위 폴더", systemImage: "folder.badge.plus") { beginCreation(.folder) }
             Divider()
             Button("파일 가져오기", systemImage: "tray.and.arrow.down") { beginImport() }.accessibilityIdentifier("native-library-import")
             Button("GoodNotes·Notability에서 가져오기", systemImage: "arrow.down.doc") { showingMigrationGuide = true }
@@ -223,7 +223,7 @@ Menu {
                 creation = nil; request.open(document)
             }
         } else {
-            BandalTextEntry(title: "새 폴더", prompt: "폴더 이름", actionTitle: "만들기", identifier: "native-name-input") { name in
+            BandalTextEntry(title: "새 하위 폴더", prompt: "폴더 이름", actionTitle: "만들기", identifier: "native-name-input") { name in
                 try await store.createFolder(name: name, courseID: destination.courseID, parentPath: destination.folder)
                 creation = nil
             }
@@ -277,7 +277,7 @@ Menu {
                 if scopedMaterials.isEmpty && !store.isLoading {
                     VStack(spacing: 12) {
                         Image(systemName: "tray").font(.system(size: 24, weight: .light))
-                        Text(courseID == nil ? "과목을 선택하세요" : "자료를 가져오거나 새 노트를 만드세요").font(.system(size: 12)).multilineTextAlignment(.center)
+                        Text(courseID == nil ? "폴더를 선택하세요" : "자료를 가져오거나 새 노트를 만드세요").font(.system(size: 12)).multilineTextAlignment(.center)
                         Button("파일 가져오기") { importing = true }.disabled(courseID == nil)
                     }.foregroundStyle(NativeDesktopTheme.muted).frame(maxWidth: .infinity).padding(24)
                 }
@@ -474,7 +474,7 @@ Menu {
     private var emptyFolder: some View {
         VStack(spacing: 10) {
             Image(systemName: "folder").font(.system(size: 24, weight: .light))
-            Text(courseID == nil ? "과목을 선택하세요" : "폴더가 비어 있습니다").font(.system(size: 12))
+            Text(courseID == nil ? "폴더를 선택하세요" : "폴더가 비어 있습니다").font(.system(size: 12))
             if courseID != nil { Button("파일 가져오기") { importing = true }.font(.system(size: 12)) }
         }.foregroundStyle(NativeDesktopTheme.muted).frame(maxWidth: .infinity).padding(.vertical, 30)
     }

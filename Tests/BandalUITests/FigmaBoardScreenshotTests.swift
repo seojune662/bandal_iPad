@@ -19,7 +19,7 @@ final class FigmaBoardScreenshotTests: XCTestCase {
             let field = app.textFields["native-course-name"]
             XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap(); field.typeText(name)
             app.buttons["native-course-color-" + color].tap(); app.buttons["native-create-course"].tap()
-            XCTAssertTrue(app.buttons[name + " 과목 메뉴"].waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.buttons[name + " 폴더 메뉴"].waitForExistence(timeout: 10), app.debugDescription)
         }
         app.buttons["native-section-planner"].tap()
         let list = app.buttons["native-planner-board"]
