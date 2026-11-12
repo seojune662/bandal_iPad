@@ -55,7 +55,8 @@ final class NativePDFNavigationInputTests: XCTestCase {
             XCTAssertEqual(actual.y.bitPattern, expected.y.bitPattern)
         }
         XCTAssertEqual(points.map(\.p), [0.7, 0.9, 0.1, 0.1])
-        XCTAssertEqual(points.map(\.t), [0, (10.01-10)*1000, (10.02-10)*1000, (10.03-10)*1000])
+        let expectedTimes: [Double] = [0, (10.01 - 10) * 1000, (10.02 - 10) * 1000, (10.03 - 10) * 1000]
+        XCTAssertEqual(points.map(\.t), expectedTimes)
         try f.assertStoredExactly()
     }
 

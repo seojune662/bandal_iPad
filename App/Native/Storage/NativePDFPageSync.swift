@@ -24,7 +24,7 @@ enum NativePDFPageSync {
             var pages = try DesktopJSON.decode(Data((row["pages_json"] as! String).utf8))
             if let proof = pages as? [String: Any] {
                 let recipe = (proof["pages"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
-                pages = proof["inverse"] as? Bool == true ? try (1...D.open(Data(contentsOf: target)).pageCount).map { ["source": recipe.firstIndex(of: $0).map { $0 + 1 } ?? NSNull() as Any] } : recipe.map { ["source": $0] }
+                pages = proof["inverse"] as? Bool == true ? try (1...D.open(Data(contentsOf: target)).pageCount).map { ["source": recipe.firstIndex(of: $0).map { $0 + 1 } ?? NSNull() as Any] as [String: Any] } : recipe.map { ["source": $0] as [String: Any] }
             }
             steps.append(["from": from, "to": to, "pages": pages])
         }
