@@ -22,17 +22,17 @@ struct NativeCourseManager: View {
                     ForEach([false,true],id:\.self) { archived in
                         let values = courses.filter { $0.archived == archived }
                         if !values.isEmpty {
-                            BandalSectionHeader(archived ? "보관한 과목" : "내 과목").padding(.horizontal,8).padding(.top,4)
+                            BandalSectionHeader(archived ? "보관한 폴더" : "내 폴더").padding(.horizontal,8).padding(.top,4)
                             ForEach(values) { course in row(course) }
                         }
                     }
                 }
             }.frame(maxHeight:360).fixedSize(horizontal:false,vertical:true)
             BandalMenuDivider()
-            BandalMenuRow("기존 폴더 연결",symbol:"folder.badge.plus",detail:"보관한 과목은 파일과 필기를 그대로 두고 목록에서만 숨겨요") {
+            BandalMenuRow("기존 폴더 연결",symbol:"folder.badge.plus",detail:"보관한 폴더는 파일과 필기를 그대로 두고 목록에서만 숨겨요") {
                 change {
                     guard let folder = try await store.invoke("courses:pickFolder") as? [String:Any], let path = folder["path"] as? String else { return }
-                    let result = try await store.invoke("courses:addFromFolder",["folderPath":path,"name":folder["name"] as? String ?? "연결한 과목","color":"blue"]) as? [String:Any]
+                    let result = try await store.invoke("courses:addFromFolder",["folderPath":path,"name":folder["name"] as? String ?? "연결한 폴더","color":"blue"]) as? [String:Any]
                     if result?["status"] as? String == "failed" { throw DesktopRuntimeError(result?["reason"] as? String ?? "폴더를 연결하지 못했습니다.") }
                 }
             }.accessibilityIdentifier("native-manager-link-folder")
@@ -55,7 +55,7 @@ struct NativeCourseManager: View {
             Menu {
                 Button("이름 변경",systemImage:"pencil") { renamingID = course.id }
                 if course.missing { Button("폴더 다시 연결",systemImage:"folder.badge.questionmark") { relink(course) } }
-                Button(course.archived ? "자료실에 다시 표시" : "과목 보관",systemImage:course.archived ? "tray.and.arrow.up" : "archivebox") {
+                Button(course.archived ? "자료실에 다시 표시" : "폴더 보관",systemImage:course.archived ? "tray.and.arrow.up" : "archivebox") {
                     change { _ = try await store.invoke("courses:archive",["courseId":course.id,"archived":!course.archived]) }
                 }
             } label: { Image(systemName:"ellipsis").frame(width:32,height:BandalMetrics.rowHeight).contentShape(Rectangle()) }
@@ -77,7 +77,7 @@ struct NativeCourseManager: View {
                 guard let result = try await store.invoke("courses:relink",["courseId":course.id,"folderPath":path]) as? [String:Any] else { throw DesktopRuntimeError("폴더 연결 결과를 확인하지 못했습니다.") }
                 switch result["status"] as? String {
                 case "ok": return ["status":"ok","changedCourseIDs":[course.id]]
-                case "duplicate": throw DesktopRuntimeError("선택한 폴더가 다른 과목에 이미 연결되어 있습니다.")
+                case "duplicate": throw DesktopRuntimeError("선택한 폴더가 이미 다른 곳에 연결되어 있습니다.")
                 default: throw DesktopRuntimeError(result["reason"] as? String ?? "폴더를 연결하지 못했습니다.")
                 }
             }

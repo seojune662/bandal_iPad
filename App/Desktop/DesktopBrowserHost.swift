@@ -372,7 +372,22 @@ final class DesktopBrowserHost: NSObject {
             state.visits.append(.init(profileID: profile, courseID: request["courseId"] as? String, url: raw,
                 title: String((request["title"] as? String ?? "").prefix(10_000)), host: url.host ?? "",
                 visitCount: (previous?.visitCount ?? 0) + 1, lastVisitedAt: ISO8601DateFormatter().string(from: Date())))
-            state.visits = Array(state.visits.suffix(20_000)); try persistence.commit(state); return ["ok": true]
+            state.visits = Array(state.visits.suffix(20_000)); try persistence.commit(state)
+            emit("browser:history-changed", ["profileId": profile])
+            return ["ok": true]
+        case "browser:topSites":
+            // Sites by how often they were visited: every page of a host counts toward it.
+            let profile = try profileID(request); let limit = min(100, max(1, request["limit"] as? Int ?? 20))
+            var sites: [String: (visits: Int, title: String, top: Int, last: String)] = [:]
+            for visit in persistence.state.visits where visit.profileID == profile && !visit.host.isEmpty {
+                let host = visit.host.lowercased()
+                var site = sites[host] ?? (0, "", 0, "")
+                site.visits += visit.visitCount; site.last = max(site.last, visit.lastVisitedAt)
+                if visit.visitCount > site.top { site.top = visit.visitCount; site.title = visit.title }
+                sites[host] = site
+            }
+            let ranked = sites.sorted { $0.value.visits != $1.value.visits ? $0.value.visits > $1.value.visits : $0.value.last > $1.value.last }
+            return ["sites": ranked.prefix(limit).map { ["host": $0.key, "title": $0.value.title, "visitCount": $0.value.visits] as [String: Any] }]
         case "browser:searchHistory":
             let profile = try profileID(request); let query = request["query"] as? String ?? ""
             let limit = min(200, max(1, request["limit"] as? Int ?? 20))

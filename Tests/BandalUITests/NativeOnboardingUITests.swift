@@ -119,38 +119,54 @@ final class NativeOnboardingUITests: XCTestCase {
             capture("AI 결과 편집 (\(name))")
             confirm.tap()
 
-            // 3. 초대 코드: optional, the third of four steps, and nothing on it asks to sign in.
+            // 3. 색: a palette and its strength, on a small window drawn with them.
+            let palette = app.buttons["native-settings-decor-ocean"]
+            XCTAssertTrue(palette.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.staticTexts["반달의 색을 골라 주세요"].exists)
+            XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "6단계 중 3단계")
+            palette.tap()
+            XCTAssertTrue(palette.isSelected)
+            capture("3 색 (\(name))")
+            app.buttons["native-onboarding-next"].tap()
+
+            // 4. 초대 코드: optional, and nothing on it asks to sign in.
             let skip = app.buttons["native-referral-skip"]
             XCTAssertTrue(skip.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertTrue(app.staticTexts["초대 코드가 있나요?"].exists)
             XCTAssertEqual(skip.label, "없어요, 건너뛰기")
-            XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "4단계 중 3단계")
+            XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "6단계 중 4단계")
             XCTAssertTrue(app.buttons["native-onboarding-later"].exists && app.buttons["native-onboarding-back"].exists)
             XCTAssertFalse(app.buttons["Apple로 로그인"].exists)
-            capture("3 초대 코드 (\(name))")
+            capture("4 초대 코드 (\(name))")
             skip.tap()
 
-            // 4. 완료, then home with the school in the sidebar.
+            // 5. 친구 초대: signed out, it offers the sign-in that gives a code; 다음 goes on without it.
+            XCTAssertTrue(app.staticTexts["친구를 초대하고 AI 100회 받기"].waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "6단계 중 5단계")
+            XCTAssertTrue(app.descendants(matching: .any)["native-referral-invite"].exists)
+            capture("5 친구 초대 (\(name))")
+            app.buttons["native-onboarding-next"].tap()
+
+            // 6. 완료, then home with the school in the sidebar.
             let finish = app.buttons["native-onboarding-finish"]
             XCTAssertTrue(finish.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertTrue(app.staticTexts["준비됐어요"].exists)
             XCTAssertTrue(app.staticTexts["반달대학교 바로가기 4개를 사이드바에 넣었어요"].exists, app.debugDescription)
-            capture("4 완료 (\(name))")
+            capture("6 완료 (\(name))")
             finish.tap()
-            let heading = app.buttons["native-university-heading"]
-            XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
-            XCTAssertTrue(heading.label.contains("반달대학교"))
+            let lms = app.buttons["native-home-site-school:custom:fixture-school:lms"]
+            XCTAssertTrue(lms.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertFalse(finish.exists)
             XCTAssertTrue(app.buttons["native-section-settings"].isHittable)
-            XCTAssertTrue(app.buttons["native-university-service-custom:fixture-school:lms"].label.contains("강의실 LMS"), "The edit is in this user's settings")
-            XCTAssertFalse(app.buttons["native-university-service-custom:fixture-school:library"].exists)
+            XCTAssertTrue(lms.label.contains("강의실 LMS"), "The edit is in this user's settings")
+            XCTAssertFalse(app.buttons["native-home-site-school:custom:fixture-school:library"].exists)
             XCTAssertFalse(app.buttons["native-university-find-links"].exists)
             XCTAssertFalse(app.staticTexts["native-referral-banner"].exists, "No code, no reminder")
             capture("홈 (\(name))")
 
             // Shown once.
             app.terminate(); app.launchArguments = ["--native-ui-testing", "--native-onboarding", "--native-school-fixture"] + theme + Self.korean; app.launch()
-            XCTAssertTrue(heading.waitForExistence(timeout: 25), app.debugDescription)
+            XCTAssertTrue(lms.waitForExistence(timeout: 25), app.debugDescription)
             XCTAssertTrue(app.buttons["native-section-settings"].isHittable); XCTAssertFalse(korean.exists)
             app.terminate()
         }
@@ -193,9 +209,6 @@ final class NativeOnboardingUITests: XCTestCase {
         name.tap(); name.typeText("학교")
         capture("직접 입력")
         app.buttons["native-school-name-submit"].tap()
-        let heading = app.buttons["native-university-heading"]
-        XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(heading.label.contains("반달예술대학교"))
         XCTAssertTrue(waitForAbsence(search), "Saving ends the picker")
 
         // A school with a name only: the sidebar offers the AI search, which opens the same flow.

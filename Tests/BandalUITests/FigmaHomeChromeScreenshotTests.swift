@@ -43,8 +43,8 @@ final class FigmaHomeChromeScreenshotTests: XCTestCase {
         app.buttons["native-section-library"].tap(); sleep(1)
         app.buttons["native-toggle-materials-rail"].tap(); sleep(1); attach(app, "home files closed \(appearance)")
         app.buttons["native-toggle-materials-rail"].tap(); sleep(1)
-        app.buttons["native-ai-web-heading"].tap(); sleep(1); attach(app, "external AI open \(appearance)")
-        app.buttons["native-ai-web-heading"].tap()
+        app.buttons["native-home-site-add"].tap(); sleep(1); attach(app, "add site \(appearance)")
+        app.buttons["native-home-site-add"].tap()
         app.buttons["native-course-add-menu"].press(forDuration: 1); sleep(1); attach(app, "course add long press \(appearance)")
     }
 

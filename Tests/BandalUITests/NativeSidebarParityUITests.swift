@@ -9,18 +9,12 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
         openHome(app)
-        XCTAssertTrue(app.buttons["native-home-courses"].exists)
-        XCTAssertTrue(app.buttons["native-home-projects"].exists)
+        // 과목 and 프로젝트 are one list of folders: no tabs between them.
+        XCTAssertFalse(app.buttons["native-home-courses"].exists)
+        XCTAssertFalse(app.buttons["native-home-projects"].exists)
         for removed in ["learning", "assistant", "tools"] { XCTAssertFalse(app.buttons["native-section-" + removed].exists) }
-        app.buttons["native-course-add-menu"].tap()
-        let courseName = app.textFields["native-course-name"]
-        XCTAssertTrue(courseName.waitForExistence(timeout: 5)); courseName.tap(); courseName.typeText("Physics")
-        app.buttons["native-create-course"].tap()
-        openHome(app); app.buttons["native-home-projects"].tap()
-        app.buttons["native-project-create"].tap()
-        let projectName = app.textFields["native-name-input"]
-        XCTAssertTrue(projectName.waitForExistence(timeout: 5), app.debugDescription); projectName.tap(); projectName.typeText("Exam preparation")
-        app.buttons["만들기"].tap()
+        createFolder("Physics", app: app)
+        openHome(app); createFolder("Exam preparation", app: app)
         openInspector(app)
         app.buttons["native-inspector-materials"].tap()
         for action in ["native-library-view-menu", "native-library-refresh", "native-library-create"] {
@@ -50,19 +44,16 @@ final class NativeSidebarParityUITests: XCTestCase {
         XCTAssertTrue(input.waitForExistence(timeout: 25), app.debugDescription)
         XCTAssertTrue((input.value as? String ?? "").contains("Explain this material"), app.debugDescription)
         XCTAssertTrue(editor.exists, "The project's document tab is restored")
-        openHome(app); app.buttons["native-home-courses"].tap()
+        openHome(app)
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-course-", "Physics")).firstMatch.exists)
-        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-course-", "Exam preparation")).firstMatch.exists)
-        capture("Courses and projects keep separate lists")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-course-", "Exam preparation")).firstMatch.exists)
+        capture("One list of folders")
     }
 
     @MainActor func testAnnotationCaptureCancelAndPanelRotationKeepEditor() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]; app.launch()
-        openHome(app); app.buttons["native-home-projects"].tap(); app.buttons["native-project-create"].tap()
-        let name = app.textFields["native-name-input"]
-        XCTAssertTrue(name.waitForExistence(timeout: 5), app.debugDescription); name.tap(); name.typeText("Annotation project")
-        app.buttons["만들기"].tap()
+        openHome(app); createFolder("Annotation project", app: app)
         openInspector(app); app.buttons["native-inspector-materials"].tap()
         XCTAssertTrue(app.buttons["native-library-create"].waitForExistence(timeout: 15))
         app.buttons["native-library-create"].tap(); app.buttons["새 마크다운"].tap()
@@ -174,8 +165,21 @@ final class NativeSidebarParityUITests: XCTestCase {
         wait(for: toggle) { $0.label == "AI 닫기" }
         XCTAssertLessThan(toggle.frame.minX, 60, "The button stays on the rail while the panel opens")
         capture("AI chat beside the course rail")
+        // AI replaced the home sidebar in the left slot; tapping the open one folds the slot.
+        let home = app.buttons["native-section-library"]
+        XCTAssertFalse(home.isSelected, "AI took the home sidebar's place")
         toggle.tap()
         wait(for: toggle) { $0.label == "AI 열기" }
+        XCTAssertFalse(home.isSelected, "Closing AI folds the slot instead of bringing the home sidebar back")
+        // 홈 ↔ AI swap the slot directly.
+        home.tap()
+        wait(for: home) { $0.isSelected }
+        toggle.tap()
+        wait(for: toggle) { $0.label == "AI 닫기" }
+        XCTAssertFalse(home.isSelected)
+        home.tap()
+        wait(for: home) { $0.isSelected }
+        XCTAssertEqual(toggle.label, "AI 열기", "Home sends AI away")
     }
     @MainActor private func wait(for element: XCUIElement, until condition: @escaping (XCUIElement) -> Bool) {
         expectation(for: NSPredicate { _, _ in condition(element) }, evaluatedWith: nil); waitForExpectations(timeout: 5)
@@ -183,8 +187,15 @@ final class NativeSidebarParityUITests: XCTestCase {
     @MainActor private func openHome(_ app: XCUIApplication) {
         let home = app.buttons["native-section-library"]
         XCTAssertTrue(home.waitForExistence(timeout: 25), app.debugDescription)
-        if !app.buttons["native-home-projects"].isHittable { home.tap() }
-        XCTAssertTrue(app.buttons["native-home-projects"].waitForExistence(timeout: 10), app.debugDescription)
+        if !app.buttons["native-course-add-menu"].isHittable { home.tap() }
+        XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+    /// ＋ in the folder list makes a folder and opens it.
+    @MainActor private func createFolder(_ name: String, app: XCUIApplication) {
+        app.buttons["native-course-add-menu"].tap()
+        let field = app.textFields["native-course-name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription); field.tap(); field.typeText(name)
+        app.buttons["native-create-course"].tap()
     }
     @MainActor private func openAI(_ app: XCUIApplication) {
         let toggle = app.buttons["native-ai-rail-toggle"]

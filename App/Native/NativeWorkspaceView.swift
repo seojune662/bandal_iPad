@@ -8,7 +8,6 @@ struct NativeWorkspaceView: View {
     @StateObject private var previews = NativeWorkspacePreviewController()
     @State private var windowsOverviewOpen = false
     @State private var pdfPalette = NativePDFPaletteHost()
-    @State private var shortcutContentHeight: CGFloat = 200
     @StateObject private var services: NativePlatformServices
     @ObservedObject private var annotation: NativeAnnotationCoordinator
     @StateObject private var librarySources = NativeLibrarySourceTrayModel()
@@ -18,17 +17,19 @@ struct NativeWorkspaceView: View {
     @State private var pendingContextRefresh = false
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("native.appearance") private var appearance = "system"
+    @AppStorage(NativeDecor.paletteKey) private var decorPalette = NativeDecorPalette.default.id
+    @AppStorage(NativeDecor.intensityKey) private var decorIntensity = NativeDecor.defaultIntensity
     @State private var section: NativeWorkspaceSection = .library
     @AppStorage("native.desktop.courseRail") private var courseRailOpen = true
     @AppStorage("native.desktop.materialsRail") private var materialsRailOpen = true
     @AppStorage("native.desktop.courseRailWidth") private var courseRailWidth = 240.0
     @AppStorage("native.inspector.width") private var materialsRailWidth = 360.0
-    @AppStorage("native.home.section") private var leftPanel: NativeHomeSection = .courses
     @AppStorage("native.desktop.aiRail") private var aiRailOpen = false
     /// The sidebar was open when AI took its slot, and comes back when AI closes.
-    @AppStorage("native.desktop.courseRailBeforeAI") private var courseRailBeforeAI = false
     @State private var windowWidth: CGFloat = 1200
     @State private var markdownEditing = false
+    /// A PDF text box is open: the window keeps its size under the keyboard, the page makes room itself.
+    @State private var pdfTextEditing = false
     @State private var railsBeforeKeyboard: (Bool, Bool)?
     @State private var hasWindowWidth = false
     @State private var restoreInspectorAfterAnnotation = true
@@ -268,6 +269,9 @@ struct NativeWorkspaceView: View {
                 if compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) && showsWorkspace && annotation.request == nil {
                     HStack(spacing: 0) {
                         courseSidebar.frame(width: min(320, geometry.size.width - 48))
+                            // Over the paper, not the wallpaper: carry the window's stretch of the backdrop along, so the glass matches the pinned panel.
+                            .background { NativeBackdropUnderlay(windowSize: geometry.size, leadingInset: NativeDesktopTheme.navigationWidth) }
+                            .mask { Rectangle().padding(.vertical, -60) }
                             .nativeWorkspacePreviewExcluded(occludesContent: true)
                             .overlay(alignment: .trailing) { railDivider }
                             .transition(.move(edge: .leading))
@@ -289,6 +293,9 @@ struct NativeWorkspaceView: View {
                         .padding(.top, NativeWorkspaceWindowControls.inspectorTop)
                         .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
                         .background(NativeGlass.panel)
+                        // The drawer may float over the paper; the window's own stretch of backdrop keeps its glass the pinned panel's.
+                        .background { NativeBackdropUnderlay(windowSize: geometry.size, alignment: .trailing) }
+                        .mask { Rectangle().padding(.vertical, -60) }
                         .overlay(alignment: .leading) { if rightVisible && !chrome.rightPinned { railDivider } }
                         // Off the window's edge while closed, and opaque on the way: a fade would show the wallpaper through the glass.
                         // It turns clear only once the slide is over, which is what takes its UIKit host out of the accessibility tree.
@@ -355,6 +362,7 @@ struct NativeWorkspaceView: View {
             .onAppear { updateWindowWidth(geometry.size.width) }
             // Typing a markdown note on the software keyboard: both side panels fold, and come back with the keyboard gone.
             .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { markdownEditing = $0.object as? Bool ?? false }
+            .onReceive(NotificationCenter.default.publisher(for: NativePDFWorkspaceModel.textEditingChanged)) { pdfTextEditing = $0.object as? Bool ?? false }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
                 guard Self.foldsPanelsOnKeyboard, markdownEditing, railsBeforeKeyboard == nil else { return }
                 railsBeforeKeyboard = (courseRailOpen, materialsRailOpen)
@@ -373,9 +381,13 @@ struct NativeWorkspaceView: View {
                 if busy { showBusy = true }
             }
         }
+        // A keyboard that resized the window squeezed the whole workspace and exposed the backdrop behind it.
+        .ignoresSafeArea(pdfTextEditing ? .keyboard : [], edges: .bottom)
         .font(NativeDesktopTheme.font(14))
         .foregroundStyle(NativeDesktopTheme.text)
         .background(NativeWorkspaceBackdrop())
+        // The decor reaches every glass region from here, so the settings slider repaints the window as it moves.
+        .environment(\.nativeDecor, NativeDecor(palette: .named(decorPalette), intensity: min(max(decorIntensity, 0), 1)))
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         .tint(NativeDesktopTheme.accent)
         .toggleStyle(BandalToggleStyle())
@@ -592,7 +604,7 @@ struct NativeWorkspaceView: View {
     /// order, until the editor keeps its minimum width; narrow windows use drawers.
     private func setRail(_ rail: Rail, open: Bool, width: CGFloat) {
         // The home sidebar and AI trading the left slot is a swap, not a fold.
-        let swap = fitsAlone(rail, width: width) && (rail == .ai && (open ? courseRailOpen : courseRailBeforeAI) || rail == .course && open && aiRailOpen)
+        let swap = fitsAlone(rail, width: width) && open && (rail == .ai && courseRailOpen || rail == .course && aiRailOpen)
         withAnimation(swap ? nil : Self.railAnimation) {
             guard fitsAlone(rail, width: width) else {
                 compactCourseRail = rail == .course && open
@@ -602,12 +614,9 @@ struct NativeWorkspaceView: View {
             }
             compactCourseRail = false; compactAIRail = false; compactMaterialsRail = false
             switch rail { case .course: courseRailOpen = open; case .ai: aiRailOpen = open; case .materials: materialsRailOpen = open }
-            // The home sidebar and AI share the left slot. AI takes it and hands it back when it closes;
-            // opening the sidebar sends AI away.
-            if rail == .ai {
-                if open { if courseRailOpen { courseRailBeforeAI = true; courseRailOpen = false } }
-                else if courseRailBeforeAI { courseRailBeforeAI = false; courseRailOpen = true }
-            } else if rail == .course, open { aiRailOpen = false; courseRailBeforeAI = false }
+            // The home sidebar and AI share the left slot: opening one replaces the other,
+            // and closing the open one folds the slot.
+            if open { if rail == .ai { courseRailOpen = false } else if rail == .course { aiRailOpen = false } }
             guard open else { return }
             let minimum: [Rail: Double] = [.course: NativeWorkspaceChromeLayout.leftMinimum, .ai: NativeWorkspaceChromeLayout.aiMinimum,
                                            .materials: NativeWorkspaceChromeLayout.rightMinimum]
@@ -660,7 +669,8 @@ struct NativeWorkspaceView: View {
             }.accessibilityIdentifier("native-section-library").padding(.bottom, 3)
             NativeChromeButton(title: railVisible(.ai, width: width) ? "AI 닫기" : "AI 열기", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width),
                                selectedFill: Self.railSelected, selectedInset: 3, selectedRadius: 11, joinsPanel: chromeLayout(width: width).aiPinned && !(chromeLayout(width: width).leftPinned && railVisible(.course, width: width))) {
-                if showsWorkspace { toggleAIRail(width: width) } else { transition { openAIRail() } }
+                // The same rule as the home button: another panel in the slot is replaced, the open one folds.
+                if showsWorkspace { if NativeLocalPreferences.bool(NativeLocalPreferences.homeTogglesSidebar) || !railVisible(.ai, width: width) { toggleAIRail(width: width) } } else { transition { openAIRail() } }
             }.accessibilityIdentifier("native-ai-rail-toggle")
             NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen, selectedFill: Self.railSelected, selectedInset: 3, selectedRadius: 11) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
             if NativeReleaseFlags.showsMarketplace {
@@ -685,31 +695,18 @@ struct NativeWorkspaceView: View {
     private static let railSpacing: CGFloat = 4, railTop: CGFloat = 7
     /// A lit rail button with no panel beside it.
     private static let railSelected = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.12) : UIColor.white.withAlphaComponent(0.85) })
-    @AppStorage("native.desktop.shortcutsHeight") private var shortcutsLimit = 0.0
     private var courseSidebar: some View {
-        // 0 is the automatic height; the handle on the line below stores another.
-        let shortcutsHeight = min(shortcutContentHeight, shortcutsLimit > 0 ? max(NativeSidebarSectionHandle.minimum, shortcutsLimit) : windowWidth < 900 ? 200 : 300)
-        return VStack(spacing: 0) {
-            ScrollView {
-                // The invite reminder shares this area's height limit, so the course list keeps its room on a small iPad.
-                VStack(spacing: 0) {
-                    NativeReferralBanner(store: store)
-                    NativeSidebarShortcuts(store: store, settings: workspaceSettings, onOpenSettings: openSettings, onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb)
-                }.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shortcutContentHeight = $0 }
-            }.frame(height: shortcutsHeight)
+        VStack(spacing: 0) {
+            NativeReferralBanner(store: store)
+            // Sites as tiles: the school's essentials, then what the browser visits most; pinned ones first.
+            NativeHomeSiteTiles(store: store, settings: workspaceSettings, onOpenURL: openBrowserURL, onOpenSettings: openSettings)
             NativeGlass.hairline.frame(height: 1)
-                .overlay(alignment: .trailing) {
-                    NativeSidebarSectionHandle(limit: $shortcutsLimit, current: shortcutsHeight, content: shortcutContentHeight).padding(.trailing, 10)
-                }.zIndex(1)
-            NativeHomeSectionPicker(selection: $leftPanel)
-            switch leftPanel {
-            case .courses:
-                NativeCourseSidebar(store: store, navigation: navigation, settings: workspaceSettings, onSelect: changeCourse,
-                    onCreate: createCourse, onOpenSettings: openSettings,
-                    onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb, descriptor: favoriteDescriptor, onOpenFavorite: openFavorite)
-            case .projects:
-                NativeProjectSidebar(store: store, selectedID: workspaceContext?.id, onOpen: changeWorkspace)
-            }
+            // 과목 and 프로젝트 are one list of folders.
+            NativeCourseSidebar(store: store, navigation: navigation, settings: workspaceSettings, onSelect: changeCourse,
+                onCreate: createCourse, onOpenSettings: openSettings,
+                onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb, descriptor: favoriteDescriptor, onOpenFavorite: openFavorite,
+                selectedContextID: workspaceContext?.id, onOpenProject: changeWorkspace)
+                .padding(.top, 12)
         }.background(NativeGlass.panel)
     }
     private func toggleAcademicBoard() {
@@ -839,7 +836,7 @@ struct NativeWorkspaceView: View {
             defer { finishWorkspaceTransition() }
             do {
                 try await store.flushDocuments()
-                guard let courseID else { throw DesktopRuntimeError("먼저 과목을 만들거나 선택해 주세요.") }
+                guard let courseID else { throw DesktopRuntimeError("먼저 폴더를 만들거나 선택해 주세요.") }
                 let document: NativeDocumentReference
                 switch action {
                 case .markdown(let title): document = try await store.createMarkdown(title: title ?? ((workspaceSettings["tabs"] as? [String: Any])?["markdownTitlePrefix"] as? String ?? "새 마크다운"), courseID: courseID, parentPath: context?.rootRelPath ?? "")
@@ -924,7 +921,7 @@ struct NativeWorkspaceView: View {
     private var noWorkspacePlaceholder: some View {
         VStack(spacing: 12) {
             Image(systemName: "folder").font(.largeTitle).foregroundStyle(NativeDesktopTheme.muted)
-            Text("과목이나 프로젝트를 선택하세요").font(NativeDesktopTheme.font(14))
+            Text("폴더를 선택하세요").font(NativeDesktopTheme.font(14))
             Text("자료와 AI 대화를 한 공간에서 이어가세요.").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -941,7 +938,7 @@ struct NativeWorkspaceView: View {
     private var emptyWorkspace: some View {
         VStack(spacing: 18) {
             Spacer()
-            if store.selectedCourseID == nil { NativeBandalMark(size: 56).foregroundStyle(NativeDesktopTheme.muted.opacity(0.4)) }
+            if store.selectedCourseID == nil { NativeBandalMark(size: 56, motion: .loop).foregroundStyle(NativeDecorMarkStyle()) }
             if store.selectedCourseID != nil {
                 NativeHomeTab(store: store, courseTitle: courseTitle,
                     onOpen: open, onSelectCourse: changeCourse,
@@ -1010,7 +1007,7 @@ struct NativeWorkspaceView: View {
         defer { finishWorkspaceTransition() }
         try await store.createCourse(name: name)
         if let course = store.courses.first(where: { $0.id == store.selectedCourseID }) { navigation.activateWorkspace(.course(course)) }
-        section = .library; auxiliary = nil; learningHome = false; leftPanel = .courses; compactCourseRail = false; compactMaterialsRail = false
+        section = .library; auxiliary = nil; learningHome = false; compactCourseRail = false; compactMaterialsRail = false
         try navigation.save(to: navigationURL)
     }
 
@@ -1027,7 +1024,7 @@ struct NativeWorkspaceView: View {
             openAIRail()
             return
         }
-        if document.kind == "learning-home" { leftPanel = .projects; setCourseRail(true, width: windowWidth); return }
+        if document.kind == "learning-home" { setCourseRail(true, width: windowWidth); return }
         guard !busy else { return }; busy = true
         let current = workspaceContext
         let target = navigation.captureTarget(groupID: groupID)
@@ -1088,7 +1085,6 @@ struct NativeWorkspaceView: View {
                 await store.selectCourse(context.courseID)
                 guard store.selectedCourseID == context.courseID else { return }
                 navigation.activateWorkspace(context)
-                leftPanel = context.kind == .project ? .projects : .courses
                 section = .library; auxiliary = nil; learningHome = false; compactCourseRail = false
                 try navigation.save(to: navigationURL)
             } catch { store.errorMessage = error.localizedDescription }
@@ -1116,11 +1112,10 @@ struct NativeWorkspaceView: View {
                 await store.selectCourse(context.courseID)
                 guard store.selectedCourseID == context.courseID else { return }
                 navigation.activateWorkspace(context)
-                leftPanel = context.kind == .project ? .projects : .courses
             } else {
                 try await store.clearCourseSelection()
                 navigation.deactivateWorkspace()
-                leftPanel = .projects; setCourseRail(true, width: windowWidth)
+                setCourseRail(true, width: windowWidth)
             }
         } catch { store.errorMessage = error.localizedDescription }
     }

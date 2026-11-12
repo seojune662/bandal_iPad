@@ -56,14 +56,14 @@ struct NativeHomeTab: View {
                     ], groups: NativeLongPressItem.materialGroups(sort: $sort))
                     .modifier(NativeDeleteConfirm(name: recent.name, directory: false, isPresented: $deleting) { run { try await store.delete(recent) } })
             }
-            title("과목")
+            title("폴더")
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 14, alignment: .top)], alignment: .leading, spacing: 14) {
                 ForEach(subjects) { course in
                     Button { onSelectCourse(course.id) } label: { tile(course.name, "folder", height: 85, icon: NativeDesktopTheme.accent).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 14)) }
                         .buttonStyle(.plain).accessibilityIdentifier("native-home-course-" + course.id)
                 }
                 Button(action: onNewCourse) {
-                    tile("새 과목", "plus", height: 88, icon: NativeDesktopTheme.secondary).foregroundStyle(NativeDesktopTheme.secondary)
+                    tile("새 폴더", "plus", height: 88, icon: NativeDesktopTheme.secondary).foregroundStyle(NativeDesktopTheme.secondary)
                         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(NativeDesktopTheme.border, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
                 }.buttonStyle(.plain).accessibilityIdentifier("native-home-new-course")
             }

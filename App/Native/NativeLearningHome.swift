@@ -160,10 +160,10 @@ struct NativeProjectSidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
-                NativeRailSearchField(prompt: "프로젝트 찾기", text: $query, identifier: "native-project-search")
+                NativeRailSearchField(prompt: "폴더 찾기", text: $query, identifier: "native-project-search")
                 Button { creating = true } label: { Image(systemName: "plus").foregroundStyle(NativeDesktopTheme.secondary).frame(width: 40, height: 40).contentShape(Rectangle()) }
-                    .bandalPopover(isPresented: $creating) { BandalTextEntry(title: "새 프로젝트", prompt: "프로젝트 이름", actionTitle: "만들기", identifier: "native-name-input", commit: create) }
-                    .accessibilityLabel("새 프로젝트").accessibilityIdentifier("native-project-create")
+                    .bandalPopover(isPresented: $creating) { BandalTextEntry(title: "새 폴더", prompt: "폴더 이름", actionTitle: "만들기", identifier: "native-name-input", commit: create) }
+                    .accessibilityLabel("새 폴더").accessibilityIdentifier("native-project-create")
             }.padding(.leading, 12).padding(.trailing, 6).padding(.bottom, 8)
             if catalog.loading && catalog.projects.isEmpty { ProgressView().frame(maxWidth: .infinity).padding() }
             if let message = error ?? catalog.error { Text(message).font(.caption).foregroundStyle(.red).padding(12) }
@@ -171,7 +171,7 @@ struct NativeProjectSidebar: View {
                 LazyVStack(spacing: 2) {
                     ForEach(live) { project in projectRow(project) }
                     if live.isEmpty && !catalog.loading {
-                        Text(query.isEmpty ? "새 프로젝트에서 자료와 아이디어를 모아 보세요." : "검색 결과가 없습니다.")
+                        Text(query.isEmpty ? "새 폴더에서 자료와 아이디어를 모아 보세요." : "검색 결과가 없습니다.")
                             .font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted).padding(20)
                     }
                     if showDeleted {
@@ -183,9 +183,9 @@ struct NativeProjectSidebar: View {
                 }.padding(.horizontal, 6)
             }.refreshable { await catalog.reload(store) }
             HStack {
-                Button { showDeleted.toggle() } label: { Label("삭제한 프로젝트", systemImage: "trash").frame(minHeight: 44) }
+                Button { showDeleted.toggle() } label: { Label("삭제한 폴더", systemImage: "trash").frame(minHeight: 44) }
                 Spacer()
-                Button { Task { await catalog.reload(store) } } label: { Image(systemName: "arrow.clockwise").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("프로젝트 새로고침")
+                Button { Task { await catalog.reload(store) } } label: { Image(systemName: "arrow.clockwise").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("폴더 새로고침")
             }.font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 12)
         }.background(NativeDesktopTheme.surface).buttonStyle(.plain)
             .task { await catalog.reload(store) }
@@ -209,8 +209,8 @@ struct NativeProjectSidebar: View {
             }.padding(.horizontal, 12).frame(minHeight: 44).contentShape(Rectangle())
         }.background(selectedID == context.id ? NativeDesktopTheme.accentMuted : .clear, in: RoundedRectangle(cornerRadius: 8))
             .accessibilityIdentifier("native-project-" + project.id).accessibilityAddTraits(selectedID == context.id ? .isSelected : [])
-            .bandalConfirm("프로젝트를 목록에서 삭제할까요?", isPresented: Binding(get: { deleted?.id == project.id }, set: { if !$0 { deleted = nil } }),
-                           message: "자료와 학습 기록은 남고 삭제한 프로젝트에서 복원할 수 있어요.", action: "목록에서 삭제", destructive: true) {
+            .bandalConfirm("폴더를 목록에서 삭제할까요?", isPresented: Binding(get: { deleted?.id == project.id }, set: { if !$0 { deleted = nil } }),
+                           message: "자료와 학습 기록은 남고 삭제한 폴더에서 복원할 수 있어요.", action: "목록에서 삭제", destructive: true) {
                 mutate("learning:delete", project: project)
             }
             .contextMenu {
@@ -231,7 +231,7 @@ struct NativeProjectSidebar: View {
     }
     private func create(_ name: String) async throws {
         let response = try await store.invoke("learning:create", ["name": name]) as? [String: Any] ?? [:]
-        guard let context = NativeWorkspaceContext.project(snapshot: response) else { throw DesktopRuntimeError("프로젝트를 불러오지 못했습니다.") }
+        guard let context = NativeWorkspaceContext.project(snapshot: response) else { throw DesktopRuntimeError("폴더를 불러오지 못했습니다.") }
         creating = false
         await catalog.reload(store); onOpen(context)
     }

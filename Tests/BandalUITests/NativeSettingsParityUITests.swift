@@ -13,19 +13,16 @@ final class NativeSettingsParityUITests: XCTestCase {
         search.tap(); search.typeText("SNU")
         let school = app.buttons["native-school-result-snu"]
         XCTAssertTrue(school.waitForExistence(timeout: 5)); school.tap()
-        let heading = app.buttons["native-university-heading"]
-        XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(heading.label.contains("서울대학교"))
-        let portal = app.buttons["native-university-service-snu.portal"]
-        XCTAssertTrue(portal.exists, app.debugDescription)
-        // The AI sites follow the school's in one scroll area; with this many school sites their
-        // lazily built buttons are below its fold, so the section heading stands for them.
-        XCTAssertTrue(app.buttons["native-ai-web-heading"].exists, app.debugDescription)
+        // The school's essentials become the first site tiles; no school heading or AI section.
+        let portal = app.buttons["native-home-site-school:snu.portal"]
+        XCTAssertTrue(portal.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["native-university-heading"].exists)
+        XCTAssertFalse(app.buttons["native-ai-web-heading"].exists)
+        XCTAssertTrue(app.buttons["native-home-site-add"].exists, app.debugDescription)
         XCTAssertFalse(search.exists, "Choosing a school closes the picker")
-        capture("Configured university shortcuts above courses")
+        capture("School site tiles above the folders")
         app.terminate(); app.launchArguments = ["--native-ui-testing"]; app.launch()
         XCTAssertTrue(portal.waitForExistence(timeout: 20), app.debugDescription)
-        XCTAssertTrue(heading.label.contains("서울대학교"))
     }
 
     /// Login is optional: the workspace opens without it and only Apple and Google remain.

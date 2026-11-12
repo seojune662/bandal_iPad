@@ -43,7 +43,7 @@ struct NativeLearningWorkspace: View {
     private var header: some View {
         VStack(spacing: 8) {
             HStack {
-                if model.article != nil || model.artifact != nil { NativeChromeButton(title: "프로젝트로", symbol: "chevron.left") { model.clearDetail() } }
+                if model.article != nil || model.artifact != nil { NativeChromeButton(title: "폴더로", symbol: "chevron.left") { model.clearDetail() } }
                 VStack(alignment: .leading, spacing: 3) { Text(model.name).font(NativeDesktopTheme.font(18, weight: .semibold)); Text(model.snapshot["topic"] as? String ?? "").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
                 Menu { Button("기사 주소 추가", systemImage: "link") { showingAdd = true }; Button("AI로 만들기", systemImage: "sparkles") { store.assistantDocumentIDs.insert(binding.id) } } label: { Image(systemName: "plus").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityIdentifier("native-learning-add")
             }

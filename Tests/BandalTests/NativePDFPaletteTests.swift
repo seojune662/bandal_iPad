@@ -201,10 +201,12 @@ final class NativePDFPaletteTests: XCTestCase {
         XCTAssertEqual(model.tool, "pen"); XCTAssertEqual(model.penKind, "pen")
         XCTAssertEqual(model.currentPreset, .init(color: "ink", width: 0.004, opacity: 0.95), "The pen of a new document, as before the pen types")
         XCTAssertEqual(model.widthSlots, [2, 5, 8]); XCTAssertEqual(model.colorSlots, ["ink", "blue", "red", "green"])
-        // Its stroke: the chosen width and opacity as they are, pressure on (no fixed width), the writing calibration.
+        // Its stroke: the first pen's V4 ink, widened so a step draws as thick as it did with V5; pressure on (no fixed width).
         let preferences = NativePDFWorkspacePreferences()
         XCTAssertEqual(preferences.tool, "pen")
-        XCTAssertEqual(preferences.drawingStyle["color"] as? String, "ink"); XCTAssertEqual(preferences.drawingStyle["width"] as? Double, 0.004)
+        XCTAssertEqual(preferences.drawingStyle["color"] as? String, "ink")
+        XCTAssertEqual(preferences.drawingStyle["width"] as? Double ?? 0, 0.004 * NativePDFPaletteStyle.penWidthScale, accuracy: 1e-12)
+        XCTAssertEqual(NativePDFInkSurface.Tool().inkVersion, 5, "Only the workspace's plain 펜 asks for V4")
         XCTAssertEqual(preferences.drawingStyle["opacity"] as? Double, 0.95); XCTAssertEqual(Set(preferences.drawingStyle.keys), ["color", "width", "opacity"])
         XCTAssertFalse(NativePDFInkSurface.Tool().brush)
         // Away to another pen type or tool and back: the plain pen and its style return.

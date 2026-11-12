@@ -157,6 +157,8 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         if id.hasPrefix("native-pdf-tool-"), item.isSelected { return }
         let scroll = pane.scrollViews["native-pdf-tool-scroll"]
         if !item.isHittable, scroll.exists { scroll.swipeRight(); scroll.swipeRight(); for _ in 0..<5 where !item.isHittable { scroll.swipeLeft() } }
+        let row = pane.scrollViews["native-pdf-palette-scroll"]
+        if !item.isHittable, row.exists { row.swipeRight(); row.swipeRight(); for _ in 0..<5 where !item.isHittable { row.swipeLeft() } }
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: item)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed); item.tap()
     }
@@ -250,6 +252,8 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         if identifier.hasPrefix("native-pdf-tool-"), item.isSelected { return }
         let tools = app.scrollViews["native-pdf-tool-scroll"]
         if !item.isHittable, tools.exists { tools.swipeRight(); tools.swipeRight(); for _ in 0..<4 where !item.isHittable { tools.swipeLeft() } }
+        let row = app.scrollViews["native-pdf-palette-scroll"]
+        if !item.isHittable, row.exists { row.swipeRight(); row.swipeRight(); for _ in 0..<4 where !item.isHittable { row.swipeLeft() } }
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: item)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription); item.tap()
     }

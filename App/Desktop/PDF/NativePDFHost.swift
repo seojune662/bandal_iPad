@@ -107,7 +107,8 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
     func setTextEditor(surfaceID: String, generation: String, page: Int, view: NativePDFTextInputView?) {
         guard let item = documents[surfaceID], item.generation == generation else { return }
         item.textEditor = view.map { (page: page, view: $0) }
-        if view == nil { item.cancelKeyboardReveal(); item.restoreScrollAfterTextEditing() } else { item.revealTextEditorWhenKeyboardShows() }
+        if view == nil { item.cancelKeyboardReveal(); item.stopKeyboardInset(); item.restoreScrollAfterTextEditing() }
+        else { item.startKeyboardInset(); item.revealTextEditorWhenKeyboardShows() }
     }
     func canHandle(_ channel: String) -> Bool { channel.hasPrefix("pdfNative:") }
     func documentLocation(surfaceID: String, generation: String, point: CGPoint) -> (page: Int, point: CGPoint)? {
@@ -772,6 +773,35 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         if let keyboardReveal { NotificationCenter.default.removeObserver(keyboardReveal) }
         keyboardReveal = nil
     }
+    /// While a text box is open the window keeps its size under the keyboard (a keyboard that resized it
+    /// exposed the backdrop behind the whole workspace): the page makes room under the keyboard itself.
+    private var keyboardFrameObserver: NSObjectProtocol?
+    private var keyboardInset: CGFloat = 0
+    func startKeyboardInset() {
+        guard keyboardFrameObserver == nil else { return }
+        keyboardFrameObserver = NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main) { [weak self] note in
+            let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+            Task { @MainActor [weak self] in self?.applyKeyboardInset(screenFrame: frame) }
+        }
+    }
+    func stopKeyboardInset() {
+        if let keyboardFrameObserver { NotificationCenter.default.removeObserver(keyboardFrameObserver) }
+        keyboardFrameObserver = nil
+        applyKeyboardInset(screenFrame: nil)
+    }
+    private func applyKeyboardInset(screenFrame: CGRect?) {
+        guard let scroll = scrollView else { return }
+        var overlap: CGFloat = 0
+        if let screenFrame, let window = scroll.window, !screenFrame.isEmpty {
+            let keyboard = window.convert(screenFrame, from: window.screen.coordinateSpace)
+            let visible = scroll.convert(scroll.bounds, to: window)
+            if keyboard.intersects(visible) { overlap = max(0, visible.maxY - keyboard.minY) }
+        }
+        guard overlap != keyboardInset else { return }
+        scroll.contentInset.bottom += overlap - keyboardInset
+        scroll.verticalScrollIndicatorInsets.bottom += overlap - keyboardInset
+        keyboardInset = overlap
+    }
     /// Undo the reveal: finishing a box returns the page to where editing started.
     func restoreScrollAfterTextEditing() {
         defer { revealOffset = nil }
@@ -1177,7 +1207,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             nextTool = .init(name: name, drawAndHold: value["drawAndHold"] as? Bool ?? true, style: style, lassoBox: value["lassoMode"] as? String == "box",
                              eraserRadius: radius.isFinite && radius > 0 && radius <= 0.1 ? radius : 0.005,
                              partialErase: value["eraserMode"] as? String == "partial",
-                             brush: value["brush"] as? Bool == true, straighten: value["straighten"] as? Bool == true)
+                             brush: value["brush"] as? Bool == true, straighten: value["straighten"] as? Bool == true,
+                             inkVersion: (value["inkVersion"] as? NSNumber)?.intValue == 4 ? 4 : 5)
         }
         let epoch: Int?
         if request["objectSceneEpoch"] != nil {

@@ -20,10 +20,25 @@ struct NativePDFWorkspace: View {
     /// The band under the palette: the thumbnails button at its right end, the recording bar in its middle.
     private var belowPalette: CGFloat { showsPalette ? paletteTop + NativePDFFloatingPalette.height + 8 : paletteTop }
     @AppStorage("native.pdf.paletteCollapsed") private var paletteCollapsed = false
-    /// The window's palette is wider than the page area and floats over the pages panel and the annotation rail:
-    /// their headers start under it.
-    // ponytail: also pads in a window wide enough for the palette to stay inside the page area; compare frames if that band shows.
-    private var sidePanelTop: CGFloat { showsPalette && !paletteCollapsed && paletteHost?.floats(tabID) == true ? belowPalette : 0 }
+    /// The pane's own palette when the window does not float one.
+    @State private var panePaletteFrame = CGRect.zero
+    private var paletteFrame: CGRect {
+        guard showsPalette else { return .zero }
+        return paletteHost?.floats(tabID) == true ? paletteHost?.paletteFrame ?? .zero : panePaletteFrame
+    }
+    /// The window's palette floats over the side panels when it is wider than the page area:
+    /// a panel's header starts under it only where the pill really covers that panel.
+    private var pagesPanelTop: CGFloat {
+        paletteHost?.floats(tabID) == true && !paletteFrame.isEmpty && paletteFrame.minX < bodyFrame.minX - 0.5 ? belowPalette : 0
+    }
+    private var annotationRailTop: CGFloat {
+        paletteHost?.floats(tabID) == true && !paletteFrame.isEmpty && paletteFrame.maxX > bodyFrame.maxX + 0.5 ? belowPalette : 0
+    }
+    /// The thumbnails button sits at the page area's left, in the palette's row when the pill leaves room for it, otherwise under it.
+    private var viewButtonTop: CGFloat {
+        let room = paletteFrame.isEmpty || paletteFrame.minX - bodyFrame.minX >= NativePDFViewButton.leading + NativePDFViewButton.size + 8
+        return room ? paletteTop + (NativePDFFloatingPalette.height - NativePDFViewButton.size) / 2 : belowPalette
+    }
     /// The window draws the palette above the side panels; this pane only says where its page area is.
     private func registerPalette() {
         guard let paletteHost else { return }
@@ -66,7 +81,7 @@ struct NativePDFWorkspace: View {
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     if model.showPages && visible {
-                        NativePDFPagesPanel(model: model).padding(.top, sidePanelTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 128 : 160)
+                        NativePDFPagesPanel(model: model).padding(.top, pagesPanelTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 128 : 160)
                         Divider()
                     }
                     ZStack {
@@ -82,19 +97,21 @@ struct NativePDFWorkspace: View {
                             }
                         }
                         .overlay(alignment: .top) {
-                            if showsPalette, paletteHost?.floats(tabID) != true { NativePDFFloatingPalette(model: model).padding(.horizontal, 8).padding(.top, paletteTop) }
+                            if showsPalette, paletteHost?.floats(tabID) != true {
+                                NativePDFFloatingPalette(model: model, onFrame: { panePaletteFrame = $0 }).padding(.horizontal, 8).padding(.top, paletteTop)
+                            }
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bodyFrame = $0; registerPalette() }
-                        .overlay(alignment: .topTrailing) {
+                        .overlay(alignment: .topLeading) {
                             if visible, model.assistantAnnotation == nil, chromeMode != .toolsHidden {
-                                NativePDFViewButton(model: model).padding(.trailing, NativePDFViewButton.trailing).padding(.top, belowPalette)
+                                NativePDFViewButton(model: model).padding(.leading, NativePDFViewButton.leading).padding(.top, viewButtonTop)
                             }
                         }
                         // 문서에서 찾기 takes the band under the palette, clear of the thumbnails button; a recording bar moves below it.
                         .overlay(alignment: .top) {
                             if visible, model.search.isPresented {
                                 NativePDFSearchBar(search: model.search).padding(.horizontal, 8).frame(height: NativePDFViewButton.size).bandalGlass(in: Capsule())
-                                    .padding(.horizontal, NativePDFViewButton.trailing + NativePDFViewButton.size + 8).padding(.top, belowPalette)
+                                    .padding(.horizontal, NativePDFViewButton.leading + NativePDFViewButton.size + 8).padding(.top, belowPalette)
                             }
                         }
                         .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model).padding(.top, belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0)) } }
@@ -102,7 +119,7 @@ struct NativePDFWorkspace: View {
                         .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame) } }
                     if model.showAnnotations && visible {
                         Divider()
-                        NativePDFAnnotationRail(model: model).padding(.top, sidePanelTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 220 : 280)
+                        NativePDFAnnotationRail(model: model).padding(.top, annotationRailTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 220 : 280)
                     }
                 }
                 .onChange(of: geometry.size.width, initial: true) { _, width in model.setAvailableWidth(width) }
@@ -171,6 +188,8 @@ struct NativePDFWorkspace: View {
 @MainActor
 @Observable
 final class NativePDFWorkspaceModel {
+    /// Posted with `true` when a PDF text box opens and `false` when it closes: the window then ignores the keyboard.
+    static let textEditingChanged = Notification.Name("native.pdf.textEditingChanged")
     struct InkColor { let name: String, label: String; let color: Color }
     static let colors: [InkColor] = zip(NativePDFPenPreset.colors, ["먹색", "빨강", "주황", "노랑", "초록", "파랑", "보라"]).map {
         InkColor(name: $0.0, label: $0.1, color: Color(uiColor: NativePDFInkSurface.color($0.0)))
@@ -677,7 +696,9 @@ final class NativePDFWorkspaceModel {
                 let epoch = self.sceneEpoch
                 payload.merge(["nativeInkErase": true, "loading": false, "active": true,
                     "annotations": self.annotations, "tool": ["name": self.isPenLike ? "pen" : self.tool, "style": style, "drawAndHold": self.shapeRecognitionEnabled, "lassoMode": self.lassoMode,
-                        "brush": self.tool == "brush", "straighten": self.tool == "highlighter" && self.palette.highlighterStraight,
+                        // 펜 draws the first pen's ink (V4: a gentle pressure swell, no speed thinning or end taper);
+                        // 볼펜 and 붓 keep V5.
+                        "brush": self.tool == "brush", "inkVersion": self.tool == "pen" ? 4 : 5, "straighten": self.tool == "highlighter" && self.palette.highlighterStraight,
                         // 형광펜만 지우기 is a filter the editor applies, so the editor's eraser handles the contact (as it does for 부분).
                         "eraserRadius": self.palette.eraserRadius, "eraserMode": self.palette.eraserHighlighterOnly ? "partial" : self.palette.eraserMode], "objectSceneEpoch": self.sceneEpoch]) { _, new in new }
                 do { _ = try await self.call("snapshot", payload) }
@@ -1884,6 +1905,7 @@ final class NativePDFWorkspaceModel {
         let draft = NativePDFTextDraft(object: object, pageSize: pageSize(number), existing: existing, defaults: defaults,
             onChange: { [weak self] in self?.markDraftChanged() })
         textEditorDraft = draft; textEditorPage = number; textEditorPresentedAt = CFAbsoluteTimeGetCurrent()
+        NotificationCenter.default.post(name: Self.textEditingChanged, object: true)
         textEditorPresentedPoint = point.map { (page: number, point: $0) }
         let input = NativePDFTextInput(draft: draft, caretAt: point, onSave: { [weak self] in self?.finishText() }, onCancel: { [weak self] in self?.cancelText() })
         textInput = input
@@ -1893,7 +1915,9 @@ final class NativePDFWorkspaceModel {
     }
     private func clearTextEditor() {
         if let page = textEditorPage { host?.setTextEditor(surfaceID: surfaceID, generation: generation, page: page, view: nil); dirtyScenes.insert(page) }
+        let wasEditing = textEditorDraft != nil
         textInput?.detach(); textInput = nil; textObject = nil; textEditorDraft = nil; textEditorPage = nil
+        if wasEditing { NotificationCenter.default.post(name: Self.textEditingChanged, object: false) }
     }
     /// A tap or pen-down outside the open box. The echo of the opening tap is
     /// ignored; a tap on another text box saves this one, then opens that one.

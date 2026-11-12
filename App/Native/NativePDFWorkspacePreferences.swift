@@ -88,7 +88,7 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
         }
     }
 
-    static let tools = Set(["select", "lasso", "pen", "ballpoint", "brush", "highlighter", "eraser", "line", "text", "tape", "laser", "comment"])
+    static let tools = Set(["select", "lasso", "pen", "ballpoint", "brush", "highlighter", "eraser", "text", "tape", "laser", "comment"])
     static let lassoModes = Set(["freeform", "box"])
     static let colors = Set(["ink", "red", "orange", "yellow", "green", "blue", "violet"])
     static func key(root: URL, documentID: String, documentsRoot: URL? = nil) -> String {
@@ -140,7 +140,8 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
         return value
     }
     var drawingStyle: [String: Any] {
-        var style: [String: Any] = ["color": color, "width": tool == "highlighter" ? max(0.014, width * 4) : tool == "brush" ? width * NativePDFPaletteStyle.brushWidthScale : width,
+        var style: [String: Any] = ["color": color, "width": tool == "highlighter" ? max(0.014, width * 4) : tool == "brush" ? width * NativePDFPaletteStyle.brushWidthScale
+                                        : tool == "pen" ? width * NativePDFPaletteStyle.penWidthScale : width,
                                     "opacity": tool == "highlighter" ? min(opacity, 0.34) : opacity]
         if tool == "ballpoint" { style["fixedWidth"] = true }
         return style

@@ -35,18 +35,10 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
         chooseWindow("문제 풀이", app: app)
 
         openHome(app)
-        let school = app.buttons["native-university-choose"], ai = app.buttons["native-ai-web-heading"]
-        XCTAssertTrue(school.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(ai.exists)
-        let schoolTop = school.frame.minY, aiTop = ai.frame.minY
-        app.buttons["native-home-projects"].tap()
-        XCTAssertTrue(school.exists, "The common shortcuts stay mounted for projects")
-        XCTAssertEqual(school.frame.minY, schoolTop, accuracy: 1)
-        XCTAssertEqual(ai.frame.minY, aiTop, accuracy: 1)
-        app.buttons["native-project-create"].tap()
-        let projectName = app.textFields["native-name-input"]
+        app.buttons["native-course-add-menu"].tap()
+        let projectName = app.textFields["native-course-name"]
         XCTAssertTrue(projectName.waitForExistence(timeout: 5)); projectName.tap(); projectName.typeText("Window Project")
-        app.buttons["만들기"].tap()
+        app.buttons["native-create-course"].tap()
         waitEnabled(app.buttons["native-workspace-windows-toggle"], app: app)
         openOverview(app); expectCards(1, app: app)
         XCTAssertEqual(cards(app).firstMatch.label, "윈도우 1 열기")
@@ -55,7 +47,7 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
         renameWindow("윈도우 2", to: "프로젝트 작업", app: app)
         chooseWindow("프로젝트 작업", app: app)
 
-        openHome(app); app.buttons["native-home-courses"].tap()
+        openHome(app)
         let course = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "native-course-", "Windows Course")).firstMatch
         XCTAssertTrue(course.waitForExistence(timeout: 5)); course.tap()
         openOverview(app); expectCards(1, app: app)
@@ -267,7 +259,6 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
     }
     @MainActor private func createCourse(_ name: String, app: XCUIApplication) {
         openHome(app)
-        app.buttons["native-home-courses"].tap()
         app.buttons["native-course-add-menu"].tap()
         let field = app.textFields["native-course-name"]
         XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap(); field.typeText(name)
@@ -276,8 +267,8 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
         waitEnabled(app.buttons["native-library-create"], app: app)
     }
     @MainActor private func openHome(_ app: XCUIApplication) {
-        if !app.buttons["native-home-projects"].isHittable { app.buttons["native-section-library"].tap() }
-        XCTAssertTrue(app.buttons["native-home-projects"].waitForExistence(timeout: 10), app.debugDescription)
+        if !app.buttons["native-course-add-menu"].isHittable { app.buttons["native-section-library"].tap() }
+        XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 10), app.debugDescription)
     }
     @MainActor private func setInspector(open: Bool, app: XCUIApplication) {
         let toggle = app.buttons["native-toggle-materials-rail"]

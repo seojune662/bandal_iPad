@@ -63,14 +63,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
 
     /// Figma 129:1460: the home screen (one pane, nothing open) has no tab strip.
     private func isHome(_ group: NativeDockGroup) -> Bool { navigation.groups.count == 1 && group.tabs.isEmpty }
-    /// Read while laying out: entering or leaving full screen resizes the window, which lays the dock out again.
-    private static var windowed: Bool {
-        UIApplication.shared.connectedScenes.contains { scene in
-            guard let scene = scene as? UIWindowScene, scene.activationState == .foregroundActive else { return false }
-            let window = scene.coordinateSpace.bounds.size, screen = scene.screen.bounds.size
-            return abs(window.width - screen.width) > 1 || abs(window.height - screen.height) > 1
-        }
-    }
+    private static var windowed: Bool { NativeDockHeaderMetrics.windowed }
     private func contentFrame(_ pane: NativeDockPaneFrame, _ metrics: NativeDockStripMetrics) -> CGRect {
         isHome(pane.group) ? pane.frame : NativeDockHeaderMetrics.contentFrame(for: pane.frame, controlsHeight: chromeMode.showsTabs ? metrics.total : 0, windowed: Self.windowed)
     }
