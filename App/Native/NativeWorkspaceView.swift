@@ -938,7 +938,7 @@ struct NativeWorkspaceView: View {
     private var emptyWorkspace: some View {
         VStack(spacing: 18) {
             Spacer()
-            if store.selectedCourseID == nil { NativeBandalMark(size: 56).foregroundStyle(NativeDesktopTheme.muted.opacity(0.4)) }
+            if store.selectedCourseID == nil { NativeBandalMark(size: 56, motion: .loop).foregroundStyle(NativeDecorMarkStyle()) }
             if store.selectedCourseID != nil {
                 NativeHomeTab(store: store, courseTitle: courseTitle,
                     onOpen: open, onSelectCourse: changeCourse,

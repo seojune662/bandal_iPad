@@ -194,6 +194,20 @@ struct NativeWorkspaceBackdrop: View {
     }
 }
 
+/// The Bandal mark in the decor's colours: the palette's first hue running into its last, top-leading
+/// to bottom-trailing. 모노 keeps the quiet grey the mark had.
+struct NativeDecorMarkStyle: ShapeStyle {
+    func resolve(in environment: EnvironmentValues) -> LinearGradient {
+        let decor = environment.nativeDecor, dark = environment.colorScheme == .dark, palette = decor.palette
+        let chroma = palette.chroma == 0 ? 0 : (dark ? 0.11 : 0.14) * min(1, 0.45 + decor.intensity)
+        let colors = palette.chroma == 0
+            ? [NativeDesktopTheme.muted.opacity(0.45), NativeDesktopTheme.muted.opacity(0.45)]
+            : [Color(uiColor: NativeOKLCH.color(dark ? 0.8 : 0.62, chroma, palette.hues.0)),
+               Color(uiColor: NativeOKLCH.color(dark ? 0.76 : 0.66, chroma, palette.hues.2))]
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+}
+
 /// A small window drawn with the decor: rail, panel and a page, over the backdrop. Onboarding shows it
 /// while the palette is chosen, so the choice is seen on something like the app before the app opens.
 struct NativeDecorPreview: View {

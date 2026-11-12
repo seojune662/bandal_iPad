@@ -73,7 +73,11 @@ extension View {
 
 /// The same two vector silhouettes and pivot coordinates as the desktop mark.
 struct NativeBandalMark: View {
+  /// The desktop mark's motions: `periodic` turns for 2 s and rests for 6 s; `loop` turns on and on,
+  /// one even turn every 4 s, for the one mark a screen is built around (the empty home).
+  enum Motion { case periodic, loop }
   let size: CGFloat
+  var motion = Motion.periodic
   @Environment(\.accessibilityReduceMotion) private var reducedMotion
   @Environment(\.scenePhase) private var scenePhase
   @State private var progress = 0.0
@@ -81,12 +85,16 @@ struct NativeBandalMark: View {
     ZStack {
       ForEach(Array(NativeBandalGeometry.shared.shapes.enumerated()), id: \.offset) {
         index, shape in
-        NativeBandalSilhouette(shape: shape, index: index, progress: progress).fill(.foreground)
+        NativeBandalSilhouette(shape: shape, index: index, progress: progress, eased: motion == .periodic).fill(.foreground)
       }
     }.frame(width: size, height: size).accessibilityHidden(true)
       .task(id: scenePhase == .active && !reducedMotion) {
         progress = 0
         guard scenePhase == .active && !reducedMotion else { return }
+        if motion == .loop {
+          withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) { progress = 1 }
+          return
+        }
         do {
           while !Task.isCancelled {
             withAnimation(.linear(duration: 2)) { progress = 1 }
@@ -128,6 +136,7 @@ private struct NativeBandalSilhouette: Shape {
   let shape: NativeBandalGeometry.Silhouette
   let index: Int
   var progress: Double
+  var eased = true
   var animatableData: Double {
     get { progress }
     set { progress = newValue }
@@ -137,8 +146,8 @@ private struct NativeBandalSilhouette: Shape {
     guard shape.pivot.count >= 2, geometry.sourceSize.count >= 2, !geometry.motion.poses.isEmpty
     else { return Path() }
     let t = min(1, max(0, progress))
-    let eased = t * t * t * (t * (t * 6 - 15) + 10)
-    let position = eased * Double(geometry.motion.poses.count - 1)
+    let curve = eased ? t * t * t * (t * (t * 6 - 15) + 10) : t
+    let position = curve * Double(geometry.motion.poses.count - 1)
     let lower = Int(position)
     let upper = min(lower + 1, geometry.motion.poses.count - 1)
     let a = geometry.motion.poses[lower]
