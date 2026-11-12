@@ -1,1 +1,4 @@
-Added a first-run guide, AI school setup and friend invites.
+A new design for windows, tabs, the note screen, the pen palette and settings.
+Handwriting search: handwriting is recognised on your iPad and found by search and Find in document.
+Added window colours, paper choice for new notes, folder windows in the sidebar and a formatting bar for notes.
+Fixed PDF input getting stuck and other bugs.
