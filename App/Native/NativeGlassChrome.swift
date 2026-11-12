@@ -133,9 +133,15 @@ enum NativeGlass {
     static let selection = NativeDecorStyle(kind: .selection)
     /// `Glass/팝업`: the tint over the glass of anything that floats (palette, popover, menu, toast).
     /// Light is the style's two fills as one: white 70 % under #BFBFBF 10 %.
-    static let popup = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0x1c / 255, green: 0x1c / 255, blue: 0x1e / 255, alpha: 0.84) : UIColor(white: 0xf6 / 255, alpha: 0.73) })
+    /// Floating surfaces take a breath of the palette's first hue, as strong as the dial says; they are drawn
+    /// fresh each time they open, so the stored decor is read then.
+    static let popup = Color(uiColor: UIColor { traits in
+        tinted(dark: traits.userInterfaceStyle == .dark, lightness: (0.97, 0.235), share: 0.55, alpha: (0.73, 0.84))
+    })
     /// `Glass/시트`: settings, the study board and its editor.
-    static let sheet = fill(0xfafafb, 0.93, 0x1c1c1e, 0.93)
+    static let sheet = Color(uiColor: UIColor { traits in
+        tinted(dark: traits.userInterfaceStyle == .dark, lightness: (0.985, 0.235), share: 0.3, alpha: (0.93, 0.93))
+    })
     /// The rim of a floating surface.
     static let rim = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.14) : UIColor(white: 0xdb / 255, alpha: 1) })
     /// Rail and panel-header icons (`Brand/Accent`).
@@ -151,6 +157,12 @@ enum NativeGlass {
     /// `Surface/Tool`: the chosen tab's pill.
     static let tool = NativeDesktopTheme.adaptive(0xf7f7f7, 0x1f1f1f)
 
+    /// A neutral surface nudged toward the palette: `share` of the mesh's chroma, scaled by the dial.
+    private static func tinted(dark: Bool, lightness: (Double, Double), share: Double, alpha: (CGFloat, CGFloat)) -> UIColor {
+        let decor = NativeDecor.stored
+        return NativeOKLCH.color(dark ? lightness.1 : lightness.0, decor.palette.chroma * share * decor.saturation, decor.palette.hues.0,
+                                 alpha: dark ? alpha.1 : alpha.0)
+    }
     private static func fill(_ light: UInt32, _ lightAlpha: CGFloat, _ dark: UInt32, _ darkAlpha: CGFloat) -> Color {
         Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark ? NativeDecorStyle.rgb(dark, darkAlpha) : NativeDecorStyle.rgb(light, lightAlpha)
@@ -173,8 +185,29 @@ struct NativeWorkspaceBackdrop: View {
     var body: some View {
         MeshGradient(width: 3, height: 3, points: Self.points, colors: decor.palette.mesh(dark: scheme == .dark, saturation: decor.saturation),
                      colorSpace: .perceptual)
+            .overlay {
+                // Grain: a fine tile of noise keeps the blend from banding and gives the glass something to catch.
+                Image(uiImage: NativeGrain.tile).resizable(resizingMode: .tile)
+                    .blendMode(.overlay).opacity(0.08 + 0.16 * decor.intensity)
+            }
             .ignoresSafeArea().accessibilityHidden(true)
     }
+}
+
+/// A 128 pt tile of grey noise, made once.
+enum NativeGrain {
+    static let tile: UIImage = {
+        let side = 128
+        var generator = SystemRandomNumberGenerator()
+        let pixels = (0..<side * side).map { _ in UInt8.random(in: 0...255, using: &generator) }
+        let image = pixels.withUnsafeBytes { bytes -> CGImage? in
+            guard let provider = CGDataProvider(data: Data(bytes) as CFData) else { return nil }
+            return CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: side,
+                           space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: 0), provider: provider,
+                           decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        }
+        return image.map { UIImage(cgImage: $0, scale: 2, orientation: .up) } ?? UIImage()
+    }()
 }
 
 /// The backdrop as it sits behind a drawer that floats over the paper: the window's mesh, laid out at
