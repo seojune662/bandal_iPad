@@ -285,6 +285,7 @@
 		7A6B2FF5CC4A0B4E473B10AB /* NativePDFInkPathCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2C459B3D104174D1E0E62BD /* NativePDFInkPathCache.swift */; };
 		7BB7B93EC5E703BC8EF38068 /* Membership.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5597C9B0CDABC0915E9ACC /* Membership.swift */; };
 		7C42393D380A25137D6FCBF1 /* BandalCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2322E4CFDF0FD071DF8074B3 /* BandalCore */; };
+		7C827BE794942A010FE2A01E /* FeedbackTourScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F045E027D035EF747069F0B7 /* FeedbackTourScreenshotTests.swift */; };
 		7D0DA874DB90CAAB50679734 /* NativePDFInkV3CacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71FA02EEB505E9743A538E7 /* NativePDFInkV3CacheTests.swift */; };
 		7DF91C36FC1E16E0FAE23FA0 /* NativePDFPageStateEquality.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8470B9EA66DBD0EA1B9DBC5 /* NativePDFPageStateEquality.swift */; };
 		7E197A0E2434B9D9D3BB949A /* FigmaTabStripScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89159E0F81215474D59C0D4C /* FigmaTabStripScreenshotTests.swift */; };
@@ -1144,6 +1145,7 @@
 		EF1A1E4F96E369D1A56FEA9F /* NativePDFPageSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageSync.swift; sourceTree = "<group>"; };
 		EFBD3E37C92B030B0E0A4845 /* NativeRichMarkdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRichMarkdownTests.swift; sourceTree = "<group>"; };
 		EFFA10059FA284EC8586156B /* NativeProjectLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProjectLibrary.swift; sourceTree = "<group>"; };
+		F045E027D035EF747069F0B7 /* FeedbackTourScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackTourScreenshotTests.swift; sourceTree = "<group>"; };
 		F05EFA1FB9D41C2271244A57 /* NativePDFApertureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFApertureTests.swift; sourceTree = "<group>"; };
 		F12BB4B85C50BF7B2593FE91 /* DesktopMailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopMailTests.swift; sourceTree = "<group>"; };
 		F13B30E854BDEF93D4AB8288 /* DesktopProfileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopProfileService.swift; sourceTree = "<group>"; };
@@ -1815,6 +1817,7 @@
 			children = (
 				0E44669BA478AFAE36158A0C /* AppStoreScreenshotTests.swift */,
 				97EE3439035BD5A758666224 /* BandalUITests-Bridging-Header.h */,
+				F045E027D035EF747069F0B7 /* FeedbackTourScreenshotTests.swift */,
 				46C871E9C788B8BAD07F043B /* FigmaAIPanelScreenshotTests.swift */,
 				38D5B32AB6E5D3A3EE49268A /* FigmaBoardScreenshotTests.swift */,
 				F356907DDC8170ECA8C19306 /* FigmaHomeChromeScreenshotTests.swift */,
@@ -2301,6 +2304,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				2EEB19162846FDABA7B4DA00 /* AppStoreScreenshotTests.swift in Sources */,
+				7C827BE794942A010FE2A01E /* FeedbackTourScreenshotTests.swift in Sources */,
 				DECC985EEA09ACBD97445232 /* FigmaAIPanelScreenshotTests.swift in Sources */,
 				FEF9CD45629A4FE07CBD6D5D /* FigmaBoardScreenshotTests.swift in Sources */,
 				4316E46F993A63D7CBE99378 /* FigmaHomeChromeScreenshotTests.swift in Sources */,
