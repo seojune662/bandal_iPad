@@ -137,20 +137,19 @@ final class NativeOnboardingUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["반달대학교 바로가기 4개를 사이드바에 넣었어요"].exists, app.debugDescription)
             capture("4 완료 (\(name))")
             finish.tap()
-            let heading = app.buttons["native-university-heading"]
-            XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
-            XCTAssertTrue(heading.label.contains("반달대학교"))
+            let lms = app.buttons["native-home-site-school:custom:fixture-school:lms"]
+            XCTAssertTrue(lms.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertFalse(finish.exists)
             XCTAssertTrue(app.buttons["native-section-settings"].isHittable)
-            XCTAssertTrue(app.buttons["native-university-service-custom:fixture-school:lms"].label.contains("강의실 LMS"), "The edit is in this user's settings")
-            XCTAssertFalse(app.buttons["native-university-service-custom:fixture-school:library"].exists)
+            XCTAssertTrue(lms.label.contains("강의실 LMS"), "The edit is in this user's settings")
+            XCTAssertFalse(app.buttons["native-home-site-school:custom:fixture-school:library"].exists)
             XCTAssertFalse(app.buttons["native-university-find-links"].exists)
             XCTAssertFalse(app.staticTexts["native-referral-banner"].exists, "No code, no reminder")
             capture("홈 (\(name))")
 
             // Shown once.
             app.terminate(); app.launchArguments = ["--native-ui-testing", "--native-onboarding", "--native-school-fixture"] + theme + Self.korean; app.launch()
-            XCTAssertTrue(heading.waitForExistence(timeout: 25), app.debugDescription)
+            XCTAssertTrue(lms.waitForExistence(timeout: 25), app.debugDescription)
             XCTAssertTrue(app.buttons["native-section-settings"].isHittable); XCTAssertFalse(korean.exists)
             app.terminate()
         }
@@ -193,9 +192,6 @@ final class NativeOnboardingUITests: XCTestCase {
         name.tap(); name.typeText("학교")
         capture("직접 입력")
         app.buttons["native-school-name-submit"].tap()
-        let heading = app.buttons["native-university-heading"]
-        XCTAssertTrue(heading.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(heading.label.contains("반달예술대학교"))
         XCTAssertTrue(waitForAbsence(search), "Saving ends the picker")
 
         // A school with a name only: the sidebar offers the AI search, which opens the same flow.

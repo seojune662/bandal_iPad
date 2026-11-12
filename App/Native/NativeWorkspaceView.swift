@@ -8,7 +8,6 @@ struct NativeWorkspaceView: View {
     @StateObject private var previews = NativeWorkspacePreviewController()
     @State private var windowsOverviewOpen = false
     @State private var pdfPalette = NativePDFPaletteHost()
-    @State private var shortcutContentHeight: CGFloat = 200
     @StateObject private var services: NativePlatformServices
     @ObservedObject private var annotation: NativeAnnotationCoordinator
     @StateObject private var librarySources = NativeLibrarySourceTrayModel()
@@ -686,22 +685,12 @@ struct NativeWorkspaceView: View {
     private static let railSpacing: CGFloat = 4, railTop: CGFloat = 7
     /// A lit rail button with no panel beside it.
     private static let railSelected = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.12) : UIColor.white.withAlphaComponent(0.85) })
-    @AppStorage("native.desktop.shortcutsHeight") private var shortcutsLimit = 0.0
     private var courseSidebar: some View {
-        // 0 is the automatic height; the handle on the line below stores another.
-        let shortcutsHeight = min(shortcutContentHeight, shortcutsLimit > 0 ? max(NativeSidebarSectionHandle.minimum, shortcutsLimit) : windowWidth < 900 ? 200 : 300)
-        return VStack(spacing: 0) {
-            ScrollView {
-                // The invite reminder shares this area's height limit, so the course list keeps its room on a small iPad.
-                VStack(spacing: 0) {
-                    NativeReferralBanner(store: store)
-                    NativeSidebarShortcuts(store: store, settings: workspaceSettings, onOpenSettings: openSettings, onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb)
-                }.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shortcutContentHeight = $0 }
-            }.frame(height: shortcutsHeight)
+        VStack(spacing: 0) {
+            NativeReferralBanner(store: store)
+            // Sites as tiles: the school's essentials, then what the browser visits most; pinned ones first.
+            NativeHomeSiteTiles(store: store, settings: workspaceSettings, onOpenURL: openBrowserURL, onOpenSettings: openSettings)
             NativeGlass.hairline.frame(height: 1)
-                .overlay(alignment: .trailing) {
-                    NativeSidebarSectionHandle(limit: $shortcutsLimit, current: shortcutsHeight, content: shortcutContentHeight).padding(.trailing, 10)
-                }.zIndex(1)
             // 과목 and 프로젝트 are one list of folders.
             NativeCourseSidebar(store: store, navigation: navigation, settings: workspaceSettings, onSelect: changeCourse,
                 onCreate: createCourse, onOpenSettings: openSettings,

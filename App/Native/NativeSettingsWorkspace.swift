@@ -269,11 +269,6 @@ struct NativeSettingsWorkspace: View {
       Button { subpage = "university" } label: { NativeSettingsRow(title: "바로가기", note: shortcuts) { NativeSettingsValue("편집") } }
         .buttonStyle(.plain).accessibilityIdentifier("native-settings-integrations-shortcuts")
     }
-    // 준비 중: the list of AI sites is fixed, and none of the three services has a connection yet.
-    NativeSettingsGroup(title: "외부 AI 사이트") {
-      NativeSettingsRow(title: "사이드바에 보이기", note: NativeAIWebShortcut.all.map(\.title).joined(separator: " · ")) { NativeSettingsValue("편집") }
-        .accessibilityElement(children: .combine).accessibilityHint("준비 중")
-    }
     NativeSettingsGroup(title: "연결된 서비스", description: "Google 캘린더 · Drive · Notion 연결은 준비 중이에요. Apple 캘린더는 더 보기에서 연결해요.") {
       ForEach([("Google 캘린더", "과제 마감 기한을 가져와요"), ("Google Drive", "자료로 가져오기"), ("Notion", "페이지를 자료로 가져오기")], id: \.0) { title, note in
         NativeSettingsRow(title: title, note: note) { Button("연결") {}.disabled(true).accessibilityLabel(title + " 연결").accessibilityHint("준비 중") }
