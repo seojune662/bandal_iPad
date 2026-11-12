@@ -49,6 +49,11 @@ final class NativeWorkspaceStore {
     /// A newly created docked browser consumes its URL after its page exists.
     var assistantDocumentIDs = Set<String>()
     var pendingAssistantConversationIDs: [String: String] = [:]
+    /// A search result opened a conversation at one message (by context id): the panel scrolls to it.
+    var pendingAssistantMessageIDs: [String: String] = [:]
+    /// A search result opened a PDF tab at a page: the match its viewer marks once that page is shown
+    /// (`page`, and `query` for text or `box` for a handwritten line).
+    @ObservationIgnored var pendingPDFHighlights: [String: [String: Any]] = [:]
     /// Something elsewhere in the workspace asked the AI panel of a space (by context id) a question:
     /// the panel attaches the material, fills in the prompt and, when asked to, sends it.
     var pendingAssistantRequests: [String: NativeAssistantRequest] = [:]
@@ -161,7 +166,7 @@ final class NativeWorkspaceStore {
                         NativeLocalPreferences.keyboardFoldsPanels, NativeAIPreferences.answerLanguageKey, NativeAIPreferences.usageAlertKey,
                         NativeAIPreferences.referenceScopeKey, NativeAIPreferences.showsSourcesKey, NativeAIPreferences.savesHistoryKey,
                         NativeOnboardingGate.doneKey, NativeAppLocale.key, NativeReferral.pendingKey, NativeReferral.awaitingKey] { UserDefaults.standard.removeObject(forKey: key) }
-            // The palette's tool options and favourites are kept per root in the defaults, outside the reset folder.
+            // The palette's tool options and slots are kept per root in the defaults, outside the reset folder.
             UserDefaults.standard.removeObject(forKey: NativePDFPalettePreferences.key(root: folder, documentsRoot: documents))
             // Browser logins live in the Keychain, outside the reset folder.
             SecItemDelete(DesktopCredentialsService.keychainQuery(folder.lastPathComponent + ":default") as CFDictionary)

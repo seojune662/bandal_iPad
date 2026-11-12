@@ -15,14 +15,17 @@ final class NativeDesktopLayoutTests: XCTestCase {
         XCTAssertTrue(add.waitForExistence(timeout: 10)); add.tap(); app.buttons["새 노트"].tap()
         let title = app.textFields["native-new-note-title"]; XCTAssertTrue(title.waitForExistence(timeout: 5))
         title.tap(); title.typeText("Desktop layout"); app.buttons["native-new-note-create"].tap()
-        let pageNote = app.buttons["native-pdf-page-note"]
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: pageNote)
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: app.buttons["native-pdf-pages"])
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed, app.debugDescription)
-        XCTAssertGreaterThanOrEqual(pageNote.frame.width, 44, "Page-note action must have a full touch target")
         let pdf = app.otherElements["native-pdf-workspace"]
         XCTAssertLessThan(addCourse.frame.maxX, pdf.frame.minX)
         XCTAssertGreaterThan(add.frame.minX, pdf.frame.maxX)
         XCTAssertTrue(app.buttons["native-close-document"].exists)
+        // 페이지 필기 is a row of the thumbnails button's long-press menu.
+        app.openNativePDFViewMenu()
+        let pageNote = app.buttons["native-pdf-page-note"]
+        XCTAssertTrue(pageNote.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertGreaterThanOrEqual(pageNote.frame.width, 44, "Page-note action must have a full touch target")
         pageNote.tap()
         let note = app.textViews["native-markdown-editor"]
         XCTAssertTrue(note.waitForExistence(timeout: 20), app.debugDescription)

@@ -29,7 +29,7 @@ final class NativePDFPreferenceScopeTests: XCTestCase {
         return value
     }
 
-    func testContainerUUIDChangeKeepsDocumentStylesViewportAndSharedFavorites() throws {
+    func testContainerUUIDChangeKeepsDocumentStylesViewportAndSharedPalette() throws {
         let (defaults, suite) = defaults(); defer { defaults.removePersistentDomain(forName: suite) }
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let a = documents(base), b = documents(base)
@@ -38,7 +38,7 @@ final class NativePDFPreferenceScopeTests: XCTestCase {
         saved.viewport = .init(revision: "r", values: ["page": 2, "zoom": 1.5, "progress": 0.7, "horizontalProgress": 0.2])
         saved.save(root: old, documentID: "course:note.pdf", defaults: defaults, documentsRoot: a)
         let palette = NativePDFPalettePreferences.update(root: old, defaults: defaults, documentsRoot: a) {
-            $0.favorites[2] = .init(color: "violet", width: 0.0173, opacity: 0.55); $0.drawAndHold = false
+            $0.recentPen = .init(color: "violet", width: 0.0173, opacity: 0.55); $0.drawAndHold = false
         }
         XCTAssertEqual(NativePDFWorkspacePreferences.key(root: old, documentID: "course:note.pdf", documentsRoot: a), NativePDFWorkspacePreferences.key(root: new, documentID: "course:note.pdf", documentsRoot: b))
         XCTAssertEqual(NativePDFWorkspacePreferences.load(root: new, documentID: "course:note.pdf", defaults: defaults, documentsRoot: b), saved)
@@ -55,7 +55,7 @@ final class NativePDFPreferenceScopeTests: XCTestCase {
         for (index, previous) in oldRoots.enumerated() {
             let data = try JSONEncoder().encode(preset(index)), key = legacyDocumentKey(previous, "same-document")
             original[key] = data; defaults.set(data, forKey: key)
-            var palette = NativePDFPalettePreferences(); palette.favorites[0] = preset(index).penStyle
+            var palette = NativePDFPalettePreferences(); palette.recentPen = preset(index).penStyle
             let paletteData = try JSONEncoder().encode(palette), paletteKey = legacyPaletteKey(previous)
             original[paletteKey] = paletteData; defaults.set(paletteData, forKey: paletteKey)
         }
@@ -63,7 +63,7 @@ final class NativePDFPreferenceScopeTests: XCTestCase {
         NativePDFPreferenceScope.registerPreviousRoot(root: root, documentsRoot: currentDocuments, defaults: defaults)
         XCTAssertTrue(NativePDFWorkspacePreferences.hasStored(root: root, documentID: "same-document", defaults: defaults, documentsRoot: currentDocuments))
         XCTAssertEqual(NativePDFWorkspacePreferences.load(root: root, documentID: "same-document", defaults: defaults, documentsRoot: currentDocuments), preset(4))
-        XCTAssertEqual(NativePDFPalettePreferences.load(root: root, defaults: defaults, documentsRoot: currentDocuments).favorites[0], preset(4).penStyle)
+        XCTAssertEqual(NativePDFPalettePreferences.load(root: root, defaults: defaults, documentsRoot: currentDocuments).recentPen, preset(4).penStyle)
         for (key, data) in original { XCTAssertEqual(defaults.data(forKey: key), data) }
         XCTAssertNotNil(defaults.data(forKey: NativePDFWorkspacePreferences.key(root: root, documentID: "same-document", documentsRoot: currentDocuments)))
         // Relocation has since updated settings. It must not discard the
@@ -85,8 +85,8 @@ final class NativePDFPreferenceScopeTests: XCTestCase {
         defaults.set(try JSONEncoder().encode(preset(1)), forKey: legacyDocumentKey(previous, "document"))
         defaults.set(try JSONEncoder().encode(preset(4)), forKey: legacyDocumentKey(root, "document"))
         XCTAssertEqual(NativePDFWorkspacePreferences.load(root: root, documentID: "document", defaults: defaults, documentsRoot: currentDocuments), preset(4))
-        var oldPalette = NativePDFPalettePreferences(); oldPalette.favorites[0] = preset(1).penStyle
-        var latestPalette = NativePDFPalettePreferences(); latestPalette.favorites[0] = preset(4).penStyle
+        var oldPalette = NativePDFPalettePreferences(); oldPalette.recentPen = preset(1).penStyle
+        var latestPalette = NativePDFPalettePreferences(); latestPalette.recentPen = preset(4).penStyle
         defaults.set(try JSONEncoder().encode(oldPalette), forKey: legacyPaletteKey(previous))
         defaults.set(try JSONEncoder().encode(latestPalette), forKey: legacyPaletteKey(root))
         XCTAssertEqual(NativePDFPalettePreferences.load(root: root, defaults: defaults, documentsRoot: currentDocuments), latestPalette)
@@ -103,7 +103,7 @@ final class NativePDFPreferenceScopeTests: XCTestCase {
         defaults.set(initial, forKey: legacyDocumentKey(original, "unopened"))
         defaults.set(initial, forKey: legacyDocumentKey(original, "opened-in-middle"))
         defaults.set(recent, forKey: legacyDocumentKey(middle, "opened-in-middle"))
-        var palette = NativePDFPalettePreferences(); palette.favorites[1] = preset(3).penStyle
+        var palette = NativePDFPalettePreferences(); palette.recentPen = preset(3).penStyle
         defaults.set(try JSONEncoder().encode(palette), forKey: legacyPaletteKey(original))
         try settings(middle, previous: original)
         NativePDFPreferenceScope.registerPreviousRoot(root: middle, documentsRoot: middleDocuments, defaults: defaults)

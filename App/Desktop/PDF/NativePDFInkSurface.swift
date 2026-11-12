@@ -531,7 +531,8 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         // in cropped children avoids a page-sized UIView backing allocation.
         scene.isUserInteractionEnabled = false; scene.accessibilityElementsHidden = true
         scene.contentMode = .scaleToFill
-        addSubview(navigationView); addSubview(scene); addSubview(metal); addSubview(decorations)
+        // Search marks sit above the ink and below the selection: the cropped decorations stay the top child.
+        addSubview(navigationView); addSubview(scene); addSubview(metal); addSubview(searchMarks); addSubview(decorations)
         decorations.drawCanvas = { [weak self] context in self?.drawDecorations(in: context) }
         decorations.hasContent = { [weak self] in self?.hasDecorations ?? false }
         metal.onSubmission = { [weak self] milliseconds in
@@ -567,8 +568,11 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     func scribbleInteraction(_ interaction: UIScribbleInteraction, shouldBeginAt location: CGPoint) -> Bool {
         recordInput("scribble.denied"); return false
     }
+    /// Search matches on this page, above its ink. Vector layers only, so this page-sized view has no bitmap of its own.
+    let searchMarks = NativePDFSearchMarksView()
     override func layoutSubviews() {
         super.layoutSubviews(); onLayout?(); refreshViewport(); layoutTextEditor()
+        if searchMarks.frame != bounds { searchMarks.frame = bounds }
     }
     /// Called by PDFKit's host after scrolling, zooming, and window resizing.
     /// Rendering is coalesced to a display frame; input still uses page coords.
@@ -871,7 +875,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     }
     // ponytail: calibration knobs for 붓. The same stored-point approach as the writing calibration, so a brush
     // stroke is ordinary inkVersion 5 ink on every device: no floor and a steeper curve spread a stroke over the
-    // whole V5 width range (hairline to full), where 만년필 stays in its upper half. A finger has no force and
+    // whole V5 width range (hairline to full), where the plain 펜 stays in its upper half. A finger has no force and
     // draws an even stroke; derive pressure from speed here if a finger brush should taper too.
     static var brushGain = 2.5, brushCurve = 1.8, brushFloor = 0.02
     static func brushPressure(_ raw: Double) -> Double {

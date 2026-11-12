@@ -1,93 +1,36 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The floating row above the page (Figma 269:8679): pages · zoom · search · view pills · thumbnails.
-/// Controls the design does not show (zoom steps, fit, export, hiding the tools, history while the
-/// palette is hidden) live in the "100% ∨" menu.
-struct NativePDFToolbar: View {
+/// The thumbnails button, alone at the top right of the page area, in the band under the palette (the palette is
+/// wider than the page area, so beside it there is no room). The row it used to end is not in the design
+/// (Figma 155:7503); what that row held (page jump, zoom, search, 원본 주석, 페이지 필기, and its zoom menu's fit,
+/// hide tools and export) is in the menu a long press opens. VoiceOver opens it with the 보기 메뉴 action.
+struct NativePDFViewButton: View {
     var model: NativePDFWorkspaceModel
-    var writingOnly = false
-    @State private var entry = "1"
-    @State private var showZoomMenu = false
-    static let height: CGFloat = 54, top: CGFloat = 10
+    @State private var showMenu = false
+    /// The palette's 40 pt cell in a glass circle, 14 from the page area's right edge (the cell is where the row had it).
+    static let size: CGFloat = 48, trailing: CGFloat = 14
+    private static let menuWidth: CGFloat = 260
+    private var unavailable: Bool { model.isLoading || model.isBusy || model.errorMessage != nil }
     var body: some View {
-        Group {
-            if !writingOnly {
-                ViewThatFits(in: .horizontal) { row(compact: false); row(compact: true) }
-                    .background { saveStatus }
-                    .padding(.horizontal, 10).frame(height: Self.height)
-                    .bandalGlass(in: Capsule())
-                    .padding(.horizontal, 8).padding(.top, Self.top)
+        Image("PDFIconGrid").foregroundStyle(NativePDFPaletteLook.icon).frame(width: 40, height: 40)
+            .background(model.showPages ? NativePDFPaletteLook.chosen : .clear, in: Circle())
+            .frame(width: Self.size, height: Self.size).contentShape(Circle()).bandalGlass(in: Circle())
+            .onTapGesture { model.togglePages() }
+            .onLongPressGesture(minimumDuration: 0.4) { showMenu = true }
+            // A real button for assistive technology and UI tests: its traits and enabled state are the system's.
+            .accessibilityRepresentation {
+                Button("미리보기") { model.togglePages() }.disabled(unavailable)
+                    .accessibilityValue("\(model.page) / \(model.pageCount)").accessibilityHint("길게 누르면 페이지 이동과 보기 메뉴가 열립니다")
+                    .accessibilityAddTraits(model.showPages ? .isSelected : []).accessibilityAction(named: "보기 메뉴") { showMenu = true }
+                    .accessibilityIdentifier("native-pdf-pages")
             }
-        }
-        .foregroundStyle(NativeDesktopTheme.text)
-        .buttonStyle(.plain)
-        .disabled(model.isLoading || model.isBusy || model.errorMessage != nil)
-        .onChange(of: model.page, initial: true) { _, value in entry = String(value) }
-    }
-    private func row(compact: Bool) -> some View {
-        HStack(spacing: 4) {
-            HStack(spacing: 2) {
-                icon("이전 페이지", id: "native-pdf-page-previous") { Image(systemName: "chevron.left").font(.system(size: 17)) } action: { model.go(to: model.page - 1) }
-                    .disabled(model.page <= 1)
-                pageBox
-                icon("다음 페이지", id: "native-pdf-page-next") { Image(systemName: "chevron.right").font(.system(size: 17)) } action: { model.go(to: model.page + 1) }
-                    .disabled(model.page >= model.pageCount)
+            // Under the button, their right edges in line: the menu stays inside a narrow pane.
+            .bandalPopover(isPresented: $showMenu, at: .bottom, offset: CGSize(width: (Self.size - Self.menuWidth) / 2, height: 0), width: Self.menuWidth, padding: 8) {
+                NativePDFViewMenu(model: model) { showMenu = false }
             }
-            Spacer(minLength: 0)
-            zoom(compact: compact)
-            separator
-            icon("PDF에서 찾기", id: "native-pdf-search") { Image(systemName: "magnifyingglass").font(.system(size: 17)) } action: { model.find() }
-            if !compact {
-                pill("원본 주석", "PDFIconAnnotations", id: "native-pdf-annotations", active: model.showAnnotations) { model.toggleAnnotations() }
-                    .accessibilityValue(String(model.annotationCount))
-                if model.hasPageNoteAction { pill("페이지 필기", "PDFIconPageNote", id: "native-pdf-page-note") { model.openPageNote() } }
-            }
-            separator
-            icon("미리보기", id: "native-pdf-pages", active: model.showPages) { Image("PDFIconGrid") } action: { model.togglePages() }
-        }
-    }
-    private var separator: some View { Rectangle().fill(NativeGlass.separator).frame(width: 1, height: 20) }
-    /// The current page is the entry itself: tap the box, type a number, press return.
-    private var pageBox: some View {
-        HStack(spacing: 4) {
-            TextField("", text: $entry).keyboardType(.numbersAndPunctuation).submitLabel(.go).multilineTextAlignment(.center)
-                .font(.system(size: 14, weight: .semibold)).fixedSize().frame(minWidth: 9)
-                .onSubmit { navigate() }.accessibilityLabel("페이지").accessibilityIdentifier("native-pdf-page")
-                .toolbar { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("페이지로 이동") { navigate() } } }
-            Text(verbatim: "/ \(model.pageCount)").font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.secondary)
-                .accessibilityIdentifier("native-pdf-page-count")
-        }.padding(.horizontal, 10).frame(height: 32).background(NativeGlass.tool, in: RoundedRectangle(cornerRadius: 8))
-    }
-    private func navigate() { model.go(to: Int(entry) ?? model.page); entry = String(model.page) }
-    private func zoom(compact: Bool) -> some View {
-        Button { showZoomMenu = true } label: {
-            HStack(spacing: 4) {
-                Text(verbatim: "\(Int((model.zoom * 100).rounded()))%").font(.system(size: 14, weight: .semibold))
-                Image(systemName: "chevron.down").font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.secondary)
-            }.padding(.horizontal, 10).frame(height: 36).contentShape(Rectangle())
-        }.accessibilityLabel("배율").accessibilityIdentifier("native-pdf-zoom")
-            .bandalPopover(isPresented: $showZoomMenu, width: 260, padding: 8) {
-                BandalMenu {
-                    menuRow("확대", "plus.magnifyingglass", id: "native-pdf-zoom-in", closes: false) { model.setZoom(model.zoom + 0.1) }
-                    menuRow("축소", "minus.magnifyingglass", id: "native-pdf-zoom-out", closes: false) { model.setZoom(model.zoom - 0.1) }
-                    menuRow("페이지 맞춤", "arrow.up.left.and.arrow.down.right", id: "native-pdf-fit") { model.fitPage() }
-                    BandalMenuDivider()
-                    if compact {
-                        menuRow("원본 주석", "doc.text", id: "native-pdf-annotations") { model.toggleAnnotations() }
-                        if model.hasPageNoteAction { menuRow("페이지 필기", "pencil", id: "native-pdf-page-note") { model.openPageNote() } }
-                    }
-                    if !model.toolsExpanded {
-                        menuRow("되돌리기", "arrow.uturn.backward", id: "native-pdf-undo", closes: false) { model.undo() }.disabled(!model.canUndo && !model.isEditingText)
-                        menuRow("다시 실행", "arrow.uturn.forward", id: "native-pdf-redo", closes: false) { model.redo() }.disabled(!model.canRedo && !model.isEditingText)
-                    }
-                    menuRow(model.toolsExpanded ? "필기 도구 숨기기" : "필기 도구 보이기", "pencil.tip.crop.circle", id: "native-pdf-toggle-tools") { model.toggleTools() }
-                    menuRow("필기 포함 PDF 내보내기", "square.and.arrow.up", id: "native-pdf-export") { model.exportPDF() }
-                }
-            }
-    }
-    private func menuRow(_ title: String, _ symbol: String, id: String, closes: Bool = true, action: @escaping () -> Void) -> some View {
-        BandalMenuRow(title, symbol: symbol) { if closes { showZoomMenu = false }; action() }.accessibilityIdentifier(id)
+            .background { saveStatus }
+            .disabled(unavailable)
     }
     /// Save state for assistive technology and UI tests; activating it shows or hides the tools.
     private var saveStatus: some View {
@@ -97,20 +40,71 @@ struct NativePDFToolbar: View {
             .accessibilityHint(model.pendingCount > 0 ? "필기 저장 중" : "모든 필기 저장됨")
             .accessibilityAction { model.toggleTools() }
     }
-    private func pill(_ title: LocalizedStringKey, _ image: String, id: String, active: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(image)
-                Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-            }.padding(.horizontal, 10).frame(height: 34)
-                .background(active ? NativeDesktopTheme.raised : NativeGlass.tool, in: RoundedRectangle(cornerRadius: 10)).contentShape(Rectangle())
-        }.accessibilityIdentifier(id).accessibilityAddTraits(active ? .isSelected : []).fixedSize()
+}
+
+/// The long-press menu of the thumbnails button. Every control keeps the identifier it had in the row.
+private struct NativePDFViewMenu: View {
+    var model: NativePDFWorkspaceModel
+    let close: () -> Void
+    @State private var entry: String
+    init(model: NativePDFWorkspaceModel, close: @escaping () -> Void) {
+        self.model = model; self.close = close; _entry = State(initialValue: String(model.page))
     }
-    private func icon<Label: View>(_ title: LocalizedStringKey, id: String, active: Bool = false, @ViewBuilder label: () -> Label, action: @escaping () -> Void) -> some View {
+    var body: some View {
+        BandalMenu {
+            HStack(spacing: 0) {
+                step("이전 페이지", "chevron.left", id: "native-pdf-page-previous", enabled: model.page > 1) { model.go(to: model.page - 1) }
+                Spacer(minLength: 0)
+                pageBox
+                Spacer(minLength: 0)
+                step("다음 페이지", "chevron.right", id: "native-pdf-page-next", enabled: model.page < model.pageCount) { model.go(to: model.page + 1) }
+            }
+            HStack(spacing: 0) {
+                step("축소", "minus", id: "native-pdf-zoom-out") { model.setZoom(model.zoom - 0.1) }
+                Spacer(minLength: 0)
+                Text(verbatim: "\(Int((model.zoom * 100).rounded()))%").font(.system(size: 16, weight: .medium)).monospacedDigit()
+                    .accessibilityLabel("배율").accessibilityValue("\(Int((model.zoom * 100).rounded()))%").accessibilityIdentifier("native-pdf-zoom")
+                Spacer(minLength: 0)
+                step("확대", "plus", id: "native-pdf-zoom-in") { model.setZoom(model.zoom + 0.1) }
+            }
+            row("페이지 맞춤", "arrow.up.left.and.arrow.down.right", id: "native-pdf-fit") { model.fitPage() }
+            BandalMenuDivider()
+            row("PDF에서 찾기", "magnifyingglass", id: "native-pdf-search") { model.find() }
+            BandalMenuRow("원본 주석", asset: "PDFIconAnnotations", checked: model.showAnnotations) { close(); model.toggleAnnotations() }
+                .accessibilityValue(String(model.annotationCount)).accessibilityIdentifier("native-pdf-annotations")
+            if model.hasPageNoteAction {
+                BandalMenuRow("페이지 필기", asset: "PDFIconPageNote") { close(); model.openPageNote() }.accessibilityIdentifier("native-pdf-page-note")
+            }
+            BandalMenuDivider()
+            if !model.toolsExpanded {
+                row("되돌리기", "arrow.uturn.backward", id: "native-pdf-undo", closes: false) { model.undo() }.disabled(!model.canUndo && !model.isEditingText)
+                row("다시 실행", "arrow.uturn.forward", id: "native-pdf-redo", closes: false) { model.redo() }.disabled(!model.canRedo && !model.isEditingText)
+            }
+            row(model.toolsExpanded ? "필기 도구 숨기기" : "필기 도구 보이기", "pencil.tip.crop.circle", id: "native-pdf-toggle-tools") { model.toggleTools() }
+            row("필기 포함 PDF 내보내기", "square.and.arrow.up", id: "native-pdf-export") { model.exportPDF() }
+        }
+        .onChange(of: model.page) { _, value in entry = String(value) }
+    }
+    /// The current page is the entry itself: tap the box, type a number, press return.
+    private var pageBox: some View {
+        HStack(spacing: 4) {
+            TextField("", text: $entry).keyboardType(.numbersAndPunctuation).submitLabel(.go).multilineTextAlignment(.center)
+                .font(.system(size: 16, weight: .semibold)).fixedSize().frame(minWidth: 10)
+                .onSubmit { navigate() }.accessibilityLabel("페이지").accessibilityIdentifier("native-pdf-page")
+                .toolbar { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("페이지로 이동") { navigate() } } }
+            Text(verbatim: "/ \(model.pageCount)").font(.system(size: 16)).foregroundStyle(NativeDesktopTheme.secondary)
+                .accessibilityIdentifier("native-pdf-page-count")
+        }.padding(.horizontal, 12).frame(height: 34).background(NativeGlass.tool, in: RoundedRectangle(cornerRadius: 8))
+    }
+    private func navigate() { model.go(to: Int(entry) ?? model.page); entry = String(model.page) }
+    private func step(_ title: LocalizedStringKey, _ symbol: String, id: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            label().frame(width: 38, height: 38)
-                .background(active ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 10)).contentShape(Rectangle())
-        }.accessibilityLabel(title).accessibilityIdentifier(id).accessibilityAddTraits(active ? .isSelected : []).help(title)
+            Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(NativeGlass.icon).opacity(enabled ? 1 : 0.35)
+                .frame(width: 44, height: BandalMetrics.rowHeight).contentShape(Rectangle())
+        }.buttonStyle(BandalRowStyle()).disabled(!enabled).accessibilityLabel(title).accessibilityIdentifier(id)
+    }
+    private func row(_ title: String, _ symbol: String, id: String, closes: Bool = true, action: @escaping () -> Void) -> some View {
+        BandalMenuRow(title, symbol: symbol) { if closes { close() }; action() }.accessibilityIdentifier(id)
     }
 }
 
@@ -225,7 +219,11 @@ struct NativePDFPagesPanel: View {
     /// Every thumbnail shares one fixed aspect ratio, so one measured height
     /// serves all rows; per-row writes re-rendered the whole panel per page.
     @State private var thumbnailHeight: CGFloat?
+    @Environment(\.locale) private var locale
     var body: some View {
+        // While the document is searched only the pages with a match stay, each with its count.
+        let counts = model.search.counts
+        let pages = (1...max(1, model.pageCount)).filter { counts == nil || counts?[$0] != nil }
         VStack(spacing: 0) {
             HStack {
                 Text("페이지").font(.system(size: 12, weight: .semibold)); Spacer(); Text("\(model.pageCount)쪽").font(.system(size: 10))
@@ -233,6 +231,7 @@ struct NativePDFPagesPanel: View {
                     .disabled(!model.pageCanAppend).accessibilityLabel("페이지 추가").accessibilityIdentifier("native-pdf-page-add")
             }
                 .foregroundStyle(NativeDesktopTheme.muted).padding(.leading, 12).padding(.trailing, 4).frame(height: 40)
+            NativePDFPagesSearchField(search: model.search).padding(.horizontal, 12).padding(.bottom, 8)
             if !model.pageCanRestructure, model.pageCanAppend, let reason = model.pageHistoryReason {
                 Text(reason).font(.system(size: 10)).foregroundStyle(NativeDesktopTheme.muted).padding(.horizontal, 12).padding(.bottom, 6)
                     .frame(maxWidth: .infinity, alignment: .leading).accessibilityIdentifier("native-pdf-pages-sync-note")
@@ -240,13 +239,16 @@ struct NativePDFPagesPanel: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 4) {
-                        ForEach(1...max(1, model.pageCount), id: \.self) { number in
+                        ForEach(pages, id: \.self) { number in
                             VStack(spacing: 0) {
-                                insertionMarker(number)
-                                thumbnail(number)
+                                if counts == nil { insertionMarker(number) }
+                                thumbnail(number, matches: counts?[number])
                             }.id(number)
                         }
-                        insertionMarker(model.pageCount + 1).frame(height: 20)
+                        if counts == nil { insertionMarker(model.pageCount + 1).frame(height: 20) }
+                        else if pages.isEmpty {
+                            Text("결과 없음").font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted).padding(.top, 16).accessibilityIdentifier("native-pdf-pages-empty")
+                        }
                     }.padding(.horizontal, 12).padding(.bottom, 12)
                 }
                 .onChange(of: model.page) { _, page in withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(page, anchor: .center) } }
@@ -273,12 +275,19 @@ struct NativePDFPagesPanel: View {
         Rectangle().fill(model.pageDropSlot == slot ? NativeDesktopTheme.accent : .clear).frame(height: 4)
             .onDrop(of: [UTType.text], delegate: NativePDFPageDropDelegate(model: model, slot: slot))
     }
-    private func thumbnail(_ number: Int) -> some View {
+    private func thumbnail(_ number: Int, matches: Int? = nil) -> some View {
         VStack(spacing: 0) {
             Button { model.go(to: number) } label: {
                 NativePDFPageThumbnail(source: model.thumbnailSource, page: number, rows: model.thumbnailRows(number), inkRevision: model.thumbnailRevisions[number] ?? 0)
                     .padding(3).overlay(RoundedRectangle(cornerRadius: 5).stroke(model.page == number ? NativeDesktopTheme.accent : .clear, lineWidth: 2))
-            }.accessibilityLabel("\(number)페이지").accessibilityIdentifier("native-pdf-thumbnail-\(number)")
+                    .overlay(alignment: .topTrailing) {
+                        if let matches {
+                            Text(verbatim: String(matches)).font(.system(size: 11, weight: .semibold).monospacedDigit()).foregroundStyle(.black)
+                                .padding(.horizontal, 6).frame(minWidth: 20, minHeight: 20).background(Color(uiColor: NativePDFSearchMarksView.match), in: Capsule())
+                                .padding(6)
+                        }
+                    }
+            }.accessibilityValue(matches.map { String(format: NativeAppLocale.string("일치 %lld곳", locale), $0) } ?? "").accessibilityLabel("\(number)페이지").accessibilityIdentifier("native-pdf-thumbnail-\(number)")
                 .accessibilityAddTraits(model.page == number ? .isSelected : [])
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                     if thumbnailHeight != height { thumbnailHeight = height }
@@ -305,7 +314,8 @@ private struct NativePDFPageDropDelegate: DropDelegate {
     let slot: Int
     var midpoint: CGFloat? = nil
     private func target(_ info: DropInfo) -> Int { slot + (midpoint.map { info.location.y > $0 } == true ? 1 : 0) }
-    func validateDrop(info: DropInfo) -> Bool { model.draggedPage != nil && !model.isBusy && model.pageCanRestructure }
+    // A filtered list hides the pages a drop would land between.
+    func validateDrop(info: DropInfo) -> Bool { model.draggedPage != nil && !model.isBusy && model.pageCanRestructure && model.search.counts == nil }
     func dropEntered(info: DropInfo) { if validateDrop(info: info) { model.pageDropSlot = target(info) } }
     func dropExited(info: DropInfo) { if model.pageDropSlot == slot || midpoint != nil && model.pageDropSlot == slot + 1 { model.pageDropSlot = nil } }
     func dropUpdated(info: DropInfo) -> DropProposal? {

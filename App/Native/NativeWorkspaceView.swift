@@ -216,10 +216,11 @@ struct NativeWorkspaceView: View {
                 // the width animates and the clipped content slides with it.
                 HStack(spacing: 0) { aiRail.frame(width: aiHostWidth); railDivider }
                     .frame(width: aiVisible ? aiHostWidth + 1 : 0, alignment: .trailing)
-                    .clipped()
+                    // Cut at the sides only: the input capsule reaches below the home-indicator line.
+                    .mask { Rectangle().padding(.bottom, -40) }
                     // Outside the clip, so the glass reaches under the home indicator like the other panels.
                     .background(NativeGlass.panel)
-                    .opacity(aiVisible ? 1 : 0).allowsHitTesting(aiVisible && annotation.request == nil).accessibilityHidden(!aiVisible)
+                    .allowsHitTesting(aiVisible && annotation.request == nil).accessibilityHidden(!aiVisible)
                 // Editors and the inspector remain mounted while covered. Navigation
                 // and opening a keyboard must not discard an in-progress draft.
                 let covered = section != .library || auxiliary != nil || windowsOverviewOpen
@@ -249,7 +250,8 @@ struct NativeWorkspaceView: View {
                             NativeToolsWorkspace(section: section, store: store, services: services)
                         }
                     }
-                }.frame(maxWidth: .infinity, maxHeight: .infinity).background(NativeGlass.paper)
+                // The page, note or web view runs to the window's bottom edge, under the home indicator.
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).ignoresSafeArea(.container, edges: .bottom).background(NativeGlass.paper)
                 if chrome.rightPinned {
                     railDivider
                     Color.clear.frame(width: chrome.rightWidth)
@@ -288,8 +290,11 @@ struct NativeWorkspaceView: View {
                         .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
                         .background(NativeGlass.panel)
                         .overlay(alignment: .leading) { if rightVisible && !chrome.rightPinned { railDivider } }
-                        .offset(x: rightVisible ? 0 : (chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth))
-                        .opacity(rightVisible ? 1 : 0).allowsHitTesting(rightVisible).accessibilityHidden(!rightVisible)
+                        // Off the window's edge while closed, and opaque on the way: a fade would show the wallpaper through the glass.
+                        // It turns clear only once the slide is over, which is what takes its UIKit host out of the accessibility tree.
+                        .offset(x: rightVisible ? 0 : (chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth) + 1)
+                        .animation(rightVisible ? nil : .linear(duration: 0.01).delay(0.45)) { $0.opacity(rightVisible ? 1 : 0) }
+                        .allowsHitTesting(rightVisible).accessibilityHidden(!rightVisible)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             }
@@ -300,15 +305,16 @@ struct NativeWorkspaceView: View {
                         .position(x: geometry.size.width - chrome.rightWidth - 0.5, y: geometry.size.height / 2)
                 }
             }
-            // The PDF palette floats over the side panels; under a drawer it stays inside its pane.
-            .overlay { NativePDFPaletteLayer(host: pdfPalette, covered: compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) || rightVisible && !chrome.rightPinned) }
+            // The PDF palette floats over the side panels; under a drawer, or beside another pane (whose bar it would cover), it stays inside its pane.
+            .overlay { NativePDFPaletteLayer(host: pdfPalette, covered: compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) || rightVisible && !chrome.rightPinned || navigation.groups.count > 1) }
             // Over the rail and both panels: the overview is the whole window (Figma 132:2517).
             .overlay { if windowsOverviewOpen { windowsOverview } }
             .overlay(alignment: .topTrailing) {
                 NativeWorkspaceWindowControls(mode: navigation.chromeMode, overview: windowsOverviewOpen,
                     rightVisible: rightVisible, enabled: showsWorkspace && !boardOverlayOpen && workspaceContext != nil && !busy && annotation.request == nil,
                     changeMode: setChromeMode, toggleOverview: toggleWindowsOverview,
-                    toggleInspector: { toggleInspectorFromControls(width: geometry.size.width) })
+                    toggleInspector: { toggleInspectorFromControls(width: geometry.size.width) },
+                    store: store, shareDocument: section == .library && auxiliary == nil ? navigation.active : nil)
                     .padding(.trailing, NativeWorkspaceWindowControls.trailing)
                     .padding(.top, NativeWorkspaceWindowControls.top)
                     .nativeWorkspacePreviewExcluded()
@@ -320,7 +326,8 @@ struct NativeWorkspaceView: View {
             .overlay { NativeDocumentPreviewLayer(store: store) }
             // @AppStorage writes reach the view outside withAnimation's transaction,
             // so the slide is keyed on what is visible rather than on the toggles.
-            .animation(Self.railAnimation, value: [chrome.leftPinned, aiVisible, chrome.aiPinned, rightVisible, chrome.rightPinned,
+            // The left slot counts as one: the home sidebar and AI trade places at once, only opening and folding slide.
+            .animation(Self.railAnimation, value: [chrome.leftPinned || aiVisible, rightVisible, chrome.rightPinned,
                                                    compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width)])
             .blur(radius: settingsOpen ? 4 : boardOverlayOpen ? 3 : 0)
             // Its own reader, clear of the keyboard: typing a task must not squeeze the popup.
@@ -584,7 +591,9 @@ struct NativeWorkspaceView: View {
     /// Pinned rails push the editor. Opening one closes the others, in this
     /// order, until the editor keeps its minimum width; narrow windows use drawers.
     private func setRail(_ rail: Rail, open: Bool, width: CGFloat) {
-        withAnimation(Self.railAnimation) {
+        // The home sidebar and AI trading the left slot is a swap, not a fold.
+        let swap = fitsAlone(rail, width: width) && (rail == .ai && (open ? courseRailOpen : courseRailBeforeAI) || rail == .course && open && aiRailOpen)
+        withAnimation(swap ? nil : Self.railAnimation) {
             guard fitsAlone(rail, width: width) else {
                 compactCourseRail = rail == .course && open
                 compactAIRail = rail == .ai && open
@@ -1250,6 +1259,21 @@ struct NativeWorkspaceView: View {
         if event.channel == "nativeWorkspace:openBrowserURL", let payload = event.payload as? [String: Any], let url = payload["url"] as? String {
             openBrowserURL(url, destination: payload["nativeWorkspaceTarget"] as? NativeWorkspaceTarget ?? navigation.captureTarget()); return
         }
+        if event.channel == "nativeWorkspace:openConversation", let value = event.payload as? [String: Any],
+           let course = value["courseId"] as? String, let conversation = value["conversationId"] as? String, let listed = store.courses.first(where: { $0.id == course }) {
+            // A conversation belongs to the course or project space it was held in.
+            Task { @MainActor in
+                let context: NativeWorkspaceContext
+                if let root = value["rootRelPath"] as? String, let project = try? await NativeWorkspaceContext.loadProject(store: store, binding: .init(courseID: course, rootRelPath: root)) { context = project }
+                else if let current = workspaceContext, current.courseID == course, current.kind != .project { context = current }
+                else { context = .course(listed) }
+                store.pendingAssistantMessageIDs[context.id] = value["messageId"] as? String
+                store.pendingAssistantConversationIDs[context.id] = conversation
+                if workspaceContext?.id != context.id { changeWorkspace(context) }
+                openAIRail()
+            }
+            return
+        }
         if event.channel == "nativeWorkspace:openDocument", let value = event.payload as? [String: Any],
            let course = value["courseId"] as? String, let path = value["relPath"] as? String {
             let document = NativeDocumentReference(courseID: course, relativePath: path, title: value["title"] as? String ?? (path as NSString).lastPathComponent, kind: value["kind"] as? String ?? "pdf")
@@ -1280,6 +1304,7 @@ struct NativeWorkspaceView: View {
                             var preferences = NativePDFWorkspacePreferences.load(root: store.root, documentID: opened.id)
                             preferences.pendingPage = page
                             preferences.save(root: store.root, documentID: opened.id)
+                            if let highlight = value["highlight"] as? [String: Any] { store.pendingPDFHighlights[opened.id] = highlight.merging(["page": page]) { _, new in new } }
                         }
                         store.events.send(.init(channel: "nativeWorkspace:goToPage", payload: ["courseId": course, "relPath": path, "page": page, "tabID": opened.id]))
                     }

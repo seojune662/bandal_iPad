@@ -66,6 +66,91 @@ final class NativeLibraryPresentationUITests: XCTestCase {
     }
 
     @MainActor
+    func testListViewExpandsFoldersInPlaceAndSearchesWholeScope() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing"]
+        app.launch()
+        XCTAssertTrue(app.buttons["native-course-add-menu"].waitForExistence(timeout: 20), app.debugDescription)
+        app.buttons["native-course-add-menu"].tap()
+        let courseName = app.textFields["native-course-name"]
+        XCTAssertTrue(courseName.waitForExistence(timeout: 5))
+        courseName.tap(); courseName.typeText("Tree Library")
+        app.buttons["native-create-course"].tap()
+        XCTAssertTrue(app.buttons["native-library-create"].waitForExistence(timeout: 20), app.debugDescription)
+        chooseView("list", title: "목록", in: app)
+        createFolder("Parent", path: "Parent", in: app)
+        createFolder("Sibling", path: "Sibling", in: app)
+        let parent = app.buttons["native-material-Parent"], sibling = app.buttons["native-material-Sibling"]
+        let breadcrumbs = app.descendants(matching: .any).matching(identifier: "native-library-breadcrumbs").firstMatch
+
+        parent.tap()
+        // A new folder lands in the folder the tree last opened.
+        createFolder("Child", path: "Parent/Child", in: app)
+        let child = app.buttons["native-material-Parent/Child"]
+        XCTAssertTrue(parent.exists && sibling.exists, "Expanding must keep the parent and sibling rows: " + app.debugDescription)
+        XCTAssertTrue(child.isHittable)
+        XCTAssertFalse(breadcrumbs.exists, "The tree never shows breadcrumbs")
+        XCTAssertEqual(child.frame.height, 52, accuracy: 1, "List rows are 52 pt high")
+
+        let disappears = { (element: XCUIElement) in
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)], timeout: 5) == .completed
+        }
+        parent.tap()
+        XCTAssertTrue(disappears(child), "A second tap collapses the folder: " + app.debugDescription)
+        XCTAssertTrue(parent.exists && sibling.exists)
+
+        parent.tap()
+        XCTAssertTrue(child.waitForExistence(timeout: 5))
+        let search = app.descendants(matching: .any).matching(identifier: "native-library-search").firstMatch
+        search.tap(); app.typeText("Sibling")
+        // Child does not match, so its row going away means the flat results replaced the tree.
+        XCTAssertTrue(disappears(child), "Search replaces the tree with flat results: " + app.debugDescription)
+        XCTAssertTrue(sibling.exists, "List search covers the whole scope, not the last opened folder: " + app.debugDescription)
+        XCTAssertFalse(breadcrumbs.exists, "The tree never shows breadcrumbs, even while searching")
+        screenshot("목록 보기 전체 범위 검색")
+        let clear = app.buttons["검색어 지우기"].firstMatch
+        clear.tap()
+        XCTAssertTrue(child.waitForExistence(timeout: 5), "Clearing search returns to the tree: " + app.debugDescription)
+
+        // Folder browsing and current-folder search stay in the icon view.
+        parent.tap()
+        XCTAssertTrue(disappears(child))
+        chooseView("icons", title: "아이콘", in: app)
+        XCTAssertTrue(breadcrumbs.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(parent.exists && sibling.exists && !child.exists, "The icon view starts at the root after the tree collapsed Parent: " + app.debugDescription)
+        parent.tap()
+        XCTAssertTrue(child.waitForExistence(timeout: 5), "The icon view enters the folder: " + app.debugDescription)
+        XCTAssertFalse(sibling.exists, "The icon view shows only the open folder")
+        search.tap(); app.typeText("Sibling")
+        XCTAssertTrue(app.staticTexts["검색 결과가 없습니다"].waitForExistence(timeout: 5), "Icon view search stays inside the open folder: " + app.debugDescription)
+        clear.tap()
+        chooseView("list", title: "목록", in: app)
+        XCTAssertTrue(child.waitForExistence(timeout: 5) && sibling.exists, "Switching to the tree expands the folder that was open: " + app.debugDescription)
+        XCTAssertFalse(breadcrumbs.exists)
+
+        app.buttons["native-library-create"].tap(); app.buttons["새 노트"].tap()
+        let title = app.textFields["native-new-note-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Tree Note")
+        app.buttons["native-new-note-create"].tap()
+        XCTAssertTrue(app.otherElements["native-pdf-workspace"].waitForExistence(timeout: 20), app.debugDescription)
+        app.buttons["native-close-document"].tap()
+        let note = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-material-Parent/", "Tree Note")).firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 10), "A new note lands in the folder the tree last opened: " + app.debugDescription)
+        XCTAssertEqual(note.frame.height, 52, accuracy: 1)
+        sleep(3) // Not an assertion: lets the thumbnail render for the screenshot.
+        screenshot("목록 보기 폴더 펼침")
+
+        app.terminate()
+        app.launchArguments = ["--native-ui-testing", "-native.appearance", "dark"]
+        app.launch()
+        XCTAssertTrue(child.waitForExistence(timeout: 20), "The restored tree keeps Parent expanded: " + app.debugDescription)
+        XCTAssertTrue(sibling.exists && note.exists)
+        sleep(3)
+        screenshot("목록 보기 폴더 펼침 다크")
+    }
+
+    @MainActor
     func testSourceTrayImageDragsIntoPDFAndMarkdown() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()

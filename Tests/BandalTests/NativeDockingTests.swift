@@ -18,8 +18,13 @@ final class NativeDockingTests: XCTestCase {
         let geometry = layout.geometry(in: bounds)
         let strip = NativeDockStripMetrics.resolve(paneFrames: geometry.panes.map(\.frame), bounds: bounds)
         XCTAssertEqual(strip, .stacked)
-        let projected = Dock.projectDocuments(documents, geometry: geometry, layout: layout, bounds: bounds, headerHeight: strip.total)
+        let projected = Dock.projectDocuments(documents, geometry: geometry, layout: layout, bounds: bounds, headerHeight: strip.total, windowed: true)
         XCTAssertEqual(projected.filter(\.visible).count, 4)
+        // Full screen, every pane's editor starts right under its strip.
+        for editor in Dock.projectDocuments(documents, geometry: geometry, layout: layout, bounds: bounds, headerHeight: strip.total, windowed: false) where editor.visible {
+            let pane = try XCTUnwrap(geometry.panes.first { $0.id == editor.groupID })
+            XCTAssertEqual(editor.frame.minY - pane.frame.minY, 49)
+        }
         for pane in geometry.panes {
             let editor = try XCTUnwrap(projected.first { $0.groupID == pane.id })
             let expectedHeader: CGFloat = pane.frame.minY == 0 ? 65 : 49

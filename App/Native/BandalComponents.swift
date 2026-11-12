@@ -692,9 +692,14 @@ private struct BandalPopoverPresenter<Content: View>: UIViewRepresentable {
             }
             self.host = host
             // The system rounds and clips a popover's content (about 26 pt); the card draws its own corners (14–34).
+            // It also casts its own shadow, a dark rectangle the size of the whole popover, wider than the card: the card's shadow is the only one.
             presenter.present(host, animated: true) { [weak host] in
                 var view = host?.view.superview
-                while let current = view, !(current is UIWindow) { current.layer.cornerRadius = 0; current.layer.masksToBounds = false; view = current.superview }
+                while let current = view, !(current is UIWindow) {
+                    current.layer.cornerRadius = 0; current.layer.masksToBounds = false; current.layer.shadowOpacity = 0
+                    for sibling in current.subviews where String(describing: type(of: sibling)).contains("Shadow") { sibling.isHidden = true }
+                    view = current.superview
+                }
             }
             // UIKit's dimming view stays (it takes the outside tap); only its tint goes.
             if !dims { host.presentationController?.containerView?.subviews.first { String(describing: type(of: $0)).contains("Dimming") }?.alpha = 0.011 }

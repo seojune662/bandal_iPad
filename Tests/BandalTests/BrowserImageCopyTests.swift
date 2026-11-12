@@ -41,7 +41,7 @@ final class BrowserImageCopyTests: XCTestCase {
         XCTAssertTrue(request.contains("image_fixture_session=selected_private_profile"))
         XCTAssertTrue(request.lowercased().contains("dnt: 1"))
         XCTAssertTrue(request.lowercased().contains("sec-gpc: 1"))
-        XCTAssertTrue(request.contains(" Safari/")); XCTAssertTrue(request.contains(" Bandal"))
+        XCTAssertTrue(request.contains(" Safari/")); XCTAssertTrue(request.contains(" Version/"))
         XCTAssertFalse(page.dataStore.isPersistent)
         let normalCookies = await host.persistence!.dataStore(profile: "default", isPrivate: false).httpCookieStore.allCookies()
         XCTAssertFalse(normalCookies.contains { $0.name == "image_fixture_session" })

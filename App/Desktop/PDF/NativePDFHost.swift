@@ -345,9 +345,11 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             return try item.objectScene(request)
         case "pdfNative:navigate":
             try item.navigate(request); return item.state
-        case "pdfNative:find":
-            try item.flush()
-            item.pdfView.findInteraction.presentFindNavigator(showingReplace: false)
+        case "pdfNative:textMatches":
+            guard let page = request["page"] as? Int, let query = request["query"] as? String else { throw NativePDFError.invalid("찾을 페이지를 확인해 주세요.") }
+            return ["matches": item.textMatches(query, page: page)]
+        case "pdfNative:searchMarks":
+            item.setSearchMarks(request["marks"] as? [[String: Any]] ?? [])
             return [:]
         case "pdfNative:ack":
             let started = CACurrentMediaTime()
@@ -689,6 +691,31 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private var imageTasks: [String: Task<Void, Never>] = [:]
     private var imageFailures: Set<String> = []
     private var overlays: [Int: NativePDFInkSurface] = [:]
+    private var searchMarks: [Int: [NativePDFSearchMark]] = [:]
+    /// Replaces every search mark. A page that scrolls in later picks its marks up when its overlay is made.
+    func setSearchMarks(_ values: [[String: Any]]) {
+        var next: [Int: [NativePDFSearchMark]] = [:]
+        for value in values { if let page = value["page"] as? Int, let mark = NativePDFSearchMark(value) { next[page, default: []].append(mark) } }
+        searchMarks = next
+        for (page, overlay) in overlays { overlay.searchMarks.marks = next[page] ?? [] }
+        updateAccessibilityState()
+    }
+    /// Every occurrence of `query` in the page's own text, in reading order: one array of line rects each,
+    /// normalised to the displayed page from the top left.
+    func textMatches(_ query: String, page number: Int) -> [[[Double]]] {
+        guard !query.isEmpty, let page = document.page(at: number - 1), let text = page.string as NSString? else { return [] }
+        let coordinates = NativePDFPageCoordinates(page: page)
+        var matches: [[[Double]]] = [], cursor = NSRange(location: 0, length: text.length)
+        while cursor.length > 0 {
+            let found = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], range: cursor)
+            guard found.location != NSNotFound, found.length > 0 else { break }
+            let lines = page.selection(for: found)?.selectionsByLine().map { coordinates.normalizedRect($0.bounds(for: page)) } ?? []
+            let rects = lines.filter { ($0["width"] ?? 0) > 0 && ($0["height"] ?? 0) > 0 }.map { [$0["x"] ?? 0, $0["y"] ?? 0, $0["width"] ?? 0, $0["height"] ?? 0] }
+            if !rects.isEmpty { matches.append(rects) }
+            cursor = NSRange(location: NSMaxRange(found), length: text.length - NSMaxRange(found))
+        }
+        return matches
+    }
     private var deferredOverlayPages: Set<Int> = []
     private var deferringOverlayPreparation = false
     var textEditor: (page: Int, view: NativePDFTextInputView)? { didSet {
@@ -900,7 +927,6 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             pdfView.pageBreakMargins = UIEdgeInsets(top: 10 * unit, left: 39 * unit, bottom: 10 * unit, right: 39 * unit)
         }
         pdfView.document = document; pdfView.autoScales = true
-        pdfView.isFindInteractionEnabled = true
         // Consume measured Pencil events in the recognizer phase. Waiting for
         // UIView.touchesBegan lets PDFKit's ancestors delay or absorb the stream.
         pencilGesture.targetAtLocation = { [weak self] point in
@@ -934,7 +960,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         pageActions.showsMenuAsPrimaryAction = true
         pageActions.menu = UIMenu(children: [
             UIAction(title: "페이지 이미지 복사", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in self?.sendPageAction("imageMenu") },
-            UIAction(title: "PDF에서 찾기", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.pdfView.findInteraction.presentFindNavigator(showingReplace: false) }
+            UIAction(title: "PDF에서 찾기", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.onEvent("find", [:]) }
         ])
         pdfView.addSubview(pageActions)
         for name in [Notification.Name.PDFViewPageChanged, .PDFViewScaleChanged] {
@@ -977,11 +1003,11 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                 scroll.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
                 scroll.pinchGestureRecognizer?.isEnabled = true
                 scroll.alwaysBounceVertical = true // pull past the last page to add one
-                // The first page rests below the floating top row and palette (80 pt with the page's own 10 pt margin).
-                if scroll.contentInset.top != 70 {
+                // The first page rests below the floating palette (14 + 56, then 20: 90 pt with the page's own 10 pt margin).
+                if scroll.contentInset.top != 80 {
                     let atTop = scroll.contentOffset.y <= 0
-                    scroll.contentInset.top = 70
-                    if atTop { scroll.contentOffset.y = -70 }
+                    scroll.contentInset.top = 80
+                    if atTop { scroll.contentOffset.y = -80 }
                 }
                 if nativePinch !== scroll.pinchGestureRecognizer, nativePinch == nil {
                     nativePinch = scroll.pinchGestureRecognizer
@@ -1587,6 +1613,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             scrollView?.zoomScale ?? 0, scrollView?.minimumZoomScale ?? 0, scrollView?.maximumZoomScale ?? 0, pdfView.autoScales ? 1 : 0, workspaceActive ? 1 : 0)
         #if DEBUG
         pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " drawings=\(drawingSnapshots.order.count) pending=\(pending.count)"
+        let marks = searchMarks.values.joined()
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " searchMarks=\(marks.count) handwritingMarks=\(marks.filter(\.handwriting).count) currentMarks=\(marks.filter(\.current).count)"
         let savedPageCounts = drawingSnapshots.rowsByPage.mapValues(\.count)
         let savedPages = (1...max(1, document.pageCount)).map { "\($0):\(savedPageCounts[$0] ?? 0)" }.joined(separator: ",")
         pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " savedObjectPages=" + savedPages
@@ -1788,6 +1816,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             overlay.mapper = InkCoordinateMapper(canvasToPDF: transform, geometry: coordinates.geometry)
             self.publishSelectionFrame()
         }
+        overlay.searchMarks.marks = searchMarks[number] ?? []
         overlays[number] = overlay; refreshOverlays(pages: [number]); return overlay
     }
     func pdfView(_ pdfView: PDFView, willDisplayOverlayView overlayView: UIView, for page: PDFPage) { overlayView.setNeedsLayout() }

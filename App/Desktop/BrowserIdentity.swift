@@ -1,10 +1,12 @@
 import Foundation
+import UIKit
 import WebKit
 
-/// Keep WebKit's automatic desktop/mobile identity. Its desktop UA omits the
-/// Safari compatibility token, causing some sites to serve obsolete HTML.
-/// Append only the engine-reported token using the public configuration API;
-/// never freeze a complete user agent or fabricate a Chrome/Safari version.
+/// Keep WebKit's automatic desktop/mobile identity. Its UA omits Safari's
+/// `Version/… Safari/…` tokens, so Gmail and others report an unsupported browser.
+/// Append exactly those two through the public configuration API: the Safari
+/// token from the engine's own version, `Version/` from the system's (Safari has
+/// carried the system's version number since iOS 13). Never replace the whole user agent.
 @MainActor
 enum DesktopBrowserIdentity {
     private static let preparation = BrowserIdentityPreparation()
@@ -21,10 +23,11 @@ enum DesktopBrowserIdentity {
                 return name
         }
     }
-    static func applicationName(from identity: String) -> String? {
-        guard identity.utf8.count <= 4096,
+    static func applicationName(from identity: String, systemVersion: String = UIDevice.current.systemVersion) -> String? {
+        let version = systemVersion.split(separator: ".", omittingEmptySubsequences: false).prefix(2).map(String.init)
+        guard identity.utf8.count <= 4096, !version.isEmpty, version.allSatisfy({ !$0.isEmpty && $0.utf8.allSatisfy { (48...57).contains($0) } }),
               let range = identity.range(of: #"\bAppleWebKit/[0-9]+(?:\.[0-9]+)*(?=\s|$)"#, options: .regularExpression) else { return nil }
-        return identity[range].replacingOccurrences(of: "AppleWebKit/", with: "Safari/") + " Bandal"
+        return "Version/\(version[0]).\(version.count > 1 ? version[1] : "0") " + identity[range].replacingOccurrences(of: "AppleWebKit/", with: "Safari/")
     }
     static func configure(_ configuration: WKWebViewConfiguration) {
         if let applicationName { configuration.applicationNameForUserAgent = applicationName }

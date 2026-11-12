@@ -106,7 +106,7 @@ final class BrowserDownloadRecoveryTests: XCTestCase {
         XCTAssertEqual(restored.state,"completed",diagnostic)
         XCTAssertGreaterThan(server.requestCount,requestsBeforeRetry)
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(restored.destination)), server.body)
-        XCTAssertTrue(server.lastUserAgent.contains("Safari/")); XCTAssertTrue(server.lastUserAgent.contains("Bandal"), "Restored transfer must use the same engine identity as browser pages")
+        XCTAssertTrue(server.lastUserAgent.contains(" Safari/")); XCTAssertTrue(server.lastUserAgent.contains(" Version/"), "Restored transfer must use the same engine identity as browser pages")
         let snapshots = try await restarted.handle(channel: "browser:downloadsSnapshot", request: [:]) as? [[String: Any]]
         XCTAssertEqual(snapshots?.count, 1)
     }
