@@ -54,7 +54,10 @@ struct NativeOnboardingCover: ViewModifier {
 /// The window's backdrop under paper glass. Onboarding lies over the workspace, so it brings its own
 /// backdrop: the workspace must not show through the paper.
 struct NativeOnboardingSurface: View {
-    var body: some View { ZStack { NativeWorkspaceBackdrop(); NativeGlass.paper.ignoresSafeArea() }.accessibilityHidden(true) }
+    /// The opening wears the decor: the backdrop shows through a light veil, so the colour chosen on the
+    /// 색 step is the colour of the screen it is chosen on.
+    var body: some View { ZStack { NativeWorkspaceBackdrop(); Self.veil.ignoresSafeArea() }.accessibilityHidden(true) }
+    private static let veil = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0x18 / 255, green: 0x18 / 255, blue: 0x1a / 255, alpha: 0.55) : UIColor(white: 1, alpha: 0.5) })
 }
 
 /// Onboarding's main action: a 220 × 48 capsule that grows with its label, with the design's soft rim and a gloss from its trailing end.
@@ -93,9 +96,11 @@ struct NativeOnboardingButton: View {
 struct NativeOnboarding: View {
     var store: NativeWorkspaceStore
     let finish: () -> Void
-    private enum Step: Int, CaseIterable { case language, school, invite, done }
+    private enum Step: Int, CaseIterable { case language, school, decor, invite, share, done }
     @AppStorage(NativeAppLocale.key) private var language = NativeAppLocale.korean
     @State private var step = Step.language
+    @AppStorage(NativeDecor.paletteKey) private var decorPalette = NativeDecorPalette.default.id
+    @AppStorage(NativeDecor.intensityKey) private var decorIntensity = NativeDecor.defaultIntensity
     /// The school this run saved, for the last step's summary.
     @State private var school: School?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -110,7 +115,9 @@ struct NativeOnboarding: View {
                 switch step {
                 case .language: languageStep
                 case .school: schoolStep
+                case .decor: decorStep
                 case .invite: inviteStep
+                case .share: shareStep
                 case .done: doneStep
                 }
             }
@@ -121,6 +128,8 @@ struct NativeOnboarding: View {
         }
         .ignoresSafeArea(.container)
         .background { NativeOnboardingSurface() }
+        // Onboarding lies over the workspace; it hands the decor down itself, so the 색 step repaints as it changes.
+        .environment(\.nativeDecor, NativeDecor(palette: .named(decorPalette), intensity: min(max(decorIntensity, 0), 1)))
         .foregroundStyle(NativeDesktopTheme.text).tint(NativeDesktopTheme.accent)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: step)
         // An invite link opened the app: its code goes into the invite step's field.
@@ -178,7 +187,8 @@ struct NativeOnboarding: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous).fill(NativeDesktopTheme.bgApp).frame(width: 80, height: 80)
                 .overlay { RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(NativeDesktopTheme.border) }
                 .shadow(color: .black.opacity(0.08), radius: 6, x: 4, y: 6)
-                .overlay { Image(systemName: "moon").font(.system(size: 36)) }.accessibilityHidden(true)
+                // The app icon's mark, in the decor's colours, turning once as the welcome opens.
+                .overlay { NativeBandalMark(size: 58, motion: .intro).foregroundStyle(NativeDecorMarkStyle()) }.accessibilityHidden(true)
             heading("반달에 오신 걸 환영해요", Text("필기 · 자료 · AI를 한곳에서 이어 쓰는 공부 노트"))
             VStack(alignment: .leading, spacing: 10) {
                 Text("언어").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary).frame(minHeight: 18)
@@ -227,11 +237,31 @@ struct NativeOnboarding: View {
                 if height >= 420 { heading("학교를 골라 주세요", height >= 520 ? Text("학교 사이트와 포털 바로가기를 자동으로 채워 드려요") : nil) }
                 // Everything on this step but the list: field, chips, button and the line under it.
                 NativeSchoolPicker(store: store, onboarding: true, maxListHeight: max(68, min(275, height - (height >= 520 ? 352 : height >= 420 ? 318 : 242)))) { school in
-                    self.school = school; step = .invite
+                    self.school = school; step = .decor
                 }
             }
             // Anchored where the frame's four-row list puts it, so the heading stays put while the list changes.
             .padding(.top, max(0, (height - 628) / 2)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    /// 색: the decor, chosen on a small window drawn with it. The whole opening repaints as it changes.
+    private var decorStep: some View {
+        VStack(spacing: 24) {
+            heading("반달의 색을 골라 주세요", Text("설정 › 화면에서 언제든 바꿀 수 있어요"))
+            NativeDecorPreview().frame(height: 200)
+            BandalChoiceCard {
+                VStack(alignment: .leading, spacing: 0) {
+                    NativeDecorSwatches(selection: $decorPalette).padding(.horizontal, 16).padding(.vertical, 14)
+                    divider
+                    HStack {
+                        Text("세기").font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.secondary)
+                        Spacer(minLength: 8)
+                        NativeDecorIntensitySlider(value: $decorIntensity, palette: .named(decorPalette))
+                    }.padding(.horizontal, 16).frame(minHeight: 56)
+                }
+            }
+            primaryButton("다음", label: "다음 단계", identifier: "native-onboarding-next") { step = .invite }
         }
     }
 
@@ -242,14 +272,26 @@ struct NativeOnboarding: View {
             heading("초대 코드가 있나요?", nil)
             NativeReferralCodeEntry(referral: store.referral, large: true)
             if store.referral.applied {
-                primaryButton("다음", label: "다음 단계", identifier: "native-onboarding-next") { step = .done }
+                primaryButton("다음", label: "다음 단계", identifier: "native-onboarding-next") { step = .share }
             } else {
-                Button { store.referral.withdraw(); step = .done } label: {
+                Button { store.referral.withdraw(); step = .share } label: {
                     Text("없어요, 건너뛰기").font(.system(size: 15, weight: .medium)).foregroundStyle(NativeDesktopTheme.secondary)
                         .frame(minWidth: 220, minHeight: 48).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("native-referral-skip")
             }
+        }
+    }
+
+    /// 친구 초대: the other side of the invitation. Signed in, this account's code to copy or share and what
+    /// it has brought; signed out, the sign-in that gives it a code. Either way 다음 goes on without it.
+    private var shareStep: some View {
+        VStack(spacing: 24) {
+            heading("친구를 초대하고 AI 100회 받기", Text("친구가 로그인하고 첫 폴더를 만들면 둘 다 받아요"))
+            BandalChoiceCard {
+                NativeReferralInvite(store: store, showsTitle: false).padding(16)
+            }
+            primaryButton("다음", label: "다음 단계", identifier: "native-onboarding-next") { step = .done }
         }
     }
 
@@ -262,6 +304,8 @@ struct NativeOnboarding: View {
             BandalChoiceCard {
                 VStack(spacing: 0) {
                     summaryRow("학교", value: school.map(name) ?? NativeAppLocale.string("아직 고르지 않았어요", locale))
+                    divider
+                    summaryRow("색", value: NativeAppLocale.string(NativeDecorPalette.named(decorPalette).title, locale))
                     divider
                     summaryRow("언어", value: language == NativeAppLocale.english ? "English" : "한국어")
                 }

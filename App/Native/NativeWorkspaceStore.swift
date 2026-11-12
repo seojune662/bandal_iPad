@@ -165,7 +165,8 @@ final class NativeWorkspaceStore {
                         "native.pdf.paletteCollapsed", NativeLocalPreferences.newDocumentKind, NativeLocalPreferences.homeTogglesSidebar,
                         NativeLocalPreferences.keyboardFoldsPanels, NativeAIPreferences.answerLanguageKey, NativeAIPreferences.usageAlertKey,
                         NativeAIPreferences.referenceScopeKey, NativeAIPreferences.showsSourcesKey, NativeAIPreferences.savesHistoryKey,
-                        NativeOnboardingGate.doneKey, NativeAppLocale.key, NativeReferral.pendingKey, NativeReferral.awaitingKey] { UserDefaults.standard.removeObject(forKey: key) }
+                        NativeOnboardingGate.doneKey, NativeAppLocale.key, NativeReferral.pendingKey, NativeReferral.awaitingKey,
+                        NativeDecor.paletteKey, NativeDecor.intensityKey] { UserDefaults.standard.removeObject(forKey: key) }
             // The palette's tool options and slots are kept per root in the defaults, outside the reset folder.
             UserDefaults.standard.removeObject(forKey: NativePDFPalettePreferences.key(root: folder, documentsRoot: documents))
             // Browser logins live in the Keychain, outside the reset folder.

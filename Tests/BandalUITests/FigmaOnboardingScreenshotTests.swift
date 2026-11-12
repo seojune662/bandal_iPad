@@ -28,13 +28,19 @@ final class FigmaOnboardingScreenshotTests: XCTestCase {
         XCTAssertTrue(school.waitForExistence(timeout: 5), app.debugDescription); school.tap()
         sleep(1); attach(app, prefix + "2")
         next.tap()
+        XCTAssertTrue(app.buttons["native-settings-decor-dawn"].waitForExistence(timeout: 10), app.debugDescription)
+        sleep(1); attach(app, prefix + "2a decor")
+        next.tap()
         let skip = app.buttons["native-referral-skip"]
         XCTAssertTrue(skip.waitForExistence(timeout: 10), app.debugDescription)
         sleep(1); attach(app, prefix + "2b invite")
         skip.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["native-referral-invite"].waitForExistence(timeout: 10), app.debugDescription)
+        sleep(1); attach(app, prefix + "2c share")
+        next.tap()
         XCTAssertTrue(app.buttons["native-onboarding-finish"].waitForExistence(timeout: 10), app.debugDescription)
         sleep(1); attach(app, prefix + "3")
-        if english { app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-language-ko-KR"].tap() }
+        if english { app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-back"].tap(); app.buttons["native-onboarding-language-ko-KR"].tap() }
     }
 
     @MainActor private func picker(_ appearance: String) {

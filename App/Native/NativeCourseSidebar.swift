@@ -73,7 +73,7 @@ struct NativeCourseSidebar: View {
                     // Not while projects are still loading: a projects-only list would flash this first.
                     if courses.isEmpty && !catalog.loading && catalog.projects.allSatisfy({ $0.deletedAt != nil }) {
                         VStack(spacing: 12) {
-                            NativeBandalMark(size: 44).foregroundStyle(NativeDesktopTheme.muted.opacity(0.4))
+                            NativeBandalMark(size: 44).foregroundStyle(NativeDecorMarkStyle())
                             Text("첫 폴더를 만들어보세요").font(NativeDesktopTheme.font(13))
                             Button("새 폴더 만들기") { adding = .course }.buttonStyle(.borderedProminent).accessibilityIdentifier("native-new-course-empty")
                             Button("기존 폴더 연결", systemImage: "folder.badge.plus") { adding = .manage }.buttonStyle(.bordered)

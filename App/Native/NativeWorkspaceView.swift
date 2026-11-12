@@ -17,6 +17,8 @@ struct NativeWorkspaceView: View {
     @State private var pendingContextRefresh = false
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("native.appearance") private var appearance = "system"
+    @AppStorage(NativeDecor.paletteKey) private var decorPalette = NativeDecorPalette.default.id
+    @AppStorage(NativeDecor.intensityKey) private var decorIntensity = NativeDecor.defaultIntensity
     @State private var section: NativeWorkspaceSection = .library
     @AppStorage("native.desktop.courseRail") private var courseRailOpen = true
     @AppStorage("native.desktop.materialsRail") private var materialsRailOpen = true
@@ -268,6 +270,9 @@ struct NativeWorkspaceView: View {
                 if compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) && showsWorkspace && annotation.request == nil {
                     HStack(spacing: 0) {
                         courseSidebar.frame(width: min(320, geometry.size.width - 48))
+                            // Over the paper, not the wallpaper: carry the window's stretch of the backdrop along, so the glass matches the pinned panel.
+                            .background { NativeBackdropUnderlay(windowSize: geometry.size, leadingInset: NativeDesktopTheme.navigationWidth) }
+                            .mask { Rectangle().padding(.vertical, -60) }
                             .nativeWorkspacePreviewExcluded(occludesContent: true)
                             .overlay(alignment: .trailing) { railDivider }
                             .transition(.move(edge: .leading))
@@ -289,6 +294,9 @@ struct NativeWorkspaceView: View {
                         .padding(.top, NativeWorkspaceWindowControls.inspectorTop)
                         .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
                         .background(NativeGlass.panel)
+                        // The drawer may float over the paper; the window's own stretch of backdrop keeps its glass the pinned panel's.
+                        .background { NativeBackdropUnderlay(windowSize: geometry.size, alignment: .trailing) }
+                        .mask { Rectangle().padding(.vertical, -60) }
                         .overlay(alignment: .leading) { if rightVisible && !chrome.rightPinned { railDivider } }
                         // Off the window's edge while closed, and opaque on the way: a fade would show the wallpaper through the glass.
                         // It turns clear only once the slide is over, which is what takes its UIKit host out of the accessibility tree.
@@ -382,6 +390,8 @@ struct NativeWorkspaceView: View {
         .font(NativeDesktopTheme.font(14))
         .foregroundStyle(NativeDesktopTheme.text)
         .background(NativeWorkspaceBackdrop())
+        // The decor reaches every glass region from here, so the settings slider repaints the window as it moves.
+        .environment(\.nativeDecor, NativeDecor(palette: .named(decorPalette), intensity: min(max(decorIntensity, 0), 1)))
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         .tint(NativeDesktopTheme.accent)
         .toggleStyle(BandalToggleStyle())
@@ -933,7 +943,7 @@ struct NativeWorkspaceView: View {
             Spacer()
             if store.selectedCourseID == nil {
                 // Nothing chosen yet: say what to do, and offer it.
-                NativeBandalMark(size: 56).foregroundStyle(NativeDesktopTheme.muted.opacity(0.4))
+                NativeBandalMark(size: 56, motion: .loop).foregroundStyle(NativeDecorMarkStyle())
                 Text("폴더를 선택하거나 새로 만드세요").font(NativeDesktopTheme.font(15)).foregroundStyle(NativeDesktopTheme.secondary)
                 Button { setCourseRail(true, width: windowWidth); NotificationCenter.default.post(name: NativeHomeTab.newCourse, object: nil) } label: {
                     Label("새 폴더 만들기", systemImage: "folder.badge.plus").font(NativeDesktopTheme.font(15, weight: .semibold))

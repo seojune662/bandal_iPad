@@ -17,7 +17,7 @@ final class NativeReferralUITests: XCTestCase {
             let app = launch(["--native-onboarding", "--native-referral-fixture", "--native-referral-signed-out", "-native.appearance", name])
             let field = reachInviteStep(app)
             XCTAssertTrue(app.staticTexts["초대 코드가 있나요?"].exists)
-            XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "4단계 중 3단계")
+            XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "6단계 중 4단계")
             XCTAssertEqual(field.placeholderValue, "6자리 코드"); XCTAssertEqual(field.label, "초대 코드")
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "The field has the keyboard from the start")
             let skip = app.buttons["native-referral-skip"], next = app.buttons["native-onboarding-next"]
@@ -47,6 +47,9 @@ final class NativeReferralUITests: XCTestCase {
             let finish = app.buttons["native-onboarding-finish"], banner = app.staticTexts["native-referral-banner"]
             if name == "light" {
                 next.tap()
+                // 친구 초대 comes next; it goes on without signing in.
+                XCTAssertTrue(app.descendants(matching: .any)["native-referral-invite"].waitForExistence(timeout: 10), app.debugDescription)
+                next.tap()
                 XCTAssertTrue(finish.waitForExistence(timeout: 10), app.debugDescription); finish.tap()
                 XCTAssertTrue(banner.waitForExistence(timeout: 10), app.debugDescription)
                 XCTAssertEqual(banner.label, "첫 과목을 만들면 AI 100회가 들어와요")
@@ -59,6 +62,7 @@ final class NativeReferralUITests: XCTestCase {
                 field.typeText(Self.delete)
                 XCTAssertTrue(skip.waitForExistence(timeout: 5), app.debugDescription); XCTAssertFalse(applied.exists)
                 skip.tap()
+                XCTAssertTrue(next.waitForExistence(timeout: 10), app.debugDescription); next.tap()
                 XCTAssertTrue(finish.waitForExistence(timeout: 10), app.debugDescription); finish.tap()
                 XCTAssertTrue(app.buttons["native-new-course-empty"].waitForExistence(timeout: 10), app.debugDescription)
                 XCTAssertFalse(banner.exists, "No code, no reminder")
@@ -238,7 +242,7 @@ final class NativeReferralUITests: XCTestCase {
         apply.tap()
         XCTAssertTrue(applied.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(apply.exists)
-        XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "4단계 중 3단계")
+        XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "6단계 중 4단계")
         XCTAssertTrue(app.buttons["native-onboarding-back"].exists && app.buttons["native-onboarding-next"].exists)
         XCTAssertFalse(app.buttons["native-settings-category-account"].exists, "Onboarding, not Settings")
         capture("초대 링크 → 온보딩 3")
@@ -289,7 +293,7 @@ final class NativeReferralUITests: XCTestCase {
         XCTAssertTrue(applied.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(applied.label, "Code applied — sign in and create your first course to get 100 AI uses")
         XCTAssertTrue(app.staticTexts["Do you have an invite code?"].exists)
-        XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "Step 3 of 4")
+        XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "Step 4 of 6")
         XCTAssertEqual(field.label, "Invite code")
         field.tap(); field.typeText(Self.delete)
         XCTAssertTrue(wait(for: field) { $0.placeholderValue == "6-character code" && ($0.value as? String ?? "") != "ABC234" })
@@ -355,12 +359,14 @@ final class NativeReferralUITests: XCTestCase {
         app.launch()
         return app
     }
-    /// 언어 → 학교 (a school the app ships) → 초대 코드.
+    /// 언어 → 학교 (a school the app ships) → 색 → 초대 코드.
     @MainActor private func reachInviteStep(_ app: XCUIApplication) -> XCUIElement {
         let next = app.buttons["native-onboarding-next"]
         XCTAssertTrue(next.waitForExistence(timeout: 25), app.debugDescription); next.tap()
         let school = app.buttons["native-school-result-snu"]
         XCTAssertTrue(school.waitForExistence(timeout: 10), app.debugDescription); school.tap(); next.tap()
+        // 색 keeps its default.
+        XCTAssertTrue(app.buttons["native-settings-decor-dawn"].waitForExistence(timeout: 10), app.debugDescription); next.tap()
         let field = app.textFields["native-referral-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
         return field

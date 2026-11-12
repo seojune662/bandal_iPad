@@ -142,6 +142,8 @@ private struct NativeReferralPasteControl: UIViewRepresentable {
 /// sign-in right here and loads once someone is in.
 struct NativeReferralInvite: View {
     var store: NativeWorkspaceStore
+    /// Off where the screen already says 친구 초대 (onboarding's own heading).
+    var showsTitle = true
     @Environment(\.locale) private var locale
     @State private var phase = Phase.loading
     @State private var signInError: String?
@@ -150,7 +152,7 @@ struct NativeReferralInvite: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("친구 초대").font(.system(size: BandalMetrics.bodySize, weight: .semibold)).accessibilityAddTraits(.isHeader)
+            if showsTitle { Text("친구 초대").font(.system(size: BandalMetrics.bodySize, weight: .semibold)).accessibilityAddTraits(.isHeader) }
             if phase == .loaded, let status = store.referral.status { invite(status) }
             else if phase == .signIn { signIn }
             else if phase == .failed {
