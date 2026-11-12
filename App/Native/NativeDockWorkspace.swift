@@ -298,38 +298,40 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     static func cardFrame(_ content: CGRect) -> CGRect {
         CGRect(x: content.minX + cardInset, y: content.minY, width: max(0, content.width - cardInset * 2), height: max(0, content.height - cardInset))
     }
-    /// The card and its chosen tab as one silhouette, so a single shadow (accent when this pane has focus) runs round both.
+    /// The card and its chosen tab as one silhouette, so a single fill, rim and shadow (accent when this pane has
+    /// focus) run round both. The ground is the decor's half tone, laid over the strip's glass: a pane with nothing
+    /// open takes it edge to edge, a document's card inside its rim.
     @ViewBuilder private func paneSurface(_ pane: NativeDockPaneFrame, metrics: NativeDockStripMetrics, focused: Bool, corner: Bool) -> some View {
-        if !isHome(pane.group) {
+        if isHome(pane.group) {
+            Rectangle().fill(NativeGlass.card)
+        } else {
             let content = contentFrame(pane, metrics), card = Self.cardFrame(content).offsetBy(dx: -pane.frame.minX, dy: -pane.frame.minY)
             let top = NativeDockHeaderMetrics.topPadding(for: pane.frame, topEdge: Self.topEdge)
             let span = chromeMode.showsTabs ? selectedTabSpan(pane.group, metrics: metrics, width: pane.frame.width, corner: corner) : nil
             let accent = Color(uiColor: decor.palette.accent(dark: scheme == .dark))
+            let pillTop = top + (metrics.height - metrics.pillHeight) / 2
+            // The tab runs a little into the card, so the two outlines join as one.
+            let tab = span.map { CGRect(x: $0.x - Self.tabFlare, y: pillTop, width: $0.width + Self.tabFlare * 2, height: card.minY - pillTop + 2) }
+            let silhouette = NativeDockCardSilhouette(card: card, tab: tab, radius: Self.cardRadius, tabRadius: metrics.radius, flare: Self.tabFlare)
+            let toned = Self.takesDecor(navigation.document(pane.group.activeID))
             ZStack(alignment: .topLeading) {
                 Color.clear
-                ZStack(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous).fill(NativeGlass.paper)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous)
-                                .strokeBorder(focused ? AnyShapeStyle(accent.opacity(0.55)) : AnyShapeStyle(NativeGlass.hairline), lineWidth: focused ? 1.5 : 1)
-                        }
-                        .frame(width: card.width, height: card.height).offset(x: card.minX, y: card.minY)
-                    if let span {
-                        // Drawn over the card's rim, so the rim stops where the tab joins it.
-                        let pillTop = top + (metrics.height - metrics.pillHeight) / 2
-                        let pdf = navigation.document(pane.group.activeID)?.kind == "pdf"
-                        // Over a PDF the card shows the gutter's wash, so its tab takes the same.
-                        NativeDockTabShape(radius: metrics.radius, flare: Self.tabFlare).fill(NativeGlass.paper)
-                            .overlay { if pdf { NativeDockTabShape(radius: metrics.radius, flare: Self.tabFlare).fill(NativeGlass.gutter) } }
-                            .frame(width: span.width + Self.tabFlare * 2, height: card.minY - pillTop + 2)
-                            .offset(x: span.x - Self.tabFlare, y: pillTop)
-                    }
-                }
-                .compositingGroup()
-                .shadow(color: .black.opacity(scheme == .dark ? 0.3 : 0.07), radius: 6, y: 2)
-                .shadow(color: focused ? accent.opacity(0.22) : .clear, radius: 10)
+                // The shadow alone, cut away under the sheet: a sheet that lets the glass through would show its own shadow too.
+                silhouette.fill(.black)
+                    .shadow(color: .black.opacity(scheme == .dark ? 0.3 : 0.07), radius: 6, y: 2)
+                    .shadow(color: focused ? accent.opacity(0.22) : .clear, radius: 10)
+                    .mask { NativeDockCardSurround(inner: silhouette).fill(style: FillStyle(eoFill: true)) }
+                silhouette.fill(toned ? AnyShapeStyle(NativeGlass.card) : AnyShapeStyle(NativeGlass.paper))
+                silhouette.stroke(focused ? AnyShapeStyle(accent.opacity(0.55)) : AnyShapeStyle(NativeGlass.hairline), lineWidth: focused ? 1.5 : 1)
             }.animation(.snappy(duration: 0.2), value: span?.x)
         }
+    }
+    /// The editors that leave their tool row to the card's tone and paint paper only under their page: PDF,
+    /// note, browser and AI. Every other editor covers its card with its own ground, so that card (and its tab) stay paper.
+    static func takesDecor(_ document: NativeDocumentReference?) -> Bool {
+        guard let document else { return true }
+        if document.learningTarget != nil { return false }
+        return ["pdf", "note", "browser", "assistant"].contains(document.kind) || ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased())
     }
     static var tabFlare: CGFloat { 6 }
     private func tabs(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, topPadding: CGFloat, corner: Bool) -> some View {
@@ -958,6 +960,34 @@ private struct NativeDockTouchFocus: UIViewRepresentable {
             state = .failed
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
+/// A document's card and the chosen tab rising out of it, as one outline. The tab slides along the card's top
+/// edge when another tab is chosen.
+struct NativeDockCardSilhouette: Shape {
+    var card: CGRect
+    /// The chosen tab with its flare each side, reaching just into the card; nil with the tabs hidden.
+    var tab: CGRect?
+    var radius: CGFloat, tabRadius: CGFloat, flare: CGFloat
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { .init(tab?.minX ?? 0, tab?.width ?? 0) }
+        set { if let tab { self.tab = CGRect(x: newValue.first, y: tab.minY, width: newValue.second, height: tab.height) } }
+    }
+    func path(in rect: CGRect) -> Path {
+        let body = Path(roundedRect: card, cornerRadius: radius, style: .continuous)
+        guard let tab else { return body }
+        return body.union(NativeDockTabShape(radius: tabRadius, flare: flare).path(in: tab))
+    }
+}
+/// Everything around a card's silhouette (filled even-odd): where its shadow may show.
+struct NativeDockCardSurround: Shape {
+    var inner: NativeDockCardSilhouette
+    var animatableData: AnimatablePair<CGFloat, CGFloat> { get { inner.animatableData } set { inner.animatableData = newValue } }
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect.insetBy(dx: -48, dy: -48))
+        path.addPath(inner.path(in: rect))
+        return path
     }
 }
 

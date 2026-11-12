@@ -61,6 +61,7 @@ final class NativeDockTabSizingUITests: XCTestCase {
         XCTAssertTrue(add.waitForExistence(timeout: 10)); add.tap()
         let item = app.buttons["native-new-tab-" + action]
         XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
+        if action == "new-whiteboard" { app.confirmNewNote() }
         let opened = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             guard let selected = self.tabs(app).first(where: { $0.isSelected }) else { return false }
             return selected.identifier != previous

@@ -125,6 +125,30 @@ final class NativeInputDiagnosisUITests: XCTestCase {
         // A tap near the top makes the trace log the window's bounds against the screen's.
         tap(app, x: 200, y: 30, label: "R9 top-left probe")
     }
+    /// R11: a note in a tab: the editor's frame, whether the accessibility hit test finds it, and the whole
+    /// element tree, to look up what the snapshot believes lies over the editor's centre. (`tap()` on an
+    /// element whose centre it thinks is covered lands somewhere else in it, with no failure.)
+    @MainActor func testR11WhatCoversAnEditorsCentre() {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "--native-input-trace"]
+        app.launch()
+        let menu = app.buttons["native-course-add-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 25)); menu.tap()
+        let name = app.textFields["native-course-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Cover")
+        app.buttons["native-create-course"].tap()
+        let create = app.buttons["native-library-create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 15)); create.tap(); app.buttons["새 마크다운"].tap()
+        let title = app.textFields["native-name-input"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Cover"); app.buttons["만들기"].tap()
+        let editor = app.textViews["native-markdown-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 20), app.debugDescription); sleep(2)
+        print("[DIAG] R11 editor frame=\(editor.frame) hittable=\(editor.isHittable)")
+        print("[DIAG] R11 tree begin\n" + app.debugDescription + "\n[DIAG] R11 tree end")
+        editor.tap(); sleep(1)
+    }
+
     /// R10: four mixed tabs in one strip (the tab-sizing test's start): each tab's frame, whether the accessibility
     /// hit test finds it, and where a real tap on it lands.
     @MainActor func testR10MixedTabsHitTesting() {
@@ -142,7 +166,7 @@ final class NativeInputDiagnosisUITests: XCTestCase {
         for action in ["new-browser", "new-note", "chat", "new-whiteboard"] {
             plus.tap()
             let item = app.buttons["native-new-tab-" + action]
-            if item.waitForExistence(timeout: 5) { item.tap() } else { print("[DIAG] R10 menu item \(action) missing") }
+            if item.waitForExistence(timeout: 5) { item.tap(); if action == "new-whiteboard" { app.confirmNewNote() } } else { print("[DIAG] R10 menu item \(action) missing") }
             sleep(3)
         }
         let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-")).allElementsBoundByIndex

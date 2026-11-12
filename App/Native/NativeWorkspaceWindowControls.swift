@@ -93,6 +93,8 @@ struct NativeWorkspaceWindowsOverview: View {
     let dismiss: () -> Void
     @State private var renamingID: String?
     @State private var draggingID: String?
+    /// The window whose ✕ was tapped and now asks before it goes.
+    @State private var closingID: String?
     @AccessibilityFocusState private var headingFocused: Bool
     @FocusState private var overviewFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -157,7 +159,8 @@ struct NativeWorkspaceWindowsOverview: View {
         return caption
     }
 
-    /// The card is the window's picture, 492 × 369; its name sits under it. Long press: move, rename, close.
+    /// The card is the window's picture, 492 × 369; its name sits under it, and a ✕ on its corner closes it
+    /// (never the last one). Long press: move, rename, close.
     private func card(_ window: NativeWorkspaceWindow, index: Int) -> some View {
         let active = activeID == window.id, shape = RoundedRectangle(cornerRadius: 14)
         return VStack(alignment: .leading, spacing: 14) {
@@ -177,6 +180,18 @@ struct NativeWorkspaceWindowsOverview: View {
                     .contentShape(shape).shadow(color: .black.opacity(0.14), radius: 15, y: 10)
             }.buttonStyle(.plain).accessibilityLabel(window.name + " 열기")
                 .accessibilityIdentifier("native-window-open-" + window.id)
+                .overlay(alignment: .topTrailing) {
+                    if windows.count > 1 {
+                        Button { closingID = window.id } label: {
+                            Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(NativeDesktopTheme.text)
+                                .frame(width: 28, height: 28).bandalGlass(in: Circle())
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityLabel(window.name + " 지우기").accessibilityIdentifier("native-window-close-" + window.id)
+                            .bandalConfirm("윈도우를 지울까요?", isPresented: Binding(get: { closingID == window.id }, set: { if !$0, closingID == window.id { closingID = nil } }),
+                                           message: "열려 있던 탭만 닫혀요. 파일은 폴더에 그대로 있어요.", action: "삭제", destructive: true,
+                                           identifier: "native-window-close-confirm") { close(window.id) }
+                    }
+                }
                 .contextMenu {
                     Button("이름 변경", systemImage: "pencil") { renamingID = window.id }
                     Button("앞으로 이동", systemImage: "arrow.left") { move(window.id, index - 1) }.disabled(index == 0)
@@ -200,7 +215,7 @@ struct NativeWorkspaceWindowsOverview: View {
 }
 
 /// Cards of different widths in rows, left to right, wrapping when the row is full.
-private struct NativeWindowCardFlow: Layout {
+struct NativeWindowCardFlow: Layout {
     var spacing: CGFloat
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let frames = place(width: proposal.width ?? .infinity, subviews: subviews)

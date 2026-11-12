@@ -81,7 +81,7 @@ struct NativeCourseManager: View {
     }
     private func deletedRow(_ course: ManagedCourse) -> some View {
         HStack(spacing:8) {
-            NativeFolderChip(color: course.color, size: 14).opacity(0.5).frame(width:18)
+            NativeFolderGlyph(color: course.color, size: 16).opacity(0.5).frame(width:18)
             Text(verbatim: course.name).lineLimit(1).foregroundStyle(NativeDesktopTheme.secondary)
             Spacer(minLength:4)
             Button("복원") { change { _ = try await store.invoke("courses:restore",["courseId":course.id]) } }
@@ -94,7 +94,7 @@ struct NativeCourseManager: View {
     }
     private func row(_ course: ManagedCourse) -> some View {
         HStack(spacing:8) {
-            Group { if course.archived { Image(systemName:"archivebox").font(.system(size:12)).foregroundStyle(NativeDesktopTheme.muted) } else { NativeFolderChip(color: course.color, size: 14) } }.frame(width:18)
+            Group { if course.archived { Image(systemName:"archivebox").font(.system(size:12)).foregroundStyle(NativeDesktopTheme.muted) } else { NativeFolderGlyph(color: course.color, size: 16) } }.frame(width:18)
             VStack(alignment:.leading,spacing:1) {
                 BandalInlineEditor(text:course.name,isEditing:.editing(course.id,in:$renamingID),identifier:"native-manager-rename") { name in
                     change { _ = try await store.invoke("courses:rename",["courseId":course.id,"name":name]) }

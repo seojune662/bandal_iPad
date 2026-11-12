@@ -50,7 +50,7 @@ final class NativeLibraryPresentationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["native-library-source-photos"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.buttons["native-library-source-files"].exists)
         screenshot("자료 추가 메뉴")
-        app.buttons["새 폴더"].tap(); app.closeBandalPopover()
+        app.buttons["새 하위 폴더"].tap(); app.closeBandalPopover()
         app.terminate()
         app.launchArguments = ["--native-ui-testing"]
         app.launch()
@@ -369,7 +369,7 @@ final class NativeLibraryPresentationUITests: XCTestCase {
     }
 
     @MainActor private func createFolder(_ name: String, path: String, in app: XCUIApplication) {
-        app.buttons["native-library-create"].tap(); app.buttons["새 폴더"].tap()
+        app.buttons["native-library-create"].tap(); app.buttons["새 하위 폴더"].tap()
         let field = app.textFields["native-name-input"]
         XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap(); field.typeText(name)
         app.buttons["만들기"].tap()

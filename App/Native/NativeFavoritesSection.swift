@@ -18,6 +18,8 @@ struct NativeFavoritesSection: View {
     @State private var error: String?
     @State private var targeted = false
     @State private var loadRevision = 0
+    /// Set once the first list has arrived, so the empty hint never flashes before the favourites do.
+    @State private var loaded = false
 
     /// Posted with a course id by that course's row: no user info opens the link form, `current` saves the front tab, `documentID` saves a dropped tab.
     static let request = Notification.Name("native.favorites.request")
@@ -37,6 +39,11 @@ struct NativeFavoritesSection: View {
             } }
             if adding { linkForm }
             if let error { NativeInlineError(message: error) }
+            // An open folder with nothing in it says what can go there, as the desktop app does.
+            if loaded, favorites.isEmpty, !adding, error == nil {
+                Text("탭을 끌어 즐겨찾기 추가").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted)
+                    .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading).accessibilityIdentifier("native-favorite-empty-" + courseID)
+            }
             ForEach(Array(favorites.enumerated()), id: \.element.id) { index, favorite in
                 if renamingID == favorite.id {
                     BandalInlineEditor(text: favorite.label, isEditing: .editing(favorite.id, in: $renamingID),
@@ -59,7 +66,9 @@ struct NativeFavoritesSection: View {
                     .simultaneousGesture(TapGesture(count: 2).onEnded { renamingID = favorite.id })
                 }
             }
-        }.padding(.leading, 34).padding(.trailing, 8).padding(.bottom, favorites.isEmpty && !adding && error == nil ? 0 : 6)
+        }.padding(.leading, 34).padding(.trailing, 8).padding(.bottom, 6)
+            // The guide line of an open folder, down from its chevron.
+            .overlay(alignment: .leading) { NativeGlass.treeGuide.frame(width: 1).padding(.leading, 19).padding(.bottom, 6).allowsHitTesting(false) }
             .onReceive(NotificationCenter.default.publisher(for: Self.request)) { note in
                 guard note.object as? String == courseID else { return }
                 if let id = note.userInfo?["documentID"] as? String { if let document = documentByID(id) { addDocument(document) } }
@@ -120,7 +129,7 @@ struct NativeFavoritesSection: View {
         do {
             let rows = try await store.invoke("favorites:list", ["courseId": courseID]) as? [[String: Any]] ?? []
             guard revision == loadRevision, !Task.isCancelled else { return }
-            favorites = rows.compactMap(NativeSidebarFavorite.init); error = nil
+            favorites = rows.compactMap(NativeSidebarFavorite.init); error = nil; loaded = true
         } catch { if revision == loadRevision { self.error = error.localizedDescription } }
     }
 }

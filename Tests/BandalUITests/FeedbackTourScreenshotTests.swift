@@ -51,7 +51,7 @@ final class FeedbackTourScreenshotTests: XCTestCase {
 
         // A new note: the palette and its sliding tool strip.
         let note = app.buttons["native-home-new-note"]
-        if note.waitForExistence(timeout: 10) { note.tap() }
+        if note.waitForExistence(timeout: 10) { note.tap(); app.confirmNewNote() }
         XCTAssertTrue(app.buttons["native-pdf-tool-pen"].waitForExistence(timeout: 20), app.debugDescription)
         sleep(2); attach(app, "07-pdf-palette")
         let strip = app.scrollViews["native-pdf-tool-scroll"]

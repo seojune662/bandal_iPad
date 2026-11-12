@@ -467,6 +467,7 @@
 "모두 가리기" = "Cover all";
 "모두 보기" = "Reveal all";
 "모두 지우기" = "Clear all";
+"모눈" = "Grid";
 "모든 과목 일정 내보내기" = "Export schedule for all courses";
 "모든 과목의 AI 대화가 지워져요. 노트와 자료는 그대로예요." = "AI chats in every course are deleted. Notes and materials stay.";
 "모든 단축키를 기본값으로 되돌릴까요?" = "Reset all shortcuts to their defaults?";
@@ -562,6 +563,7 @@
 "비우기" = "Clear";
 "빈 배경" = "Blank";
 "빈 영역 닫기" = "Close empty pane";
+"빈 종이" = "Blank";
 "사각형" = "Rectangle";
 "사본 적용" = "Apply copy";
 "사본으로 보관" = "Keep as copy";
@@ -610,6 +612,7 @@
 "새 브라우저 페이지에서 사용할 기본값입니다." = "Defaults for new browser pages.";
 "새 브라우저 프로필" = "New browser profile";
 "새 자막을 자동으로 따라가기" = "Follow new captions automatically";
+"새 윈도우" = "New window";
 "새 창" = "New window";
 "새 탭" = "New tab";
 "새 탭 기본 문서" = "Default document for new tabs";
@@ -719,6 +722,7 @@
 "열린 자료와 분할 보기" = "Open materials and split view";
 "열린 탭 %lld개" = "Open tabs: %lld";
 "열린 탭 검색" = "Search open tabs";
+"열려 있던 탭만 닫혀요. 파일은 폴더에 그대로 있어요." = "Only its open tabs close. Your files stay in the folder.";
 "영어 이어읽기" = "Continue reading in English";
 "영어 읽기 · 표현 저장" = "English reading · saved phrases";
 "영역" = "Area";
@@ -770,6 +774,7 @@
 "윈도우 관리" = "Manage windows";
 "윈도우 관리 닫기" = "Close window manager";
 "윈도우 닫기" = "Close window";
+"윈도우를 지울까요?" = "Delete this window?";
 "음성 모델" = "Speech model";
 "응답 중지" = "Stop response";
 "이 iPad" = "This iPad";
@@ -896,6 +901,7 @@
 "제출한 답안을 확인하고 서술형을 자기 점검해 주세요." = "Review your submitted answers and self-check the written responses.";
 "좁은 화면에서는 영역을 선택해 보세요" = "On a narrow screen, pick a pane to view";
 "종류" = "Type";
+"종이" = "Paper";
 "좌우로 밀어 폴더를 탐색하세요" = "Swipe left or right to browse folders";
 "주석 · 10 pt" = "Caption · 10 pt";
 "주석 닫기" = "Close annotations";

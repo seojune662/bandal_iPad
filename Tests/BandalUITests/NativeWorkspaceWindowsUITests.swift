@@ -19,6 +19,55 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
     }
 
     @MainActor
+    func testWindowCardCloseButtonAsksThenClosesAndTheLastWindowHasNone() throws {
+        let app = launch()
+        createCourse("Close Course", app: app)
+        let closers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-window-close-"))
+        openOverview(app); expectCards(1, app: app)
+        XCTAssertEqual(closers.count, 0, "The only window cannot be closed, so its card has no ✕")
+        addWindow(app)
+        openOverview(app); expectCards(2, app: app)
+        XCTAssertEqual(closers.count, 2, app.debugDescription)
+        capture(app, "Window cards with their close buttons")
+        closers.element(boundBy: 1).tap()
+        let confirm = app.buttons["native-window-close-confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription)
+        // Tapping away keeps the window.
+        app.closeBandalPopover(); expectCards(2, app: app)
+        closers.element(boundBy: 1).tap()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription); confirm.tap()
+        expectCards(1, app: app)
+        XCTAssertEqual(closers.count, 0)
+    }
+
+    @MainActor
+    func testSidebarListsTheFolderWindowsAndSwitchesAndClosesThem() throws {
+        let app = launch()
+        createCourse("Sidebar Windows", app: app)
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND NOT (identifier IN %@)", "native-sidebar-window-",
+                                                    ["native-sidebar-window-add", "native-sidebar-window-close-confirm"]))
+        wait(app, "The folder's one window is listed under it") { rows.count == 1 && rows.element(boundBy: 0).isSelected }
+        // ＋ makes a window and goes to it.
+        app.buttons["native-sidebar-window-add"].tap()
+        wait(app, "The new window is listed and current") { rows.count == 2 && rows.element(boundBy: 1).isSelected && !rows.element(boundBy: 0).isSelected }
+        // A tap goes back to the first.
+        rows.element(boundBy: 0).tap()
+        wait(app, "The first window is current again") { rows.element(boundBy: 0).isSelected && !rows.element(boundBy: 1).isSelected }
+        capture(app, "The folder's windows in the sidebar")
+        // The overview stays, with the same windows.
+        openOverview(app); expectCards(2, app: app)
+        app.buttons["native-workspace-windows-toggle"].tap()
+        wait(app, "The overview closes") { !self.overview(app).exists }
+        // Long press › 윈도우 닫기 asks, then closes it.
+        rows.element(boundBy: 1).press(forDuration: 1)
+        let close = app.buttons["윈도우 닫기"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5), app.debugDescription); close.tap()
+        let confirm = app.buttons["native-sidebar-window-close-confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription); confirm.tap()
+        wait(app, "One window is left") { rows.count == 1 && rows.element(boundBy: 0).isSelected }
+    }
+
+    @MainActor
     func testWindowManagementCourseProjectIsolationAndRestartKeepSidebarState() throws {
         let app = launch()
         createCourse("Windows Course", app: app)

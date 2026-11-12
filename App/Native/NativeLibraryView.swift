@@ -79,7 +79,7 @@ struct NativeLibraryView: View {
                 Button { Task { await store.refreshMaterials(); await projectLibrary.reload(store: store, scope: scope) } } label: { Image(systemName: "arrow.clockwise").font(.system(size: 16)).foregroundStyle(Self.headerIcon).frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .accessibilityLabel("자료 새로고침").accessibilityIdentifier("native-library-refresh")
                     // Anchored up here, not on 자료 추가: the keyboard covers the bottom of the panel.
-                    .bandalPopover(isPresented: Binding(get: { showingMigrationGuide || creation != nil }, set: { if !$0 { showingMigrationGuide = false; creation = nil } }), width: creation?.kind == .ink ? 340 : 300) {
+                    .bandalPopover(isPresented: Binding(get: { showingMigrationGuide || creation != nil }, set: { if !$0 { showingMigrationGuide = false; creation = nil } }), width: creation?.kind == .ink ? 400 : 300) {
                         if showingMigrationGuide { migrationGuide } else if let creation { namedCreation(creation) }
                     }
             }.padding(.leading, 16).padding(.trailing, 3).frame(height: 44)
@@ -216,7 +216,10 @@ Menu {
     @ViewBuilder private func namedCreation(_ request: CreationRequest) -> some View {
         let destination = request.destination
         if request.kind == .ink {
-            NativeNewNoteSheet(store: store, courseID: destination.courseID, parentPath: destination.folder) { document in creation = nil; request.open(document) }
+            NativeNewNoteSheet(cancel: { creation = nil }) { options in
+                let document = try await store.createNote(title: options.title, paper: options.paper.rawValue, orientation: options.orientation, courseID: destination.courseID, parentPath: destination.folder)
+                creation = nil; request.open(document)
+            }
         } else if request.kind == .markdown {
             BandalTextEntry(title: "새 마크다운", prompt: request.markdownTitle, initial: request.markdownTitle, actionTitle: "만들기", identifier: "native-name-input") { name in
                 let document = try await store.createMarkdown(title: name, courseID: destination.courseID, parentPath: destination.folder)

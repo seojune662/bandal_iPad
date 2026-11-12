@@ -67,6 +67,8 @@ struct NativeMarkdownWorkspace: View {
             } else if chromeMode != .toolsHidden {
                 formattingToolbar.padding(.trailing, controlInset).padding(.top, topInset)
             }
+            // The tool row above sits on the card's tone; the note itself is paper.
+            VStack(spacing: 0) {
             if let error = session.errorMessage {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(error, systemImage: "exclamationmark.triangle").font(.callout)
@@ -100,7 +102,9 @@ struct NativeMarkdownWorkspace: View {
                 }
             } else {
                 ContentUnavailableView("노트를 열지 못했어요", systemImage: "doc.badge.ellipsis", description: Text("저장된 파일은 그대로 보관되어 있습니다."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            }.background(NativeGlass.paper)
         }
         .padding(.top, chromeMode == .toolsHidden && annotation.request?.documentID != document.id ? (controlInset > 0 ? topInset + 44 : topInset) : 0)
         .task {
@@ -313,8 +317,8 @@ struct NativeMarkdownWorkspace: View {
             }
         }.buttonStyle(.plain).padding(.horizontal, 12).frame(height: 45).padding(.bottom, 1)
             .accessibilityElement(children: .contain).accessibilityIdentifier("native-markdown-toolbar").accessibilityValue(sourceMode ? "Markdown 원문" : "서식 편집")
-            .foregroundStyle(NativeDesktopTheme.text).background(NativeGlass.paper)
-            .overlay(alignment: .bottom) { NativeGlass.separator.frame(height: 1) }
+            .foregroundStyle(NativeDesktopTheme.text)
+            .overlay(alignment: .bottom) { NativeGlass.hairline.frame(height: 1) }
             .disabled(!session.canEdit || session.frozen)
             .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { editing = $0.object as? Bool ?? false }
     }
