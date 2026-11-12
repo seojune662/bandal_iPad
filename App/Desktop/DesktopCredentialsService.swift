@@ -243,7 +243,8 @@ final class DesktopCredentialsService: NSObject, UIDocumentPickerDelegate {
         guard rows.count <= 10_001 else { throw DesktopRuntimeError("CSV는 한 번에 10,000개 계정까지 가져올 수 있습니다.") }; return rows
     }
     private func pickCSV() async throws -> URL? {
-        guard picker == nil, let presenter, presenter.presentedViewController == nil else { throw DesktopRuntimeError("열린 파일 선택 창을 먼저 닫아 주세요.") }
+        guard picker == nil else { throw DesktopRuntimeError("이미 파일 선택 창이 열려 있어요.") }
+        guard let presenter = await presenter?.readyPresenter(), picker == nil else { throw DesktopRuntimeError("열린 창을 닫은 뒤 다시 시도해 주세요.") }
         let controller = UIDocumentPickerViewController(forOpeningContentTypes: [.commaSeparatedText, .plainText], asCopy: false); controller.delegate = self
         return try await withCheckedThrowingContinuation { continuation in picker = continuation; presenter.present(controller, animated: true) }
     }

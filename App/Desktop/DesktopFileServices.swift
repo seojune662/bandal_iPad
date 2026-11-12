@@ -11,6 +11,7 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
     private var selection: CheckedContinuation<[URL]?, Error>?
     private weak var activePicker: UIDocumentPickerViewController?
     private weak var activeShare: UIActivityViewController?
+    private weak var activePreview: QLPreviewController?
     private var shareIdentifier: UUID?
     private var cancelShare: (() -> Void)?
     private var presentationGeneration = 0
@@ -31,8 +32,8 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
         let share = activeShare; activeShare = nil
         pending?.resume(returning: nil); cancel?()
         picker?.dismiss(animated: false); share?.dismiss(animated: false)
-        if let preview = presenter?.presentedViewController as? QLPreviewController,
-           previewURLs[ObjectIdentifier(preview)] != nil { preview.dismiss(animated: false) }
+        if let preview = activePreview, previewURLs[ObjectIdentifier(preview)] != nil { preview.dismiss(animated: false) }
+        activePreview = nil
         let previews = Array(previewURLs.values); previewURLs.removeAll()
         previews.forEach(releaseTemporaryFile)
     }
@@ -118,7 +119,7 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
             guard let path = request["path"] as? String else { throw DesktopRuntimeError("파일을 확인해 주세요.") }
             let target = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
             guard target.path.hasPrefix(runtime.root.resolvingSymlinksInPath().path + "/") else { throw DesktopRuntimeError("파일 경로에 접근할 수 없습니다.") }
-            try preview(target)
+            try await preview(target)
             return ["ok": true]
         case "native:openLogs":
             await runtime.log.flush()
@@ -126,7 +127,7 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let file = folder.appendingPathComponent("bandal.log")
             if !FileManager.default.fileExists(atPath: file.path) { try Data("반달 iPad 실행 기록\n".utf8).write(to: file, options: .atomic) }
-            try preview(file)
+            try await preview(file)
             return ["ok": true]
         case "courses:pickFolder", "plugins:pickFolder", "settings:pickDataRoot":
             let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
@@ -163,7 +164,7 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
         case "materials:reveal", "materials:preview", "chat:openArtifact":
             // `annotated`: the note as written, ink included (the tab strip's 미리보기).
             let source = try await materialSnapshot(request, includingPDFAnnotations: request["annotated"] as? Bool == true)
-            do { try preview(source) } catch { releaseTemporaryFile(source); throw error }
+            do { try await preview(source) } catch { releaseTemporaryFile(source); throw error }
             return ["ok": true]
         case "materials:export":
             let source = try await materialSnapshot(request, includingPDFAnnotations: true)
@@ -173,7 +174,8 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
         case "materials:share":
             let source = try await materialSnapshot(request, includingPDFAnnotations: true)
             defer { releaseTemporaryFile(source) }
-            guard let presenter, presenter.viewIfLoaded?.window != nil, presenter.presentedViewController == nil else { throw DesktopRuntimeError("열린 창을 닫은 뒤 다시 시도해 주세요.") }
+            guard activeShare == nil else { throw DesktopRuntimeError("이미 공유 창이 열려 있어요.") }
+            guard let presenter = await presenter?.readyPresenter() else { throw DesktopRuntimeError("열린 창을 닫은 뒤 다시 시도해 주세요.") }
             let identifier = UUID()
             defer { if shareIdentifier == identifier { cancelShare = nil; activeShare = nil; shareIdentifier = nil } }
             let shared = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
@@ -217,10 +219,10 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
         return source
     }
 
-    private func preview(_ url: URL) throws {
-        guard let presenter, presenter.viewIfLoaded?.window != nil, presenter.presentedViewController == nil else { throw DesktopRuntimeError("열린 창을 닫은 뒤 다시 시도해 주세요.") }
+    private func preview(_ url: URL) async throws {
+        guard let presenter = await presenter?.readyPresenter() else { throw DesktopRuntimeError("열린 창을 닫은 뒤 다시 시도해 주세요.") }
         let preview = QLPreviewController(); preview.dataSource = self; preview.delegate = self
-        previewURLs[ObjectIdentifier(preview)] = url
+        previewURLs[ObjectIdentifier(preview)] = url; activePreview = preview
         presenter.present(preview, animated: true)
     }
 
@@ -242,7 +244,8 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
     }
 
     private func pick(_ picker: UIDocumentPickerViewController) async throws -> [URL]? {
-        guard selection == nil, let presenter, presenter.viewIfLoaded?.window != nil, presenter.presentedViewController == nil else { throw DesktopRuntimeError("열린 파일 선택 창을 먼저 닫아 주세요.") }
+        guard selection == nil else { throw DesktopRuntimeError("이미 파일 선택 창이 열려 있어요.") }
+        guard let presenter = await presenter?.readyPresenter(), selection == nil else { throw DesktopRuntimeError("열린 창을 닫은 뒤 다시 시도해 주세요.") }
         picker.view.accessibilityIdentifier = "bandal-document-picker"
         picker.delegate = self
         return try await withCheckedThrowingContinuation { continuation in
@@ -265,5 +268,22 @@ final class DesktopFileServices: NSObject, UIDocumentPickerDelegate, QLPreviewCo
     }
     func previewControllerDidDismiss(_ controller: QLPreviewController) {
         if let source = previewURLs.removeValue(forKey: ObjectIdentifier(controller)) { releaseTemporaryFile(source) }
+    }
+}
+
+extension UIViewController {
+    /// The controller to present a system sheet from, starting at this (root) controller. A menu row
+    /// (the tab strip's 공유, a folder manager popover) closes its popover and starts the work in the same
+    /// tap, so the popover may still be animating away: wait for that, then present over whatever stays on
+    /// top — a popover meant to remain open (the folder manager) hosts the sheet instead of blocking it.
+    @MainActor func readyPresenter() async -> UIViewController? {
+        for _ in 0..<30 {
+            guard viewIfLoaded?.window != nil else { return nil }
+            var top: UIViewController = self
+            while let next = top.presentedViewController, !next.isBeingDismissed { top = next }
+            if top.presentedViewController == nil, !top.isBeingPresented { return top }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return nil
     }
 }

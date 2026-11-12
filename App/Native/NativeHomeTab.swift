@@ -42,7 +42,7 @@ struct NativeHomeTab: View {
                     Image(systemName: "chevron.right").font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.muted)
                 }.padding(14)
                     // Lifted while its menu is open (Figma 129:3094): paper white, shadow 0/10/30 at 14%.
-                    .background(showingMenu ? NativeDesktopTheme.bgApp : NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+                    .background(showingMenu ? AnyShapeStyle(NativeDesktopTheme.bgApp) : AnyShapeStyle(NativeGlass.panel), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: .black.opacity(showingMenu ? 0.14 : 0), radius: 15, y: 10)
                     .contentShape(Rectangle())
                     .onTapGesture { if !renaming { onOpen(recent.document(in: courseID)) } }
@@ -59,22 +59,27 @@ struct NativeHomeTab: View {
             title("폴더")
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 14, alignment: .top)], alignment: .leading, spacing: 14) {
                 ForEach(subjects) { course in
-                    Button { onSelectCourse(course.id) } label: { tile(course.name, "folder.fill", height: 88, icon: NativeFolderColor.color(course.color)).background(NativeDesktopTheme.surface, in: RoundedRectangle(cornerRadius: 14)) }
+                    Button { onSelectCourse(course.id) } label: {
+                        tile(course.name, nil, height: 88, icon: NativeFolderColor.color(course.color), chip: course.color)
+                            .background(NativeGlass.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NativeGlass.hairline))
+                    }
                         .buttonStyle(.plain).accessibilityIdentifier("native-home-course-" + course.id)
                 }
                 Button(action: onNewCourse) {
-                    tile("새 폴더", "plus", height: 88, icon: NativeDesktopTheme.secondary).foregroundStyle(NativeDesktopTheme.secondary)
-                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(NativeDesktopTheme.border, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+                    tile("새 폴더", "plus", height: 88, icon: Color.accentColor).foregroundStyle(NativeGlass.accent)
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NativeGlass.accent.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
                 }.buttonStyle(.plain).accessibilityIdentifier("native-home-new-course")
             }
             HStack(spacing: 18) {
                 Button(action: onNewNote) {
                     HStack(spacing: 8) { Image(systemName: "square.and.pencil").font(.system(size: 18)); Text("새 노트").font(NativeDesktopTheme.font(17, weight: .semibold)) }
-                        .foregroundStyle(NativeDesktopTheme.onAccent)
-                        .padding(.horizontal, 26).frame(height: 49).background(NativeDesktopTheme.accent, in: Capsule())
-                        .shadow(color: .black.opacity(0.12), radius: 12, y: 8).contentShape(Rectangle())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 26).frame(height: 49)
+                        .background { Capsule().fill(NativeGlass.accent).overlay(Capsule().fill(LinearGradient(colors: [.white.opacity(0.22), .clear], startPoint: .top, endPoint: .bottom))) }
+                        .shadow(color: Color.accentColor.opacity(0.28), radius: 12, y: 8).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("새 노트 쓰기").accessibilityIdentifier("native-home-new-note")
-                Button("PDF · 폴더에서 추가") { importing = true }.buttonStyle(.plain).font(NativeDesktopTheme.font(15, weight: .medium)).foregroundStyle(NativeDesktopTheme.accent).frame(minHeight: 44)
+                Button("PDF · 폴더에서 추가") { importing = true }.buttonStyle(.plain).font(NativeDesktopTheme.font(15, weight: .medium)).foregroundStyle(NativeGlass.accent).frame(minHeight: 44)
                     .accessibilityIdentifier("native-home-import")
             }.frame(maxWidth: .infinity)
         }
@@ -90,9 +95,10 @@ struct NativeHomeTab: View {
     private func title(_ text: LocalizedStringKey) -> some View {
         Text(text).font(NativeDesktopTheme.font(15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityAddTraits(.isHeader)
     }
-    private func tile(_ title: String, _ symbol: String, height: CGFloat, icon: Color) -> some View {
+    private func tile(_ title: String, _ symbol: String?, height: CGFloat, icon: Color, chip: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 22)).foregroundStyle(icon).frame(height: 26)
+            if let chip { NativeFolderChip(color: chip, size: 24).frame(height: 26) }
+            else if let symbol { Image(systemName: symbol).font(.system(size: 22)).foregroundStyle(icon).frame(height: 26) }
             Text(title).font(NativeDesktopTheme.font(14, weight: .medium)).lineLimit(1)
         }.padding(16).frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading).contentShape(Rectangle())
     }

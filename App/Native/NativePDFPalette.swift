@@ -54,8 +54,10 @@ struct NativePDFPaletteLayer: View {
         GeometryReader { geometry in
             if !host.suspended, host.entries.count == 1, let entry = host.entries.values.first {
                 let origin = geometry.frame(in: .global).origin, middle = entry.frame.midX - origin.x
-                // Centred on the page area and as wide as the window allows on both sides.
-                let half = max(0, min(middle, geometry.size.width - middle) - 8)
+                // Centred on the page area and kept inside it, clear of the thumbnails button at its left
+                // (and as far from the right, to stay centred): with both side panels open the pill
+                // compacts rather than spilling over them or pushing that button down.
+                let half = max(0, min(entry.frame.width / 2 - NativePDFFloatingPalette.sideReserve, min(middle, geometry.size.width - middle) - 8))
                 NativePDFFloatingPalette(model: entry.model, onFrame: { host.paletteFrame = $0 }).frame(width: half * 2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .offset(x: middle - half, y: entry.frame.minY - origin.y + entry.top)
@@ -73,12 +75,21 @@ struct NativePDFFloatingPalette: View {
     @AppStorage("native.pdf.paletteCollapsed") private var collapsed = false
     /// Its gap below the tab strip and its height: the 34 pt row and 5 pt above and below.
     static let top: CGFloat = 14, height: CGFloat = 44
+    /// What the pill leaves free at each side of the page area: the thumbnails button and a gap.
+    static let sideReserve = NativePDFViewButton.leading + NativePDFViewButton.width + 8
+    /// Narrower and narrower rows, tried in order: the colours give way first, then the tools.
+    /// (tools shown in their strip, colours shown in theirs; nil shows every colour.)
+    private static let stages: [(tools: CGFloat, colors: Int?)] = [(5.5, nil), (5.5, 3), (3.5, 3), (3.5, 2), (2.5, 2), (1.5, 1)]
     var body: some View {
         Group {
             if collapsed { mini } else {
-                // Hug the row when it fits; scroll inside the pill in a narrow pane.
+                // Hug the row when it fits; shrink the colours, then the tools, each into a strip that slides;
+                // only when even that does not fit does the whole row scroll.
                 ViewThatFits(in: .horizontal) {
-                    NativePDFPaletteQuickControls(model: model, collapse: { collapsed = true }).fixedSize(horizontal: true, vertical: false)
+                    ForEach(Array(Self.stages.enumerated()), id: \.offset) { _, stage in
+                        NativePDFPaletteQuickControls(model: model, collapse: { collapsed = true }, shownTools: stage.tools, shownColors: stage.colors)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
                     // Too narrow for the pill: the whole row scrolls, with every tool in it (no second scroller inside).
                     ScrollView(.horizontal, showsIndicators: false) {
                         NativePDFPaletteQuickControls(model: model, collapse: { collapsed = true }, slidingTools: false).fixedSize(horizontal: true, vertical: false)
@@ -113,7 +124,13 @@ struct NativePDFPaletteQuickControls: View {
     var collapse: (() -> Void)? = nil
     /// The tools slide inside their own strip; off in a row that itself scrolls.
     var slidingTools = true
+    /// How many tool cells the strip shows (a half cell hints at more).
+    var shownTools = CGFloat(NativePDFPaletteLook.shownTools) + 0.5
+    /// How many swatches show before the rest slide; nil shows them all.
+    var shownColors: Int? = nil
     private static let spacing: CGFloat = 4
+    @State private var moreColorsLeft = false
+    @State private var moreColorsRight = false
     @State private var moreLeft = false
     @State private var moreRight = false
     var body: some View {
@@ -124,7 +141,7 @@ struct NativePDFPaletteQuickControls: View {
             divider
             if slidingTools { toolStrip } else { HStack(spacing: Self.spacing) { toolButtons } }
             divider
-            colors
+            if let shownColors, slidingTools { colorStrip(shownColors) } else { colors }
             divider
             widths
             if let collapse {
@@ -140,7 +157,7 @@ struct NativePDFPaletteQuickControls: View {
     /// Five tools wide and half of the sixth, so the strip reads as one that slides; its edges fade where more tools wait.
     /// A tool chosen elsewhere (Pencil double-tap, a shortcut) scrolls just enough to come into view.
     private var toolStrip: some View {
-        let cell = NativePDFPaletteLook.cell, shown = CGFloat(NativePDFPaletteLook.shownTools)
+        let cell = NativePDFPaletteLook.cell, shown = shownTools.rounded(.down), partial = shownTools - shown
         let selected = model.isPenLike ? "pen" : model.tool
         return ScrollViewReader { reader in
             ScrollView(.horizontal, showsIndicators: false) {
@@ -158,12 +175,37 @@ struct NativePDFPaletteQuickControls: View {
                     LinearGradient(colors: [.black, .black.opacity(moreRight ? 0 : 1)], startPoint: .leading, endPoint: .trailing).frame(width: 14)
                 }
             }
-            .frame(width: cell * (shown + 0.5) + Self.spacing * shown)
+            .frame(width: cell * (shown + partial) + Self.spacing * shown)
             .padding(.vertical, -5)
             .onChange(of: selected, initial: true) { _, tool in
                 withAnimation(.easeOut(duration: 0.2)) { reader.scrollTo(tool) }
             }
         }.accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-tool-scroll")
+    }
+    /// The swatches in a strip `count` wide that slides, the chosen one scrolled into view; ＋ stays outside it.
+    private func colorStrip(_ count: Int) -> some View {
+        let slots = model.usesColorSlots ? model.colorSlots : model.palette.colors(for: model.penKind)
+        let width = CGFloat(count) * 30 + CGFloat(max(0, count - 1)) * Self.spacing + (slots.count > count ? 12 : 0)
+        return HStack(spacing: Self.spacing) {
+            ScrollViewReader { reader in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Self.spacing) { swatches }.padding(.vertical, 5)
+                }
+                .onScrollGeometryChange(for: [Bool].self) { geometry in
+                    [geometry.contentOffset.x > 1, geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1]
+                } action: { _, edges in moreColorsLeft = edges[0]; moreColorsRight = edges[1] }
+                .mask {
+                    HStack(spacing: 0) {
+                        LinearGradient(colors: [.black.opacity(moreColorsLeft ? 0 : 1), .black], startPoint: .leading, endPoint: .trailing).frame(width: 10)
+                        Color.black
+                        LinearGradient(colors: [.black, .black.opacity(moreColorsRight ? 0 : 1)], startPoint: .leading, endPoint: .trailing).frame(width: 10)
+                    }
+                }
+                .frame(width: width).padding(.vertical, -5)
+                .onChange(of: model.activeColor, initial: true) { _, color in withAnimation(.easeOut(duration: 0.2)) { reader.scrollTo("color-" + color) } }
+            }.accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-color-scroll")
+            addColor
+        }
     }
     private var divider: some View { Rectangle().fill(NativePDFPaletteLook.divider).frame(width: 1, height: 18).padding(.horizontal, 4) }
     private func cell(_ image: String, chosen: Bool = false) -> some View {
@@ -195,7 +237,8 @@ struct NativePDFPaletteQuickControls: View {
         } else { button }
     }
     /// The current tool's colours, or the pen's while a tool without colour is chosen (a tap then returns to the pen).
-    @ViewBuilder private var colors: some View {
+    @ViewBuilder private var colors: some View { swatches; addColor }
+    @ViewBuilder private var swatches: some View {
         let slots = model.usesColorSlots ? model.colorSlots : model.palette.colors(for: model.penKind), tape = model.tool == "tape"
         ForEach(slots, id: \.self) { name in
             let chosen = model.usesColorSlots && model.activeColor == name
@@ -209,7 +252,11 @@ struct NativePDFPaletteQuickControls: View {
             }.accessibilityLabel(NativePDFPaletteLook.colorName(name)).accessibilityIdentifier("native-pdf-quick-color-" + name)
                 .accessibilityAddTraits(chosen ? .isSelected : [])
                 .contextMenu { if model.usesColorSlots, slots.count > 1 { Button("이 색 빼기", role: .destructive) { model.removeColorSlot(name) } } }
+                .id("color-" + name)
         }
+    }
+    @ViewBuilder private var addColor: some View {
+        let slots = model.usesColorSlots ? model.colorSlots : model.palette.colors(for: model.penKind)
         let missing = NativePDFWorkspaceModel.colors.filter { !slots.contains($0.name) }
         Menu {
             ForEach(missing, id: \.name) { item in Button(item.label) { if !model.usesColorSlots { model.choosePen() }; model.addColorSlot(item.name) } }

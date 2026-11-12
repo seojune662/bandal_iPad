@@ -210,10 +210,16 @@ struct NativeWorkspaceView: View {
                 (chrome.rightPinned || !NativeWorkspaceChromeLayout.fitsRight(geometry.size.width) && compactMaterialsRail)
             HStack(spacing: 0) {
                 globalNavigation(width: geometry.size.width).zIndex(2)
-                if chrome.leftPinned {
-                    HStack(spacing: 0) { courseSidebar.frame(width: chrome.leftWidth); railDivider }
-                        .transition(.move(edge: .leading)).zIndex(1)
+                // The slot is cut at its sides, so the sidebar slides out of its own column and never passes
+                // under the rail: rail glass over panel glass reads as a flat grey band for the whole slide.
+                HStack(spacing: 0) {
+                    if chrome.leftPinned {
+                        HStack(spacing: 0) { courseSidebar.frame(width: chrome.leftWidth); railDivider }
+                            .transition(.move(edge: .leading))
+                    }
                 }
+                .mask { Rectangle().padding(.vertical, -400) }
+                .zIndex(1)
                 // Always mounted so a draft or streaming reply survives closing the column;
                 // the width animates and the clipped content slides with it.
                 HStack(spacing: 0) { aiRail.frame(width: aiHostWidth); railDivider }
@@ -253,7 +259,9 @@ struct NativeWorkspaceView: View {
                         }
                     }
                 // The page, note or web view runs to the window's bottom edge, under the home indicator.
-                }.frame(maxWidth: .infinity, maxHeight: .infinity).ignoresSafeArea(.container, edges: .bottom).background(NativeGlass.paper)
+                // The dock lays its documents out as cards on the glass; a tool screen over it keeps the plain paper.
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).ignoresSafeArea(.container, edges: .bottom)
+                    .background(covered ? AnyShapeStyle(NativeGlass.paper) : AnyShapeStyle(NativeGlass.panel))
                 if chrome.rightPinned {
                     railDivider
                     Color.clear.frame(width: chrome.rightWidth)
@@ -393,7 +401,8 @@ struct NativeWorkspaceView: View {
         // The decor reaches every glass region from here, so the settings slider repaints the window as it moves.
         .environment(\.nativeDecor, NativeDecor(palette: .named(decorPalette), intensity: min(max(decorIntensity, 0), 1)))
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
-        .tint(NativeDesktopTheme.accent)
+        // Controls take the decor's accent (모노 keeps black and white).
+        .tint(Color(uiColor: UIColor { [decorPalette] traits in NativeDecorPalette.named(decorPalette).accent(dark: traits.userInterfaceStyle == .dark) }))
         .toggleStyle(BandalToggleStyle())
         .environment(\.nativeWorkspacePreviewController, previews)
         .disabled(store.isApplyingExternalChanges)
@@ -947,8 +956,8 @@ struct NativeWorkspaceView: View {
                 Text("폴더를 선택하거나 새로 만드세요").font(NativeDesktopTheme.font(15)).foregroundStyle(NativeDesktopTheme.secondary)
                 Button { setCourseRail(true, width: windowWidth); NotificationCenter.default.post(name: NativeHomeTab.newCourse, object: nil) } label: {
                     Label("새 폴더 만들기", systemImage: "folder.badge.plus").font(NativeDesktopTheme.font(15, weight: .semibold))
-                        .padding(.horizontal, 18).frame(minHeight: 44)
-                }.buttonStyle(.borderedProminent).accessibilityIdentifier("native-empty-new-folder")
+                        .padding(.horizontal, 4).frame(minHeight: 44)
+                }.buttonStyle(NativeThemedButtonStyle(prominent: true)).accessibilityIdentifier("native-empty-new-folder")
             }
             if store.selectedCourseID != nil {
                 NativeHomeTab(store: store, courseTitle: courseTitle,

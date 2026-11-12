@@ -6,7 +6,7 @@ final class NativeLibraryRepository {
     private typealias C = NativeRepositoryContext
     let context: NativeRepositoryContext
     private var recovered = false
-    static let channels = ["courses:list", "courses:create", "courses:addFromFolder", "courses:relink", "courses:rename", "courses:setColor", "courses:setWorkspaceKind", "courses:archive", "courses:organize", "courses:delete", "courses:restore", "courses:purge", "courseGroups:list", "courseGroups:create", "courseGroups:rename", "courseGroups:delete", "courseLinks:list", "courseLinks:create", "courseLinks:update", "courseLinks:delete", "materials:tree", "materials:snapshot", "materials:search", "materials:readFile", "materials:import", "materials:importShared", "materials:rename", "materials:move", "materials:delete", "materials:duplicate", "materials:createFolder", "materials:writeFile", "materials:adoptFile", "notes:read", "notes:write", "notes:create", "notes:rename", "nativeMaterial:path"]
+    static let channels = ["courses:list", "courses:create", "courses:addFromFolder", "courses:relink", "courses:rename", "courses:setColor", "courses:setWorkspaceKind", "courses:archive", "courses:organize", "courses:move", "courses:delete", "courses:restore", "courses:purge", "courseLinks:list", "courseLinks:create", "courseLinks:update", "courseLinks:delete", "materials:tree", "materials:snapshot", "materials:search", "materials:readFile", "materials:import", "materials:importShared", "materials:rename", "materials:move", "materials:delete", "materials:duplicate", "materials:createFolder", "materials:writeFile", "materials:adoptFile", "notes:read", "notes:write", "notes:create", "notes:rename", "nativeMaterial:path"]
     init(context: NativeRepositoryContext) { self.context = context }
 
     func handle(_ channel: String, _ request: [String: Any]) throws -> Any? {
@@ -15,14 +15,13 @@ final class NativeLibraryRepository {
         if channel == "nativeMaterial:folders" { return try folders(id(request)) }
         let result: Any
         if channel.hasPrefix("courses:") { result = try courses(String(channel.dropFirst(8)), request) }
-        else if channel.hasPrefix("courseGroups:") { result = try groups(String(channel.dropFirst(13)), request) }
         else if channel.hasPrefix("courseLinks:") { result = try links(String(channel.dropFirst(12)), request) }
         else if channel.hasPrefix("notes:") { result = try notes(String(channel.dropFirst(6)), request) }
         else if channel == "nativeMaterial:path" { return try context.materialURL(courseID: id(request), relativePath: string(request, "relPath")).path }
         else { result = try materials(String(channel.dropFirst(10)), request) }
         let action = channel.split(separator: ":").last.map(String.init) ?? ""
         if !["list", "tree", "snapshot", "search", "read", "readFile"].contains(action) {
-            if channel.hasPrefix("courses:") || channel.hasPrefix("courseGroups:") { context.emit?("courses:changed", [:]) }
+            if channel.hasPrefix("courses:") { context.emit?("courses:changed", [:]) }
             else if let course = request["courseId"] as? String { context.emit?("materials:changed", ["courseId": course]) }
         }
         return result
@@ -35,7 +34,7 @@ final class NativeLibraryRepository {
     private func course(_ row: [String: Any]) -> [String: Any] {
         let path = row["folder_path"] as? String ?? ""
         var directory: ObjCBool = false
-        var value: [String: Any] = ["id": row["id"] ?? "", "name": row["name"] ?? "", "slug": row["slug"] ?? "", "color": row["color"] ?? "blue", "folderPath": path, "source": row["source"] ?? "managed", "workspaceKind": row["workspace_kind"] ?? "course", "missing": !context.files.fileExists(atPath: path, isDirectory: &directory) || !directory.boolValue, "archived": (row["archived"] as? NSNumber)?.boolValue ?? false, "groupId": row["group_id"] ?? NSNull(), "sortOrder": row["sort_order"] ?? 0, "createdAt": row["created_at"] ?? "", "updatedAt": row["updated_at"] ?? ""]
+        var value: [String: Any] = ["id": row["id"] ?? "", "name": row["name"] ?? "", "slug": row["slug"] ?? "", "color": row["color"] ?? "blue", "folderPath": path, "source": row["source"] ?? "managed", "workspaceKind": row["workspace_kind"] ?? "course", "missing": !context.files.fileExists(atPath: path, isDirectory: &directory) || !directory.boolValue, "archived": (row["archived"] as? NSNumber)?.boolValue ?? false, "parentId": row["parent_id"] ?? NSNull(), "sortOrder": row["sort_order"] ?? 0, "createdAt": row["created_at"] ?? "", "updatedAt": row["updated_at"] ?? ""]
         if let deleted = row["deleted_at"] as? String { value["deletedAt"] = deleted }
         return value
     }
@@ -63,6 +62,10 @@ final class NativeLibraryRepository {
         if action == "list" { return try listCourses(request) }
         if action == "create" || action == "addFromFolder" {
             let linked = action == "addFromFolder"
+            // A folder inside a folder is a link between two folders, each with its own directory: the
+            // parent's files never list the child's, and no two folders ever share a path.
+            let parent = (request["parentId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            if let parent { _ = try row("courses", id: try C.requireID(parent)) }
             let kind = request["workspaceKind"] as? String ?? "course"
             guard ["course", "study-space"].contains(kind) else { throw C.validation("Invalid workspace kind") }
             var name = (request["name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -89,7 +92,7 @@ final class NativeLibraryRepository {
             let key = UUID().uuidString.lowercased(), now = C.nowISO
             do {
                 let order = try context.query("SELECT COALESCE(MAX(sort_order),-1)+1 AS value FROM courses WHERE deleted_at IS NULL").first?["value"] ?? 0
-                try context.run("INSERT INTO courses(id,name,slug,color,folder_path,source,workspace_kind,archived,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,0,?,?,?)", [key, name, token, color, folder.path, source, kind, order, now, now])
+                try context.run("INSERT INTO courses(id,name,slug,color,folder_path,source,workspace_kind,archived,sort_order,parent_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,0,?,?,?,?)", [key, name, token, color, folder.path, source, kind, order, parent as Any? ?? NSNull(), now, now])
             } catch {
                 if !linked, (try? context.files.contentsOfDirectory(atPath: folder.path).isEmpty) == true { try? context.files.removeItem(at: folder) }
                 throw error
@@ -106,14 +109,28 @@ final class NativeLibraryRepository {
             try context.run("UPDATE courses SET \(column)=?,updated_at=? WHERE id=?", [value, now, key])
         case "archive":
             guard let archive = request["archived"] as? Bool else { throw C.validation("archived must be boolean") }
-            try context.run("UPDATE courses SET archived=?,updated_at=? WHERE id=?", [archive ? 1 : 0, now, key])
+            // Archiving a folder archives what is inside it; restoring brings the inside back with it.
+            let members = try subtree(key, live: true)
+            try context.transaction { for member in members { try context.run("UPDATE courses SET archived=?,updated_at=? WHERE id=?", [archive ? 1 : 0, now, member]) } }
         case "delete":
-            try context.run("UPDATE courses SET deleted_at=?,updated_at=? WHERE id=?", [now, now, key]); return ["ok": true]
+            // To 최근 삭제 with everything inside, stamped with one time so 복원 can bring back exactly this set.
+            let members = try subtree(key, live: true)
+            try context.transaction { for member in members { try context.run("UPDATE courses SET deleted_at=?,updated_at=? WHERE id=?", [now, now, member]) } }
+            return ["ok": true, "count": members.count]
         case "restore":
-            let folder = URL(fileURLWithPath: current["folder_path"] as! String).resolvingSymlinksInPath()
-            guard folderProblem(folder) == nil else { throw C.notFound("course folder", folder.path) }
-            if try context.query("SELECT id,folder_path FROM courses WHERE deleted_at IS NULL AND id<>?", [key]).contains(where: { URL(fileURLWithPath: $0["folder_path"] as! String).resolvingSymlinksInPath() == folder }) { throw C.conflict("이 폴더가 다른 공간에 연결되어 있습니다.") }
-            try context.run("UPDATE courses SET deleted_at=NULL,archived=0,updated_at=? WHERE id=?", [now, key])
+            let stamp = current["deleted_at"] as? String
+            let members = try subtree(key, live: false).filter { $0 != key }
+            try restoreOne(key, now: now)
+            // A folder restored without its deleted parent comes back at the top level.
+            if let parent = current["parent_id"] as? String, try context.query("SELECT id FROM courses WHERE id=? AND deleted_at IS NULL", [parent]).isEmpty {
+                try context.run("UPDATE courses SET parent_id=NULL WHERE id=?", [key])
+            }
+            // What was deleted with it (the same stamp) comes back with it; a folder deleted on its own earlier stays.
+            if let stamp {
+                for member in members where (try context.query("SELECT deleted_at FROM courses WHERE id=?", [member]).first?["deleted_at"] as? String) == stamp {
+                    try? restoreOne(member, now: now)
+                }
+            }
         case "relink":
             let path = try string(request, "folderPath"); guard path.hasPrefix("/") else { throw C.validation("folderPath must be absolute") }
             let folder = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
@@ -122,22 +139,36 @@ final class NativeLibraryRepository {
             try context.assertPathAvailable(courseID: key)
             try context.run("UPDATE courses SET folder_path=?,source='linked',updated_at=? WHERE id=?", [folder.path, now, key])
             return ["status": "ok", "course": course(try row("courses", id: key))]
-        case "organize":
-            let group = request["groupId"] as? String, before = request["beforeCourseId"] as? String
-            if let group { _ = try row("course_groups", id: C.requireID(group)) }
+        case "organize", "move":
+            // `parentId` absent keeps the folder where it is; null moves it to the top level.
+            let parent: String? = request.keys.contains("parentId") ? (request["parentId"] as? String).flatMap { $0.isEmpty ? nil : $0 } : current["parent_id"] as? String
+            let before = request["beforeCourseId"] as? String
             if before == key { throw C.validation("Cannot place a course before itself") }
+            if let parent {
+                _ = try row("courses", id: try C.requireID(parent))
+                if try subtree(key, live: true).contains(parent) { throw C.validation("폴더를 자기 안으로 옮길 수 없어요.") }
+            }
             try context.transaction {
-                var ordered = try context.query("SELECT id,group_id FROM courses WHERE deleted_at IS NULL AND id<>? ORDER BY sort_order,created_at", [key])
+                var ordered = try context.query("SELECT id,parent_id FROM courses WHERE deleted_at IS NULL AND id<>? ORDER BY sort_order,created_at", [key])
                 let position: Int
                 if let before {
-                    guard let index = ordered.firstIndex(where: { $0["id"] as? String == before }), ordered[index]["group_id"] as? String == group else { throw C.validation("The target course must belong to the target group") }; position = index
-                } else { position = ordered.lastIndex(where: { $0["group_id"] as? String == group }).map { $0 + 1 } ?? ordered.count }
-                ordered.insert(["id": key, "group_id": group as Any? ?? NSNull()], at: position)
-                try context.run("UPDATE courses SET group_id=?,updated_at=? WHERE id=?", [group as Any? ?? NSNull(), now, key])
+                    guard let index = ordered.firstIndex(where: { $0["id"] as? String == before }), ordered[index]["parent_id"] as? String == parent else { throw C.validation("The target folder must be in the same folder") }; position = index
+                } else { position = ordered.lastIndex(where: { $0["parent_id"] as? String == parent }).map { $0 + 1 } ?? ordered.count }
+                ordered.insert(["id": key, "parent_id": parent as Any? ?? NSNull()], at: position)
+                try context.run("UPDATE courses SET parent_id=?,updated_at=? WHERE id=?", [parent as Any? ?? NSNull(), now, key])
                 for (index, item) in ordered.enumerated() { try context.run("UPDATE courses SET sort_order=?,updated_at=? WHERE id=?", [index, now, item["id"]!]) }
             }
             return try listCourses()
-        case "purge": return try purgeCourse(current)
+        case "purge":
+            // Children deleted with this folder go with it; the deepest first, so none is left pointing at a gone parent.
+            if let stamp = current["deleted_at"] as? String {
+                for member in try subtree(key, live: false).filter({ $0 != key }).reversed()
+                where (try context.query("SELECT deleted_at FROM courses WHERE id=?", [member]).first?["deleted_at"] as? String) == stamp {
+                    _ = try purgeCourse(try row("courses", id: member, live: false))
+                }
+            }
+            try context.run("UPDATE courses SET parent_id=NULL WHERE parent_id=?", [key])
+            return try purgeCourse(try row("courses", id: key, live: false))
         default: throw C.validation("Unsupported course action")
         }
         return course(try row("courses", id: key))
@@ -148,18 +179,21 @@ final class NativeLibraryRepository {
         if !directory.boolValue { return "not-a-directory" }
         return context.files.isReadableFile(atPath: url.path) ? nil : "unreadable"
     }
-    private func groups(_ action: String, _ request: [String: Any]) throws -> Any {
-        func value(_ row: [String: Any]) -> [String: Any] { ["id": row["id"]!, "name": row["name"]!, "sortOrder": row["sort_order"]!, "createdAt": row["created_at"]!, "updatedAt": row["updated_at"]!] }
-        if action == "list" { return try context.query("SELECT * FROM course_groups WHERE deleted_at IS NULL ORDER BY sort_order,created_at").map(value) }
-        let now = C.nowISO
-        if action == "create" {
-            let key = UUID().uuidString.lowercased(), name = try string(request, "name").trimmingCharacters(in: .whitespacesAndNewlines)
-            let order = try context.query("SELECT COALESCE(MAX(sort_order),-1)+1 AS value FROM course_groups WHERE deleted_at IS NULL").first?["value"] ?? 0
-            try context.run("INSERT INTO course_groups(id,name,sort_order,created_at,updated_at) VALUES(?,?,?,?,?)", [key, name, order, now, now]); return value(try row("course_groups", id: key))
+    /// The folder and every folder inside it, parents before children. `live` limits it to folders not deleted.
+    private func subtree(_ root: String, live: Bool) throws -> [String] {
+        var result = [root], index = 0
+        while index < result.count {
+            let children = try context.query("SELECT id FROM courses WHERE parent_id=?\(live ? " AND deleted_at IS NULL" : "") ORDER BY sort_order,created_at", [result[index]]).compactMap { $0["id"] as? String }
+            result.append(contentsOf: children.filter { !result.contains($0) }); index += 1
         }
-        let key = try id(request, "groupId"); _ = try row("course_groups", id: key)
-        if action == "rename" { try context.run("UPDATE course_groups SET name=?,updated_at=? WHERE id=?", [try string(request, "name").trimmingCharacters(in: .whitespacesAndNewlines), now, key]); return value(try row("course_groups", id: key)) }
-        try context.transaction { try context.run("UPDATE courses SET group_id=NULL,updated_at=? WHERE group_id=?", [now, key]); try context.run("UPDATE course_groups SET deleted_at=?,updated_at=? WHERE id=?", [now, now, key]) }; return ["ok": true]
+        return result
+    }
+    private func restoreOne(_ key: String, now: String) throws {
+        let current = try row("courses", id: key, live: false)
+        let folder = URL(fileURLWithPath: current["folder_path"] as! String).resolvingSymlinksInPath()
+        guard folderProblem(folder) == nil else { throw C.notFound("course folder", folder.path) }
+        if try context.query("SELECT id,folder_path FROM courses WHERE deleted_at IS NULL AND id<>?", [key]).contains(where: { URL(fileURLWithPath: $0["folder_path"] as! String).resolvingSymlinksInPath() == folder }) { throw C.conflict("이 폴더가 다른 공간에 연결되어 있습니다.") }
+        try context.run("UPDATE courses SET deleted_at=NULL,archived=0,updated_at=? WHERE id=?", [now, key])
     }
     private func links(_ action: String, _ request: [String: Any]) throws -> Any {
         func value(_ r: [String: Any]) -> [String: Any] { ["id": r["id"]!, "courseId": r["course_id"]!, "label": r["label"]!, "url": r["url"]!, "rawUrl": r["raw_url"]!, "kind": r["kind"]!, "lmsCourseId": r["lms_course_id"] ?? NSNull(), "sortOrder": r["sort_order"]!, "createdAt": r["created_at"]!, "updatedAt": r["updated_at"]!] }
@@ -845,9 +879,11 @@ final class NativeLibraryRepository {
         return target
     }
     private func purgeCourse(_ course: [String: Any]) throws -> Any {
-        guard course["deleted_at"] is String, course["source"] as? String == "managed", let id = course["id"] as? String, let path = course["folder_path"] as? String else { throw C.validation("Only a deleted managed course can be purged") }
+        guard course["deleted_at"] is String, let id = course["id"] as? String, let path = course["folder_path"] as? String else { throw C.validation("Only a deleted course can be purged") }
+        // A linked folder belongs to the user's Files: purging forgets it here and never touches its contents.
+        let managed = course["source"] as? String == "managed"
         let folder = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
-        for row in try context.query("SELECT folder_path FROM courses WHERE deleted_at IS NULL") {
+        for row in try context.query("SELECT folder_path FROM courses WHERE deleted_at IS NULL") where managed {
             if let path = row["folder_path"] as? String {
                 let other = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
                 if C.contains(folder.path, other) || C.contains(other, folder.path) { throw C.conflict("이 폴더를 다른 공간에서 사용하고 있습니다.") }
@@ -859,7 +895,7 @@ final class NativeLibraryRepository {
             // Purge is rare. Retain a consistent SQLite backup alongside Trash,
             // including annotations and receipts, before removing any rows.
             try context.run("VACUUM INTO ?", [backup.appendingPathComponent("purged-course-\(id)-\(UUID().uuidString).db").path])
-            let trashed = context.files.fileExists(atPath: folder.path) ? try trash(folder, course: id, relative: "") : nil
+            let trashed = managed && context.files.fileExists(atPath: folder.path) ? try trash(folder, course: id, relative: "") : nil
             do {
                 try context.transaction {
                     try context.run("DELETE FROM message_blocks WHERE message_id IN (SELECT id FROM messages WHERE course_id=?)", [id])

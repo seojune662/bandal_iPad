@@ -41,10 +41,16 @@ struct NativeDockShareControls: View {
                 Button { sharing.toggle() } label: { cell }
                     .bandalPopover(isPresented: $sharing, at: .bottom, offset: CGSize(width: 0, height: 3), width: 280, radius: 14, padding: 8) {
                         VStack(spacing: 2) {
+                            // Which document this acts on: with panes side by side it is the one last touched.
+                            HStack(spacing: 8) {
+                                Image(systemName: isPDF ? "doc.richtext" : "doc.text").font(.system(size: 13)).foregroundStyle(NativeGlass.accent)
+                                Text(verbatim: document.title).font(.system(size: 13, weight: .medium)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1).truncationMode(.middle)
+                                Spacer(minLength: 0)
+                            }.padding(.horizontal, 12).frame(height: 32).accessibilityIdentifier("native-dock-share-target")
                             ForEach(items) { item in
                                 Button { sharing = false; item.action() } label: {
                                     HStack(spacing: 12) {
-                                        Image(systemName: item.symbol).font(.system(size: 17)).foregroundStyle(NativeDesktopTheme.accent).frame(width: 24, height: 24)
+                                        Image(systemName: item.symbol).font(.system(size: 17)).foregroundStyle(NativeGlass.accent).frame(width: 24, height: 24)
                                         VStack(alignment: .leading, spacing: 2) {
                                             BandalText(item.title).font(.system(size: 16, weight: .semibold)).foregroundStyle(NativeDesktopTheme.text)
                                             BandalText(item.detail).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)

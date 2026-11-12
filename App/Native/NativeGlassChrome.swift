@@ -97,7 +97,7 @@ extension EnvironmentValues {
 
 /// A glass fill that follows the decor in the environment, so a change redraws it wherever it is painted.
 struct NativeDecorStyle: ShapeStyle {
-    enum Kind: Sendable { case rail, panel, selection, clear }
+    enum Kind: Sendable { case rail, panel, selection, accent, accentSoft, gutter, clear }
     let kind: Kind
     static let clear = NativeDecorStyle(kind: .clear)
 
@@ -108,6 +108,12 @@ struct NativeDecorStyle: ShapeStyle {
         case .rail: dark ? Self.rgb(0x131315, decor.alpha(0.95, 0.6, reduceTransparency: solid)) : Self.rgb(0xdcdce1, decor.alpha(0.93, 0.5, reduceTransparency: solid))
         case .panel: dark ? Self.rgb(0x1f1f21, decor.alpha(0.94, 0.66, reduceTransparency: solid)) : Self.rgb(0xf4f4f6, decor.alpha(0.9, 0.58, reduceTransparency: solid))
         case .selection: decor.palette.accent(dark: dark).withAlphaComponent(decor.selectionAlpha(dark: dark))
+        case .accent: decor.palette.accent(dark: dark)
+        // A filled control's ground: the accent, light enough that its label still reads in `accent`.
+        case .accentSoft: decor.palette.accent(dark: dark).withAlphaComponent(dark ? 0.22 : 0.14)
+        // Behind PDF pages: about 30 % of the theme at the default dial, following it either way.
+        // 모노's accent is black or white, so it takes a fraction of that to stay a quiet grey.
+        case .gutter: decor.palette.accent(dark: dark).withAlphaComponent((decor.palette.chroma == 0 ? 0.08 : 0.3) * CGFloat(0.45 + decor.intensity) * (dark ? 0.7 : 1))
         case .clear: .clear
         }
         return Color(uiColor: color).resolve(in: environment)
@@ -131,6 +137,11 @@ enum NativeGlass {
     static let hairline = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.07) : UIColor.black.withAlphaComponent(0.06) })
     /// A chosen row or a pressed control on a glass panel: the palette's accent, faint.
     static let selection = NativeDecorStyle(kind: .selection)
+    /// The palette's accent: the chosen tab's rim, the focused pane, primary buttons and their icons.
+    static let accent = NativeDecorStyle(kind: .accent)
+    static let accentSoft = NativeDecorStyle(kind: .accentSoft)
+    /// The gutter around PDF pages: a soft wash of the theme over the paper.
+    static let gutter = NativeDecorStyle(kind: .gutter)
     /// `Glass/팝업`: the tint over the glass of anything that floats (palette, popover, menu, toast).
     /// Light is the style's two fills as one: white 70 % under #BFBFBF 10 %.
     /// Floating surfaces take a breath of the palette's first hue, as strong as the dial says; they are drawn
@@ -308,9 +319,10 @@ struct NativeRailSurface: View {
         ZStack(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 Rectangle().fill(NativeGlass.rail).ignoresSafeArea()
-                if let tabCenter { tab(tabCenter).foregroundStyle(.black).blendMode(.destinationOut) }
+                if let tabCenter { tab(tabCenter).foregroundStyle(.black).blendMode(.destinationOut).transition(.identity) }
             }.compositingGroup()
-            if let tabCenter { tab(tabCenter).foregroundStyle(NativeGlass.panel) }
+            // No fade: half-faded, the cut-out and its fill stack rail and panel glass into a flat grey.
+            if let tabCenter { tab(tabCenter).foregroundStyle(NativeGlass.panel).transition(.identity) }
         }.accessibilityHidden(true)
     }
     private func tab(_ center: CGFloat) -> some View {

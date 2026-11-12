@@ -151,6 +151,55 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         tapPaneControl("native-pdf-undo", pane: a); expectPaneInk(2, pane: a)
         capture("Closing one PDF instance preserves the other editable view")
     }
+    /// Regression: after switching folders back and forth, the PDF in the centre must still take ink,
+    /// pinch zoom and its tab's close button (it used to go dead while the side panels kept working).
+    @MainActor
+    func testFolderSwitchingKeepsPDFInteractive() {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = arguments(reset: true)
+        app.launch()
+        createCourse("Folder A", app: app)
+        // Ink is not asserted here: on current simulators the synthetic Pencil dispatch does not
+        // land (testMultiplePDFs… fails at its first stroke too); pinch and close still exercise input.
+        createPDF("A Notes", app: app)
+        capture("card tabs · PDF gutter")
+        createCourse("Folder B", app: app)
+        for _ in 0..<3 {
+            courseRow("Folder A", app: app).tap()
+            XCTAssertTrue(tab("A Notes", app: app).waitForExistence(timeout: 15), app.debugDescription)
+            courseRow("Folder B", app: app).tap()
+            sleep(1)
+        }
+        courseRow("Folder A", app: app).tap()
+        switchTab("A Notes", app: app)
+        // XCUITest's pinch and synthetic Pencil do not reach PDFKit on current simulators, so assert the
+        // state they depend on: the host must have released its input block after every switch.
+        let body = app.otherElements["bandal-native-pdf-body"]
+        XCTAssertTrue(body.waitForExistence(timeout: 10))
+        let live = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@ AND value CONTAINS %@", "hostInputBlocked=0", "nativeInput=1"), object: body)
+        XCTAssertEqual(XCTWaiter.wait(for: [live], timeout: 10), .completed, "PDF input must be live after folder switches: \(body.value ?? "")")
+        // Open and leave the pen's options (the popover whose flag used to block input), then check again.
+        tapControl("native-pdf-tool-pen", app: app); app.buttons["native-pdf-tool-pen"].tap(); sleep(1)
+        app.otherElements["native-pdf-workspace"].coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.8)).tap(); sleep(1)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@ AND value CONTAINS %@", "hostInputBlocked=0", "nativeInput=1"), object: body)], timeout: 10),
+                       .completed, "closing the pen options must leave input live: \(body.value ?? "")")
+        let close = app.buttons["native-close-document"]
+        XCTAssertTrue(close.waitForExistence(timeout: 10)); close.tap()
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: tab("A Notes", app: app))
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 15), .completed, "closing the tab must still work after folder switches")
+    }
+    @MainActor private func createCourse(_ name: String, app: XCUIApplication) {
+        let menu = app.buttons["native-course-add-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 20)); menu.tap()
+        let field = app.textFields["native-course-name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap(); field.typeText(name)
+        app.buttons["native-create-course"].tap()
+        XCTAssertTrue(courseRow(name, app: app).waitForExistence(timeout: 10), app.debugDescription)
+    }
+    @MainActor private func courseRow(_ name: String, app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND NOT (identifier BEGINSWITH %@) AND label CONTAINS %@", "native-course-", "native-course-expand-", name)).firstMatch
+    }
     @MainActor private func tapPaneControl(_ id: String, pane: XCUIElement) {
         let item = pane.buttons[id]
         XCTAssertTrue(item.waitForExistence(timeout: 15))
@@ -232,10 +281,10 @@ final class NativePDFDocumentFlowTests: XCTestCase {
         body.coordinate(withNormalizedOffset: from).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: to), withVelocity: .slow, thenHoldForDuration: 0.05)
     }
-    @MainActor private func expectInk(_ count: Int, app: XCUIApplication, timeout: TimeInterval = 20) {
+    @MainActor private func expectInk(_ count: Int, app: XCUIApplication, timeout: TimeInterval = 20, file: StaticString = #filePath, line: UInt = #line) {
         let item = app.buttons["native-pdf-drawing-tools"]
         let saved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND value == %@", "drawings=\(count) pending=0"), object: item)
-        XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: timeout), .completed, app.debugDescription)
+        XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: timeout), .completed, app.debugDescription, file: file, line: line)
     }
     @MainActor private func expectPage(_ page: Int, app: XCUIApplication) {
         // The thumbnails button's value is the reader's position ("2 / 3").

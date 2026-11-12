@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 import UniformTypeIdentifiers
 
 enum NativeDockDragPayload {
@@ -25,7 +26,11 @@ private final class NativeDockDragSession: ObservableObject {
     struct Target: Equatable { let groupID: String; let direction: NativeDockDirection; let index: Int? }
     @Published var transfer: Transfer?
     @Published var target: Target?
-    func end() { transfer = nil; target = nil }
+    /// The system's session for `transfer`. UIKit keeps it alive only while the drag runs, so a transfer
+    /// whose session is gone lost its end callback (the source tab was torn down mid-drag).
+    weak var source: UIDragSession?
+    var isStale: Bool { transfer != nil && source == nil }
+    func end() { transfer = nil; target = nil; source = nil }
 }
 
 /// Frames are projected from the recursive tree, but editor views live in a flat
@@ -55,6 +60,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     var chromeMode: NativeWorkspaceChromeMode = .all
     var controlInset: CGFloat = 0
     @StateObject private var drag = NativeDockDragSession()
+    @Environment(\.nativeDecor) private var decor
+    @Environment(\.colorScheme) private var scheme
     @State private var maximizedGroupID: String?
     @State private var newTabGroupID: String?
     @State private var tabListGroupID: String?
@@ -83,8 +90,20 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 let geometry = focusMode ? NativeDockGeometry(panes: [.init(group: selected, frame: bounds)]) : layout.geometry(in: bounds)
                 let metrics = layout.groups.count > 1 && focusMode ? NativeDockStripMetrics.columns : NativeDockStripMetrics.resolve(paneFrames: geometry.panes.map(\.frame), bounds: bounds)
                 ZStack(alignment: .topLeading) {
-                    // Sizes the stack; the paper glass behind the dock is the only fill.
-                    Color.clear
+                    // Sizes the stack. With panes side by side it also tracks the last touch, so 공유 and the
+                    // other window controls act on the pane the user last worked in, whatever the editor
+                    // (PDFKit, Pencil and text views swallow the SwiftUI tap below).
+                    NativeDockTouchFocus(panes: geometry.panes.count > 1 && !covered ? geometry.panes.map { ($0.group.id, $0.frame) } : []) { id in
+                        if navigation.layout?.focusedGroupID != id { focus(id) }
+                    }
+                    // Each pane's paper: a card on the glass with its chosen tab joined to it like a folder's tab.
+                    ForEach(geometry.panes) { pane in
+                        paneSurface(pane, metrics: metrics, focused: layout.groups.count > 1 && pane.group.id == layout.focusedGroupID,
+                                    corner: pane.frame.maxX >= bounds.maxX - 1 && pane.frame.minY <= bounds.minY + 1)
+                            .frame(width: pane.frame.width, height: pane.frame.height)
+                            .position(x: pane.frame.midX, y: pane.frame.midY)
+                            .allowsHitTesting(false)
+                    }
                     ForEach(geometry.panes) { pane in
                         paneChrome(pane, metrics: metrics,
                                    corner: pane.frame.maxX >= bounds.maxX - 1 && pane.frame.minY <= bounds.minY + 1)
@@ -94,25 +113,26 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     // Do not nest these in pane chrome: an editor retains identity
                     // when the same document moves to another group or the tree changes.
                     ForEach(visibleDocuments(geometry, layout: layout, bounds: bounds, metrics: metrics)) { entry in
+                        let card = Self.cardFrame(entry.frame)
                         content(entry.document)
                             .environment(\.nativeEditorVisible, entry.visible && !covered)
                             .environment(\.nativeWorkspaceChromeMode, chromeMode)
                             .environment(\.nativeWorkspaceControlInset, !chromeMode.showsTabs && entry.frame.minY <= 16.5 && entry.frame.maxX >= bounds.maxX - 1 ? controlInset : 0)
-                            .frame(width: entry.frame.width, height: entry.frame.height)
+                            .frame(width: card.width, height: card.height)
                             .background {
                                 if Self.retainsEditor(entry.document) {
                                     NativeDockEditorVisibility(isVisible: entry.visible && !covered)
                                 }
                             }
-                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous))
                             .opacity(entry.visible ? 1 : 0)
                             .allowsHitTesting(entry.visible && !covered)
                             .accessibilityHidden(!entry.visible || covered)
                             .simultaneousGesture(TapGesture().onEnded { focus(entry.groupID) })
-                            .position(x: entry.frame.midX, y: entry.frame.midY)
+                            .position(x: card.midX, y: card.midY)
                     }
                     ForEach(geometry.panes.filter { $0.group.activeID == nil }) { pane in
-                        let frame = contentFrame(pane, metrics)
+                        let frame = isHome(pane.group) ? contentFrame(pane, metrics) : Self.cardFrame(contentFrame(pane, metrics))
                         emptyPane(pane.group, groupCount: layout.groups.count)
                             .frame(width: frame.width, height: frame.height)
                             .position(x: frame.midX, y: frame.midY)
@@ -252,15 +272,69 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         return NativeDockTabSizing(availableWidth: max(0, available), naturalWidths: widths,
             activeIndex: group.tabs.firstIndex(of: group.activeID ?? "") ?? -1, spacing: density == "compact" ? 0 : metrics.gap)
     }
+    /// How a strip `width` wide sizes its tabs, and whether it keeps the open-tabs list.
+    private func stripSizing(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, width: CGFloat, corner: Bool) -> (sizing: NativeDockTabSizing, showsList: Bool) {
+        let split = navigation.groups.count > 1
+        let inset = corner ? controlInset : 0
+        let room = width - metrics.padding - Self.addWidth(metrics) - 8 - (split ? 44 : 0) - inset
+        let roomy = sizing(group, metrics: metrics, available: room - (split ? 0 : Self.listWidth))
+        // The list of open tabs stays in a split pane only while some of its tabs do not fit.
+        let showsList = !split || roomy.visibleIndices.count < group.tabs.count
+        return (split && showsList ? sizing(group, metrics: metrics, available: room - Self.listWidth) : roomy, showsList)
+    }
+    /// The chosen tab's span in the strip (from the pane's left edge), when it is on screen.
+    private func selectedTabSpan(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, width: CGFloat, corner: Bool) -> (x: CGFloat, width: CGFloat)? {
+        let sizing = stripSizing(group, metrics: metrics, width: width, corner: corner).sizing
+        guard let active = group.activeID, let index = group.tabs.firstIndex(of: active), let position = sizing.visibleIndices.firstIndex(of: index) else { return nil }
+        let before = sizing.visibleIndices.prefix(position).reduce(CGFloat(0)) { $0 + sizing.width(of: $1) + sizing.spacing }
+        return (metrics.padding + before, sizing.width(of: index))
+    }
+    // MARK: Card
+    static var cardInset: CGFloat { 6 }
+    static var cardRadius: CGFloat { 12 }
+    /// The paper inside a pane's content area: in from the sides and bottom, flush with the strip on top.
+    static func cardFrame(_ content: CGRect) -> CGRect {
+        CGRect(x: content.minX + cardInset, y: content.minY, width: max(0, content.width - cardInset * 2), height: max(0, content.height - cardInset))
+    }
+    /// The card and its chosen tab as one silhouette, so a single shadow (accent when this pane has focus) runs round both.
+    @ViewBuilder private func paneSurface(_ pane: NativeDockPaneFrame, metrics: NativeDockStripMetrics, focused: Bool, corner: Bool) -> some View {
+        if !isHome(pane.group) {
+            let content = contentFrame(pane, metrics), card = Self.cardFrame(content).offsetBy(dx: -pane.frame.minX, dy: -pane.frame.minY)
+            let top = NativeDockHeaderMetrics.topPadding(for: pane.frame, windowed: Self.windowed)
+            let span = chromeMode.showsTabs ? selectedTabSpan(pane.group, metrics: metrics, width: pane.frame.width, corner: corner) : nil
+            let accent = Color(uiColor: decor.palette.accent(dark: scheme == .dark))
+            ZStack(alignment: .topLeading) {
+                Color.clear
+                ZStack(alignment: .topLeading) {
+                    RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous).fill(NativeGlass.paper)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous)
+                                .strokeBorder(focused ? AnyShapeStyle(accent.opacity(0.55)) : AnyShapeStyle(NativeGlass.hairline), lineWidth: focused ? 1.5 : 1)
+                        }
+                        .frame(width: card.width, height: card.height).offset(x: card.minX, y: card.minY)
+                    if let span {
+                        // Drawn over the card's rim, so the rim stops where the tab joins it.
+                        let pillTop = top + (metrics.height - metrics.pillHeight) / 2
+                        let pdf = navigation.document(pane.group.activeID)?.kind == "pdf"
+                        // Over a PDF the card shows the gutter's wash, so its tab takes the same.
+                        NativeDockTabShape(radius: metrics.radius, flare: Self.tabFlare).fill(NativeGlass.paper)
+                            .overlay { if pdf { NativeDockTabShape(radius: metrics.radius, flare: Self.tabFlare).fill(NativeGlass.gutter) } }
+                            .frame(width: span.width + Self.tabFlare * 2, height: card.minY - pillTop + 2)
+                            .offset(x: span.x - Self.tabFlare, y: pillTop)
+                    }
+                }
+                .compositingGroup()
+                .shadow(color: .black.opacity(scheme == .dark ? 0.3 : 0.07), radius: 6, y: 2)
+                .shadow(color: focused ? accent.opacity(0.22) : .clear, radius: 10)
+            }.animation(.snappy(duration: 0.2), value: span?.x)
+        }
+    }
+    static var tabFlare: CGFloat { 6 }
     private func tabs(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, topPadding: CGFloat, corner: Bool) -> some View {
         GeometryReader { geometry in
             let split = navigation.groups.count > 1
             let inset = corner ? controlInset : 0
-            let room = geometry.size.width - metrics.padding - Self.addWidth(metrics) - 8 - (split ? 44 : 0) - inset
-            let roomy = sizing(group, metrics: metrics, available: room - (split ? 0 : Self.listWidth))
-            // The list of open tabs stays in a split pane only while some of its tabs do not fit.
-            let showsList = !split || roomy.visibleIndices.count < group.tabs.count
-            let sizing = split && showsList ? sizing(group, metrics: metrics, available: room - Self.listWidth) : roomy
+            let (sizing, showsList) = stripSizing(group, metrics: metrics, width: geometry.size.width, corner: corner)
             HStack(spacing: 0) {
                 HStack(spacing: sizing.spacing) {
                     ForEach(sizing.visibleIndices.map { group.tabs[$0] }, id: \.self) { id in
@@ -297,10 +371,9 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 if inset > 0 { Color.clear.frame(width: inset, height: metrics.height) }
             }.frame(height: metrics.height).padding(.leading, metrics.padding).padding(.top, topPadding)
                 .foregroundStyle(NativeDesktopTheme.secondary)
-        // The strip carries the paper's fill once more over the pane's paper (Figma 155:7541), which is what sets the chosen tab's pill off.
-        }.frame(height: metrics.total + topPadding).clipped().background(NativeGlass.paper)
+        // The strip lies on the glass; the chosen tab is the paper rising out of the card (`paneSurface`).
+        }.frame(height: metrics.total + topPadding).clipped()
             .background { NativeDockTabStripBounds(groupID: group.id) }
-            .overlay(alignment: .bottom) { NativeGlass.separator.frame(height: 1) }
             .onDrop(of: [NativeDockDragPayload.contentType], delegate: drop(group.id))
     }
     /// ＋ opens the new-tab menu; a long press opens the split and layout menu the design keeps out of the strip.
@@ -342,16 +415,16 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             }
         }
         .frame(width: width, height: metrics.height).clipped()
-        .background { RoundedRectangle(cornerRadius: metrics.radius).fill(active ? NativeGlass.tool : Color.clear).frame(height: metrics.pillHeight) }
-        .overlay {
+        // The pane being written in marks its chosen tab with a short accent bar along the top.
+        .overlay(alignment: .top) {
             if split && active {
-                NativeDesktopTheme.accent.frame(height: 2).padding(.horizontal, metrics.tabPadding)
-                    .frame(height: metrics.pillHeight, alignment: .bottom).allowsHitTesting(false)
+                Capsule().fill(NativeGlass.accent).frame(width: max(0, min(28, width - metrics.tabPadding * 2)), height: 3)
+                    .padding(.top, (metrics.height - metrics.pillHeight) / 2 + 3).allowsHitTesting(false)
             }
         }
         .contextMenu { tabMenu(document, group: group) }
         .overlay(alignment: .leading) {
-            if drag.target == .init(groupID: group.id, direction: .within, index: index) { NativeDesktopTheme.accent.frame(width: 3) }
+            if drag.target == .init(groupID: group.id, direction: .within, index: index) { Rectangle().fill(NativeGlass.accent).frame(width: 3) }
         }
         .onDrop(of: [NativeDockDragPayload.contentType], delegate: drop(group.id, index: index))
     }
@@ -519,10 +592,10 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         if groupCount == 1 { empty() }
         else {
             VStack(spacing: 14) {
-                NativeBandalMark(size: 32).foregroundStyle(NativeDesktopTheme.muted.opacity(0.5))
+                NativeBandalMark(size: 36).foregroundStyle(NativeDecorMarkStyle()).opacity(0.85)
                 Text("이 영역에서 새 탭을 여세요").font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.muted)
-                Button("새 탭 열기", systemImage: "plus") { focus(group.id); newTabGroupID = group.id }.buttonStyle(.bordered).frame(minHeight: 44)
-                Button("빈 영역 닫기", systemImage: "xmark") { perform { navigation.removeEmptyGroup(group.id) } }.buttonStyle(.bordered).frame(minHeight: 44)
+                Button("새 탭 열기", systemImage: "plus") { focus(group.id); newTabGroupID = group.id }.buttonStyle(NativeThemedButtonStyle(prominent: true)).frame(minHeight: 44)
+                Button("빈 영역 닫기", systemImage: "xmark") { perform { navigation.removeEmptyGroup(group.id) } }.buttonStyle(NativeThemedButtonStyle()).frame(minHeight: 44)
                     .accessibilityIdentifier("native-dock-close-empty-" + group.id)
             }.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle()).onTapGesture { focus(group.id) }
         }
@@ -544,7 +617,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             Text(compact ? "좁은 화면에서는 영역을 선택해 보세요" : "선택한 영역 크게 보기").font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
             Spacer(minLength: 0)
             if !compact { Button("전체 보기") { perform { maximizedGroupID = nil } }.frame(minHeight: 44) }
-        }.padding(.horizontal, 12).background(NativeDesktopTheme.surface)
+        }.padding(.horizontal, 12).background(NativeGlass.panel)
     }
     private func focus(_ id: String) { navigation.focus(id); persist() }
     private func drop(_ groupID: String, direction: NativeDockDirection = .within, index: Int? = nil) -> NativeDockDropDelegate {
@@ -556,7 +629,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             .overlay {
                 if let target = drag.target, target.groupID == pane.id, target.index == nil {
                     let horizontal = target.direction.axis == .horizontal, half = target.direction != .within
-                    RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.16)).overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 2))
+                    RoundedRectangle(cornerRadius: Self.cardRadius).fill(NativeGlass.accentSoft).overlay(RoundedRectangle(cornerRadius: Self.cardRadius).stroke(NativeGlass.accent, lineWidth: 2))
                         .frame(width: half && horizontal ? proxy.size.width / 2 : proxy.size.width, height: half && !horizontal ? proxy.size.height / 2 : proxy.size.height)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: target.direction == .left ? .leading : target.direction == .right ? .trailing : target.direction == .above ? .top : target.direction == .below ? .bottom : .center)
                         .allowsHitTesting(false)
@@ -640,11 +713,18 @@ private struct NativeDockDropSurface: UIViewRepresentable {
         let active = drag.transfer != nil
         if view.acceptsTouches != active { NativeDockDragPayload.trace("surface.active=\(active)") }
         view.acceptsTouches = active
+        let drag = drag
+        view.releaseIfStale = { guard drag.isStale else { return false }; NativeDockDragPayload.trace("surface.stale"); drag.end(); return true }
     }
+    /// Covers the pane only while a tab drag runs. A real touch that finds the drag already over (its end
+    /// callback lost) clears it and passes through, instead of leaving the editor beneath dead to touch.
     final class Surface: UIView {
         var acceptsTouches = false
+        var releaseIfStale: () -> Bool = { false }
         override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-            acceptsTouches && super.point(inside: point, with: event)
+            guard acceptsTouches else { return false }
+            if event?.type == .touches, releaseIfStale() { acceptsTouches = false; return false }
+            return super.point(inside: point, with: event)
         }
     }
     @MainActor final class Coordinator: NSObject, UIDropInteractionDelegate {
@@ -806,6 +886,7 @@ private struct NativeDockDraggableTab: UIViewRepresentable {
         func dragInteraction(_ interaction: UIDragInteraction, itemsForBeginning session: UIDragSession) -> [UIDragItem] {
             NativeDockDragPayload.trace("source.begin")
             owner.drag.transfer = .init(documentID: owner.document.id, courseID: owner.courseID)
+            owner.drag.source = session
             return [UIDragItem(itemProvider: NativeDockDragPayload.provider(documentID: owner.document.id))]
         }
         func dragInteraction(_ interaction: UIDragInteraction, session: UIDragSession, didEndWith operation: UIDropOperation) {
@@ -814,5 +895,74 @@ private struct NativeDockDraggableTab: UIViewRepresentable {
         }
         func dragInteraction(_ interaction: UIDragInteraction, sessionIsRestrictedToDraggingApplication session: UIDragSession) -> Bool { true }
         func dragInteraction(_ interaction: UIDragInteraction, sessionAllowsMoveOperation session: UIDragSession) -> Bool { true }
+    }
+}
+
+/// Watches every touch in the window without taking part in it: a recognizer that fails on its first
+/// touch, never cancels or delays, and reports where the touch began in this view's space.
+private struct NativeDockTouchFocus: UIViewRepresentable {
+    let panes: [(String, CGRect)]
+    let onFocus: (String) -> Void
+    func makeUIView(context: Context) -> Probe { let view = Probe(); view.isUserInteractionEnabled = false; view.isAccessibilityElement = false; return view }
+    func updateUIView(_ view: Probe, context: Context) {
+        let panes = panes, onFocus = onFocus
+        view.onTouch = { point in if let pane = panes.first(where: { $0.1.contains(point) }) { onFocus(pane.0) } }
+        view.active = !panes.isEmpty
+    }
+    static func dismantleUIView(_ view: Probe, coordinator: ()) { view.detach() }
+    final class Probe: UIView {
+        var onTouch: (CGPoint) -> Void = { _ in }
+        /// Only with panes side by side does the window carry the watcher at all.
+        var active = false { didSet { if active != oldValue { attach() } } }
+        private var watcher: Watcher?
+        override func didMoveToWindow() { super.didMoveToWindow(); attach() }
+        private func attach() {
+            detach()
+            guard active, let window else { return }
+            let watcher = Watcher { [weak self] touch in
+                guard let self, self.active, self.window != nil, !self.isHidden else { return }
+                let point = touch.location(in: self)
+                guard self.bounds.contains(point) else { return }
+                DispatchQueue.main.async { self.onTouch(point) }
+            }
+            window.addGestureRecognizer(watcher); self.watcher = watcher
+        }
+        func detach() { if let watcher { watcher.view?.removeGestureRecognizer(watcher); self.watcher = nil } }
+    }
+    final class Watcher: UIGestureRecognizer, UIGestureRecognizerDelegate {
+        private let report: (UITouch) -> Void
+        init(_ report: @escaping (UITouch) -> Void) {
+            self.report = report
+            super.init(target: nil, action: nil)
+            cancelsTouchesInView = false; delaysTouchesBegan = false; delaysTouchesEnded = false
+            delegate = self
+        }
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+            if let touch = touches.first { report(touch) }
+            state = .failed
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
+/// A tab rising out of the card under it: rounded on top, and at the bottom flaring out into the card's edge
+/// with a concave curve each side (`flare` wide), so tab and card read as one sheet.
+struct NativeDockTabShape: Shape {
+    var radius: CGFloat
+    var flare: CGFloat
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let left = rect.minX + flare, right = rect.maxX - flare, top = rect.minY, bottom = rect.maxY
+        let r = min(radius, (right - left) / 2, (bottom - top) / 2)
+        path.move(to: CGPoint(x: rect.minX, y: bottom))
+        path.addQuadCurve(to: CGPoint(x: left, y: bottom - flare), control: CGPoint(x: left, y: bottom))
+        path.addLine(to: CGPoint(x: left, y: top + r))
+        path.addQuadCurve(to: CGPoint(x: left + r, y: top), control: CGPoint(x: left, y: top))
+        path.addLine(to: CGPoint(x: right - r, y: top))
+        path.addQuadCurve(to: CGPoint(x: right, y: top + r), control: CGPoint(x: right, y: top))
+        path.addLine(to: CGPoint(x: right, y: bottom - flare))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: bottom), control: CGPoint(x: right, y: bottom))
+        path.closeSubpath()
+        return path
     }
 }
