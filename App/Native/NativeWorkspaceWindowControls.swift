@@ -27,7 +27,11 @@ struct NativeWorkspaceWindowControls: View {
     /// Figma's three cells (128) and 공유 before them, which the owner moved here from the tab strip.
     static let width: CGFloat = 169
     static let trailing: CGFloat = 10
-    static let top: CGFloat = 12
+    static let height: CGFloat = 40
+    /// Centred on the tab strip's row: (51 − 40) / 2 below the strip's top, which a window that is not full screen moves down.
+    static var top: CGFloat {
+        NativeDockHeaderMetrics.topPadding(for: .zero, windowed: NativeDockHeaderMetrics.windowed) + (NativeDockStripMetrics.single.height - height) / 2
+    }
     static let inspectorTop: CGFloat = 61
 
     var body: some View {

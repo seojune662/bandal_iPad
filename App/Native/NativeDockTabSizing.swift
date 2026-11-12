@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import UIKit
 
 /// Figma tab strip values: one pane (155:7541, 269:8463), left/right split
 /// (130:5986) and the smaller strip of top/bottom and four panes (130:6064).
@@ -22,6 +23,14 @@ struct NativeDockStripMetrics: Equatable {
 /// iPadOS moves a window by its top edge. A pane at the top of a window that is not
 /// full screen keeps its strip below that edge; full screen, the strip starts at the top (Figma 129:1596).
 enum NativeDockHeaderMetrics {
+    /// Read while laying out: entering or leaving full screen resizes the window, which lays the dock out again.
+    static var windowed: Bool {
+        UIApplication.shared.connectedScenes.contains { scene in
+            guard let scene = scene as? UIWindowScene, scene.activationState == .foregroundActive else { return false }
+            let window = scene.coordinateSpace.bounds.size, screen = scene.screen.bounds.size
+            return abs(window.width - screen.width) > 1 || abs(window.height - screen.height) > 1
+        }
+    }
     static func topPadding(for paneFrame: CGRect, windowed: Bool) -> CGFloat {
         windowed && abs(paneFrame.minY) < 0.5 ? 16 : 0
     }
