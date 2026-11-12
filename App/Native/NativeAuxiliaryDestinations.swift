@@ -15,7 +15,7 @@ struct NativeHelpView: View {
                 Text("반달에서 읽고, 기록하고, 연결하세요.").foregroundStyle(NativeDesktopTheme.secondary)
                 NativeSettingsCard(title: "시작하기", description: "자료와 생각을 한 작업 공간에서 이어갑니다.") {
                     VStack(alignment: .leading, spacing: 14) {
-                        Label("과목을 만들고 오른쪽 자료 목록에서 파일을 가져오세요.", systemImage: "folder.badge.plus")
+                        Label("폴더를 만들고 오른쪽 자료 목록에서 파일을 가져오세요.", systemImage: "folder.badge.plus")
                         Label(NativeReleaseFlags.showsRecording ? "탭 옆 +에서 브라우저, 노트, 마크다운, AI, 녹음을 여세요." : "탭 옆 +에서 브라우저, 노트, 마크다운, AI를 여세요.", systemImage: "plus")
                         Label("탭을 끌어 나누거나 화면 배치 메뉴로 여러 자료를 함께 보세요.", systemImage: "rectangle.split.2x1")
                         Label("PDF와 노트에는 Apple Pencil로 필기할 수 있습니다.", systemImage: "pencil.tip")
@@ -23,10 +23,10 @@ struct NativeHelpView: View {
                 }
                 NativeSettingsCard(title: "반달 둘러보기") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("왼쪽 +로 과목을 만들거나 폴더를 연결하고, 자료 목록에서 PDF·이미지·영상을 가져오세요.", systemImage: "1.circle")
+                        Label("왼쪽 +로 폴더를 만들거나 파일 앱 폴더를 연결하고, 자료 목록에서 PDF·이미지·영상을 가져오세요.", systemImage: "1.circle")
                         Label("PDF와 노트에는 Apple Pencil로 필기하고, 마크다운으로 정리하세요.", systemImage: "2.circle")
                         Label("탭을 끌어 영역을 나누고, 경계를 끌어 비율을 바꾸세요.", systemImage: "3.circle")
-                        Label("로그인하면 반달 AI가 과목 자료를 읽고 답해요. 레일의 ✦로 AI 패널을 여세요.", systemImage: "4.circle")
+                        Label("로그인하면 반달 AI가 폴더 자료를 읽고 답해요. 레일의 ✦로 AI 패널을 여세요.", systemImage: "4.circle")
                         Label("편집은 기기에 자동 저장되고, 동기화를 켜면 다른 기기와 맞춰져요.", systemImage: "5.circle")
                     }.font(.system(size: 13))
                 }

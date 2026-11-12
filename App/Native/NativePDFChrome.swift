@@ -10,23 +10,32 @@ struct NativePDFViewButton: View {
     @State private var showMenu = false
     /// The palette's 34 pt cell in a glass circle as tall as the palette, 14 from the page area's left edge.
     static let size: CGFloat = 44, leading: CGFloat = 14
+    /// The grid cell and the ⌄ that opens the view menu (page jump, zoom, find, export…).
+    static let width: CGFloat = size + 24
     private static let menuWidth: CGFloat = 260
     private var unavailable: Bool { model.isLoading || model.isBusy || model.errorMessage != nil }
     var body: some View {
-        Image("PDFIconGrid").foregroundStyle(NativePDFPaletteLook.icon).frame(width: NativePDFPaletteLook.cell, height: NativePDFPaletteLook.cell)
-            .background(model.showPages ? NativePDFPaletteLook.chosen : .clear, in: Circle())
-            .frame(width: Self.size, height: Self.size).contentShape(Circle()).bandalGlass(in: Circle())
-            .onTapGesture { model.togglePages() }
+        HStack(spacing: 0) {
+            Image("PDFIconGrid").foregroundStyle(NativePDFPaletteLook.icon).frame(width: NativePDFPaletteLook.cell, height: NativePDFPaletteLook.cell)
+                .background(model.showPages ? NativePDFPaletteLook.chosen : .clear, in: Circle())
+                .frame(width: Self.size, height: Self.size).contentShape(Rectangle())
+                .onTapGesture { model.togglePages() }
+            // The menu used to hide behind a long press: it has its own visible control now.
+            Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(NativePDFPaletteLook.icon)
+                .frame(width: 24, height: Self.size).padding(.trailing, 4).contentShape(Rectangle()).padding(.trailing, -4)
+                .onTapGesture { showMenu = true }
+        }
+            .frame(width: Self.width, height: Self.size).bandalGlass(in: Capsule())
             .onLongPressGesture(minimumDuration: 0.4) { showMenu = true }
             // A real button for assistive technology and UI tests: its traits and enabled state are the system's.
             .accessibilityRepresentation {
-                Button("미리보기") { model.togglePages() }.disabled(unavailable)
-                    .accessibilityValue("\(model.page) / \(model.pageCount)").accessibilityHint("길게 누르면 페이지 이동과 보기 메뉴가 열립니다")
+                Button("페이지 썸네일") { model.togglePages() }.disabled(unavailable)
+                    .accessibilityValue("\(model.page) / \(model.pageCount)").accessibilityHint("옆의 화살표로 페이지 이동과 보기 메뉴를 엽니다")
                     .accessibilityAddTraits(model.showPages ? .isSelected : []).accessibilityAction(named: "보기 메뉴") { showMenu = true }
                     .accessibilityIdentifier("native-pdf-pages")
             }
             // Under the button, their left edges in line: the menu stays inside a narrow pane.
-            .bandalPopover(isPresented: $showMenu, at: .bottom, offset: CGSize(width: (Self.menuWidth - Self.size) / 2, height: 0), width: Self.menuWidth, padding: 8) {
+            .bandalPopover(isPresented: $showMenu, at: .bottom, offset: CGSize(width: (Self.menuWidth - Self.width) / 2, height: 0), width: Self.menuWidth, padding: 8) {
                 NativePDFViewMenu(model: model) { showMenu = false }
             }
             .background { saveStatus }
@@ -115,6 +124,8 @@ private struct NativePDFViewMenu: View {
 struct NativePDFSelectionBar: View {
     var model: NativePDFWorkspaceModel
     let frame: CGRect
+    /// The band at the top of the page area the palette (and the find or recording bar) holds; the bar stays below it.
+    var clearTop: CGFloat = 0
     @State private var width: CGFloat = 331
     @State private var showStyle = false
     @State private var showMore = false
@@ -132,7 +143,7 @@ struct NativePDFSelectionBar: View {
                             .padding(.horizontal, 10).frame(height: 36).contentShape(Rectangle())
                     }.accessibilityLabel("스타일").accessibilityIdentifier("native-pdf-selection-style")
                         .bandalPopover(isPresented: $showStyle, arrowEdge: nil, width: 252, radius: 22, padding: 18, dims: false) { NativePDFSelectionStyle(model: model) }
-                    Button { showMore = true } label: { Image(systemName: "ellipsis").font(.system(size: 14, weight: .medium)).frame(width: 36, height: 36).contentShape(Rectangle()) }
+                    Button { showMore = true } label: { Image(systemName: "ellipsis").font(.system(size: 14, weight: .medium)).frame(width: 36, height: 36).padding(4).contentShape(Rectangle()).padding(-4) }
                         .accessibilityLabel("선택 더 보기").accessibilityIdentifier("native-pdf-selection-more")
                         .bandalPopover(isPresented: $showMore, arrowEdge: nil, width: 240, radius: 14, padding: 8, dims: false) { more }
                 } else {
@@ -140,7 +151,7 @@ struct NativePDFSelectionBar: View {
                     Button { model.pasteObjects() } label: { action("붙여넣기") }
                         .disabled(!model.canPaste).opacity(model.canPaste ? 1 : 0.4).accessibilityIdentifier("native-pdf-paste")
                     Button { model.clearSelection() } label: {
-                        Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 36, height: 36).contentShape(Rectangle())
+                        Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 36, height: 36).padding(4).contentShape(Rectangle()).padding(-4)
                     }.accessibilityLabel("선택 해제")
                 }
             }
@@ -149,7 +160,7 @@ struct NativePDFSelectionBar: View {
             .bandalGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous), adaptive: false)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .position(x: min(max(frame.midX, width / 2 + 8), max(width / 2 + 8, geometry.size.width - width / 2 - 8)),
-                      y: frame.minY - 40 > 40 ? frame.minY - 40 : min(frame.maxY + 40, geometry.size.height - 32))
+                      y: frame.minY - 40 - 24 >= clearTop ? frame.minY - 40 : min(max(frame.maxY + 40, clearTop + 24), geometry.size.height - 32))
         }.disabled(model.isBusy || model.errorMessage != nil)
             .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-selection-bar")
     }
@@ -206,10 +217,12 @@ struct NativePDFSelectionStyle: View {
                         .accessibilityAddTraits(chosen ? .isSelected : [])
                 }
             }
-            Button { model.paletteNotice = "글자로 바꾸기는 준비 중이에요" } label: {
-                Text("글자로 바꾸기").font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity).frame(height: 43)
-                    .background(NativeGlass.tool, in: RoundedRectangle(cornerRadius: 12, style: .continuous)).contentShape(Rectangle())
-            }.accessibilityLabel("글자로 바꾸기 (준비 중)").accessibilityIdentifier("native-pdf-selection-to-text")
+            if NativeReleaseFlags.showsUnbuiltFeatures {
+                Button { model.paletteNotice = "글자로 바꾸기는 준비 중이에요" } label: {
+                    Text("글자로 바꾸기").font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity).frame(height: 43)
+                        .background(NativeGlass.tool, in: RoundedRectangle(cornerRadius: 12, style: .continuous)).contentShape(Rectangle())
+                }.accessibilityLabel("글자로 바꾸기 (준비 중)").accessibilityIdentifier("native-pdf-selection-to-text")
+            }
         }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.text).disabled(model.isBusy || model.errorMessage != nil)
     }
 }

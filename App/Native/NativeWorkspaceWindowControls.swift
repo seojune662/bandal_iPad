@@ -32,7 +32,8 @@ struct NativeWorkspaceWindowControls: View {
     static var top: CGFloat {
         NativeDockHeaderMetrics.topPadding(for: .zero, windowed: NativeDockHeaderMetrics.windowed) + (NativeDockStripMetrics.single.height - height) / 2
     }
-    static let inspectorTop: CGFloat = 61
+    /// The right panel starts under the group, with the same 9 pt gap as before the group was centred.
+    static var inspectorTop: CGFloat { top + height + 9 }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -69,7 +70,9 @@ struct NativeWorkspaceWindowControls: View {
             .foregroundStyle(selected ? NativeGlass.icon : NativeGlass.panelIcon)
             .frame(width: width, height: 40)
             .background { if selected { RoundedRectangle(cornerRadius: 8).fill(NativeGlass.selection).frame(width: 34, height: 30) } }
-            .opacity(overview ? 0 : 1).contentShape(Rectangle())
+            .opacity(overview ? 0 : 1)
+            // 40 drawn; touch reaches 44 above and below the group.
+            .padding(.vertical, 2).contentShape(Rectangle()).padding(.vertical, -2)
     }
     @ViewBuilder private func label(_ title: String, mode value: NativeWorkspaceChromeMode) -> some View {
         if mode == value { Label(title, systemImage: "checkmark") } else { Text(title) }
@@ -95,6 +98,11 @@ struct NativeWorkspaceWindowsOverview: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The cards start slightly large and settle, so opening reads as the window zooming out into its card.
     @State private var settled = false
+    /// The overview's width: cards shrink to fit a narrow window (Split View, a small Stage Manager window).
+    @State private var available: CGFloat = 1024
+    private var leadingInset: CGFloat { available < 700 ? 24 : 64 }
+    private var cardWidth: CGFloat { max(200, min(492, available - leadingInset - 18)) }
+    private var cardHeight: CGFloat { (cardWidth * 369 / 492).rounded() }
 
     /// Figma 132:2517: the whole window is paper; title at (64, 56), cards from y 200.
     var body: some View {
@@ -117,13 +125,14 @@ struct NativeWorkspaceWindowsOverview: View {
                         VStack(spacing: 10) {
                             Image(systemName: "plus").font(.system(size: 30))
                             Text("새 창").font(.system(size: 16, weight: .medium))
-                        }.foregroundStyle(NativeDesktopTheme.secondary).frame(width: 220, height: 368)
+                        }.foregroundStyle(NativeDesktopTheme.secondary).frame(width: min(220, cardWidth), height: cardHeight)
                             .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(NativeDesktopTheme.border, style: StrokeStyle(lineWidth: 2, dash: [8, 6])) }
                             .contentShape(RoundedRectangle(cornerRadius: 14))
                     }.buttonStyle(.plain).accessibilityIdentifier("native-window-add")
                 }.padding(.top, 85)
-            }.padding(.leading, 64).padding(.trailing, 18).padding(.top, 56).padding(.bottom, 40).frame(maxWidth: .infinity, alignment: .leading)
-        }.scaleEffect(settled || reduceMotion ? 1 : 1.08).opacity(settled ? 1 : 0)
+            }.padding(.leading, leadingInset).padding(.trailing, 18).padding(.top, 56).padding(.bottom, 40).frame(maxWidth: .infinity, alignment: .leading)
+        }.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { available = $0 }
+        .scaleEffect(settled || reduceMotion ? 1 : 1.08).opacity(settled ? 1 : 0)
             .background { ZStack { NativeWorkspaceBackdrop(); NativeGlass.paper }.ignoresSafeArea() }
             .focusable()
             .focusEffectDisabled()
@@ -162,7 +171,7 @@ struct NativeWorkspaceWindowsOverview: View {
                             Text("아직 미리보기 없음").font(.callout)
                         }.foregroundStyle(NativeDesktopTheme.muted)
                     }
-                }.frame(width: 492, height: 369, alignment: .top).background(NativeDesktopTheme.bgApp).clipShape(shape)
+                }.frame(width: cardWidth, height: cardHeight, alignment: .top).background(NativeDesktopTheme.bgApp).clipShape(shape)
                     // The active card's 2-point stroke sits outside the picture, the others' hairline inside.
                     .overlay { if active { RoundedRectangle(cornerRadius: 16).strokeBorder(NativeDesktopTheme.accent, lineWidth: 2).padding(-2) } else { shape.strokeBorder(NativeDesktopTheme.border, lineWidth: 1) } }
                     .contentShape(shape).shadow(color: .black.opacity(0.14), radius: 15, y: 10)
@@ -185,7 +194,7 @@ struct NativeWorkspaceWindowsOverview: View {
                             .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityLabel(window.name + " 이름 변경")
                 }
-            }.frame(width: 492, height: 19, alignment: .leading)
+            }.frame(width: cardWidth, height: 19, alignment: .leading)
         }.accessibilityElement(children: .contain)
     }
 }

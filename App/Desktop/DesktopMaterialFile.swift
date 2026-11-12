@@ -17,7 +17,7 @@ final class DesktopMaterialFile: @unchecked Sendable {
             let resolved = candidate.standardizedFileURL.resolvingSymlinksInPath()
             return resolved.path.hasPrefix(canonicalRoot.path + "/") || DesktopFileAccess.shared(root: root).allows(resolved)
         }
-        guard allowed(url) else { throw DesktopRuntimeError("과목의 자료에 접근할 수 없습니다.") }
+        guard allowed(url) else { throw DesktopRuntimeError("폴더의 자료에 접근할 수 없습니다.") }
         let fd = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW)
         guard fd >= 0 else { throw DesktopRuntimeError("자료를 열지 못했습니다.") }
         let opened = FileHandle(fileDescriptor: fd, closeOnDealloc: true)

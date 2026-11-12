@@ -88,7 +88,7 @@ struct NativeSettingsUniversityPanel: View {
                         .accessibilityLabel(chosen == nil ? Text("내 학교 고르기") : Text("내 학교 바꾸기")).accessibilityIdentifier("native-settings-school-choose")
                 }.frame(minHeight: 36)
             }
-            NativeSettingsGroup(title: "학교 사이트", description: "표시 순서와 열리는 위치를 선택합니다. 보안 프로그램이 필요한 일부 사이트는 iPad에서 제공되지 않을 수 있습니다.") {
+            NativeSettingsGroup(title: "학교 사이트", description: "사이드바 첫 타일에 앞의 4개가 들어가고, 그 뒤로는 자주 방문한 순서로 바뀌어요. 보안 프로그램이 필요한 일부 사이트는 iPad에서 제공되지 않을 수 있습니다.") {
                 ForEach(Array(services.enumerated()), id: \.element.id) { index, service in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { Text(service.label).fontWeight(.medium); Spacer(); Button("열기", systemImage: "arrow.up.right") { open(service) } }
@@ -99,12 +99,24 @@ struct NativeSettingsUniversityPanel: View {
                             persist(["hiddenServiceIds": visible ? hidden.filter { $0 != service.id } : hidden + [service.id]])
                         }))
                         Toggle("시스템 브라우저에서 열기", isOn: Binding(get: { service.opensExternally }, set: { value in var overrides = university["openExternallyOverrides"] as? [String: Bool] ?? [:]; overrides[service.id] = value; persist(["openExternallyOverrides": overrides]) }))
-                        Toggle("더보기에 표시", isOn: Binding(get: { service.secondary }, set: { value in var overrides = university["secondaryOverrides"] as? [String: Bool] ?? [:]; overrides[service.id] = value; persist(["secondaryOverrides": overrides]) }))
                         HStack {
                             Button("위로", systemImage: "arrow.up") { move(index, by: -1) }.disabled(index == 0)
                             Button("아래로", systemImage: "arrow.down") { move(index, by: 1) }.disabled(index == services.count - 1)
                             Spacer()
                             if service.custom { Button("삭제", role: .destructive) { persist(["customServices": (university["customServices"] as? [[String: Any]] ?? []).filter { $0["id"] as? String != service.id }]) } }
+                        }
+                    }.padding(.vertical, 8)
+                }
+                // Sites removed from the home tiles (by address): bring them back here.
+                let hiddenSites = NativeHomeSitePreferences(settings: settings).hidden
+                if !hiddenSites.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("사이드바에서 숨긴 사이트").fontWeight(.medium)
+                        ForEach(hiddenSites, id: \.self) { host in
+                            HStack { Text(verbatim: host).foregroundStyle(NativeDesktopTheme.secondary); Spacer()
+                                Button("다시 표시") { var next = NativeHomeSitePreferences(settings: settings); next.hidden.removeAll { $0 == host }; saveSites(next) }
+                                    .frame(minHeight: 44).accessibilityIdentifier("native-settings-unhide-" + host)
+                            }
                         }
                     }.padding(.vertical, 8)
                 }
@@ -126,6 +138,10 @@ struct NativeSettingsUniversityPanel: View {
         guard let url = URL(string: service.url) else { return }
         if service.opensExternally { openURL(url) }
         else { store.events.send(.init(channel: "nativeWorkspace:openBrowserURL", payload: ["url": service.url])) }
+    }
+    private func saveSites(_ next: NativeHomeSitePreferences) {
+        guard !busy else { return }; busy = true; error = nil
+        Task { defer { busy = false }; do { try await save([NativeHomeSitePreferences.key: next.json]) } catch { self.error = error.localizedDescription } }
     }
     private func persist(_ patch: [String: Any]) { guard !busy else { return }; busy = true; error = nil; Task { defer { busy = false }; do { try await save(["university": patch]) } catch { self.error = error.localizedDescription } } }
 }

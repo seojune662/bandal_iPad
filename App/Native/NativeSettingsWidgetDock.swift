@@ -52,7 +52,7 @@ private struct NativeWidgetTasks: View {
     private struct WidgetTaskEditor: Identifiable { let id = UUID(); let task: NativePlannerTask? }
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Text(store.courses.first { $0.id == store.selectedCourseID }?.name ?? "모든 과목").font(NativeDesktopTheme.font(11)).lineLimit(1); Spacer(); Button("할 일 추가", systemImage: "plus") { editor = .init(task: nil) }.labelStyle(.iconOnly).accessibilityIdentifier("native-widget-add-task") }.padding(.horizontal, 12).frame(height: 30)
+            HStack { Text(store.courses.first { $0.id == store.selectedCourseID }?.name ?? "모든 폴더").font(NativeDesktopTheme.font(11)).lineLimit(1); Spacer(); Button("할 일 추가", systemImage: "plus") { editor = .init(task: nil) }.labelStyle(.iconOnly).accessibilityIdentifier("native-widget-add-task") }.padding(.horizontal, 12).frame(height: 30)
             if let error { NativeToolError(message: error) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {

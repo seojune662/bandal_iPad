@@ -128,7 +128,7 @@ struct NativePDFSearchBar: View {
         }
     }
     private func button(_ title: LocalizedStringKey, _ symbol: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).font(.system(size: 15)).frame(width: 38, height: 38).contentShape(Rectangle()) }
+        Button(action: action) { Image(systemName: symbol).font(.system(size: 15)).frame(width: 38, height: 38).padding(3).contentShape(Rectangle()).padding(-3) }
             .accessibilityLabel(title).accessibilityIdentifier(id).help(title)
     }
 }

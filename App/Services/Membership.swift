@@ -108,7 +108,7 @@ enum FreeTier {
         let makesCourse = ["courses:create", "courses:addFromFolder"].contains(channel)
             || channel == "learning:create" && request["placement"] as? String ?? "standalone" == "standalone"
         if makesCourse, try usage(library: library).courses >= courses {
-            throw DesktopRuntimeError("무료로는 이 iPad에서 과목을 \(courses)개까지 만들 수 있어요.", code: code)
+            throw DesktopRuntimeError("무료로는 이 iPad에서 폴더를 \(courses)개까지 만들 수 있어요.", code: code)
         }
         let adding = try documentsAdded(channel, request, library: library)
         guard adding > 0 else { return }

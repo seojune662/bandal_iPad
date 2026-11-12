@@ -88,7 +88,7 @@ final class NativePDFWritingUITests: XCTestCase {
                 XCTAssertFalse(pane.buttons["native-pdf-quick-favorite-\(index)"].exists)
                 XCTAssertTrue(pane.buttons["native-pdf-width-slot-\(index)"].exists, "The row ends with the three thickness dots")
             }
-            XCTAssertTrue(pane.scrollViews["native-pdf-tool-scroll"].exists, app.debugDescription)
+            XCTAssertFalse(pane.scrollViews["native-pdf-tool-scroll"].exists, "A row that scrolls has no second scroller inside")
             // A pane too narrow for the pill scrolls the whole row inside it.
             let row = pane.scrollViews["native-pdf-palette-scroll"]
             XCTAssertTrue(row.exists, app.debugDescription)

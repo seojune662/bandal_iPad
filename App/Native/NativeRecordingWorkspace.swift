@@ -216,7 +216,7 @@ struct NativeRecordingWorkspace: View {
         if let error { NativeToolError(message: error) }
         if effectiveCourseID == nil {
           NativeToolEmptyState(
-            title: "과목을 선택하세요", message: "녹음과 전사를 과목별로 보관합니다.", symbol: "waveform")
+            title: "폴더를 선택하세요", message: "녹음과 전사를 폴더별로 보관합니다.", symbol: "waveform")
         } else {
           GeometryReader { geometry in
             HStack(spacing: 0) {
@@ -251,7 +251,7 @@ struct NativeRecordingWorkspace: View {
           }
         }
       }.font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.text).background(
-        NativeDesktopTheme.bgApp
+        NativeGlass.paper
       )
       .overlay { if loading && sessions.isEmpty { ProgressView() } }
       .task(id: effectiveCourseID) {
@@ -288,7 +288,7 @@ struct NativeRecordingWorkspace: View {
   private var recordingIntro: some View {
     VStack(alignment: .leading, spacing: 12) {
       if displayed == nil {
-        Text("LECTURE NOTES").font(.system(size: 12)).tracking(0.18).foregroundStyle(
+        Text("강의 노트").font(.system(size: 12)).tracking(0.18).foregroundStyle(
           NativeDesktopTheme.muted)
       }
       Text(displayed?.title ?? "듣는 순간, 기록이 됩니다.").font(.system(size: 24, weight: .semibold))
@@ -437,7 +437,7 @@ struct NativeRecordingWorkspace: View {
         Text(String(sessions.count)).foregroundStyle(NativeDesktopTheme.muted)
       }
       if sessions.isEmpty {
-        Text("이 과목의 첫 강의를 남겨 보세요.").font(.system(size: 12)).foregroundStyle(
+        Text("이 폴더의 첫 강의를 남겨 보세요.").font(.system(size: 12)).foregroundStyle(
           NativeDesktopTheme.muted)
       }
       ForEach(sessions) { session in

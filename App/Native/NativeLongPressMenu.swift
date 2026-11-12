@@ -19,9 +19,11 @@ struct NativeMaterialMenu<Extra: View>: View {
         }
         // A note belongs to one course: moving it to another, keeping it outside one and offline copies
         // need storage and sync that do not exist yet.
-        NativeMenuPending(title: "과목으로 이동", symbol: "folder")
-        NativeMenuPending(title: "오프라인 저장", symbol: "icloud")
-        NativeMenuPending(title: "과목에서 빼기", symbol: "folder.badge.minus", destructive: true)
+        if NativeReleaseFlags.showsUnbuiltFeatures {
+            NativeMenuPending(title: "폴더로 이동", symbol: "folder")
+            NativeMenuPending(title: "오프라인 저장", symbol: "icloud")
+            NativeMenuPending(title: "폴더에서 빼기", symbol: "folder.badge.minus", destructive: true)
+        }
         Divider()
         Picker(NativeAppLocale.string("정렬 기준", locale), selection: $sort) {
             BandalText("이름순").tag(NativeLibraryPresentation.Sort.name.rawValue)
@@ -60,9 +62,10 @@ struct NativeLongPressItem: Identifiable {
         func choice(_ title: String, _ value: NativeLibraryPresentation.Sort) -> NativeLongPressItem {
             .init(title: title, checked: sort.wrappedValue == value.rawValue) { sort.wrappedValue = value.rawValue }
         }
-        return [[.init(title: "과목으로 이동", symbol: "folder", kind: .pending), .init(title: "오프라인 저장", symbol: "icloud", kind: .pending),
-                 .init(title: "과목에서 빼기", symbol: "folder.badge.minus", kind: .pending)],
-                [.init(title: "정렬 기준", children: [choice("이름순", .name), choice("최근 수정순", .recent)])]]
+        let sorting: [NativeLongPressItem] = [.init(title: "정렬 기준", children: [choice("이름순", .name), choice("최근 수정순", .recent)])]
+        guard NativeReleaseFlags.showsUnbuiltFeatures else { return [sorting] }
+        return [[.init(title: "폴더로 이동", symbol: "folder", kind: .pending), .init(title: "오프라인 저장", symbol: "icloud", kind: .pending),
+                 .init(title: "폴더에서 빼기", symbol: "folder.badge.minus", kind: .pending)], sorting]
     }
 }
 

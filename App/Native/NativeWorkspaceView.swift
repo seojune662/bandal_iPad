@@ -30,6 +30,7 @@ struct NativeWorkspaceView: View {
     @State private var markdownEditing = false
     /// A PDF text box is open: the window keeps its size under the keyboard, the page makes room itself.
     @State private var pdfTextEditing = false
+    @State private var shareNotice: String?
     @State private var railsBeforeKeyboard: (Bool, Bool)?
     @State private var hasWindowWidth = false
     @State private var restoreInspectorAfterAnnotation = true
@@ -362,7 +363,9 @@ struct NativeWorkspaceView: View {
             .onAppear { updateWindowWidth(geometry.size.width) }
             // Typing a markdown note on the software keyboard: both side panels fold, and come back with the keyboard gone.
             .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { markdownEditing = $0.object as? Bool ?? false }
-            .onReceive(NotificationCenter.default.publisher(for: NativePDFWorkspaceModel.textEditingChanged)) { pdfTextEditing = $0.object as? Bool ?? false }
+            .onReceive(NotificationCenter.default.publisher(for: NativePDFWorkspaceModel.textEditingChanged)) {
+                pdfTextEditing = $0.object as? Bool ?? false; NativeKeyboardInset.shared.ignored = pdfTextEditing
+            }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
                 guard Self.foldsPanelsOnKeyboard, markdownEditing, railsBeforeKeyboard == nil else { return }
                 railsBeforeKeyboard = (courseRailOpen, materialsRailOpen)
@@ -371,7 +374,8 @@ struct NativeWorkspaceView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 guard let saved = railsBeforeKeyboard else { return }
                 railsBeforeKeyboard = nil
-                withAnimation(Self.railAnimation) { courseRailOpen = saved.0; materialsRailOpen = saved.1 }
+                // The home sidebar and AI share the left slot: AI opened meanwhile keeps it.
+                withAnimation(Self.railAnimation) { courseRailOpen = saved.0 && !aiRailOpen; materialsRailOpen = saved.1 }
             }
             .onChange(of: geometry.size.width) { _, width in updateWindowWidth(width) }
             .task(id: busy) {
@@ -399,6 +403,7 @@ struct NativeWorkspaceView: View {
         .background(NativeWorkspaceKeyboardBridge(store: store))
         .background(NativePresentationAnchor(services: services).allowsHitTesting(false))
         .bandalToast(Binding(get: { store.errorMessage }, set: { store.errorMessage = $0 }))
+        .bandalToast($shareNotice, symbol: "checkmark.circle.fill")
         .modifier(NativeReferralHost(referral: store.referral, ready: restored && onboarding == .closed, openSettings: openSettings))
         .task {
             await store.start()
@@ -527,6 +532,8 @@ struct NativeWorkspaceView: View {
     private func importSharedMaterials() async {
         let report = await shareInbox.synchronize(using: store)
         if !report.failures.isEmpty { store.errorMessage = report.failures.joined(separator: "\n") }
+        // Arrived quietly before: say what came in.
+        else if report.importedCount > 0 { shareNotice = String(format: NativeAppLocale.string("공유한 자료 %lld개를 추가했어요", Locale.current), report.importedCount) }
     }
 
     private func refreshShareDestinations() {
@@ -551,7 +558,11 @@ struct NativeWorkspaceView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityElement(children: .contain).accessibilityIdentifier("native-ai-tab")
             } else if document.kind == "learning-home" {
-                NativeProjectSidebar(store: store, selectedID: workspaceContext?.id, onOpen: changeWorkspace).frame(maxWidth: 420)
+                // A tab saved by an older version: the folders it listed are in the sidebar now.
+                VStack(spacing: 14) {
+                    Text("폴더 목록은 왼쪽 사이드바에 있어요").font(NativeDesktopTheme.font(15)).foregroundStyle(NativeDesktopTheme.secondary)
+                    Button("사이드바 열기") { setCourseRail(true, width: windowWidth) }.buttonStyle(.bordered)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if document.kind == "learning" {
                 NativeLearningWorkspace(store: store, binding: NativeLearningBinding(courseID: document.courseID, rootRelPath: document.relativePath), onOpenDocument: { openCapturedDocument($0, target: navigation.target(containing: document.id)) }, onOpenBrowser: openBrowserURL, panelID: document.id)
             } else if document.isWorkspaceTool, let tool = NativeWorkspaceSection(rawValue: document.kind) {
@@ -667,7 +678,7 @@ struct NativeWorkspaceView: View {
                     }
                 }
             }.accessibilityIdentifier("native-section-library").padding(.bottom, 3)
-            NativeChromeButton(title: railVisible(.ai, width: width) ? "AI 닫기" : "AI 열기", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width),
+            NativeChromeButton(title: !railVisible(.ai, width: width) ? "AI 열기" : NativeLocalPreferences.bool(NativeLocalPreferences.homeTogglesSidebar) ? "AI 닫기" : "AI", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width),
                                selectedFill: Self.railSelected, selectedInset: 3, selectedRadius: 11, joinsPanel: chromeLayout(width: width).aiPinned && !(chromeLayout(width: width).leftPinned && railVisible(.course, width: width))) {
                 // The same rule as the home button: another panel in the slot is replaced, the open one folds.
                 if showsWorkspace { if NativeLocalPreferences.bool(NativeLocalPreferences.homeTogglesSidebar) || !railVisible(.ai, width: width) { toggleAIRail(width: width) } } else { transition { openAIRail() } }
@@ -882,14 +893,6 @@ struct NativeWorkspaceView: View {
             } else { store.pendingBrowserURLs["global"] = url; section = .browser }
         }
     }
-    private func shortcut(_ title: String, _ symbol: String, _ target: NativeWorkspaceSection) -> some View {
-        Button { openTool(target, new: true) } label: {
-            Label(title, systemImage: symbol).font(.system(size: 12)).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).frame(height: 32).contentShape(Rectangle())
-        }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary)
-    }
-    private func courseColor(_ value: String) -> Color {
-        switch value { case "red": .red; case "orange": .orange; case "yellow", "gold": .yellow; case "green": .green; case "purple": .purple; case "pink": .pink; default: .blue }
-    }
     private var inspectorSidebar: some View {
         VStack(spacing: 0) {
             if let context = workspaceContext {
@@ -938,7 +941,15 @@ struct NativeWorkspaceView: View {
     private var emptyWorkspace: some View {
         VStack(spacing: 18) {
             Spacer()
-            if store.selectedCourseID == nil { NativeBandalMark(size: 56, motion: .loop).foregroundStyle(NativeDecorMarkStyle()) }
+            if store.selectedCourseID == nil {
+                // Nothing chosen yet: say what to do, and offer it.
+                NativeBandalMark(size: 56, motion: .loop).foregroundStyle(NativeDecorMarkStyle())
+                Text("폴더를 선택하거나 새로 만드세요").font(NativeDesktopTheme.font(15)).foregroundStyle(NativeDesktopTheme.secondary)
+                Button { setCourseRail(true, width: windowWidth); NotificationCenter.default.post(name: NativeHomeTab.newCourse, object: nil) } label: {
+                    Label("새 폴더 만들기", systemImage: "folder.badge.plus").font(NativeDesktopTheme.font(15, weight: .semibold))
+                        .padding(.horizontal, 18).frame(minHeight: 44)
+                }.buttonStyle(.borderedProminent).accessibilityIdentifier("native-empty-new-folder")
+            }
             if store.selectedCourseID != nil {
                 NativeHomeTab(store: store, courseTitle: courseTitle,
                     onOpen: open, onSelectCourse: changeCourse,
@@ -953,9 +964,6 @@ struct NativeWorkspaceView: View {
             }
             Spacer()
         }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-    private func documentIcon(_ document: NativeDocumentReference) -> String {
-        switch document.kind { case "browser": "globe"; case "assistant": "sparkle"; case "recordings": "waveform"; case "planner": "checklist"; case "pdf": "doc.richtext"; case "whiteboard": "rectangle.and.pencil.and.ellipsis"; case "video": "play.rectangle"; case "audio": "waveform"; default: "doc.text" }
     }
     private func openTool(_ target: NativeWorkspaceSection, new: Bool = false) {
         if target == .assistant { openAIRail(); return }

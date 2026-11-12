@@ -27,7 +27,7 @@ struct NativeLearningWorkspace: View {
             else if let article = model.article { NativeLearningArticleView(model: model, article: article, onOpenBrowser: onOpenBrowser) }
             else if let artifact = model.artifact { NativeLearningArtifactView(model: model, artifact: artifact, onOpenSource: openSource) }
             else { overview }
-        }.padding(.top, chromeMode == .toolsHidden ? (controlInset > 0 ? topInset + 44 : topInset) : 0).background(NativeDesktopTheme.bgApp).accessibilityElement(children: .contain).accessibilityIdentifier("native-learning-workspace")
+        }.padding(.top, chromeMode == .toolsHidden ? (controlInset > 0 ? topInset + 44 : topInset) : 0).background(NativeGlass.paper).accessibilityElement(children: .contain).accessibilityIdentifier("native-learning-workspace")
             .task(id: binding) {
                 await model.rebind(binding); guard model.binding == binding else { return }
                 await model.start()

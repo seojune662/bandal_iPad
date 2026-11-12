@@ -153,7 +153,7 @@ struct NativeBrowserDownloadItem: Identifiable {
         courseID = value["courseId"] as? String; relativePath = value["relPath"] as? String; error = value["failureReason"] as? String
     }
     var retryTitle: String? {
-        if state == "completed" { return recoverable ? "과목에 저장" : nil }
+        if state == "completed" { return recoverable ? "폴더에 저장" : nil }
         return ["interrupted", "cancelled"].contains(state) ? "다시 받기" : nil
     }
     var status: String { paused ? "일시 정지" : state == "completed" ? "완료" : state == "cancelled" ? "취소됨" : state == "interrupted" ? "중단됨" : "내려받는 중" }

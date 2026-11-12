@@ -57,7 +57,7 @@ final class NativeBrowserAddressTests: XCTestCase {
             XCTAssertEqual(item.retryTitle, "다시 받기")
         }
         let material = try XCTUnwrap(NativeBrowserDownloadItem(["id": "test", "state": "completed", "recoverable": true]))
-        XCTAssertEqual(material.retryTitle, "과목에 저장")
+        XCTAssertEqual(material.retryTitle, "폴더에 저장")
         let complete = try XCTUnwrap(NativeBrowserDownloadItem(["id": "test", "state": "completed", "recoverable": false]))
         XCTAssertNil(complete.retryTitle)
     }

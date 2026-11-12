@@ -21,7 +21,7 @@ struct NativeReferralCodeEntry: View {
     var body: some View {
         VStack(alignment: large ? .center : .leading, spacing: 8) {
             if referral.awaiting || referral.status?.claim != nil {
-                applied(referral.status?.claim?.completed == true ? "코드 적용됨 — AI 100회를 받았어요" : "코드 적용됨 — 로그인하고 첫 과목을 만들면 AI 100회가 들어와요")
+                applied(referral.status?.claim?.completed == true ? "코드 적용됨 — AI 100회를 받았어요" : "코드 적용됨 — 로그인하고 첫 폴더를 만들면 AI 100회가 들어와요")
             } else {
                 // In onboarding the row is as wide as the button under it.
                 HStack(spacing: 8) {
@@ -79,7 +79,7 @@ struct NativeReferralCodeEntry: View {
         case .checking:
             HStack(spacing: 6) { ProgressView().controlSize(.small); Text("확인하는 중…") }
                 .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
-        case .applied: applied("코드 적용됨 — 로그인하고 첫 과목을 만들면 AI 100회가 들어와요")
+        case .applied: applied("코드 적용됨 — 로그인하고 첫 폴더를 만들면 AI 100회가 들어와요")
         case .invalid: failure(Text("없는 초대 코드예요."))
         case .refused(let error): failure(Text(verbatim: NativeReferral.Notice.refused(error).text(locale)))
         case .unavailable:
@@ -210,7 +210,7 @@ struct NativeReferralInvite: View {
             Text("초대 \(status.counted) / \(status.limit) · 받은 AI \(Referral.uses(status.creditMicrocents))회")
                 .font(.system(size: BandalMetrics.bodySize, weight: .medium)).accessibilityIdentifier("native-referral-count")
             VStack(alignment: .leading, spacing: 2) {
-                Text("친구가 로그인하고 첫 과목을 만들면 둘 다 AI 100회")
+                Text("친구가 로그인하고 첫 폴더를 만들면 둘 다 AI 100회")
                 Text("\(status.limit)명까지")
             }.font(.system(size: 11)).foregroundStyle(NativeDesktopTheme.muted).fixedSize(horizontal: false, vertical: true)
         }
@@ -253,7 +253,7 @@ struct NativeReferralBanner: View {
             let needsSignIn = store.referral.pending != nil && store.hasCourse && !store.referral.signedIn
             // Signed in with a course and still waiting: the server could not give the reward yet and is asked again.
             let onItsWay = store.referral.awaiting && store.hasCourse && store.referral.signedIn
-            let line = NativeAppLocale.string(needsSignIn ? "로그인하면 AI 100회가 들어와요" : onItsWay ? "곧 AI 100회가 들어와요" : "첫 과목을 만들면 AI 100회가 들어와요", locale)
+            let line = NativeAppLocale.string(needsSignIn ? "로그인하면 AI 100회가 들어와요" : onItsWay ? "곧 AI 100회가 들어와요" : "첫 폴더를 만들면 AI 100회가 들어와요", locale)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: "gift").accessibilityHidden(true)
                 // One line at the sidebar's usual width. Where it wraps, "AI 100회" stays whole.
@@ -277,7 +277,7 @@ struct NativeReferralSettingsCard: View {
     @State private var inviting = false
     var body: some View {
         NativeSettingsGroup(title: NativeAppLocale.string("친구 초대", locale)) {
-            BandalSettingRow(title: NativeAppLocale.string("친구 초대", locale), note: NativeAppLocale.string("친구가 로그인하고 첫 과목을 만들면 둘 다 AI 100회", locale)) {
+            BandalSettingRow(title: NativeAppLocale.string("친구 초대", locale), note: NativeAppLocale.string("친구가 로그인하고 첫 폴더를 만들면 둘 다 AI 100회", locale)) {
                 Button { inviting = true } label: { Text("초대하기").frame(minHeight: 44) }.accessibilityIdentifier("native-referral-settings-open")
                     .bandalPopover(isPresented: $inviting, width: 280) { NativeReferralInvite(store: store) }
             }

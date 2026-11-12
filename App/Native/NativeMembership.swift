@@ -160,7 +160,7 @@ struct NativeSettingsSubscriptionPanel: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(tier == .pro ? "반달 프로" : tier == .plus ? "반달 플러스" : "반달 무료").font(.system(size: 20, weight: .bold))
                 Group {
-                    if tier == .free { Text("플러스는 과목·자료 무제한, 프로는 AI를 플러스의 4배") }
+                    if tier == .free { Text("플러스는 폴더·자료 무제한, 프로는 AI를 플러스의 4배") }
                     else if let renewal { Text("다음 결제일 \(renewal, format: .dateTime.month().day())") }
                     else { Text("결제일과 해지는 구독 관리에서 볼 수 있어요") }
                 }.font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(2)
@@ -203,10 +203,10 @@ struct NativeSettingsSubscriptionPanel: View {
 
     /// 구독·사용량 › 더 보기.
     @ViewBuilder private var details: some View {
-        NativeSettingsGroup(title: "반달 멤버십", description: "이미 있는 과목과 자료는 구독과 관계없이 계속 열고 고칠 수 있어요.") {
+        NativeSettingsGroup(title: "반달 멤버십", description: "이미 있는 폴더와 자료는 구독과 관계없이 계속 열고 고칠 수 있어요.") {
             LabeledContent("상태", value: Self.title(membership.tier)).accessibilityIdentifier("native-membership-state")
             if membership.tier < .plus {
-                LabeledContent("이 iPad에서 만든 과목", value: "\(usage["courses"] as? Int ?? 0) / \(FreeTier.courses)")
+                LabeledContent("이 iPad에서 만든 폴더", value: "\(usage["courses"] as? Int ?? 0) / \(FreeTier.courses)")
                 LabeledContent("이 iPad에서 만든 자료", value: "\(usage["documents"] as? Int ?? 0) / \(FreeTier.documents)")
             }
             HStack {

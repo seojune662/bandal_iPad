@@ -418,7 +418,6 @@ Menu {
                 .contextMenu { actions(material) }
                 .modifier(deleteConfirm(material))
                 .modifier(movePopover(material))
-        .modifier(movePopover(material))
                 .modifier(materialDrag(material))
                 .task(id: materialTaskID(material)) { await resolveURL(material) }
                 .accessibilityIdentifier("native-library-gallery-preview")

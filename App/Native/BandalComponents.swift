@@ -383,6 +383,25 @@ extension BandalSearchList where Accessory == EmptyView {
     }
 }
 
+/// The keyboard's height while the window ignores it (a PDF text box is being typed in): views pinned to the
+/// window's bottom (toasts, error banners) lift by it themselves.
+@MainActor @Observable final class NativeKeyboardInset {
+    static let shared = NativeKeyboardInset()
+    var ignored = false
+    private(set) var height: CGFloat = 0
+    var lift: CGFloat { ignored ? height : 0 }
+    private var observer: NSObjectProtocol?
+    private init() {
+        observer = NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main) { note in
+            let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? .zero
+            MainActor.assumeIsolated {
+                let screen = UIScreen.main.bounds
+                NativeKeyboardInset.shared.height = frame.isEmpty ? 0 : max(0, screen.maxY - frame.minY)
+            }
+        }
+    }
+}
+
 struct BandalToast: View {
     @Binding var message: String?
     /// A status mark before the text (Figma: `checkmark.circle.fill` in green).
@@ -394,7 +413,7 @@ struct BandalToast: View {
             if let message {
                 HStack(spacing: 10) {
                     if let symbol { Image(systemName: symbol).font(.system(size: 15)).foregroundStyle(Color(uiColor: .systemGreen)) }
-                    Text(message).font(.system(size: 14, weight: .medium)).foregroundStyle(NativeDesktopTheme.text)
+                    BandalText(message).font(.system(size: 14, weight: .medium)).foregroundStyle(NativeDesktopTheme.text)
                         .multilineTextAlignment(.center).lineLimit(3)
                     if let actionTitle, let action {
                         NativeDesktopTheme.border.frame(width: 1, height: 16)
@@ -404,7 +423,7 @@ struct BandalToast: View {
                 }
                     .padding(.horizontal, 16).frame(minHeight: 40)
                     .bandalGlass(in: Capsule())
-                    .padding(.bottom, 24).padding(.horizontal, 16)
+                    .padding(.bottom, 24 + NativeKeyboardInset.shared.lift).padding(.horizontal, 16)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .onTapGesture { self.message = nil }
                     .accessibilityIdentifier("bandal-toast")

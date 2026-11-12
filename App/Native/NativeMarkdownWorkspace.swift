@@ -295,16 +295,16 @@ struct NativeMarkdownWorkspace: View {
                 Button("사본으로 저장", systemImage: "doc.on.doc") { keepCopy() }.disabled(copying)
                 ShareLink(item: session.text) { Label("텍스트 공유", systemImage: "square.and.arrow.up") }
                 Button("파일 다시 읽기", systemImage: "arrow.clockwise") { confirmReload = true }
-            } label: { Image(systemName: "ellipsis").font(.system(size: 18)).foregroundStyle(NativeDesktopTheme.muted).frame(width: 31, height: 31).contentShape(Rectangle()) }
+            } label: { Image(systemName: "ellipsis").font(.system(size: 18)).foregroundStyle(NativeDesktopTheme.muted).frame(width: 31, height: 31).padding(.vertical, 7).padding(.horizontal, 6).contentShape(Rectangle()).padding(.vertical, -7).padding(.horizontal, -6) }
                 .accessibilityLabel("서식과 노트 작업").accessibilityIdentifier("native-markdown-more")
                 .bandalConfirm("파일을 다시 읽을까요?", isPresented: $confirmReload, message: "저장하지 않은 편집과 임시 저장본을 지우고 파일을 다시 읽어요.", action: "파일 내용으로 되돌리기", destructive: true) {
                     Task { do { try await session.reloadDiscardingDraft() } catch { copyMessage = error.localizedDescription } }
                 }
                 .accessibilityValue(session.saving || session.dirty ? "저장 중" : "저장됨")
             if editing && !sourceMode {
-                Button { session.applyFormat?("undo") } label: { Image(systemName: "arrow.uturn.backward").font(.system(size: 18)).frame(width: 21, height: 31).contentShape(Rectangle().inset(by: -3)) }
+                Button { session.applyFormat?("undo") } label: { Image(systemName: "arrow.uturn.backward").font(.system(size: 18)).frame(width: 21, height: 31).padding(.vertical, 7).padding(.horizontal, 6).contentShape(Rectangle()).padding(.vertical, -7).padding(.horizontal, -6) }
                     .accessibilityLabel("실행 취소").accessibilityIdentifier("native-markdown-undo")
-                Button { session.applyFormat?("redo") } label: { Image(systemName: "arrow.uturn.forward").font(.system(size: 18)).frame(width: 21, height: 31).contentShape(Rectangle().inset(by: -3)) }
+                Button { session.applyFormat?("redo") } label: { Image(systemName: "arrow.uturn.forward").font(.system(size: 18)).frame(width: 21, height: 31).padding(.vertical, 7).padding(.horizontal, 6).contentShape(Rectangle()).padding(.vertical, -7).padding(.horizontal, -6) }
                     .accessibilityLabel("다시 실행").accessibilityIdentifier("native-markdown-redo")
                 Button { session.applyFormat?("done") } label: {
                     Text("완료").font(.system(size: 15, weight: .semibold)).foregroundStyle(NativeDesktopTheme.onAccent)
@@ -313,7 +313,7 @@ struct NativeMarkdownWorkspace: View {
             }
         }.buttonStyle(.plain).padding(.horizontal, 12).frame(height: 45).padding(.bottom, 1)
             .accessibilityElement(children: .contain).accessibilityIdentifier("native-markdown-toolbar").accessibilityValue(sourceMode ? "Markdown 원문" : "서식 편집")
-            .foregroundStyle(NativeDesktopTheme.text).background(NativeDesktopTheme.bgApp)
+            .foregroundStyle(NativeDesktopTheme.text).background(NativeGlass.paper)
             .overlay(alignment: .bottom) { NativeGlass.separator.frame(height: 1) }
             .disabled(!session.canEdit || session.frozen)
             .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { editing = $0.object as? Bool ?? false }
@@ -323,13 +323,14 @@ struct NativeMarkdownWorkspace: View {
         let active = barFormats.contains(format)
         return Text(title).font(.system(size: 16, weight: .semibold)).strikethrough(format == "strike").foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.text)
             .padding(.horizontal, 12).frame(height: 31)
-            .background(active ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 9)).contentShape(Rectangle())
+            .background(active ? NativeDesktopTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 9))
+            .padding(.vertical, 7).contentShape(Rectangle()).padding(.vertical, -7)
     }
     private func formatSymbol(_ symbol: String, _ format: String) -> some View {
         let active = barFormats.contains(format)
         return Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(active ? NativeDesktopTheme.accent : NativeDesktopTheme.text)
             .frame(width: 23, height: 31).background { if active { RoundedRectangle(cornerRadius: 9).fill(NativeDesktopTheme.raised).padding(.horizontal, -4) } }
-            .contentShape(Rectangle().inset(by: -3))
+            .padding(.vertical, 7).padding(.horizontal, 6).contentShape(Rectangle()).padding(.vertical, -7).padding(.horizontal, -6)
     }
     private func selectPage(_ index: Int) {
         session.prepareForFlush?(); pageIndex = index; showAppendix = false
@@ -480,7 +481,7 @@ struct NativeMarkdownWorkspace: View {
                     let parent = (document.relativePath as NSString).deletingLastPathComponent
                     return try await store.createMarkdown(title: (document.title as NSString).deletingPathExtension + " 사본", courseID: document.courseID, parentPath: parent)
                 }
-                copyMessage = "편집 내용을 새 마크다운로 보관했어요. 자료 목록에서 열 수 있습니다."
+                copyMessage = "편집 내용을 새 마크다운으로 보관했어요. 자료 목록에서 열 수 있습니다."
             } catch { copyMessage = error.localizedDescription }
         }
     }

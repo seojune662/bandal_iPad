@@ -264,7 +264,7 @@ final class NativeWorkspaceStore {
         do {
             try await ensureStarted()
             if !courses.contains(where: { $0.id == id }) { try await loadCourses() }
-            guard courses.contains(where: { $0.id == id }) else { throw DesktopRuntimeError("선택한 과목을 찾을 수 없습니다.") }
+            guard courses.contains(where: { $0.id == id }) else { throw DesktopRuntimeError("선택한 폴더를 찾을 수 없습니다.") }
             if selectedCourseID != id { try await flushDocuments() }
             selectedCourseID = id
             materials = []
@@ -287,7 +287,7 @@ final class NativeWorkspaceStore {
     }
 
     func createCourse(name: String) async throws {
-        let name = try nonEmpty(name, label: "과목 이름")
+        let name = try nonEmpty(name, label: "폴더 이름")
         try await flushDocuments()
         let created: NativeCourse = try Self.decode(try await invoke("courses:create", ["name": name, "color": "blue"]))
         try await loadCourses()
@@ -333,7 +333,7 @@ final class NativeWorkspaceStore {
         try await ensureStarted()
         let courseID: String
         if let requestedCourseID {
-            guard courses.contains(where: { $0.id == requestedCourseID }) else { throw DesktopRuntimeError("노트를 저장할 과목을 찾을 수 없습니다.") }
+            guard courses.contains(where: { $0.id == requestedCourseID }) else { throw DesktopRuntimeError("노트를 저장할 폴더를 찾을 수 없습니다.") }
             courseID = requestedCourseID
         } else { courseID = try await currentCourse() }
         let value = try await invoke("notes:create", ["courseId": courseID, "dirRelPath": parentPath, "title": try nonEmpty(title, label: "노트 제목")])
@@ -652,7 +652,7 @@ final class NativeWorkspaceStore {
 
     private func currentCourse() async throws -> String {
         try await ensureStarted()
-        guard let selectedCourseID, courses.contains(where: { $0.id == selectedCourseID }) else { throw DesktopRuntimeError("먼저 과목을 선택해 주세요.") }
+        guard let selectedCourseID, courses.contains(where: { $0.id == selectedCourseID }) else { throw DesktopRuntimeError("먼저 폴더를 선택해 주세요.") }
         return selectedCourseID
     }
 
@@ -661,7 +661,7 @@ final class NativeWorkspaceStore {
     private func materialDestinationCourse(_ requested: String?) async throws -> String {
         try await ensureStarted()
         guard let courseID = requested ?? selectedCourseID, courses.contains(where: { $0.id == courseID }) else {
-            throw DesktopRuntimeError(requested == nil ? "먼저 과목을 선택해 주세요." : "자료를 저장할 과목을 찾을 수 없습니다.")
+            throw DesktopRuntimeError(requested == nil ? "먼저 폴더를 선택해 주세요." : "자료를 저장할 폴더를 찾을 수 없습니다.")
         }
         return courseID
     }

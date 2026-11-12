@@ -22,7 +22,7 @@ final class NativeAIModelPickerUITests: XCTestCase {
         if assistant.label == "AI 열기" { assistant.tap() }
         let pill = app.buttons["native-ai-model-pill"]
         XCTAssertTrue(pill.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertEqual(pill.label, "AI 모델: Auto")
+        XCTAssertEqual(pill.label, "AI 모델: 자동")
         pill.tap()
         let auto = app.buttons["native-ai-model-default"]
         XCTAssertTrue(auto.waitForExistence(timeout: 10), app.debugDescription)

@@ -58,7 +58,9 @@ enum NativeHomeSites {
             guard !hidden.contains(site.host), !sites.contains(where: { $0.id == site.id }) else { return }
             sites.append(site); hosts.insert(site.host)
         }
-        for service in school.filter({ !$0.secondary && !$0.hidden }).prefix(schoolLimit) {
+        // The school's order, its main links before the ones it marks secondary.
+        let essentials = school.filter { !$0.hidden }.enumerated().sorted { ($0.element.secondary ? 1 : 0, $0.offset) < ($1.element.secondary ? 1 : 0, $1.offset) }.map(\.element)
+        for service in essentials.prefix(schoolLimit) {
             guard let host = host(service.url) else { continue }
             add(.init(id: "school:" + service.id, title: service.label, url: service.url, host: host, source: .school,
                       visits: 1 + (visits[host] ?? 0), pinned: false, opensExternally: service.opensExternally))
@@ -129,19 +131,19 @@ struct NativeHomeSiteTiles: View {
     private var sites: [NativeHomeSite] {
         NativeHomeSites.rank(school: NativeUniversityCatalog.resolvedServices(settings: settings), preferences: preferences, visited: visited)
     }
-    private static let spacing: CGFloat = 8, height: CGFloat = 52
+    private static let spacing: CGFloat = 8, height: CGFloat = 64
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if NativeUniversityCatalog.university(settings) == nil {
                 NativeSchoolPickerButton(store: store, arrowEdge: .leading) { Label("학교 고르기", systemImage: "building.columns") }
-                    .buttonStyle(.plain).font(NativeDesktopTheme.font(14)).foregroundStyle(NativeDesktopTheme.secondary).frame(minHeight: 32)
+                    .buttonStyle(.plain).font(NativeDesktopTheme.font(14)).foregroundStyle(NativeDesktopTheme.secondary).frame(minHeight: 44)
                     .accessibilityIdentifier("native-university-choose")
             } else if let university = NativeUniversityCatalog.university(settings), NativeUniversityCatalog.needsLinks(settings) {
                 // A school known by name only: AI finds its sites.
                 NativeSchoolPickerButton(store: store, aiQuery: university["nameKo"] as? String, country: university["country"] as? String, arrowEdge: .leading) {
-                    Label("AI로 학교 링크 찾기", systemImage: "sparkles")
-                }.buttonStyle(.plain).font(NativeDesktopTheme.font(14, weight: .medium)).foregroundStyle(NativeDesktopTheme.accent).frame(minHeight: 32)
-                    .accessibilityLabel("AI로 링크 찾기").accessibilityIdentifier("native-university-find-links")
+                    Label("AI로 링크 찾기", systemImage: "sparkles")
+                }.buttonStyle(.plain).font(NativeDesktopTheme.font(14, weight: .medium)).foregroundStyle(NativeDesktopTheme.accent).frame(minHeight: 44)
+                    .accessibilityIdentifier("native-university-find-links")
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: Self.spacing) {
@@ -153,18 +155,21 @@ struct NativeHomeSiteTiles: View {
             .frame(height: Self.height)
             .accessibilityIdentifier("native-home-sites")
         }
-        .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 12).disabled(busy)
+        .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 12)
+        // Visits are read when the tiles appear (or the app comes back), never while they are on screen:
+        // a tile does not move away from the finger while the user browses.
         .task(id: reload) { await loadVisited() }
-        .onReceive(store.events) { event in
-            if event.channel == "browser:history-changed" || event.channel == "browser:profiles-changed" { reload &+= 1 }
-        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in reload &+= 1 }
     }
     private func tile(_ site: NativeHomeSite) -> some View {
         Button {
             if site.opensExternally, let url = URL(string: site.url) { UIApplication.shared.open(url) } else { onOpenURL(site.url) }
         } label: {
-            NativeSiteIcon(host: site.host, title: site.title, store: store)
+            VStack(spacing: 5) {
+                NativeSiteIcon(host: site.host, title: site.title, store: store)
+                Text(verbatim: site.title).font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.secondary)
+                    .lineLimit(1).truncationMode(.tail).padding(.horizontal, 6)
+            }
                 .frame(maxWidth: .infinity).frame(height: Self.height)
                 .background(NativeGlass.selection, in: RoundedRectangle(cornerRadius: 14))
                 .overlay(alignment: .topTrailing) {
@@ -175,10 +180,11 @@ struct NativeHomeSiteTiles: View {
         .buttonStyle(.plain)
         .containerRelativeFrame(.horizontal, count: 3, spacing: Self.spacing)
         .help(site.title)
-        .accessibilityLabel(site.title + (site.pinned ? ", 고정됨" : ""))
+        .accessibilityLabel(Text(verbatim: site.title))
+        .accessibilityValue(site.pinned ? Text("고정됨") : Text(verbatim: ""))
         .accessibilityIdentifier("native-home-site-" + site.id)
         .contextMenu {
-            Text(site.title)
+            Text(verbatim: site.title)
             Button(site.pinned ? "고정 해제" : "고정", systemImage: site.pinned ? "pin.slash" : "pin") { togglePin(site) }
             Button("삭제", systemImage: "trash", role: .destructive) { remove(site) }
             if site.source == .school { Button("학교 설정", systemImage: "gearshape") { onOpenSettings("university") } }
@@ -221,11 +227,23 @@ struct NativeHomeSiteTiles: View {
         persist(next)
     }
     private func remove(_ site: NativeHomeSite) {
+        // A school link is hidden the way Settings hides it, so its 사이드바에 표시 switch agrees.
+        if site.source == .school {
+            let university = settings["university"] as? [String: Any] ?? [:], id = String(site.id.dropFirst("school:".count))
+            let hidden = university["hiddenServiceIds"] as? [String] ?? []
+            var next = preferences; next.pinned.removeAll { $0 == site.id }
+            Task { @MainActor in
+                do {
+                    _ = try await store.invoke("settings:set", ["university": ["hiddenServiceIds": hidden.contains(id) ? hidden : hidden + [id]], NativeHomeSitePreferences.key: next.json])
+                } catch { store.errorMessage = error.localizedDescription }
+            }
+            return
+        }
         var next = preferences
         next.pinned.removeAll { $0 == site.id }
         if site.source == .custom { next.custom.removeAll { $0.id == site.id } }
         // Removed by host, so browsing it again does not bring it back.
-        if site.source != .custom || site.visits > 1 { if !next.hidden.contains(site.host) { next.hidden.append(site.host) } }
+        if site.source == .visited || site.visits > 1 { if !next.hidden.contains(site.host) { next.hidden.append(site.host) } }
         persist(next)
     }
     private func persist(_ next: NativeHomeSitePreferences) {

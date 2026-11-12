@@ -12,13 +12,12 @@ struct NativePDFTextEditor: View {
     let onDelete: () -> Void
     @State private var extras = false
 
-    /// Docked under the palette; the text itself is edited on the page.
+    /// A glass card floating under the palette (it never pushes the page); the text itself is edited on the page.
     var body: some View {
         VStack(spacing: 0) {
-            Divider()
             if let errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout).foregroundStyle(.red).padding(.horizontal, 12).padding(.top, 8)
+                Label { BandalText(errorMessage) } icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+                    .font(.callout).foregroundStyle(NativeDesktopTheme.text).padding(.horizontal, 12).padding(.top, 8)
                     .accessibilityIdentifier("native-pdf-text-error")
             }
             HStack(alignment: .center, spacing: 4) {
@@ -31,7 +30,8 @@ struct NativePDFTextEditor: View {
                     .accessibilityIdentifier("native-pdf-save-text")
             }.padding(.trailing, 8)
         }
-        .background(NativeDesktopTheme.bgApp)
+        .padding(.vertical, 2)
+        .bandalGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .disabled(isBusy)
         .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-text-sheet")
     }
@@ -55,7 +55,7 @@ struct NativePDFTextEditor: View {
                     toggle("underline", symbol: "underline", label: "밑줄", selected: draft.style.underline)
                     Button { extras.toggle() } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
                         .accessibilityLabel("텍스트 추가 서식").accessibilityIdentifier("native-pdf-text-more")
-                        .popover(isPresented: $extras) {
+                        .bandalPopover(isPresented: $extras, width: 360, radius: 22, padding: 10) {
                             VStack(spacing: 0) {
                                 HStack {
                                     Text("텍스트 서식").font(.headline)
@@ -65,8 +65,7 @@ struct NativePDFTextEditor: View {
                                 }.padding(.horizontal, 12)
                                 Divider()
                                 extraControls
-                            }.frame(width: 340).padding(.bottom, 4)
-                                .presentationCompactAdaptation(.popover)
+                            }.padding(.bottom, 4)
                         }
                 }.padding(.horizontal, 8)
             }
@@ -84,7 +83,7 @@ struct NativePDFTextEditor: View {
                     colorButtons(fill: false)
                 }.padding(.horizontal, 8)
             }
-        }.buttonStyle(.plain).background(NativeDesktopTheme.bgApp)
+        }.buttonStyle(.plain)
     }
     private var extraControls: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -291,6 +290,18 @@ struct NativePDFTextSizeField: UIViewRepresentable {
 }
 
 final class NativePDFTextInputView: UITextView {
+    /// While this box has the keyboard the window keeps its size (see `NativeWorkspaceView`); focus moving to
+    /// any other field, in this pane or another, hands keyboard avoidance back to the window.
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { NotificationCenter.default.post(name: NativePDFWorkspaceModel.textEditingChanged, object: true) }
+        return became
+    }
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { NotificationCenter.default.post(name: NativePDFWorkspaceModel.textEditingChanged, object: false) }
+        return resigned
+    }
     /// Normalized page box the overlay maps to this view's frame.
     var pageBox: CGRect?
     /// Installed by the page overlay that positions this view. The view lives

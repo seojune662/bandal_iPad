@@ -331,6 +331,7 @@ final class NativeBrowserSession: ObservableObject {
 }
 
 struct NativeBrowserWorkspace: View {
+    @Environment(\.locale) private var locale
     @Environment(\.nativeWorkspaceChromeMode) private var chromeMode
     @Environment(\.nativeWorkspaceControlInset) private var controlInset
     @Environment(\.nativeWorkspaceTopInset) private var topInset
@@ -375,7 +376,7 @@ struct NativeBrowserWorkspace: View {
             }
             page
                 .padding(.top, chromeMode == .toolsHidden && annotationRequest == nil ? (controlInset > 0 ? topInset + 44 : topInset) : 0)
-        }.background(NativeDesktopTheme.bgApp).foregroundStyle(NativeDesktopTheme.text)
+        }.background(NativeGlass.paper).foregroundStyle(NativeDesktopTheme.text)
         .nativeWorkspacePreviewSurface(id: "browser-private-" + (session.workspaceID ?? "global"), privateContent: { session.active?.isPrivate == true })
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { workspaceHeight = $0 }
         .task { await session.start(); updateAddress() }
@@ -613,7 +614,7 @@ struct NativeBrowserWorkspace: View {
             HStack(spacing: 6) {
                 Image(systemName: session.active?.isPrivate == true ? "hand.raised.fill" : "person.crop.circle.fill").font(.system(size: 17))
                 if expanded {
-                    Text(session.active?.isPrivate == true ? "시크릿" : session.activeProfileName).font(.system(size: 12)).lineLimit(1)
+                    Text(session.active?.isPrivate == true ? NativeAppLocale.string("개인정보 보호", locale) : session.activeProfileName).font(.system(size: 12)).lineLimit(1)
                     Image(systemName: "chevron.down").font(.system(size: 8))
                 }
             }.padding(.horizontal, expanded ? 10 : 0).frame(minWidth: 44, maxWidth: expanded ? 116 : 44, minHeight: 44)

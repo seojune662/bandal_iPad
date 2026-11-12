@@ -53,14 +53,25 @@ struct NativeToolsWorkspace: View {
     }
 }
 
+/// A problem in a tool: an orange mark and the message on the panel's glass, with 닫기 when the caller can clear it.
 struct NativeToolError: View {
     let message: String
+    var onDismiss: (() -> Void)? = nil
     var body: some View {
-        Label(message, systemImage: "exclamationmark.triangle")
-            .font(.callout).foregroundStyle(.red)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding().background(Color.red.opacity(0.06))
-            .accessibilityIdentifier("native-tool-error")
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            BandalText(message).foregroundStyle(NativeDesktopTheme.text).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            if let onDismiss {
+                Button(action: onDismiss) { Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 44, height: 28).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary).accessibilityLabel("닫기")
+            }
+        }
+        .font(.callout)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12).background(NativeGlass.selection, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .accessibilityElement(children: .combine).accessibilityIdentifier("native-tool-error")
     }
 }
 

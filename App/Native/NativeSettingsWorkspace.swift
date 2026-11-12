@@ -269,9 +269,11 @@ struct NativeSettingsWorkspace: View {
       Button { subpage = "university" } label: { NativeSettingsRow(title: "바로가기", note: shortcuts) { NativeSettingsValue("편집") } }
         .buttonStyle(.plain).accessibilityIdentifier("native-settings-integrations-shortcuts")
     }
-    NativeSettingsGroup(title: "연결된 서비스", description: "Google 캘린더 · Drive · Notion 연결은 준비 중이에요. Apple 캘린더는 더 보기에서 연결해요.") {
-      ForEach([("Google 캘린더", "과제 마감 기한을 가져와요"), ("Google Drive", "자료로 가져오기"), ("Notion", "페이지를 자료로 가져오기")], id: \.0) { title, note in
-        NativeSettingsRow(title: title, note: note) { Button("연결") {}.disabled(true).accessibilityLabel(title + " 연결").accessibilityHint("준비 중") }
+    if NativeReleaseFlags.showsUnbuiltFeatures {
+      NativeSettingsGroup(title: "연결된 서비스", description: "Google 캘린더 · Drive · Notion 연결은 준비 중이에요. Apple 캘린더는 더 보기에서 연결해요.") {
+        ForEach([("Google 캘린더", "과제 마감 기한을 가져와요"), ("Google Drive", "자료로 가져오기"), ("Notion", "페이지를 자료로 가져오기")], id: \.0) { title, note in
+          NativeSettingsRow(title: title, note: note) { Button("연결") {}.disabled(true).accessibilityLabel(title + " 연결").accessibilityHint("준비 중") }
+        }
       }
     }
   }
@@ -312,12 +314,11 @@ struct NativeSettingsWorkspace: View {
     }
     NativeDecorSettingsGroup()
     NativeSettingsGroup(title: "사이드바") {
-      NativeSettingsToggle(title: "홈 버튼으로 접고 펼치기", isOn: $homeTogglesSidebar).accessibilityIdentifier("native-settings-home-toggles-sidebar")
+      NativeSettingsToggle(title: "홈·AI 버튼으로 접고 펼치기", isOn: $homeTogglesSidebar).accessibilityIdentifier("native-settings-home-toggles-sidebar")
       NativeSettingsToggle(title: "키보드를 쓰면 자동으로 접기", note: "마크다운에서 키보드가 올라올 때", isOn: $keyboardFoldsPanels).accessibilityIdentifier("native-settings-keyboard-folds-panels")
     }
     // 준비 중: finger drawing is a per-note tool option, with no app-wide default to switch here.
-    NativeSettingsGroup(title: "펜슬", description: "‘손가락은 스크롤만’을 끄는 설정은 준비 중이에요.") {
-      NativeSettingsToggle(title: "손가락은 스크롤만", note: "필기는 펜슬로만 해요", isOn: .constant(true)).disabled(true).accessibilityIdentifier("native-settings-finger-scrolls")
+    NativeSettingsGroup(title: "펜슬", description: "필기는 펜슬로, 손가락은 스크롤과 확대에 써요.") {
       // The double tap is the system's setting: the row shows it and opens Settings.
       Button { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } } label: {
         NativeSettingsRow(title: "펜슬 두 번 탭") { NativeSettingsValue(pencilTapTitle) }
@@ -383,14 +384,14 @@ struct NativeSettingsWorkspace: View {
     }
     NativeSettingsGroup(title: "자료 참고") {
       NativeSettingsRow(title: "참고 범위", height: 61) {
-        BandalSegmented(options: [("note", "지금 노트"), ("course", "과목 전체")], selection: $referenceScope, identifierPrefix: "native-settings-ai-scope-")
+        BandalSegmented(options: [("note", "지금 노트"), ("course", "폴더 전체")], selection: $referenceScope, identifierPrefix: "native-settings-ai-scope-")
       }
       NativeSettingsToggle(title: "AI 답변 출처 표시", isOn: $showsSources).accessibilityIdentifier("native-settings-ai-sources")
     }
     NativeSettingsGroup(title: "대화 기록", description: savesHistory ? "" : "지금부터 시작하는 대화는 목록에 남지 않고, 앱을 다시 열면 지워져요") {
       NativeSettingsToggle(title: "대화 기록 저장", isOn: $savesHistory).accessibilityIdentifier("native-settings-ai-saves-history")
       NativeSettingsActionRow(title: "대화 기록 모두 지우기", destructive: true) { deleteChatsConfirmation = true }.accessibilityIdentifier("native-settings-delete-chats")
-        .bandalConfirm("대화 기록을 모두 지울까요?", isPresented: $deleteChatsConfirmation, message: "모든 과목의 AI 대화가 지워져요. 노트와 자료는 그대로예요.", action: "모두 지우기", destructive: true, identifier: "native-settings-delete-chats-confirm") {
+        .bandalConfirm("대화 기록을 모두 지울까요?", isPresented: $deleteChatsConfirmation, message: "모든 폴더의 AI 대화가 지워져요. 노트와 자료는 그대로예요.", action: "모두 지우기", destructive: true, identifier: "native-settings-delete-chats-confirm") {
           run { _ = try await store.invoke("chat:deleteAll"); notice = "대화 기록을 지웠어요." }
         }
     }

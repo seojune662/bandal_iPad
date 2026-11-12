@@ -36,9 +36,11 @@ struct NativePDFWorkspace: View {
     }
     /// The thumbnails button sits at the page area's left, in the palette's row when the pill leaves room for it, otherwise under it.
     private var viewButtonTop: CGFloat {
-        let room = paletteFrame.isEmpty || paletteFrame.minX - bodyFrame.minX >= NativePDFViewButton.leading + NativePDFViewButton.size + 8
+        let room = paletteFrame.isEmpty || paletteFrame.minX - bodyFrame.minX >= NativePDFViewButton.leading + NativePDFViewButton.width + 8
         return room ? paletteTop + (NativePDFFloatingPalette.height - NativePDFViewButton.size) / 2 : belowPalette
     }
+    /// The bars in the band under the palette keep clear of the thumbnails button only when it sits in that band.
+    private var bandSideInset: CGFloat { viewButtonTop == belowPalette ? NativePDFViewButton.leading + NativePDFViewButton.width + 8 : 16 }
     /// The window draws the palette above the side panels; this pane only says where its page area is.
     private func registerPalette() {
         guard let paletteHost else { return }
@@ -74,10 +76,6 @@ struct NativePDFWorkspace: View {
                     Button { model.clearSourceSelection() } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }.accessibilityLabel("원문 선택 해제")
                 }.padding(.horizontal, 16).background(.bar).disabled(model.isBusy || model.errorMessage != nil)
             }
-            if let draft = model.textEditorDraft {
-                NativePDFTextEditor(draft: draft, isBusy: model.isBusy, errorMessage: model.errorMessage, canCancel: !model.textSaveNeedsRecovery,
-                    onSave: model.finishText, onCancel: model.cancelText, onDelete: model.deleteText)
-            }
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     if model.showPages && visible {
@@ -111,12 +109,21 @@ struct NativePDFWorkspace: View {
                         .overlay(alignment: .top) {
                             if visible, model.search.isPresented {
                                 NativePDFSearchBar(search: model.search).padding(.horizontal, 8).frame(height: NativePDFViewButton.size).bandalGlass(in: Capsule())
-                                    .padding(.horizontal, NativePDFViewButton.leading + NativePDFViewButton.size + 8).padding(.top, belowPalette)
+                                    .padding(.horizontal, bandSideInset).padding(.top, belowPalette)
                             }
                         }
-                        .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model).padding(.top, belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0)) } }
+                        .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model, sideInset: bandSideInset).padding(.top, belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0)) } }
                         .overlay { if visible { NativePDFCommentAnchor(model: model) } }
-                        .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame) } }
+                        // The text box's format card floats under the palette: opening a box never moves the page under the finger.
+                        .overlay(alignment: .top) {
+                            if let draft = model.textEditorDraft {
+                                NativePDFTextEditor(draft: draft, isBusy: model.isBusy, errorMessage: model.errorMessage, canCancel: !model.textSaveNeedsRecovery,
+                                    onSave: model.finishText, onCancel: model.cancelText, onDelete: model.deleteText)
+                                    .frame(maxWidth: 760).padding(.horizontal, 8).padding(.top, belowPalette)
+                            }
+                        }
+                        .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame,
+                            clearTop: belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
                     if model.showAnnotations && visible {
                         Divider()
                         NativePDFAnnotationRail(model: model).padding(.top, annotationRailTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 220 : 280)
@@ -132,6 +139,7 @@ struct NativePDFWorkspace: View {
                         .disabled(model.isBusy).accessibilityIdentifier("native-pdf-retry")
                 }
                 .padding(12).background(.bar)
+                .padding(.bottom, NativeKeyboardInset.shared.lift)
             }
         }
         .onChange(of: visible, initial: true) { _, value in model.setVisible(value) }
@@ -188,7 +196,7 @@ struct NativePDFWorkspace: View {
 @MainActor
 @Observable
 final class NativePDFWorkspaceModel {
-    /// Posted with `true` when a PDF text box opens and `false` when it closes: the window then ignores the keyboard.
+    /// Posted with `true` when a PDF text box takes the keyboard and `false` when it gives it up: the window then ignores the keyboard.
     static let textEditingChanged = Notification.Name("native.pdf.textEditingChanged")
     struct InkColor { let name: String, label: String; let color: Color }
     static let colors: [InkColor] = zip(NativePDFPenPreset.colors, ["먹색", "빨강", "주황", "노랑", "초록", "파랑", "보라"]).map {
@@ -1905,7 +1913,6 @@ final class NativePDFWorkspaceModel {
         let draft = NativePDFTextDraft(object: object, pageSize: pageSize(number), existing: existing, defaults: defaults,
             onChange: { [weak self] in self?.markDraftChanged() })
         textEditorDraft = draft; textEditorPage = number; textEditorPresentedAt = CFAbsoluteTimeGetCurrent()
-        NotificationCenter.default.post(name: Self.textEditingChanged, object: true)
         textEditorPresentedPoint = point.map { (page: number, point: $0) }
         let input = NativePDFTextInput(draft: draft, caretAt: point, onSave: { [weak self] in self?.finishText() }, onCancel: { [weak self] in self?.cancelText() })
         textInput = input
@@ -1915,9 +1922,7 @@ final class NativePDFWorkspaceModel {
     }
     private func clearTextEditor() {
         if let page = textEditorPage { host?.setTextEditor(surfaceID: surfaceID, generation: generation, page: page, view: nil); dirtyScenes.insert(page) }
-        let wasEditing = textEditorDraft != nil
         textInput?.detach(); textInput = nil; textObject = nil; textEditorDraft = nil; textEditorPage = nil
-        if wasEditing { NotificationCenter.default.post(name: Self.textEditingChanged, object: false) }
     }
     /// A tap or pen-down outside the open box. The echo of the opening tap is
     /// ignored; a tap on another text box saves this one, then opens that one.

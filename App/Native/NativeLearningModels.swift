@@ -27,7 +27,7 @@ struct NativeLearningSummary: Decodable, Identifiable {
     func displayName(courses: [NativeCourse]) -> String {
         guard name == "AI 학습자료", topic == "과목 자료", purpose == "course-review" else { return name }
         let source = courses.first { $0.id == (linkedCourseId ?? binding.courseID) && $0.workspaceKind != "study-space" }
-        return source.map { $0.name + " 복습" } ?? "과목 복습"
+        return source.map { $0.name + " 복습" } ?? "폴더 복습"
     }
 }
 

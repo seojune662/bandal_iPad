@@ -135,11 +135,11 @@ struct NativePlannerWorkspace: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         NativePlannerChip(title: "전체", selected: courseFilter == nil) { courseFilter = nil }
-                            .accessibilityLabel("전체 과목").accessibilityIdentifier("native-planner-filter-all")
+                            .accessibilityLabel("전체 폴더").accessibilityIdentifier("native-planner-filter-all")
                         ForEach(store.courses) { course in
                             NativePlannerChip(title: course.name, tint: course.tint, selected: courseFilter == course.id, clears: true) {
                                 courseFilter = courseFilter == course.id ? nil : course.id
-                            }.accessibilityLabel(course.name + " 과목만 보기").accessibilityIdentifier("native-planner-filter-" + course.id)
+                            }.accessibilityLabel(course.name + " 폴더만 보기").accessibilityIdentifier("native-planner-filter-" + course.id)
                         }
                     }.padding(.vertical, 1)
                 }
@@ -232,7 +232,8 @@ struct NativePlannerWorkspace: View {
             .accessibilityIdentifier("native-task-edit-\(task.id)")
             .bandalPopover(isPresented: .editing(task.id, in: $detailID), arrowEdge: .leading, width: 362, radius: 22, padding: 18, fill: NativePlannerPalette.popover) {
                 NativePlannerTaskDetail(task: task, course: course,
-                    setStatus: { detailID = nil; setStatus(task, status: $0) }, delete: { detailID = nil; delete(task) })
+                    setStatus: { detailID = nil; setStatus(task, status: $0) }, delete: { detailID = nil; delete(task) },
+                    edit: { detailID = nil; editor = TaskEditorIdentity(task: task) })
             }
             .contextMenu {
                 ForEach(NativePlannerTask.statuses, id: \.self) { status in Button(NativePlannerTask.statusTitle(status)) { setStatus(task, status: status) } }

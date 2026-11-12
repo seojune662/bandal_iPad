@@ -16,7 +16,6 @@ struct NativeCourseSidebar: View {
     var selectedContextID: String? = nil
     var onOpenProject: (NativeWorkspaceContext) -> Void = { _ in }
     @StateObject private var catalog = NativeLearningCatalog()
-    @State private var showDeleted = false
     @State private var deletingProject: NativeLearningSummary?
     @AppStorage("native.desktop.collapsedCourses") private var collapsedCourses = "[]"
     @AppStorage("native.desktop.collapsedCourseGroups") private var collapsedGroups = "[]"
@@ -32,8 +31,10 @@ struct NativeCourseSidebar: View {
     @State private var error: String?
     private var courses: [NativeCourse] { store.courses.filter { $0.workspaceKind != "study-space" } }
     private var visible: [NativeCourse] { courses.filter { query.isEmpty || $0.name.localizedStandardContains(query) } }
+    /// Projects keep one order (by name), so a row never moves because its contents changed.
     private var projects: [NativeLearningSummary] {
         catalog.projects.filter { $0.deletedAt == nil && (query.isEmpty || $0.displayName(courses: store.courses).localizedStandardContains(query)) }
+            .sorted { $0.displayName(courses: store.courses).localizedStandardCompare($1.displayName(courses: store.courses)) == .orderedAscending }
     }
     private var deletedProjects: [NativeLearningSummary] { catalog.projects.filter { $0.deletedAt != nil } }
     var body: some View {
@@ -52,16 +53,14 @@ struct NativeCourseSidebar: View {
                 Button { adding = .course } label: { Image(systemName: "plus").font(.system(size: 16)).foregroundStyle(NativeGlass.panelIcon).frame(width: 44, height: 34).contentShape(Rectangle()) }
                     .buttonStyle(.plain).accessibilityLabel("폴더 추가").accessibilityIdentifier("native-course-add-menu")
                     .contextMenu {
-                        Button("기존 폴더 연결", systemImage: "folder.badge.plus") { adding = .manage }
                         Button("그룹 만들기", systemImage: "folder") { adding = .group }
-                        Button("보관된 폴더 관리", systemImage: "archivebox") { adding = .manage }
-                        if !deletedProjects.isEmpty { Button(showDeleted ? "삭제한 폴더 숨기기" : "삭제한 폴더 보기", systemImage: "trash") { showDeleted.toggle() } }
+                        Button("폴더 관리", systemImage: "folder.badge.gearshape") { adding = .manage }
                     }
                     .bandalPopover(isPresented: Binding(get: { adding == .group || adding == .manage }, set: { if !$0, adding != .course { adding = nil } }), width: adding == .manage ? 340 : 280) { addingContent }
             }.padding(.leading, 12).padding(.trailing, 9).padding(.bottom, 6)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if let error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red).padding(8) }
+                    if let message = error ?? catalog.error { NativeInlineError(message: message).padding(8) }
                     if !query.isEmpty { ForEach(visible, content: courseRow) }
                     else {
                         ForEach(groups) { group in
@@ -71,24 +70,15 @@ struct NativeCourseSidebar: View {
                         ForEach(courses.filter { course in course.groupId == nil || !groups.contains { $0.id == course.groupId } }, content: courseRow)
                     }
                     ForEach(projects, content: projectRow)
-                    if courses.isEmpty && catalog.projects.allSatisfy({ $0.deletedAt != nil }) {
+                    // Not while projects are still loading: a projects-only list would flash this first.
+                    if courses.isEmpty && !catalog.loading && catalog.projects.allSatisfy({ $0.deletedAt != nil }) {
                         VStack(spacing: 12) {
                             NativeBandalMark(size: 44).foregroundStyle(NativeDecorMarkStyle())
                             Text("첫 폴더를 만들어보세요").font(NativeDesktopTheme.font(13))
+                            Button("새 폴더 만들기") { adding = .course }.buttonStyle(.borderedProminent).accessibilityIdentifier("native-new-course-empty")
                             Button("기존 폴더 연결", systemImage: "folder.badge.plus") { adding = .manage }.buttonStyle(.bordered)
-                            Button("새 폴더 만들기") { adding = .course }.accessibilityIdentifier("native-new-course-empty")
                         }.frame(maxWidth: .infinity).padding(.top, 32)
                     } else if !query.isEmpty && visible.isEmpty && projects.isEmpty { Text("일치하는 폴더가 없어요").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.muted).padding() }
-                    if showDeleted {
-                        ForEach(deletedProjects) { project in
-                            HStack(spacing: 8) {
-                                Image(systemName: "folder").font(.system(size: 16)).foregroundStyle(NativeDesktopTheme.muted).frame(width: 22)
-                                Text(project.displayName(courses: store.courses)).font(NativeDesktopTheme.font(14)).foregroundStyle(NativeDesktopTheme.muted).lineLimit(1)
-                                Spacer(minLength: 0)
-                                Button("복원") { mutateProject("learning:restore", project) }.font(NativeDesktopTheme.font(12, weight: .medium))
-                            }.padding(.leading, 34).padding(.trailing, 8).frame(height: 38)
-                        }
-                    }
                 }.padding(.horizontal, 8).padding(.bottom, 16)
             }
         }.disabled(busy)
@@ -113,7 +103,7 @@ struct NativeCourseSidebar: View {
                 }
                 if renamingID == course.id {
                     HStack(spacing: 6) {
-                        Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeGlass.panelIcon).frame(width: 20)
+                        Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(NativeFolderColor.color(course.color)).frame(width: 20)
                         BandalInlineEditor(text: course.name, isEditing: renaming(course.id), font: NativeDesktopTheme.font(13, weight: .medium), identifier: "native-course-rename") { name in
                             mutate("courses:rename", ["courseId": course.id, "name": name])
                         }
@@ -124,14 +114,13 @@ struct NativeCourseSidebar: View {
                     onSelect(course.id)
                 } label: {
                     HStack(spacing: selected ? 6 : 8) {
-                        Image(systemName: "folder").font(.system(size: selected ? 14 : 16)).foregroundStyle(selected ? NativeGlass.panelIcon : NativeDesktopTheme.secondary).frame(width: selected ? 20 : 22)
+                        Image(systemName: "folder.fill").font(.system(size: selected ? 14 : 16)).foregroundStyle(NativeFolderColor.color(course.color)).frame(width: selected ? 20 : 22)
                         Text(course.name).font(NativeDesktopTheme.font(selected ? 13 : 14, weight: selected ? .medium : .regular)).foregroundStyle(selected ? NativeGlass.icon : NativeDesktopTheme.text).lineLimit(1)
                         Spacer(minLength: 0)
                         if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
                     }.padding(.leading, selected ? 0 : 34).padding(.trailing, selected ? 0 : 8).frame(height: 38).contentShape(Rectangle())
                 }.accessibilityIdentifier("native-course-" + course.id)
                     .contextMenu { courseMenu(course) }
-                    .simultaneousGesture(TapGesture(count: 2).onEnded { renamingID = course.id })
                 }
                 if selected {
                     Menu { courseMenu(course) } label: { Image(systemName: "ellipsis").font(.system(size: 16)).foregroundStyle(NativeGlass.panelIcon).frame(width: 46, height: 38).contentShape(Rectangle()) }.accessibilityLabel(course.name + " 폴더 메뉴")
@@ -166,9 +155,14 @@ struct NativeCourseSidebar: View {
             Button("그룹 없음") { mutate("courses:organize", ["courseId": course.id, "groupId": NSNull()]) }
             ForEach(groups) { group in Button(group.name) { mutate("courses:organize", ["courseId": course.id, "groupId": group.id]) } }
         }
-        NativeMenuPending(title: "오프라인 저장", symbol: "icloud")
         Divider()
-        Menu("색상", systemImage: "circle.fill") { ForEach([("blue", "파랑"), ("green", "초록"), ("purple", "보라"), ("orange", "주황"), ("red", "빨강"), ("pink", "분홍"), ("yellow", "노랑"), ("gray", "회색")], id: \.0) { value, name in Button(name) { mutate("courses:setColor", ["courseId": course.id, "color": value]) } } }
+        Menu("색상", systemImage: "circle.fill") {
+            ForEach(NativeFolderColor.all, id: \.name) { item in
+                Button { mutate("courses:setColor", ["courseId": course.id, "color": item.name]) } label: {
+                    if course.color == item.name { Label(item.label, systemImage: "checkmark") } else { Text(item.label) }
+                }
+            }
+        }
         if store.selectedCourseID == course.id {
             Menu("즐겨찾기", systemImage: "star") {
                 Button("링크 추가", systemImage: "link.badge.plus") { NotificationCenter.default.post(name: NativeFavoritesSection.request, object: course.id) }.accessibilityIdentifier("native-favorite-add-link")
@@ -178,7 +172,7 @@ struct NativeCourseSidebar: View {
             }
         }
         Button("그룹 만들기", systemImage: "folder") { adding = .group }
-        Button("폴더 연결 및 보관 관리", systemImage: "folder.badge.gearshape") { adding = .manage }
+        Button("폴더 관리", systemImage: "folder.badge.gearshape") { adding = .manage }
     }
     private func groupHeading(_ group: NativeSidebarCourseGroup) -> some View {
         HStack {
@@ -188,12 +182,11 @@ struct NativeCourseSidebar: View {
                 }.frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
             } else {
                 Button { toggle(group.id, in: &collapsedGroups) } label: { Label(group.name, systemImage: contains(group.id, in: collapsedGroups) ? "chevron.right" : "chevron.down").frame(maxWidth: .infinity, minHeight: 32, alignment: .leading).contentShape(Rectangle()) }
-                    .simultaneousGesture(TapGesture(count: 2).onEnded { renamingID = group.id })
             }
             Menu {
                 Button("그룹 이름 변경") { renamingID = group.id }
                 Button("그룹 삭제", role: .destructive) { deletingGroup = group }
-            } label: { Image(systemName: "ellipsis").frame(width: 28, height: 32) }
+            } label: { Image(systemName: "ellipsis").frame(width: 44, height: 36).contentShape(Rectangle()) }.accessibilityLabel(group.name + " 그룹 메뉴")
         }.buttonStyle(.plain).font(NativeDesktopTheme.font(12, weight: .medium)).foregroundStyle(NativeDesktopTheme.muted).padding(.leading, 8)
             .bandalConfirm("그룹을 삭제할까요?", isPresented: Binding(get: { deletingGroup?.id == group.id }, set: { if !$0 { deletingGroup = nil } }),
                            message: "그룹 안의 폴더는 그대로 남아요.", action: "그룹 삭제", destructive: true) {
@@ -206,41 +199,50 @@ struct NativeCourseSidebar: View {
             BandalTextEntry(title: "새 그룹", prompt: "그룹 이름", actionTitle: "만들기", identifier: "native-group-name") { name in
                 adding = nil; mutate("courseGroups:create", ["name": name])
             }
-        case .manage: NativeCourseManager(store: store)
+        case .manage: NativeCourseManager(store: store, archivedProjects: deletedProjects.map { ($0.id, $0.displayName(courses: store.courses)) }) { id in
+            if let project = deletedProjects.first(where: { $0.id == id }) { mutateProject("learning:restore", project) }
+        }
         case .course, nil: EmptyView()
         }
     }
-    /// A project (study space): the same row as an unselected folder; it opens its own workspace.
+    /// A project (study space) is a folder like any other: the same row, the same ⋯ menu; it opens its own workspace.
     private func projectRow(_ project: NativeLearningSummary) -> some View {
         let context = NativeWorkspaceContext.project(project, courses: store.courses), selected = selectedContextID == context.id
-        return Group {
+        let tint = NativeFolderColor.color(store.courses.first { $0.id == project.binding.courseID }?.color ?? "blue")
+        return HStack(spacing: 0) {
             if renamingID == project.id {
                 HStack(spacing: 8) {
-                    Image(systemName: "folder").font(.system(size: 16)).foregroundStyle(NativeDesktopTheme.secondary).frame(width: 22)
+                    Image(systemName: "folder.fill").font(.system(size: 16)).foregroundStyle(tint).frame(width: 22)
                     BandalInlineEditor(text: project.name, isEditing: renaming(project.id), font: NativeDesktopTheme.font(14), identifier: "native-project-rename") { renameProject(project, to: $0) }
                 }.padding(.leading, 34).frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
             } else {
                 Button { onOpenProject(context) } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "folder").font(.system(size: 16)).foregroundStyle(selected ? NativeGlass.panelIcon : NativeDesktopTheme.secondary).frame(width: 22)
+                        Image(systemName: "folder.fill").font(.system(size: 16)).foregroundStyle(tint).frame(width: 22)
                         Text(context.title).font(NativeDesktopTheme.font(14, weight: selected ? .medium : .regular)).foregroundStyle(selected ? NativeGlass.icon : NativeDesktopTheme.text).lineLimit(1)
                         Spacer(minLength: 0)
                         if project.dueCardCount > 0 { Text("\(project.dueCardCount)").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted) }
-                    }.padding(.leading, 34).padding(.trailing, 8).frame(height: 38).contentShape(Rectangle())
-                }.buttonStyle(.plain)
-                    .background(selected ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 8))
-                    .accessibilityIdentifier("native-project-" + project.id).accessibilityAddTraits(selected ? .isSelected : [])
-                    .simultaneousGesture(TapGesture(count: 2).onEnded { renamingID = project.id })
-                    .contextMenu {
-                        Button("이름 변경", systemImage: "pencil") { renamingID = project.id }
-                        Button("목록에서 삭제", systemImage: "trash", role: .destructive) { deletingProject = project }
-                    }
-                    .bandalConfirm("폴더를 목록에서 삭제할까요?", isPresented: Binding(get: { deletingProject?.id == project.id }, set: { if !$0 { deletingProject = nil } }),
-                                   message: "자료와 학습 기록은 남고 + 버튼을 길게 눌러 삭제한 폴더에서 복원할 수 있어요.", action: "목록에서 삭제", destructive: true) {
-                        mutateProject("learning:delete", project)
-                    }
+                    }.padding(.leading, 34).padding(.trailing, selected ? 0 : 8).frame(height: 38).contentShape(Rectangle())
+                }.accessibilityIdentifier("native-project-" + project.id).accessibilityAddTraits(selected ? .isSelected : [])
+                    .contextMenu { projectMenu(project) }
+                if selected {
+                    Menu { projectMenu(project) } label: { Image(systemName: "ellipsis").font(.system(size: 16)).foregroundStyle(NativeGlass.panelIcon).frame(width: 46, height: 38).contentShape(Rectangle()) }
+                        .accessibilityLabel(context.title + " 폴더 메뉴")
+                }
             }
+        }.buttonStyle(.plain)
+            .background(selected ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .bandalConfirm("폴더를 보관할까요?", isPresented: Binding(get: { deletingProject?.id == project.id }, set: { if !$0 { deletingProject = nil } }),
+                           message: "자료와 학습 기록은 그대로이고 폴더 관리에서 다시 꺼낼 수 있어요.", action: "보관") {
+                mutateProject("learning:delete", project)
+            }
+    }
+    @ViewBuilder private func projectMenu(_ project: NativeLearningSummary) -> some View {
+        ControlGroup {
+            Button("이름 변경", systemImage: "pencil") { renamingID = project.id }
+            Button("폴더 보관", systemImage: "archivebox", role: .destructive) { deletingProject = project }
         }
+        Button("폴더 관리", systemImage: "folder.badge.gearshape") { adding = .manage }
     }
     private func renameProject(_ project: NativeLearningSummary, to name: String) {
         Task { @MainActor in
@@ -293,8 +295,7 @@ private struct NativeNewCourseForm: View {
     @State private var error: String?
     @State private var busy = false
     @FocusState private var focused: Bool
-    private static let colors: [(String, Color)] = [("blue", NativeDesktopTheme.adaptive(0x3b6fe0, 0x3b6fe0)), ("red", .red), ("orange", .orange), ("green", .green),
-                                                    ("yellow", NativeDesktopTheme.adaptive(0xf5b83d, 0xe6a93a)), ("gray", NativeDesktopTheme.secondary)]
+    private static let colors: [(String, Color)] = NativeFolderColor.all.map { ($0.name, NativeFolderColor.color($0.name)) }
     private var ready: Bool { !busy && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -318,7 +319,7 @@ private struct NativeNewCourseForm: View {
                             Circle().fill(tint).frame(width: 20, height: 20).frame(width: 30, height: 30)
                                 .overlay { if color == value { Circle().strokeBorder(NativeDesktopTheme.accent, lineWidth: 2) } }
                                 .contentShape(Rectangle())
-                        }.buttonStyle(.plain).accessibilityLabel(value).accessibilityAddTraits(color == value ? .isSelected : [])
+                        }.buttonStyle(.plain).accessibilityLabel(NativeFolderColor.label(value)).accessibilityAddTraits(color == value ? .isSelected : [])
                             .accessibilityIdentifier("native-course-color-" + value)
                     }
                 }
@@ -335,5 +336,34 @@ private struct NativeNewCourseForm: View {
             defer { busy = false }
             do { try await create(name.trimmingCharacters(in: .whitespacesAndNewlines), color) } catch { self.error = error.localizedDescription }
         }
+    }
+}
+
+/// The folder colours: one palette for the new-folder form, the 색상 menu and every folder glyph.
+enum NativeFolderColor {
+    static let all: [(name: String, label: LocalizedStringKey)] = [("blue", "파랑"), ("green", "초록"), ("purple", "보라"), ("orange", "주황"),
+                                                                 ("red", "빨강"), ("pink", "분홍"), ("yellow", "노랑"), ("gray", "회색")]
+    static func label(_ name: String) -> LocalizedStringKey { all.first { $0.name == name }?.label ?? "파랑" }
+    static func color(_ name: String) -> Color {
+        switch name {
+        case "red": Color(uiColor: .systemRed)
+        case "orange": Color(uiColor: .systemOrange)
+        case "yellow", "gold": NativeDesktopTheme.adaptive(0xf5b83d, 0xe6a93a)
+        case "green": Color(uiColor: .systemGreen)
+        case "purple": Color(uiColor: .systemPurple)
+        case "pink": Color(uiColor: .systemPink)
+        case "gray": NativeDesktopTheme.secondary
+        default: NativeDesktopTheme.adaptive(0x3b6fe0, 0x5a8af0)
+        }
+    }
+}
+
+/// An error in a list or panel: an orange mark and the message, not raw red text.
+struct NativeInlineError: View {
+    let message: String
+    var body: some View {
+        Label { BandalText(message).fixedSize(horizontal: false, vertical: true) } icon: {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+        }.font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary)
     }
 }

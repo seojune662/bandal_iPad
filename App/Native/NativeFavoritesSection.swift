@@ -32,11 +32,11 @@ struct NativeFavoritesSection: View {
                     if let currentDocument, descriptor(currentDocument) != nil {
                         Button("현재 탭 즐겨찾기에 추가", systemImage: "star") { addDocument(currentDocument) }.accessibilityIdentifier("native-favorite-add-current")
                     }
-                } label: { Image(systemName: "plus").font(.system(size: 11)).frame(width: 32, height: 32).contentShape(Rectangle()) }
+                } label: { Image(systemName: "plus").font(.system(size: 11)).frame(width: 32, height: 32).padding(6).contentShape(Rectangle()).padding(-6) }
                 .accessibilityLabel("즐겨찾기 추가").accessibilityIdentifier("native-favorite-add-" + courseID)
             } }
             if adding { linkForm }
-            if let error { Text(error).font(NativeDesktopTheme.font(11)).foregroundStyle(.red).textSelection(.enabled) }
+            if let error { NativeInlineError(message: error) }
             ForEach(Array(favorites.enumerated()), id: \.element.id) { index, favorite in
                 if renamingID == favorite.id {
                     BandalInlineEditor(text: favorite.label, isEditing: .editing(favorite.id, in: $renamingID),

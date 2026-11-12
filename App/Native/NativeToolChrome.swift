@@ -19,8 +19,9 @@ struct NativeToolButtonStyle: ButtonStyle {
       )
       .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       .opacity(enabled ? 1 : 0.4)
-      // The drawing is 31 high; touch keeps its 36.
-      .frame(minHeight: compact ? 32 : 36).contentShape(Rectangle())
+      // The drawing is 31 high; touch reaches 44 without changing the row's layout.
+      .frame(minHeight: compact ? 32 : 36)
+      .padding(.vertical, compact ? 6 : 4).contentShape(Rectangle()).padding(.vertical, compact ? -6 : -4)
   }
 }
 
@@ -28,7 +29,9 @@ struct NativeToolIconStyle: ButtonStyle {
   @Environment(\.isEnabled) private var enabled
   func makeBody(configuration: Configuration) -> some View {
     configuration.label.font(.system(size: 16)).labelStyle(.iconOnly)
-      .frame(width: 32, height: 32).contentShape(Rectangle())
+      .frame(width: 32, height: 32)
+      // 32 drawn, 44 to touch.
+      .padding(6).contentShape(Rectangle()).padding(-6)
       .foregroundStyle(NativeDesktopTheme.secondary)
       .background(
         configuration.isPressed ? NativeDesktopTheme.raised : .clear,
@@ -56,8 +59,8 @@ struct NativeToolEmptyState: View {
     VStack(spacing: 12) {
       Image(systemName: symbol).font(.system(size: 32, weight: .light)).foregroundStyle(
         NativeDesktopTheme.muted)
-      Text(title).font(.system(size: 18, weight: .medium)).foregroundStyle(NativeDesktopTheme.text)
-      Text(message).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
+      BandalText(title).font(.system(size: 18, weight: .medium)).foregroundStyle(NativeDesktopTheme.text)
+      BandalText(message).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary)
         .multilineTextAlignment(.center)
     }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
   }
