@@ -188,6 +188,8 @@ struct NativePDFWorkspace: View {
 @MainActor
 @Observable
 final class NativePDFWorkspaceModel {
+    /// Posted with `true` when a PDF text box opens and `false` when it closes: the window then ignores the keyboard.
+    static let textEditingChanged = Notification.Name("native.pdf.textEditingChanged")
     struct InkColor { let name: String, label: String; let color: Color }
     static let colors: [InkColor] = zip(NativePDFPenPreset.colors, ["먹색", "빨강", "주황", "노랑", "초록", "파랑", "보라"]).map {
         InkColor(name: $0.0, label: $0.1, color: Color(uiColor: NativePDFInkSurface.color($0.0)))
@@ -1901,6 +1903,7 @@ final class NativePDFWorkspaceModel {
         let draft = NativePDFTextDraft(object: object, pageSize: pageSize(number), existing: existing, defaults: defaults,
             onChange: { [weak self] in self?.markDraftChanged() })
         textEditorDraft = draft; textEditorPage = number; textEditorPresentedAt = CFAbsoluteTimeGetCurrent()
+        NotificationCenter.default.post(name: Self.textEditingChanged, object: true)
         textEditorPresentedPoint = point.map { (page: number, point: $0) }
         let input = NativePDFTextInput(draft: draft, caretAt: point, onSave: { [weak self] in self?.finishText() }, onCancel: { [weak self] in self?.cancelText() })
         textInput = input
@@ -1910,7 +1913,9 @@ final class NativePDFWorkspaceModel {
     }
     private func clearTextEditor() {
         if let page = textEditorPage { host?.setTextEditor(surfaceID: surfaceID, generation: generation, page: page, view: nil); dirtyScenes.insert(page) }
+        let wasEditing = textEditorDraft != nil
         textInput?.detach(); textInput = nil; textObject = nil; textEditorDraft = nil; textEditorPage = nil
+        if wasEditing { NotificationCenter.default.post(name: Self.textEditingChanged, object: false) }
     }
     /// A tap or pen-down outside the open box. The echo of the opening tap is
     /// ignored; a tap on another text box saves this one, then opens that one.

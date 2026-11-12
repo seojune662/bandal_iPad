@@ -28,6 +28,8 @@ struct NativeWorkspaceView: View {
     /// The sidebar was open when AI took its slot, and comes back when AI closes.
     @State private var windowWidth: CGFloat = 1200
     @State private var markdownEditing = false
+    /// A PDF text box is open: the window keeps its size under the keyboard, the page makes room itself.
+    @State private var pdfTextEditing = false
     @State private var railsBeforeKeyboard: (Bool, Bool)?
     @State private var hasWindowWidth = false
     @State private var restoreInspectorAfterAnnotation = true
@@ -354,6 +356,7 @@ struct NativeWorkspaceView: View {
             .onAppear { updateWindowWidth(geometry.size.width) }
             // Typing a markdown note on the software keyboard: both side panels fold, and come back with the keyboard gone.
             .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { markdownEditing = $0.object as? Bool ?? false }
+            .onReceive(NotificationCenter.default.publisher(for: NativePDFWorkspaceModel.textEditingChanged)) { pdfTextEditing = $0.object as? Bool ?? false }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
                 guard Self.foldsPanelsOnKeyboard, markdownEditing, railsBeforeKeyboard == nil else { return }
                 railsBeforeKeyboard = (courseRailOpen, materialsRailOpen)
@@ -372,6 +375,8 @@ struct NativeWorkspaceView: View {
                 if busy { showBusy = true }
             }
         }
+        // A keyboard that resized the window squeezed the whole workspace and exposed the backdrop behind it.
+        .ignoresSafeArea(pdfTextEditing ? .keyboard : [], edges: .bottom)
         .font(NativeDesktopTheme.font(14))
         .foregroundStyle(NativeDesktopTheme.text)
         .background(NativeWorkspaceBackdrop())
