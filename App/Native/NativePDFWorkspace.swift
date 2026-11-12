@@ -13,7 +13,6 @@ struct NativePDFWorkspace: View {
     @Environment(\.nativeWorkspaceTopInset) private var topInset
     @Environment(\.nativePDFPaletteHost) private var paletteHost
     @State private var bodyFrame = CGRect.zero
-    @AppStorage("native.pdf.paletteCollapsed") private var paletteCollapsed = false
     private let tabID: String
     private var showsPalette: Bool { visible && model.assistantAnnotation == nil && (chromeMode == .toolsHidden || model.toolsExpanded) }
     /// Where the palette starts. With the tabs hidden the window buttons sit over this pane's corner: start below them.
