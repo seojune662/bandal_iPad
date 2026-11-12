@@ -1328,3 +1328,6 @@
 "새 하위 폴더" = "New subfolder";
 "선택한 폴더가 이미 다른 곳에 연결되어 있습니다." = "The selected folder is already linked elsewhere.";
 "먼저 폴더를 만들거나 선택해 주세요." = "Create or choose a folder first.";
+
+/* UX audit fixes */
+"홈·AI 버튼으로 접고 펼치기" = "Collapse and expand with the home and AI buttons";

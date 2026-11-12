@@ -32,7 +32,8 @@ struct NativeWorkspaceWindowControls: View {
     static var top: CGFloat {
         NativeDockHeaderMetrics.topPadding(for: .zero, windowed: NativeDockHeaderMetrics.windowed) + (NativeDockStripMetrics.single.height - height) / 2
     }
-    static let inspectorTop: CGFloat = 61
+    /// The right panel starts under the group, with the same 9 pt gap as before the group was centred.
+    static var inspectorTop: CGFloat { top + height + 9 }
 
     var body: some View {
         HStack(spacing: 0) {

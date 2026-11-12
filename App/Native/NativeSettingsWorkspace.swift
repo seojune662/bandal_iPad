@@ -311,7 +311,7 @@ struct NativeSettingsWorkspace: View {
       NativeSettingsRow(title: "글자 크기", height: 51) { fontScaleBar }
     }
     NativeSettingsGroup(title: "사이드바") {
-      NativeSettingsToggle(title: "홈 버튼으로 접고 펼치기", isOn: $homeTogglesSidebar).accessibilityIdentifier("native-settings-home-toggles-sidebar")
+      NativeSettingsToggle(title: "홈·AI 버튼으로 접고 펼치기", isOn: $homeTogglesSidebar).accessibilityIdentifier("native-settings-home-toggles-sidebar")
       NativeSettingsToggle(title: "키보드를 쓰면 자동으로 접기", note: "마크다운에서 키보드가 올라올 때", isOn: $keyboardFoldsPanels).accessibilityIdentifier("native-settings-keyboard-folds-panels")
     }
     // 준비 중: finger drawing is a per-note tool option, with no app-wide default to switch here.

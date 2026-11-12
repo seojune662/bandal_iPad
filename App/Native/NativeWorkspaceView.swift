@@ -354,7 +354,9 @@ struct NativeWorkspaceView: View {
             .onAppear { updateWindowWidth(geometry.size.width) }
             // Typing a markdown note on the software keyboard: both side panels fold, and come back with the keyboard gone.
             .onReceive(NotificationCenter.default.publisher(for: NativeRichTextEditor.editingChanged)) { markdownEditing = $0.object as? Bool ?? false }
-            .onReceive(NotificationCenter.default.publisher(for: NativePDFWorkspaceModel.textEditingChanged)) { pdfTextEditing = $0.object as? Bool ?? false }
+            .onReceive(NotificationCenter.default.publisher(for: NativePDFWorkspaceModel.textEditingChanged)) {
+                pdfTextEditing = $0.object as? Bool ?? false; NativeKeyboardInset.shared.ignored = pdfTextEditing
+            }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
                 guard Self.foldsPanelsOnKeyboard, markdownEditing, railsBeforeKeyboard == nil else { return }
                 railsBeforeKeyboard = (courseRailOpen, materialsRailOpen)
@@ -363,7 +365,8 @@ struct NativeWorkspaceView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 guard let saved = railsBeforeKeyboard else { return }
                 railsBeforeKeyboard = nil
-                withAnimation(Self.railAnimation) { courseRailOpen = saved.0; materialsRailOpen = saved.1 }
+                // The home sidebar and AI share the left slot: AI opened meanwhile keeps it.
+                withAnimation(Self.railAnimation) { courseRailOpen = saved.0 && !aiRailOpen; materialsRailOpen = saved.1 }
             }
             .onChange(of: geometry.size.width) { _, width in updateWindowWidth(width) }
             .task(id: busy) {
@@ -657,7 +660,7 @@ struct NativeWorkspaceView: View {
                     }
                 }
             }.accessibilityIdentifier("native-section-library").padding(.bottom, 3)
-            NativeChromeButton(title: railVisible(.ai, width: width) ? "AI 닫기" : "AI 열기", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width),
+            NativeChromeButton(title: !railVisible(.ai, width: width) ? "AI 열기" : NativeLocalPreferences.bool(NativeLocalPreferences.homeTogglesSidebar) ? "AI 닫기" : "AI", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width),
                                selectedFill: Self.railSelected, selectedInset: 3, selectedRadius: 11, joinsPanel: chromeLayout(width: width).aiPinned && !(chromeLayout(width: width).leftPinned && railVisible(.course, width: width))) {
                 // The same rule as the home button: another panel in the slot is replaced, the open one folds.
                 if showsWorkspace { if NativeLocalPreferences.bool(NativeLocalPreferences.homeTogglesSidebar) || !railVisible(.ai, width: width) { toggleAIRail(width: width) } } else { transition { openAIRail() } }

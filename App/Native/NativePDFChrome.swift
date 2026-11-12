@@ -115,6 +115,8 @@ private struct NativePDFViewMenu: View {
 struct NativePDFSelectionBar: View {
     var model: NativePDFWorkspaceModel
     let frame: CGRect
+    /// The band at the top of the page area the palette (and the find or recording bar) holds; the bar stays below it.
+    var clearTop: CGFloat = 0
     @State private var width: CGFloat = 331
     @State private var showStyle = false
     @State private var showMore = false
@@ -149,7 +151,7 @@ struct NativePDFSelectionBar: View {
             .bandalGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous), adaptive: false)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .position(x: min(max(frame.midX, width / 2 + 8), max(width / 2 + 8, geometry.size.width - width / 2 - 8)),
-                      y: frame.minY - 40 > 40 ? frame.minY - 40 : min(frame.maxY + 40, geometry.size.height - 32))
+                      y: frame.minY - 40 - 24 >= clearTop ? frame.minY - 40 : min(max(frame.maxY + 40, clearTop + 24), geometry.size.height - 32))
         }.disabled(model.isBusy || model.errorMessage != nil)
             .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-selection-bar")
     }
