@@ -30,7 +30,7 @@ enum NativeSettingsCatalog {
     }
     private static let allCategories: [NativeSettingsCategory] = [
         .init(id: "general", title: "일반", description: "언어, 시작, 알림, 단축키", keywords: "일반 언어 한국어 영어 시작 복원 탭 알림 마감 소리 단축키 키보드 키 조합 우선권 고급 캐시 초기화 진단 language notifications shortcuts", icon: "gearshape", group: "settings"),
-        .init(id: "appearance", title: "화면", description: "테마, 글자, 탭과 위젯", keywords: "화면 외형 테마 라이트 다크 시스템 글자 크기 글꼴 밀도 탭 마크다운 녹음 노트 배경 학업 보드 위젯 투두 메일 appearance theme", icon: "macwindow", group: "settings"),
+        .init(id: "appearance", title: "화면", description: "테마, 글자, 탭과 위젯", keywords: "화면 외형 테마 꾸미기 색 팔레트 세기 그라데이션 라이트 다크 시스템 글자 크기 글꼴 밀도 탭 마크다운 녹음 노트 배경 학업 보드 위젯 투두 메일 appearance theme", icon: "macwindow", group: "settings"),
         .init(id: "account", title: "계정", description: "프로필, 학교, 로그인", keywords: "계정 프로필 닉네임 이메일 로그인 로그아웃 계정 삭제 학교 대학 학사 포털 바로가기 account university", icon: "person.2", group: "settings"),
         .init(id: "subscription", title: "구독·사용량", description: "플랜, AI 사용량, 충전", keywords: "구독 멤버십 플러스 프로 Plus Pro 결제 구매 복원 무료 체험 한도 AI 사용량 충전 크레딧 subscription usage", icon: "moon", group: "settings"),
         .init(id: "ai", title: "AI", description: "기본 모델, 전송 동의", keywords: "AI 모델 Auto Anthropic OpenAI Claude GPT effort 동의 철회 공정 이용", icon: "sparkles", group: "settings"),

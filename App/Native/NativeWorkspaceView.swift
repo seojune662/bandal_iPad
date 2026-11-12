@@ -17,6 +17,8 @@ struct NativeWorkspaceView: View {
     @State private var pendingContextRefresh = false
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("native.appearance") private var appearance = "system"
+    @AppStorage(NativeDecor.paletteKey) private var decorPalette = NativeDecorPalette.default.id
+    @AppStorage(NativeDecor.intensityKey) private var decorIntensity = NativeDecor.defaultIntensity
     @State private var section: NativeWorkspaceSection = .library
     @AppStorage("native.desktop.courseRail") private var courseRailOpen = true
     @AppStorage("native.desktop.materialsRail") private var materialsRailOpen = true
@@ -384,6 +386,8 @@ struct NativeWorkspaceView: View {
         .font(NativeDesktopTheme.font(14))
         .foregroundStyle(NativeDesktopTheme.text)
         .background(NativeWorkspaceBackdrop())
+        // The decor reaches every glass region from here, so the settings slider repaints the window as it moves.
+        .environment(\.nativeDecor, NativeDecor(palette: .named(decorPalette), intensity: min(max(decorIntensity, 0), 1)))
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         .tint(NativeDesktopTheme.accent)
         .toggleStyle(BandalToggleStyle())

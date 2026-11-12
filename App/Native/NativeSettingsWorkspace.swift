@@ -301,7 +301,7 @@ struct NativeSettingsWorkspace: View {
       Text("가").font(.system(size: 19)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityHidden(true)
     }
   }
-  /// 화면 (132:2998): 테마, 사이드바, 펜슬.
+  /// 화면 (132:2998): 테마, 꾸미기, 사이드바, 펜슬.
   @ViewBuilder private var appearancePage: some View {
     NativeSettingsGroup(title: "테마") {
       NativeSettingsRow(title: "모양", height: 61) {
@@ -310,6 +310,7 @@ struct NativeSettingsWorkspace: View {
       }
       NativeSettingsRow(title: "글자 크기", height: 51) { fontScaleBar }
     }
+    NativeDecorSettingsGroup()
     NativeSettingsGroup(title: "사이드바") {
       NativeSettingsToggle(title: "홈 버튼으로 접고 펼치기", isOn: $homeTogglesSidebar).accessibilityIdentifier("native-settings-home-toggles-sidebar")
       NativeSettingsToggle(title: "키보드를 쓰면 자동으로 접기", note: "마크다운에서 키보드가 올라올 때", isOn: $keyboardFoldsPanels).accessibilityIdentifier("native-settings-keyboard-folds-panels")

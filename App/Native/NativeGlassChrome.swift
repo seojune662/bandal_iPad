@@ -1,46 +1,128 @@
 import SwiftUI
 import UIKit
 
-/// The window's decor: a hand-tuned palette and how loudly it shows. The palette's colours live only in
-/// `NativeWorkspaceBackdrop`; the glass regions let it through in proportion to `intensity`, and the
-/// chosen row and the pressed control take the palette's accent. Paper never takes any of it.
-struct NativeDecorPalette: Sendable {
+/// The window's decor: a palette and how loudly it shows (Settings › 화면 › 꾸미기). The palette's colours
+/// live only in `NativeWorkspaceBackdrop`; the glass regions let it through in proportion to `intensity`,
+/// and a chosen row takes the palette's accent. Paper never takes any of it.
+struct NativeDecorPalette: Identifiable, Equatable, Sendable {
     let id: String
-    /// 3 × 3 mesh colours, row by row from the top leading corner, which is the lit one.
-    let light: [UInt32], dark: [UInt32]
-    /// The palette's accent: selection tints and, later, the accent token.
-    let accentLight: UInt32, accentDark: UInt32
+    let title: String
+    /// OKLCH hues the mesh runs through, from the lit top-leading corner to the bottom-trailing one.
+    let hues: (Double, Double, Double)
+    /// The mesh's chroma at the dial's tuned point; 0 is grey.
+    let chroma: Double
 
-    /// 새벽: periwinkle into lilac and blush by day, deep indigo into plum by night.
-    static let dawn = NativeDecorPalette(id: "dawn",
-        light: [0xdde4ff, 0xe8e0fc, 0xf7e4ee,
-                0xd6e6f8, 0xe3ddf7, 0xf3dfe4,
-                0xd2eaf0, 0xdee0f5, 0xf0e3dc],
-        dark: [0x1d2650, 0x271f4b, 0x33213f,
-               0x152541, 0x1e1d3c, 0x2b1d33,
-               0x10283a, 0x19213e, 0x281e2b],
-        accentLight: 0x5a5fd8, accentDark: 0xa3a6ff)
+    static func == (a: Self, b: Self) -> Bool { a.id == b.id }
+
+    static let all: [NativeDecorPalette] = [
+        .init(id: "dawn", title: "새벽", hues: (270, 295, 345), chroma: 0.05),
+        .init(id: "blossom", title: "벚꽃", hues: (350, 15, 50), chroma: 0.05),
+        .init(id: "sunset", title: "노을", hues: (30, 60, 330), chroma: 0.06),
+        .init(id: "forest", title: "숲", hues: (150, 175, 120), chroma: 0.045),
+        .init(id: "ocean", title: "바다", hues: (220, 195, 250), chroma: 0.05),
+        .init(id: "lavender", title: "라벤더", hues: (300, 280, 320), chroma: 0.045),
+        .init(id: "ink", title: "먹", hues: (70, 60, 80), chroma: 0.012),
+        .init(id: "mono", title: "모노", hues: (270, 270, 270), chroma: 0),
+    ]
+    static let `default` = all[0]
+    static func named(_ id: String) -> NativeDecorPalette { all.first { $0.id == id } ?? .default }
+
+    /// The 3 × 3 mesh, row by row. Lightness falls from the lit corner; hue runs along the diagonal and
+    /// bows ±12° off it, so the blend has some turn to it rather than a straight ramp.
+    func mesh(dark: Bool, saturation: Double) -> [Color] {
+        (0..<3).flatMap { row in (0..<3).map { column in
+            let t = Double(row + column) / 4, bow = Double(column - row) * 12
+            let hue = t < 0.5 ? Self.mix(hues.0, hues.1, t * 2) : Self.mix(hues.1, hues.2, t * 2 - 1)
+            let lightness = dark ? 0.31 - 0.08 * t : 0.955 - 0.045 * t
+            return Color(uiColor: NativeOKLCH.color(lightness, chroma * saturation * (dark ? 1.25 : 1), hue + bow))
+        } }
+    }
+    /// The accent a chosen row is tinted with.
+    func accent(dark: Bool) -> UIColor {
+        chroma == 0 ? (dark ? .white : .black) : NativeOKLCH.color(dark ? 0.78 : 0.55, dark ? 0.12 : 0.15, hues.0)
+    }
+    /// Hue interpolation the short way round.
+    private static func mix(_ a: Double, _ b: Double, _ t: Double) -> Double {
+        var delta = (b - a).truncatingRemainder(dividingBy: 360)
+        if delta > 180 { delta -= 360 } else if delta < -180 { delta += 360 }
+        return a + delta * t
+    }
 }
 
-enum NativeDecor {
-    static let palette = NativeDecorPalette.dawn
-    /// 0 is barely-there (today's grey glass over a faint wash), 1 the loudest.
-    static let intensity: CGFloat = 0.55
+/// OKLCH → sRGB (Björn Ottosson's OKLab), clipped into the gamut.
+enum NativeOKLCH {
+    static func color(_ lightness: Double, _ chroma: Double, _ hue: Double, alpha: CGFloat = 1) -> UIColor {
+        let radians = hue * .pi / 180, a = chroma * cos(radians), b = chroma * sin(radians)
+        let l = pow(lightness + 0.3963377774 * a + 0.2158037573 * b, 3)
+        let m = pow(lightness - 0.1055613458 * a - 0.0638541728 * b, 3)
+        let s = pow(lightness - 0.0894841775 * a - 1.2914855480 * b, 3)
+        let linear = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+                      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+                      -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s]
+        let rgb = linear.map { value -> CGFloat in
+            let v = min(max(value, 0), 1)
+            return CGFloat(v <= 0.0031308 ? 12.92 * v : 1.055 * pow(v, 1 / 2.4) - 0.055)
+        }
+        return UIColor(red: rgb[0], green: rgb[1], blue: rgb[2], alpha: alpha)
+    }
+}
 
-    /// Glass opacity: `quiet` at intensity 0 down to `loud` at 1.
-    static func alpha(_ quiet: CGFloat, _ loud: CGFloat) -> CGFloat { quiet + (loud - quiet) * intensity }
-    /// The mesh's saturation follows the dial: a faint wash at 0, the palette as tuned at about 0.8.
-    static var saturation: CGFloat { 0.35 + 0.8 * intensity }
-    /// How strongly a chosen row takes the accent.
-    static var selectionAlpha: (light: CGFloat, dark: CGFloat) { (0.06 + 0.08 * intensity, 0.08 + 0.1 * intensity) }
+/// The decor in force: the stored choice, handed down the view tree so every glass region redraws when it changes.
+struct NativeDecor: Equatable, Sendable {
+    static let paletteKey = "native.decor.palette", intensityKey = "native.decor.intensity"
+    static let defaultIntensity = 0.55
+
+    var palette = NativeDecorPalette.default
+    /// 0 is barely-there (grey glass over a faint wash), 1 the loudest.
+    var intensity = defaultIntensity
+
+    static var stored: NativeDecor {
+        let defaults = UserDefaults.standard
+        let intensity = defaults.object(forKey: intensityKey) as? Double ?? defaultIntensity
+        return NativeDecor(palette: .named(defaults.string(forKey: paletteKey) ?? ""), intensity: min(max(intensity, 0), 1))
+    }
+
+    /// Glass opacity: `quiet` at intensity 0 down to `loud` at 1. Reduce Transparency keeps it solid.
+    func alpha(_ quiet: CGFloat, _ loud: CGFloat, reduceTransparency: Bool = false) -> CGFloat {
+        reduceTransparency ? 1 : quiet + (loud - quiet) * CGFloat(intensity)
+    }
+    /// The mesh's chroma follows the dial: a faint wash at 0, the palette as tuned near 0.75, louder past it.
+    var saturation: Double { 0.25 + intensity }
+    func selectionAlpha(dark: Bool) -> CGFloat { dark ? 0.08 + 0.1 * CGFloat(intensity) : 0.06 + 0.08 * CGFloat(intensity) }
+}
+
+extension EnvironmentValues {
+    @Entry var nativeDecor = NativeDecor.stored
+}
+
+/// A glass fill that follows the decor in the environment, so a change redraws it wherever it is painted.
+struct NativeDecorStyle: ShapeStyle {
+    enum Kind: Sendable { case rail, panel, selection, clear }
+    let kind: Kind
+    static let clear = NativeDecorStyle(kind: .clear)
+
+    func resolve(in environment: EnvironmentValues) -> Color.Resolved {
+        let decor = environment.nativeDecor, dark = environment.colorScheme == .dark
+        let solid = environment.accessibilityReduceTransparency
+        let color: UIColor = switch kind {
+        case .rail: dark ? Self.rgb(0x131315, decor.alpha(0.95, 0.6, reduceTransparency: solid)) : Self.rgb(0xdcdce1, decor.alpha(0.93, 0.5, reduceTransparency: solid))
+        case .panel: dark ? Self.rgb(0x1f1f21, decor.alpha(0.94, 0.66, reduceTransparency: solid)) : Self.rgb(0xf4f4f6, decor.alpha(0.9, 0.58, reduceTransparency: solid))
+        case .selection: decor.palette.accent(dark: dark).withAlphaComponent(decor.selectionAlpha(dark: dark))
+        case .clear: .clear
+        }
+        return Color(uiColor: color).resolve(in: environment)
+    }
+    static func rgb(_ value: UInt32, _ alpha: CGFloat) -> UIColor {
+        UIColor(red: CGFloat((value >> 16) & 255) / 255, green: CGFloat((value >> 8) & 255) / 255, blue: CGFloat(value & 255) / 255, alpha: alpha)
+    }
 }
 
 /// The window's glass surfaces, from the Figma styles `Glass/라이트|다크/레일 · 패널 · 종이`.
 /// Each is a translucent fill; `NativeWorkspaceBackdrop` is what shows through.
 /// Paint one per region and nothing opaque on top, or the glass turns into a flat colour.
 enum NativeGlass {
-    static let rail = fill(0xdcdce1, NativeDecor.alpha(0.93, 0.5), 0x131315, NativeDecor.alpha(0.95, 0.6))
-    static let panel = fill(0xf4f4f6, NativeDecor.alpha(0.9, 0.58), 0x1f1f21, NativeDecor.alpha(0.94, 0.66))
+    static let rail = NativeDecorStyle(kind: .rail)
+    static let panel = NativeDecorStyle(kind: .panel)
     /// Documents, notes and web pages: opaque, so ink and page colours read true whatever the decor.
     static let paper = fill(0xffffff, 1, 0x18181a, 1)
     /// `Surface/Separator`: the hairline under the tab strip and between panels.
@@ -48,10 +130,7 @@ enum NativeGlass {
     /// A hairline drawn on a glass panel (between rail, panels and paper).
     static let hairline = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.07) : UIColor.black.withAlphaComponent(0.06) })
     /// A chosen row or a pressed control on a glass panel: the palette's accent, faint.
-    static let selection = Color(uiColor: UIColor { traits in
-        let dark = traits.userInterfaceStyle == .dark, alpha = NativeDecor.selectionAlpha
-        return rgb(dark ? NativeDecor.palette.accentDark : NativeDecor.palette.accentLight, dark ? alpha.dark : alpha.light)
-    })
+    static let selection = NativeDecorStyle(kind: .selection)
     /// `Glass/팝업`: the tint over the glass of anything that floats (palette, popover, menu, toast).
     /// Light is the style's two fills as one: white 70 % under #BFBFBF 10 %.
     static let popup = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0x1c / 255, green: 0x1c / 255, blue: 0x1e / 255, alpha: 0.84) : UIColor(white: 0xf6 / 255, alpha: 0.73) })
@@ -74,11 +153,8 @@ enum NativeGlass {
 
     private static func fill(_ light: UInt32, _ lightAlpha: CGFloat, _ dark: UInt32, _ darkAlpha: CGFloat) -> Color {
         Color(uiColor: UIColor { traits in
-            traits.userInterfaceStyle == .dark ? rgb(dark, darkAlpha) : rgb(light, lightAlpha)
+            traits.userInterfaceStyle == .dark ? NativeDecorStyle.rgb(dark, darkAlpha) : NativeDecorStyle.rgb(light, lightAlpha)
         })
-    }
-    fileprivate static func rgb(_ value: UInt32, _ alpha: CGFloat) -> UIColor {
-        UIColor(red: CGFloat((value >> 16) & 255) / 255, green: CGFloat((value >> 8) & 255) / 255, blue: CGFloat(value & 255) / 255, alpha: alpha)
     }
 }
 
@@ -86,14 +162,8 @@ enum NativeGlass {
 /// neighbouring hues never pass through grey. An iPad app cannot see the home-screen wallpaper behind
 /// its window, so this is the window's own wallpaper.
 struct NativeWorkspaceBackdrop: View {
-    private static let colors: [Color] = zip(NativeDecor.palette.light, NativeDecor.palette.dark).map { light, dark in
-        Color(uiColor: UIColor { traits in
-            let color = NativeGlass.rgb(traits.userInterfaceStyle == .dark ? dark : light, 1)
-            var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-            guard color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else { return color }
-            return UIColor(hue: hue, saturation: min(1, saturation * NativeDecor.saturation), brightness: brightness, alpha: 1)
-        })
-    }
+    @Environment(\.nativeDecor) private var decor
+    @Environment(\.colorScheme) private var scheme
     /// The middle column and row bow a little, so the blend reads as light falling rather than a grid.
     private static let points: [SIMD2<Float>] = [
         [0, 0], [0.55, 0], [1, 0],
@@ -101,7 +171,8 @@ struct NativeWorkspaceBackdrop: View {
         [0, 1], [0.6, 1], [1, 1],
     ]
     var body: some View {
-        MeshGradient(width: 3, height: 3, points: Self.points, colors: Self.colors, colorSpace: .perceptual)
+        MeshGradient(width: 3, height: 3, points: Self.points, colors: decor.palette.mesh(dark: scheme == .dark, saturation: decor.saturation),
+                     colorSpace: .perceptual)
             .ignoresSafeArea().accessibilityHidden(true)
     }
 }
@@ -149,7 +220,7 @@ struct NativeRailSurface: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
-                NativeGlass.rail.ignoresSafeArea()
+                Rectangle().fill(NativeGlass.rail).ignoresSafeArea()
                 if let tabCenter { tab(tabCenter).foregroundStyle(.black).blendMode(.destinationOut) }
             }.compositingGroup()
             if let tabCenter { tab(tabCenter).foregroundStyle(NativeGlass.panel) }
@@ -158,5 +229,83 @@ struct NativeRailSurface: View {
     private func tab(_ center: CGFloat) -> some View {
         NativeRailTab(reachesTop: reachesTop).frame(width: NativeRailTab.size.width, height: NativeRailTab.size.height)
             .offset(y: center - NativeRailTab.size.height / 2)
+    }
+}
+
+/// 화면 › 꾸미기: the palette swatches and the intensity slider. Both write straight to the stored decor,
+/// which the workspace hands down, so the window behind the settings sheet repaints as the slider moves.
+struct NativeDecorSettingsGroup: View {
+    @AppStorage(NativeDecor.paletteKey) private var paletteID = NativeDecorPalette.default.id
+    @AppStorage(NativeDecor.intensityKey) private var intensity = NativeDecor.defaultIntensity
+    var body: some View {
+        NativeSettingsGroup(title: "꾸미기", description: "창 가장자리의 색이에요. 문서와 필기 색은 바뀌지 않아요.") {
+            VStack(alignment: .leading, spacing: 12) {
+                BandalText("색")
+                NativeDecorSwatches(selection: $paletteID)
+            }.padding(.vertical, 4)
+            NativeSettingsRow(title: "세기", height: 61) {
+                NativeDecorIntensitySlider(value: $intensity, palette: .named(paletteID))
+            }
+        }
+    }
+}
+
+private struct NativeDecorSwatches: View {
+    @Binding var selection: String
+    @Environment(\.colorScheme) private var scheme
+    private static let points: [SIMD2<Float>] = (0..<3).flatMap { row in (0..<3).map { SIMD2(Float($0) / 2, Float(row) / 2) } }
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(NativeDecorPalette.all) { palette in
+                    let chosen = palette.id == selection
+                    Button { selection = palette.id } label: {
+                        VStack(spacing: 6) {
+                            // The palette as the window wears it at full strength, so the swatches are told apart.
+                            MeshGradient(width: 3, height: 3, points: Self.points, colors: palette.mesh(dark: scheme == .dark, saturation: 1.8), colorSpace: .perceptual)
+                                .frame(width: 36, height: 36).clipShape(Circle())
+                                .overlay { Circle().strokeBorder(NativeGlass.hairline, lineWidth: 1) }
+                                .padding(3)
+                                .overlay { if chosen { Circle().strokeBorder(Color(uiColor: palette.accent(dark: scheme == .dark)), lineWidth: 2) } }
+                            Text(palette.title).font(NativeDesktopTheme.font(12, weight: chosen ? .semibold : .regular))
+                                .foregroundStyle(chosen ? NativeDesktopTheme.text : NativeDesktopTheme.secondary)
+                        }.frame(minWidth: 44).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                        .accessibilityLabel(palette.title).accessibilityAddTraits(chosen ? .isSelected : [])
+                        .accessibilityIdentifier("native-settings-decor-" + palette.id)
+                }
+            }
+        }.sensoryFeedback(.selection, trigger: selection)
+    }
+}
+
+/// 은은하게 … 선명하게: a 200 pt bar filled with the palette's own accent, with a knob that follows the finger.
+/// It clicks at each quarter, and VoiceOver steps it by tenths.
+private struct NativeDecorIntensitySlider: View {
+    @Binding var value: Double
+    let palette: NativeDecorPalette
+    @Environment(\.colorScheme) private var scheme
+    private static let width: CGFloat = 200
+    var body: some View {
+        let accent = Color(uiColor: palette.accent(dark: scheme == .dark))
+        HStack(spacing: 10) {
+            Text("은은하게").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityHidden(true)
+            ZStack(alignment: .leading) {
+                Capsule().fill(NativeDesktopTheme.surface).frame(height: 6)
+                Capsule().fill(LinearGradient(colors: [accent.opacity(0.25), accent], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: max(6, Self.width * value), height: 6)
+                Circle().fill(.white).frame(width: 22, height: 22)
+                    .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+                    .overlay { Circle().strokeBorder(NativeGlass.hairline, lineWidth: 0.5) }
+                    .offset(x: (Self.width - 22) * value)
+            }
+            .frame(width: Self.width, height: 44).contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { value = min(max(($0.location.x - 11) / (Self.width - 22), 0), 1) })
+            .sensoryFeedback(.selection, trigger: Int((value * 4).rounded()))
+            .accessibilityElement().accessibilityLabel("꾸미기 세기").accessibilityValue("\(Int((value * 100).rounded()))%")
+            .accessibilityAdjustableAction { value = min(max(value + ($0 == .increment ? 0.1 : -0.1), 0), 1) }
+            .accessibilityIdentifier("native-settings-decor-intensity")
+            Text("선명하게").font(NativeDesktopTheme.font(12)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityHidden(true)
+        }
     }
 }
