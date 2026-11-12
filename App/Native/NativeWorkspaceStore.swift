@@ -162,7 +162,7 @@ final class NativeWorkspaceStore {
             // Normal launches and restart tests preserve the user's preference.
             for key in ["native.desktop.courseRail", "native.desktop.materialsRail", "native.library.displayMode", "native.home.section", "native.desktop.aiRail", "native.inspector.width",
                         // Preferences a test may flip: the next fixture starts from the defaults again.
-                        "native.desktop.courseRailBeforeAI", "native.pdf.paletteCollapsed", NativeLocalPreferences.newDocumentKind, NativeLocalPreferences.homeTogglesSidebar,
+                        "native.pdf.paletteCollapsed", NativeLocalPreferences.newDocumentKind, NativeLocalPreferences.homeTogglesSidebar,
                         NativeLocalPreferences.keyboardFoldsPanels, NativeAIPreferences.answerLanguageKey, NativeAIPreferences.usageAlertKey,
                         NativeAIPreferences.referenceScopeKey, NativeAIPreferences.showsSourcesKey, NativeAIPreferences.savesHistoryKey,
                         NativeOnboardingGate.doneKey, NativeAppLocale.key, NativeReferral.pendingKey, NativeReferral.awaitingKey] { UserDefaults.standard.removeObject(forKey: key) }

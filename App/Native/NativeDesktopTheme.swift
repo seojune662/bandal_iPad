@@ -73,6 +73,6 @@ struct NativeChromeButton: View {
                 .frame(width: 44, height: 44)
                 .background { if selected, !joinsPanel { RoundedRectangle(cornerRadius: selectedRadius).fill(selectedFill).padding(selectedInset) } }
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel(title).help(title)
+        }.buttonStyle(.plain).accessibilityLabel(title).accessibilityAddTraits(selected ? .isSelected : []).help(title)
     }
 }

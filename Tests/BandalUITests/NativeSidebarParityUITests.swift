@@ -174,8 +174,21 @@ final class NativeSidebarParityUITests: XCTestCase {
         wait(for: toggle) { $0.label == "AI 닫기" }
         XCTAssertLessThan(toggle.frame.minX, 60, "The button stays on the rail while the panel opens")
         capture("AI chat beside the course rail")
+        // AI replaced the home sidebar in the left slot; tapping the open one folds the slot.
+        let home = app.buttons["native-section-library"]
+        XCTAssertFalse(home.isSelected, "AI took the home sidebar's place")
         toggle.tap()
         wait(for: toggle) { $0.label == "AI 열기" }
+        XCTAssertFalse(home.isSelected, "Closing AI folds the slot instead of bringing the home sidebar back")
+        // 홈 ↔ AI swap the slot directly.
+        home.tap()
+        wait(for: home) { $0.isSelected }
+        toggle.tap()
+        wait(for: toggle) { $0.label == "AI 닫기" }
+        XCTAssertFalse(home.isSelected)
+        home.tap()
+        wait(for: home) { $0.isSelected }
+        XCTAssertEqual(toggle.label, "AI 열기", "Home sends AI away")
     }
     @MainActor private func wait(for element: XCUIElement, until condition: @escaping (XCUIElement) -> Bool) {
         expectation(for: NSPredicate { _, _ in condition(element) }, evaluatedWith: nil); waitForExpectations(timeout: 5)

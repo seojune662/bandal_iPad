@@ -26,7 +26,6 @@ struct NativeWorkspaceView: View {
     @AppStorage("native.home.section") private var leftPanel: NativeHomeSection = .courses
     @AppStorage("native.desktop.aiRail") private var aiRailOpen = false
     /// The sidebar was open when AI took its slot, and comes back when AI closes.
-    @AppStorage("native.desktop.courseRailBeforeAI") private var courseRailBeforeAI = false
     @State private var windowWidth: CGFloat = 1200
     @State private var markdownEditing = false
     @State private var railsBeforeKeyboard: (Bool, Bool)?
@@ -592,7 +591,7 @@ struct NativeWorkspaceView: View {
     /// order, until the editor keeps its minimum width; narrow windows use drawers.
     private func setRail(_ rail: Rail, open: Bool, width: CGFloat) {
         // The home sidebar and AI trading the left slot is a swap, not a fold.
-        let swap = fitsAlone(rail, width: width) && (rail == .ai && (open ? courseRailOpen : courseRailBeforeAI) || rail == .course && open && aiRailOpen)
+        let swap = fitsAlone(rail, width: width) && open && (rail == .ai && courseRailOpen || rail == .course && aiRailOpen)
         withAnimation(swap ? nil : Self.railAnimation) {
             guard fitsAlone(rail, width: width) else {
                 compactCourseRail = rail == .course && open
@@ -602,12 +601,9 @@ struct NativeWorkspaceView: View {
             }
             compactCourseRail = false; compactAIRail = false; compactMaterialsRail = false
             switch rail { case .course: courseRailOpen = open; case .ai: aiRailOpen = open; case .materials: materialsRailOpen = open }
-            // The home sidebar and AI share the left slot. AI takes it and hands it back when it closes;
-            // opening the sidebar sends AI away.
-            if rail == .ai {
-                if open { if courseRailOpen { courseRailBeforeAI = true; courseRailOpen = false } }
-                else if courseRailBeforeAI { courseRailBeforeAI = false; courseRailOpen = true }
-            } else if rail == .course, open { aiRailOpen = false; courseRailBeforeAI = false }
+            // The home sidebar and AI share the left slot: opening one replaces the other,
+            // and closing the open one folds the slot.
+            if open { if rail == .ai { courseRailOpen = false } else if rail == .course { aiRailOpen = false } }
             guard open else { return }
             let minimum: [Rail: Double] = [.course: NativeWorkspaceChromeLayout.leftMinimum, .ai: NativeWorkspaceChromeLayout.aiMinimum,
                                            .materials: NativeWorkspaceChromeLayout.rightMinimum]
@@ -660,7 +656,8 @@ struct NativeWorkspaceView: View {
             }.accessibilityIdentifier("native-section-library").padding(.bottom, 3)
             NativeChromeButton(title: railVisible(.ai, width: width) ? "AI 닫기" : "AI 열기", symbol: "sparkles", selected: showsWorkspace && railVisible(.ai, width: width),
                                selectedFill: Self.railSelected, selectedInset: 3, selectedRadius: 11, joinsPanel: chromeLayout(width: width).aiPinned && !(chromeLayout(width: width).leftPinned && railVisible(.course, width: width))) {
-                if showsWorkspace { toggleAIRail(width: width) } else { transition { openAIRail() } }
+                // The same rule as the home button: another panel in the slot is replaced, the open one folds.
+                if showsWorkspace { if NativeLocalPreferences.bool(NativeLocalPreferences.homeTogglesSidebar) || !railVisible(.ai, width: width) { toggleAIRail(width: width) } } else { transition { openAIRail() } }
             }.accessibilityIdentifier("native-ai-rail-toggle")
             NativeChromeButton(title: "학업 보드", symbol: "rectangle.split.3x1", selected: boardOverlayOpen, selectedFill: Self.railSelected, selectedInset: 3, selectedRadius: 11) { toggleAcademicBoard() }.accessibilityIdentifier("native-section-planner")
             if NativeReleaseFlags.showsMarketplace {
