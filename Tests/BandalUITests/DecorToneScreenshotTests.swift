@@ -56,6 +56,13 @@ final class DecorToneScreenshotTests: XCTestCase {
         sleep(2); attach(app, "10-window-cards")
         overview.tap(); sleep(2)
 
+        // What else reaches the top-left corner, under the status bar's clock: the AI column and settings.
+        let ai = app.buttons["native-ai-rail-toggle"]
+        if ai.waitForExistence(timeout: 5) { ai.tap(); sleep(2); attach(app, "15-ai-rail"); ai.tap(); sleep(1) }
+        app.buttons["설정"].firstMatch.tap()
+        if app.buttons["native-settings-category-appearance"].waitForExistence(timeout: 10) { app.buttons["native-settings-category-appearance"].tap(); sleep(2); attach(app, "16-settings") }
+        if app.buttons["native-settings-close"].exists { app.buttons["native-settings-close"].tap(); sleep(1) }
+
         // The same note at three points of the dial, and in the dark.
         for (shot, appearance, intensity) in [("11-dial-055", "light", "0.55"), ("12-dial-100", "light", "1.0"), ("13-dial-200", "light", "2.0"), ("14-dark", "dark", "1.0")] {
             app.terminate()
@@ -74,7 +81,7 @@ final class DecorToneScreenshotTests: XCTestCase {
         return app
     }
     @MainActor private func attach(_ app: XCUIApplication, _ name: String) {
-        // A landscape capture of the whole screen comes out rotated and cropped; the window does not.
-        let shot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        // The whole screen, for the status bar a window capture leaves out. It comes out a quarter turn round.
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
     }
 }

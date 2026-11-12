@@ -83,10 +83,25 @@ persists `page=1` (save-side again in the merged config) by capturing the trace.
 > active over every pane. Measured on 26.5 by pressing one tab at several heights: y = 20…32 moves the window,
 > y = 36 does not.
 >
-> Fix: in full screen on iPadOS 26 the strip sits 24 pt below the top edge (`NativeDockTopEdge.systemBand`), so
-> the whole tab pill lies under that band; the drop surface passes every touch through and only catches the
-> drag's own events, so a drag that ends unreported can no longer leave a pane dead. The rest of this section is
-> kept as the record of the investigation.
+> Fix: the drop surface passes every touch through and only catches the drag's own events, so a drag that ends
+> unreported can no longer leave a pane dead. The rest of this section is kept as the record of the investigation.
+>
+> **Where the strip sits (2026-11-13).** In full screen on iPadOS 26 the top band shows the system status bar
+> (clock, battery), as in other tabbed iPad apps, and everything of ours starts under it: the tab strip and the
+> window buttons 24 pt down (`NativeDockTopEdge.statusBar`), the rail and the side panels by the same 24 pt. The
+> whole tab pill then lies below the band, so a tab can be dragged from anywhere on it. The same band was first
+> left empty (the status bar was hidden), which read as wasted space; the strip was then tried flush with the top,
+> which put most of each tab back in the band. Every move a tab drag makes is also in the tab's long-press menu
+> (오른쪽으로 분할, 아래로 분할, 다른 영역으로 이동, 다른 윈도우로 이동, 왼쪽·오른쪽으로 옮기기, 즐겨찾기에 추가).
+>
+> The app cannot take the band back. Measured on 26.5 with `NativeInputDiagnosisUITests` (R9c, R9j):
+> - it moves the window whichever way the drag goes: down, at a shallow angle, sideways, with or without a hold first;
+> - `.defersSystemGestures(on: .top)` changes nothing;
+> - a recognizer on the tab that recognizes at once, prevents the window's and makes it wait for failure changes
+>   nothing: the system cancels the touch;
+> - the touch on a tab does not carry the in-process `_UIFlexInteractionPanGestureRecognizer` at all, so there is
+>   nothing in the app to switch off.
+> Apple's own answer on the forums (thread 795402) only covers adding drag regions (`UIWindowSceneDragInteraction`).
 
 **Symptom.** Dragging a tab from one pane and dropping it onto another pane
 (`aTab.press(forDuration:1, thenDragTo: markdown…)`) frequently fails to merge:

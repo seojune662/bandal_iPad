@@ -28,18 +28,23 @@ enum NativeDockCard {
 
 /// How far a pane at the window's top keeps its tab strip below the top edge.
 ///
-/// iPadOS takes a drag that starts along the top of a window as a drag of the window itself, even when it starts
-/// on one of our tabs: the tab's own drag then never ends and the window leaves its place. In a window that is
-/// not full screen the strip has always kept 16 pt below that edge. iPadOS 26 does the same in full screen: there
-/// a drag that starts in the top 32 pt (`systemDragBand`, measured on 26.5) pulls the app out of full screen.
+/// A window that is not full screen keeps the strip 16 pt down, clear of the window's own controls.
+///
+/// Full screen on iPadOS 26 the top 32 pt (`systemDragBand`) belong to the system: a drag that starts there
+/// moves the window, whatever it starts on and whichever way it goes, and the app has no say in it (measured on
+/// 26.5; deferring system gestures on that edge and a recognizer of ours set to win over the window's changed
+/// nothing). So that band holds what the system puts there anyway, the status bar with its clock and battery,
+/// as in other tabbed iPad apps, and everything of ours starts under it: the strip 24 pt down, which puts the
+/// whole tab pill (10 pt inside its row) below the band, and the rail and side panels by the same 24 pt.
+/// Before iPadOS 26 nothing claims that edge: the status bar stays hidden and the strip is flush (Figma 129:1596).
 struct NativeDockTopEdge: Equatable {
     let clearance: CGFloat
-    /// Full screen before iPadOS 26: nothing above the strip claims touches (Figma 129:1596).
+    /// Full screen before iPadOS 26: the strip starts at the top edge.
     static let flush = NativeDockTopEdge(clearance: 0)
     /// A window that is not full screen.
     static let window = NativeDockTopEdge(clearance: 16)
-    /// Full screen on iPadOS 26: the whole tab pill, which sits 10 pt inside its row, lies under the system's band.
-    static let systemBand = NativeDockTopEdge(clearance: 24)
+    /// Full screen on iPadOS 26: under the status bar.
+    static let statusBar = NativeDockTopEdge(clearance: 24)
     /// The depth of the band iPadOS 26 drags a full-screen window by.
     static let systemDragBand: CGFloat = 32
 }
@@ -53,11 +58,14 @@ enum NativeDockHeaderMetrics {
             return abs(window.width - screen.width) > 1 || abs(window.height - screen.height) > 1
         }
     }
+    /// From iPadOS 26 the status bar shows (in full screen; a window that is not has none to show).
+    nonisolated static var showsStatusBar: Bool { if #available(iOS 26, *) { true } else { false } }
+    /// What the rail and the side panels leave free at their top for the status bar.
+    @MainActor static var statusBand: CGFloat { topEdge == .statusBar ? NativeDockTopEdge.statusBar.clearance : 0 }
     /// The top edge the window has now.
     @MainActor static var topEdge: NativeDockTopEdge {
         if windowed { return .window }
-        if #available(iOS 26, *) { return .systemBand }
-        return .flush
+        return showsStatusBar ? .statusBar : .flush
     }
     static func topPadding(for paneFrame: CGRect, topEdge: NativeDockTopEdge) -> CGFloat {
         abs(paneFrame.minY) < 0.5 ? topEdge.clearance : 0

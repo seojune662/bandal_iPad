@@ -187,6 +187,19 @@ struct NativePDFTextSizeField: UIViewRepresentable {
     }
     final class SizeField: UITextField {
         var cancel: (() -> Void)?
+        // The size field belongs to the open text box, so the window keeps its size while it has the keyboard,
+        // just as it does for the box. Handing avoidance back to the window here squeezed the page twice (the
+        // window shrank and the page kept its own keyboard inset) and left the box under the palette, unseen.
+        override func becomeFirstResponder() -> Bool {
+            let became = super.becomeFirstResponder()
+            if became { NotificationCenter.default.post(name: NativePDFWorkspaceModel.textEditingChanged, object: true) }
+            return became
+        }
+        override func resignFirstResponder() -> Bool {
+            let resigned = super.resignFirstResponder()
+            if resigned { NotificationCenter.default.post(name: NativePDFWorkspaceModel.textEditingChanged, object: false) }
+            return resigned
+        }
         override var keyCommands: [UIKeyCommand]? {
             (super.keyCommands ?? []) + [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(escape))]
         }

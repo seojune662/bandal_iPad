@@ -375,6 +375,7 @@
 "다른 앱으로 보내기" = "Send to another app";
 "다른 영역과 합치기" = "Merge with another pane";
 "다른 영역으로 이동" = "Move to another pane";
+"다른 윈도우로 이동" = "Move to another window";
 "다시 만들 수 있는 임시 파일만 지워요." = "Only temporary files that can be made again are removed.";
 "다시 만들기" = "Recreate";
 "다시 불러오기" = "Reload";
@@ -687,6 +688,7 @@
 "실행 취소" = "Undo";
 "아래로" = "Down";
 "아래로 이동" = "Move down";
+"아래로 분할" = "Split below";
 "아래에 페이지 추가" = "Add page below";
 "아래에 행 추가" = "Add row below";
 "아직 미리보기 없음" = "No preview yet";
@@ -736,6 +738,8 @@
 "오른쪽 위젯" = "Right-side widgets";
 "오른쪽 정렬" = "Align right";
 "오른쪽 탭 모두 닫기" = "Close all tabs to the right";
+"오른쪽으로 분할" = "Split right";
+"오른쪽으로 옮기기" = "Move right";
 "오른쪽 패널 접기" = "Collapse right panel";
 "오른쪽 패널 펼치기" = "Expand right panel";
 "오른쪽에 분할 복제" = "Duplicate in split on the right";
@@ -749,6 +753,7 @@
 "완료로 표시" = "Mark as complete";
 "외부 AI 사이트" = "External AI sites";
 "왼쪽" = "Left";
+"왼쪽으로 옮기기" = "Move left";
 "왼쪽 +로 과목을 만들거나 폴더를 연결하고, 자료 목록에서 PDF·이미지·영상을 가져오세요." = "Use + on the left to create a course or link a folder, then import PDFs, images and videos from the materials list.";
 "왼쪽 정렬" = "Align left";
 "요청 다시 준비" = "Prepare request again";

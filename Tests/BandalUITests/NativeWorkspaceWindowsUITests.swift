@@ -67,6 +67,30 @@ final class NativeWorkspaceWindowsUITests: XCTestCase {
         wait(app, "One window is left") { rows.count == 1 && rows.element(boundBy: 0).isSelected }
     }
 
+    /// A tab's menu makes every move a tab drag does.
+    /// (Moving to another window is covered in `NativeWorkspaceWindowTests`: while a tab's menu is up the test
+    /// runner waits a minute for the app to idle before every step, so this taps only one item.)
+    @MainActor
+    func testTabMenuOffersTheMovesAndSplitsTheTabOut() throws {
+        let app = launch()
+        createCourse("Tab Moves", app: app)
+        let home = app.buttons["native-home-new-note"], pen = app.buttons["native-pdf-tool-pen"]
+        XCTAssertTrue(home.waitForExistence(timeout: 15), app.debugDescription); home.tap(); app.confirmNewNote(title: "One")
+        XCTAssertTrue(pen.waitForExistence(timeout: 20), app.debugDescription)
+        let plus = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-add-")).firstMatch
+        XCTAssertTrue(plus.waitForExistence(timeout: 10)); plus.tap(); app.buttons["native-new-tab-new-whiteboard"].tap(); app.confirmNewNote(title: "Two")
+        let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-"))
+        let strips = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-tab-strip-"))
+        wait(app, "Two tabs in one pane") { tabs.count == 2 && strips.count == 1 }
+
+        tabs.element(boundBy: 1).press(forDuration: 1)
+        let split = app.buttons["native-tab-split-right"]
+        XCTAssertTrue(split.waitForExistence(timeout: 5), app.debugDescription)
+        for item in ["native-tab-split-below", "다른 윈도우로 이동", "왼쪽으로 옮기기", "즐겨찾기에 추가"] { XCTAssertTrue(app.buttons[item].exists, item) }
+        split.tap()
+        wait(app, "The tab took a pane of its own") { strips.count == 2 && tabs.count == 2 }
+    }
+
     @MainActor
     func testWindowManagementCourseProjectIsolationAndRestartKeepSidebarState() throws {
         let app = launch()

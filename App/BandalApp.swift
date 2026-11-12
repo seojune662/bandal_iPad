@@ -10,7 +10,8 @@ struct BandalApp: App {
             NativeWorkspaceView(store: store)
                 .id(ObjectIdentifier(store))
                 .onReceive(NotificationCenter.default.publisher(for: DesktopProfileService.didActivate)) { _ in store = NativeWorkspaceStore() }
-                .statusBarHidden(true)
+                // From iPadOS 26 the clock and battery show: the band they sit in is the system's either way (`NativeDockTopEdge`).
+                .statusBarHidden(!NativeDockHeaderMetrics.showsStatusBar)
                 .ignoresSafeArea(.container, edges: .top)
                 .bandalLocalized()
         }

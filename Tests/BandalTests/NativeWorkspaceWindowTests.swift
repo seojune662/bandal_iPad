@@ -50,6 +50,22 @@ final class NativeWorkspaceWindowTests: XCTestCase {
         XCTAssertEqual(restored.chromeMode, .tabsHidden)
         XCTAssertEqual(restored.activeID, firstDocument.id)
     }
+    func testATabMovesToAnotherWindowOfTheSameFolderAndKeepsItsIdentity() throws {
+        let nav = NativeWorkspaceNavigation(), pdf = document(), note = document("note.md", kind: "note")
+        nav.open(pdf); nav.open(note)
+        let first = try XCTUnwrap(nav.currentWindowRef), second = try XCTUnwrap(nav.createWindow())
+        let moved = try XCTUnwrap(nav.documents(in: first).first { $0.relativePath == "note.md" })
+        XCTAssertTrue(nav.move(moved.id, from: first, toWindow: second))
+        XCTAssertEqual(nav.documents(in: first).map(\.relativePath), ["chapter.pdf"])
+        XCTAssertEqual(nav.documents(in: second).map(\.id), [moved.id], "The same tab, not a copy")
+        XCTAssertEqual(nav.window(second)?.layout.activeID, moved.id, "It is the front tab where it lands")
+        XCTAssertEqual(nav.window(first)?.layout.activeID, nav.documents(in: first).first?.id, "The window it left shows what is left")
+        // Not to itself, not to a window of another folder, and not a tab the source does not hold.
+        XCTAssertFalse(nav.move(moved.id, from: second, toWindow: second))
+        XCTAssertFalse(nav.move(moved.id, from: first, toWindow: second))
+        XCTAssertFalse(nav.move(moved.id, from: second, toWindow: .init(workspaceID: "course:other", windowID: first.windowID)))
+        XCTAssertEqual(nav.documents(in: second).map(\.id), [moved.id])
+    }
     func testDefaultNamesSkipRenamedNamesAndDoNotRecycleClosedNumbers() throws {
         let nav = NativeWorkspaceNavigation(); nav.activateCourse("course")
         let first = try XCTUnwrap(nav.currentWindowRef)

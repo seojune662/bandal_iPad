@@ -738,7 +738,8 @@ struct NativeWorkspaceView: View {
             }
     }
     /// Icon centres at 29 / 80 / 128 below the status bar: 44 pt buttons, the home button 3 pt further from the next.
-    private static let railSpacing: CGFloat = 4, railTop: CGFloat = 7
+    private static let railSpacing: CGFloat = 4
+    private static var railTop: CGFloat { 7 + NativeDockHeaderMetrics.statusBand }
     /// A lit rail button with no panel beside it.
     private static let railSelected = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.12) : UIColor.white.withAlphaComponent(0.85) })
     private var courseSidebar: some View {
@@ -753,7 +754,8 @@ struct NativeWorkspaceView: View {
                 onOpenURL: openBrowserURL, onOpenAIWeb: openAIWeb, descriptor: favoriteDescriptor, onOpenFavorite: openFavorite,
                 selectedContextID: workspaceContext?.id, onOpenProject: changeWorkspace, windowActions: sidebarWindowActions)
                 .padding(.top, 12)
-        }.background(NativeGlass.panel)
+        // The glass runs to the top edge; what is on it starts under the status bar.
+        }.padding(.top, NativeDockHeaderMetrics.statusBand).background(NativeGlass.panel)
     }
     private func toggleAcademicBoard() {
         transition {
@@ -981,7 +983,7 @@ struct NativeWorkspaceView: View {
                     .environment(\.nativeWorkspaceTarget, navigation.captureTarget())
                     .id(context.id)
             } else { noWorkspacePlaceholder }
-        }
+        }.padding(.top, NativeDockHeaderMetrics.statusBand)
     }
     private var noWorkspacePlaceholder: some View {
         VStack(spacing: 12) {

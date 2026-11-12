@@ -307,6 +307,18 @@ final class NativeWorkspaceNavigation: ObservableObject {
     func move(_ documentID: String, to groupID: String, direction: NativeDockDirection = .within, index: Int? = nil) {
         edit { _ = $0.move(documentID, to: groupID, direction: direction, index: index) }
     }
+    /// Takes a tab out of one window and puts it at the end of another window's focused pane, in the same
+    /// folder. The tab keeps its identity, so its editor's state goes with it.
+    @discardableResult
+    func move(_ documentID: String, from source: NativeWorkspaceWindowRef, toWindow target: NativeWorkspaceWindowRef) -> Bool {
+        guard source != target, source.workspaceID == target.workspaceID, window(target) != nil,
+              window(source)?.layout.groups.contains(where: { $0.tabs.contains(documentID) }) == true else { return false }
+        _ = edit(in: source) { layout in layout.root = layout.root.mapGroups { item in var group = item; group.remove(documentID); return group } }
+        return edit(in: target) { layout in
+            guard let group = layout.focused else { return }
+            layout.updateGroup(group.id) { $0.tabs.append(documentID); $0.activeID = documentID }
+        }
+    }
     func resize(_ splitID: String, fraction: Double) { edit { $0.root = $0.root.resizing(splitID, fraction: fraction) } }
     func apply(_ preset: NativeDockPreset) { edit { $0.apply(preset) } }
     func removeEmptyGroup(_ id: String) { edit { $0.removeEmptyGroup(id) } }

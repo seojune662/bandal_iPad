@@ -86,8 +86,29 @@ final class NativeInputDiagnosisUITests: XCTestCase {
     @MainActor func testR9TabDragAndTheWindow() { tabDrag(extra: []) }
     /// R9c: how deep the band is that iPadOS drags a full-screen window by: the same tab pressed at several heights.
     /// (Measured on 26.5: 32 pt. Leaves the app windowed in between and restores full screen each time.)
-    @MainActor func testR9cTopBandDepth() {
+    @MainActor func testR9cTopBandDepth() { bandDepth(extra: []) }
+    /// R9j: does a drag that stays inside the band (sideways, as when reordering) or leaves it at a shallow
+    /// angle also move the window, or only one that goes down? (Measured on 26.5: every one of them moves it.
+    /// Deferring system gestures on the top edge, and a recognizer on the tab that the window's own must wait
+    /// for, changed nothing either; both were tried and taken out again.)
+    @MainActor func testR9jDirectionsOutOfTheBand() {
         let app = launch(fixturePencil: false)
+        openNote("Trace Band", app: app)
+        let tab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-document-tab-", "Trace Band")).firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 10))
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        for (name, dx, dy, hold) in [("sideways after a hold", 260.0, 0.0, 1.0), ("sideways at once", 260.0, 0.0, 0.05), ("shallow down-right", 300.0, 120.0, 1.0), ("straight down", 0.0, 300.0, 1.0)] {
+            let frame = tab.frame
+            let start = origin.withOffset(.init(dx: frame.midX, dy: 20))
+            start.press(forDuration: hold, thenDragTo: origin.withOffset(.init(dx: frame.midX + dx, dy: 20 + dy)), withVelocity: .slow, thenHoldForDuration: 0.5)
+            sleep(2)
+            let window = app.windows.firstMatch.frame
+            print("[DIAG] R9j \(name): window after \(window) \(window.width < 1370 ? "LEFT FULL SCREEN" : "stayed full screen")")
+            ensureFullScreen(app); sleep(1)
+        }
+    }
+    @MainActor private func bandDepth(extra: [String]) {
+        let app = launch(fixturePencil: false, extra: extra)
         openNote("Trace Band", app: app)
         let tab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "native-document-tab-", "Trace Band")).firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 10))

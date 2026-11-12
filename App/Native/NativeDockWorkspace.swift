@@ -435,12 +435,51 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         }
         .onDrop(of: [NativeDockDragPayload.contentType], delegate: drop(group.id, index: index))
     }
+    /// Everything dragging a tab does, by name, for when a drag is awkward or not on offer (a drag that starts
+    /// along a window's top edge moves the window instead: `NativeDockTopEdge`).
+    @ViewBuilder private func moveMenu(_ document: NativeDocumentReference, group: NativeDockGroup) -> some View {
+        let index = group.tabs.firstIndex(of: document.id) ?? 0, others = navigation.groups.filter { $0.id != group.id }
+        if group.tabs.count > 1 {
+            Button("오른쪽으로 분할", systemImage: "rectangle.righthalf.inset.filled") { perform { navigation.move(document.id, to: group.id, direction: .right) } }
+                .accessibilityIdentifier("native-tab-split-right")
+            Button("아래로 분할", systemImage: "rectangle.bottomhalf.inset.filled") { perform { navigation.move(document.id, to: group.id, direction: .below) } }
+                .accessibilityIdentifier("native-tab-split-below")
+        }
+        if !others.isEmpty {
+            Menu("다른 영역으로 이동", systemImage: "arrow.left.arrow.right") {
+                ForEach(others) { other in
+                    Button(groupTitle(other, index: navigation.groups.firstIndex { $0.id == other.id } ?? 0)) { perform { navigation.move(document.id, to: other.id) } }
+                }
+            }
+        }
+        if let ref = navigation.currentWindowRef {
+            Menu("다른 윈도우로 이동", systemImage: "macwindow.on.rectangle") {
+                ForEach(navigation.windows.filter { $0.id != ref.windowID }) { window in
+                    let target = NativeWorkspaceWindowRef(workspaceID: ref.workspaceID, windowID: window.id)
+                    Button(NativeSidebarWindowsSection.title(window.name, titles: window.layout.groups.compactMap { navigation.document($0.activeID)?.title })) {
+                        perform { navigation.move(document.id, from: ref, toWindow: target) }
+                    }
+                }
+                // The new window opens with this tab in it.
+                Button("새 윈도우", systemImage: "plus") {
+                    perform { if let target = navigation.createWindow() { navigation.move(document.id, from: ref, toWindow: target) } }
+                }.accessibilityIdentifier("native-tab-move-new-window")
+            }
+        }
+        if group.tabs.count > 1 {
+            Button("왼쪽으로 옮기기", systemImage: "arrow.left") { perform { navigation.move(document.id, to: group.id, index: index - 1) } }.disabled(index == 0)
+            // `index` is where the tab lands among the others once it is taken out, so one step right is two past its own place.
+            Button("오른쪽으로 옮기기", systemImage: "arrow.right") { perform { navigation.move(document.id, to: group.id, index: index + 2) } }.disabled(index == group.tabs.count - 1)
+        }
+    }
     @ViewBuilder private func tabMenu(_ document: NativeDocumentReference, group: NativeDockGroup) -> some View {
         Button("닫기", systemImage: "xmark") { closeDocuments([document.id]) }
         Button("이 그룹의 다른 탭 닫기") { closeDocuments(group.tabs.filter { $0 != document.id }) }
         Button("전체 작업 공간의 다른 탭 닫기") { closeDocuments(navigation.groups.flatMap(\.tabs).filter { $0 != document.id }) }
         Button("오른쪽 탭 모두 닫기") { closeDocuments(Array(group.tabs.dropFirst((group.tabs.firstIndex(of: document.id) ?? group.tabs.count) + 1))) }
             .disabled(group.tabs.last == document.id)
+        Divider()
+        moveMenu(document, group: group)
         Divider()
         Button("즐겨찾기에 추가", systemImage: "link") {
             resourceAction {
