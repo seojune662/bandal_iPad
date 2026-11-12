@@ -88,7 +88,7 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
         }
     }
 
-    static let tools = Set(["select", "lasso", "pen", "ballpoint", "brush", "highlighter", "eraser", "line", "text", "tape", "laser", "comment"])
+    static let tools = Set(["select", "lasso", "pen", "ballpoint", "brush", "highlighter", "eraser", "text", "tape", "laser", "comment"])
     static let lassoModes = Set(["freeform", "box"])
     static let colors = Set(["ink", "red", "orange", "yellow", "green", "blue", "violet"])
     static func key(root: URL, documentID: String, documentsRoot: URL? = nil) -> String {

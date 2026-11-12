@@ -163,6 +163,8 @@ final class NativeWorkspaceFlowTests: XCTestCase {
             tools.swipeRight(); tools.swipeRight()
             for _ in 0..<4 where !item.isHittable { tools.swipeLeft() }
         }
+        let row = app.scrollViews["native-pdf-palette-scroll"]
+        if !item.isHittable, row.exists { row.swipeRight(); row.swipeRight(); for _ in 0..<4 where !item.isHittable { row.swipeLeft() } }
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: item)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription)
         item.tap()

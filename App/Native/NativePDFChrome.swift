@@ -1,19 +1,19 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The thumbnails button, alone at the top right of the page area, in the band under the palette (the palette is
-/// wider than the page area, so beside it there is no room). The row it used to end is not in the design
+/// The thumbnails button at the top left of the page area, beside the pages panel it opens: in the palette's row
+/// when the pill leaves room, otherwise in the band under it. The row it used to end is not in the design
 /// (Figma 155:7503); what that row held (page jump, zoom, search, 원본 주석, 페이지 필기, and its zoom menu's fit,
 /// hide tools and export) is in the menu a long press opens. VoiceOver opens it with the 보기 메뉴 action.
 struct NativePDFViewButton: View {
     var model: NativePDFWorkspaceModel
     @State private var showMenu = false
-    /// The palette's 40 pt cell in a glass circle, 14 from the page area's right edge (the cell is where the row had it).
-    static let size: CGFloat = 48, trailing: CGFloat = 14
+    /// The palette's 34 pt cell in a glass circle as tall as the palette, 14 from the page area's left edge.
+    static let size: CGFloat = NativePDFFloatingPalette.height, leading: CGFloat = 14
     private static let menuWidth: CGFloat = 260
     private var unavailable: Bool { model.isLoading || model.isBusy || model.errorMessage != nil }
     var body: some View {
-        Image("PDFIconGrid").foregroundStyle(NativePDFPaletteLook.icon).frame(width: 40, height: 40)
+        Image("PDFIconGrid").foregroundStyle(NativePDFPaletteLook.icon).frame(width: NativePDFPaletteLook.cell, height: NativePDFPaletteLook.cell)
             .background(model.showPages ? NativePDFPaletteLook.chosen : .clear, in: Circle())
             .frame(width: Self.size, height: Self.size).contentShape(Circle()).bandalGlass(in: Circle())
             .onTapGesture { model.togglePages() }
@@ -25,8 +25,8 @@ struct NativePDFViewButton: View {
                     .accessibilityAddTraits(model.showPages ? .isSelected : []).accessibilityAction(named: "보기 메뉴") { showMenu = true }
                     .accessibilityIdentifier("native-pdf-pages")
             }
-            // Under the button, their right edges in line: the menu stays inside a narrow pane.
-            .bandalPopover(isPresented: $showMenu, at: .bottom, offset: CGSize(width: (Self.size - Self.menuWidth) / 2, height: 0), width: Self.menuWidth, padding: 8) {
+            // Under the button, their left edges in line: the menu stays inside a narrow pane.
+            .bandalPopover(isPresented: $showMenu, at: .bottom, offset: CGSize(width: (Self.menuWidth - Self.size) / 2, height: 0), width: Self.menuWidth, padding: 8) {
                 NativePDFViewMenu(model: model) { showMenu = false }
             }
             .background { saveStatus }

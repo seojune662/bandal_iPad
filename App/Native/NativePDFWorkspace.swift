@@ -20,10 +20,25 @@ struct NativePDFWorkspace: View {
     /// The band under the palette: the thumbnails button at its right end, the recording bar in its middle.
     private var belowPalette: CGFloat { showsPalette ? paletteTop + NativePDFFloatingPalette.height + 8 : paletteTop }
     @AppStorage("native.pdf.paletteCollapsed") private var paletteCollapsed = false
-    /// The window's palette is wider than the page area and floats over the pages panel and the annotation rail:
-    /// their headers start under it.
-    // ponytail: also pads in a window wide enough for the palette to stay inside the page area; compare frames if that band shows.
-    private var sidePanelTop: CGFloat { showsPalette && !paletteCollapsed && paletteHost?.floats(tabID) == true ? belowPalette : 0 }
+    /// The pane's own palette when the window does not float one.
+    @State private var panePaletteFrame = CGRect.zero
+    private var paletteFrame: CGRect {
+        guard showsPalette else { return .zero }
+        return paletteHost?.floats(tabID) == true ? paletteHost?.paletteFrame ?? .zero : panePaletteFrame
+    }
+    /// The window's palette floats over the side panels when it is wider than the page area:
+    /// a panel's header starts under it only where the pill really covers that panel.
+    private var pagesPanelTop: CGFloat {
+        paletteHost?.floats(tabID) == true && !paletteFrame.isEmpty && paletteFrame.minX < bodyFrame.minX - 0.5 ? belowPalette : 0
+    }
+    private var annotationRailTop: CGFloat {
+        paletteHost?.floats(tabID) == true && !paletteFrame.isEmpty && paletteFrame.maxX > bodyFrame.maxX + 0.5 ? belowPalette : 0
+    }
+    /// The thumbnails button sits at the page area's left, in the palette's row when the pill leaves room for it, otherwise under it.
+    private var viewButtonTop: CGFloat {
+        let room = paletteFrame.isEmpty || paletteFrame.minX - bodyFrame.minX >= NativePDFViewButton.leading + NativePDFViewButton.size + 8
+        return room ? paletteTop + (NativePDFFloatingPalette.height - NativePDFViewButton.size) / 2 : belowPalette
+    }
     /// The window draws the palette above the side panels; this pane only says where its page area is.
     private func registerPalette() {
         guard let paletteHost else { return }
@@ -66,7 +81,7 @@ struct NativePDFWorkspace: View {
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     if model.showPages && visible {
-                        NativePDFPagesPanel(model: model).padding(.top, sidePanelTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 128 : 160)
+                        NativePDFPagesPanel(model: model).padding(.top, pagesPanelTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 128 : 160)
                         Divider()
                     }
                     ZStack {
@@ -82,19 +97,21 @@ struct NativePDFWorkspace: View {
                             }
                         }
                         .overlay(alignment: .top) {
-                            if showsPalette, paletteHost?.floats(tabID) != true { NativePDFFloatingPalette(model: model).padding(.horizontal, 8).padding(.top, paletteTop) }
+                            if showsPalette, paletteHost?.floats(tabID) != true {
+                                NativePDFFloatingPalette(model: model, onFrame: { panePaletteFrame = $0 }).padding(.horizontal, 8).padding(.top, paletteTop)
+                            }
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bodyFrame = $0; registerPalette() }
-                        .overlay(alignment: .topTrailing) {
+                        .overlay(alignment: .topLeading) {
                             if visible, model.assistantAnnotation == nil, chromeMode != .toolsHidden {
-                                NativePDFViewButton(model: model).padding(.trailing, NativePDFViewButton.trailing).padding(.top, belowPalette)
+                                NativePDFViewButton(model: model).padding(.leading, NativePDFViewButton.leading).padding(.top, viewButtonTop)
                             }
                         }
                         // 문서에서 찾기 takes the band under the palette, clear of the thumbnails button; a recording bar moves below it.
                         .overlay(alignment: .top) {
                             if visible, model.search.isPresented {
                                 NativePDFSearchBar(search: model.search).padding(.horizontal, 8).frame(height: NativePDFViewButton.size).bandalGlass(in: Capsule())
-                                    .padding(.horizontal, NativePDFViewButton.trailing + NativePDFViewButton.size + 8).padding(.top, belowPalette)
+                                    .padding(.horizontal, NativePDFViewButton.leading + NativePDFViewButton.size + 8).padding(.top, belowPalette)
                             }
                         }
                         .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model).padding(.top, belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0)) } }
@@ -102,7 +119,7 @@ struct NativePDFWorkspace: View {
                         .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame) } }
                     if model.showAnnotations && visible {
                         Divider()
-                        NativePDFAnnotationRail(model: model).padding(.top, sidePanelTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 220 : 280)
+                        NativePDFAnnotationRail(model: model).padding(.top, annotationRailTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 220 : 280)
                     }
                 }
                 .onChange(of: geometry.size.width, initial: true) { _, width in model.setAvailableWidth(width) }

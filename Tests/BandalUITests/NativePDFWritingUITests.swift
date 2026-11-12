@@ -88,17 +88,19 @@ final class NativePDFWritingUITests: XCTestCase {
                 XCTAssertFalse(pane.buttons["native-pdf-quick-favorite-\(index)"].exists)
                 XCTAssertTrue(pane.buttons["native-pdf-width-slot-\(index)"].exists, "The row ends with the three thickness dots")
             }
-            let tools = pane.scrollViews["native-pdf-tool-scroll"]
-            XCTAssertTrue(tools.exists, app.debugDescription)
-            XCTAssertGreaterThan(tools.frame.width, pane.frame.width - 48, "The floating palette fills a narrow pane up to its insets")
-            // The thumbnails button stands alone under the palette, clear of it at any pane width.
+            XCTAssertTrue(pane.scrollViews["native-pdf-tool-scroll"].exists, app.debugDescription)
+            // A pane too narrow for the pill scrolls the whole row inside it.
+            let row = pane.scrollViews["native-pdf-palette-scroll"]
+            XCTAssertTrue(row.exists, app.debugDescription)
+            XCTAssertGreaterThan(row.frame.width, pane.frame.width - 48, "The floating palette fills a narrow pane up to its insets")
+            // The thumbnails button never overlaps the palette, at any pane width.
             let pages = pane.buttons["native-pdf-pages"]
             XCTAssertTrue(pages.isHittable, app.debugDescription)
-            XCTAssertGreaterThanOrEqual(pages.frame.minY, tools.frame.maxY, "The thumbnails button never overlaps the palette")
+            XCTAssertFalse(pages.frame.intersects(row.frame), "The thumbnails button never overlaps the palette")
             // The row ends with the collapse button; the pen is back at its start.
-            for _ in 0..<5 where !pane.buttons["native-pdf-palette-collapse"].isHittable { tools.swipeLeft() }
+            for _ in 0..<5 where !pane.buttons["native-pdf-palette-collapse"].isHittable { row.swipeLeft() }
             XCTAssertTrue(pane.buttons["native-pdf-palette-collapse"].isHittable, app.debugDescription)
-            for _ in 0..<5 where !pane.buttons["native-pdf-tool-pen"].isHittable { tools.swipeRight() }
+            for _ in 0..<5 where !pane.buttons["native-pdf-tool-pen"].isHittable { row.swipeRight() }
         }
         // The pen settings open under the pane's own 펜 button; a colour picked there changes that pane only.
         right.buttons["native-pdf-tool-pen"].tap()
@@ -439,6 +441,8 @@ final class NativePDFWritingUITests: XCTestCase {
         XCTAssertTrue(item.waitForExistence(timeout: 15), app.debugDescription)
         let scroll = app.scrollViews["native-pdf-tool-scroll"]
         if !item.isHittable, scroll.exists { scroll.swipeRight(); for _ in 0..<5 where !item.isHittable { scroll.swipeLeft() } }
+        let row = app.scrollViews["native-pdf-palette-scroll"]
+        if !item.isHittable, row.exists { row.swipeRight(); for _ in 0..<5 where !item.isHittable { row.swipeLeft() } }
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: item)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription); item.tap()
     }
