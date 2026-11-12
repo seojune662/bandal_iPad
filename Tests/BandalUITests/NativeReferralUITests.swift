@@ -7,7 +7,7 @@ import XCTest
 final class NativeReferralUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    private static let applied = "코드 적용됨 — 로그인하고 첫 과목을 만들면 AI 100회가 들어와요"
+    private static let applied = "코드 적용됨 — 로그인하고 첫 폴더를 만들면 AI 100회가 들어와요"
     private static let delete = String(repeating: XCUIKeyboardKey.delete.rawValue, count: 6)
 
     /// Onboarding's third step: a code that does not exist, one that does, and going on without one.
@@ -52,7 +52,7 @@ final class NativeReferralUITests: XCTestCase {
                 next.tap()
                 XCTAssertTrue(finish.waitForExistence(timeout: 10), app.debugDescription); finish.tap()
                 XCTAssertTrue(banner.waitForExistence(timeout: 10), app.debugDescription)
-                XCTAssertEqual(banner.label, "첫 과목을 만들면 AI 100회가 들어와요")
+                XCTAssertEqual(banner.label, "첫 폴더를 만들면 AI 100회가 들어와요")
                 XCTAssertTrue(app.buttons["native-new-course-empty"].isHittable, "The reminder leaves the course list on screen")
                 // It waits on this iPad: still there after a relaunch.
                 app.terminate(); app.launchArguments = ["--native-ui-testing", "--native-referral-fixture", "--native-referral-signed-out"] + Self.korean; app.launch()
@@ -88,7 +88,7 @@ final class NativeReferralUITests: XCTestCase {
             XCTAssertTrue(code.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertEqual(code.label, "내 초대 코드 BANDA2 복사")
             XCTAssertEqual(app.staticTexts["native-referral-count"].label, "초대 3 / 5 · 받은 AI 300회")
-            XCTAssertTrue(app.staticTexts["친구가 로그인하고 첫 과목을 만들면 둘 다 AI 100회"].exists)
+            XCTAssertTrue(app.staticTexts["친구가 로그인하고 첫 폴더를 만들면 둘 다 AI 100회"].exists)
             XCTAssertTrue(app.staticTexts["5명까지"].exists)
             let link = app.buttons["native-referral-copy-link"], share = app.descendants(matching: .any)["native-referral-share"]
             XCTAssertEqual(link.label, "링크 복사"); XCTAssertEqual(share.label, "공유")
@@ -195,7 +195,7 @@ final class NativeReferralUITests: XCTestCase {
 
             app.buttons["native-settings-close"].tap()
             XCTAssertTrue(banner.waitForExistence(timeout: 10), app.debugDescription)
-            XCTAssertEqual(banner.label, "첫 과목을 만들면 AI 100회가 들어와요")
+            XCTAssertEqual(banner.label, "첫 폴더를 만들면 AI 100회가 들어와요")
             XCTAssertTrue(app.buttons["native-new-course-empty"].isHittable)
             capture("사이드바 배너 (\(name))")
 
@@ -291,7 +291,7 @@ final class NativeReferralUITests: XCTestCase {
         XCTAssertTrue(apply.waitForExistence(timeout: 25), app.debugDescription)
         XCTAssertEqual(apply.label, "Apply this code"); apply.tap()
         XCTAssertTrue(applied.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(applied.label, "Code applied — sign in and create your first course to get 100 AI uses")
+        XCTAssertEqual(applied.label, "Code applied — sign in and create your first folder to get 100 AI uses")
         XCTAssertTrue(app.staticTexts["Do you have an invite code?"].exists)
         XCTAssertEqual(app.descendants(matching: .any)["native-onboarding-dots"].label, "Step 4 of 6")
         XCTAssertEqual(field.label, "Invite code")
@@ -314,7 +314,7 @@ final class NativeReferralUITests: XCTestCase {
         XCTAssertTrue(code.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(code.label, "Copy my invite code BANDA2")
         XCTAssertEqual(app.staticTexts["native-referral-count"].label, "Invited 3 of 5 · 300 AI uses received")
-        XCTAssertTrue(app.staticTexts["When a friend signs in and creates their first course, you both get 100 AI uses"].exists)
+        XCTAssertTrue(app.staticTexts["When a friend signs in and creates their first folder, you both get 100 AI uses"].exists)
         XCTAssertTrue(app.staticTexts["Up to 5 friends"].exists)
         XCTAssertEqual(app.buttons["native-referral-copy-link"].label, "Copy link")
         XCTAssertEqual(app.descendants(matching: .any)["native-referral-share"].label, "Share")
@@ -335,7 +335,7 @@ final class NativeReferralUITests: XCTestCase {
         app.buttons["native-settings-close"].tap()
         let banner = app.staticTexts["native-referral-banner"]
         XCTAssertTrue(banner.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(banner.label, "Create your first course to get 100 AI uses")
+        XCTAssertEqual(banner.label, "Create your first folder to get 100 AI uses")
         app.buttons["native-course-add-menu"].tap()
         let course = app.textFields["native-course-name"]
         XCTAssertTrue(course.waitForExistence(timeout: 5), app.debugDescription); course.tap(); course.typeText("Physics\n")
