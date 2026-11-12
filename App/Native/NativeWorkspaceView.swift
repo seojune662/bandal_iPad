@@ -267,6 +267,9 @@ struct NativeWorkspaceView: View {
                 if compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) && showsWorkspace && annotation.request == nil {
                     HStack(spacing: 0) {
                         courseSidebar.frame(width: min(320, geometry.size.width - 48))
+                            // Over the paper, not the wallpaper: carry the window's stretch of the backdrop along, so the glass matches the pinned panel.
+                            .background { NativeBackdropUnderlay(windowSize: geometry.size, leadingInset: NativeDesktopTheme.navigationWidth) }
+                            .mask { Rectangle().padding(.vertical, -60) }
                             .nativeWorkspacePreviewExcluded(occludesContent: true)
                             .overlay(alignment: .trailing) { railDivider }
                             .transition(.move(edge: .leading))
@@ -288,6 +291,9 @@ struct NativeWorkspaceView: View {
                         .padding(.top, NativeWorkspaceWindowControls.inspectorTop)
                         .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
                         .background(NativeGlass.panel)
+                        // The drawer may float over the paper; the window's own stretch of backdrop keeps its glass the pinned panel's.
+                        .background { NativeBackdropUnderlay(windowSize: geometry.size, alignment: .trailing) }
+                        .mask { Rectangle().padding(.vertical, -60) }
                         .overlay(alignment: .leading) { if rightVisible && !chrome.rightPinned { railDivider } }
                         // Off the window's edge while closed, and opaque on the way: a fade would show the wallpaper through the glass.
                         // It turns clear only once the slide is over, which is what takes its UIKit host out of the accessibility tree.
