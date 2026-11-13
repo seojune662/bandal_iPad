@@ -276,4 +276,56 @@ final class NativePDFPaletteTests: XCTestCase {
             }
         }
     }
+
+    /// The pill sits on the page's centre while its room allows, otherwise right of the thumbnails button,
+    /// and it is placed by layout alone: the same answers the window used to work out from the pill's measured frame.
+    func testThePillIsPlacedOnThePageCentreAsFarAsItsRoomAllows() {
+        let bias = (NativePDFFloatingPalette.trailingReserve - NativePDFFloatingPalette.leadingReserve) / 2
+        XCTAssertEqual(bias, -41)
+        func origin(_ width: CGFloat, room: CGFloat = 600, bias: CGFloat = bias) -> CGFloat { NativePDFPalettePlacement.origin(width: width, room: 0...room, bias: bias) }
+        XCTAssertEqual(origin(300), 109, "Room to spare: the pill's middle is the page's, 41 pt left of the room's")
+        XCTAssertEqual(origin(560), 0, "20 pt each side is less than the 41 pt it would move: it keeps to the room's left edge")
+        XCTAssertEqual(origin(600), 0)
+        XCTAssertEqual(origin(700), 0, "A row wider than its room starts at the left edge, clear of the thumbnails button")
+        XCTAssertEqual(origin(300, bias: 0), 150, "A pane's own palette sits on the middle of its room")
+        XCTAssertEqual(origin(93), 212.5, "The collapsed pill")
+        // What the offset from the measured frame gave: the room's left edge, plus the spare room, less what it moved toward the page's centre.
+        for width in stride(from: CGFloat(80), through: 640, by: 7) {
+            let spare = max(0, 600 - width) / 2
+            XCTAssertEqual(origin(width), spare - min(spare, 41), accuracy: 0.001, "\(width)")
+        }
+    }
+
+    /// The row an 11-inch iPad gives a PDF with both side panels open: narrower than any the suites ran at on the
+    /// 13-inch simulator, and the only one that slides its colours or scrolls whole. 1.4.2 (30) hung there on iPadOS 27.
+    func testTheRowBetweenBothPanelsSlidesItsColoursOnAnElevenInchPadAndFitsWholeOnAThirteenInchOne() {
+        func room(_ window: Double) -> CGFloat {
+            let chrome = NativeWorkspaceChromeLayout(width: window, leftOpen: true, rightOpen: true)
+            XCTAssertTrue(chrome.leftPinned && chrome.rightPinned, "\(window)")
+            let centre = CGFloat(window - 48 - 2 - chrome.leftWidth - chrome.rightWidth)
+            return centre - NativeDockCard.inset * 2 - NativePDFFloatingPalette.leadingReserve - NativePDFFloatingPalette.trailingReserve
+        }
+        XCTAssertEqual(room(1376), 616); XCTAssertEqual(room(1210), 450); XCTAssertEqual(room(1194), 434); XCTAssertEqual(room(1180), 420)
+        let wide = NativePDFFloatingPalette.stage(fitting: room(1376), slots: 3)
+        XCTAssertEqual(wide?.tools, 5.5); XCTAssertNil(wide?.colors, "13-inch: every tool cell and every colour")
+        let narrow = NativePDFFloatingPalette.stage(fitting: room(1210), slots: 3)
+        XCTAssertEqual(narrow?.tools, 2.5); XCTAssertEqual(narrow?.colors, 1, "11-inch Pro (M4 and later): the colours slide in a strip one swatch wide")
+        XCTAssertNil(NativePDFFloatingPalette.stage(fitting: room(1194), slots: 3), "11-inch Pro before the M4: the whole row scrolls")
+        XCTAssertNil(NativePDFFloatingPalette.stage(fitting: room(1180), slots: 3), "11-inch Air: the whole row scrolls")
+        // A panel dragged narrower gives the older 11-inch Pro the sliding colours too.
+        let dragged = NativeWorkspaceChromeLayout(width: 1194, leftOpen: true, rightOpen: true, leftRequested: 200, rightRequested: 320)
+        let span = CGFloat(1194 - 48 - 2 - dragged.leftWidth - dragged.rightWidth) - NativeDockCard.inset * 2 - NativePDFFloatingPalette.leadingReserve - NativePDFFloatingPalette.trailingReserve
+        XCTAssertEqual(NativePDFFloatingPalette.stage(fitting: span, slots: 3)?.colors, 2)
+    }
+
+    func testAStripFadesOnlyTheEdgesThatHaveCellsBeyondThem() {
+        typealias Edges = NativePDFPaletteStripEdges
+        // One swatch and the start of the next in view (42 pt), three swatches in all (98 pt).
+        XCTAssertEqual(Edges.resolve(offset: 0, container: 42, content: 98), Edges(leading: false, trailing: true))
+        XCTAssertEqual(Edges.resolve(offset: 30, container: 42, content: 98), Edges(leading: true, trailing: true))
+        XCTAssertEqual(Edges.resolve(offset: 56, container: 42, content: 98), Edges(leading: true, trailing: false))
+        XCTAssertEqual(Edges.resolve(offset: 0, container: 98, content: 98), Edges(), "Cells that all fit fade neither edge")
+        XCTAssertEqual(Edges.resolve(offset: 0.5, container: 97.5, content: 98), Edges(), "Half a point is not another cell")
+        XCTAssertEqual(Edges.resolve(offset: 0, container: 42, content: 0), Edges(), "A strip not laid out yet")
+    }
 }
