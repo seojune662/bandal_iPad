@@ -143,10 +143,11 @@ final class NativeAssistantSession: ObservableObject {
             // UI tests have no signed-in AI: one stored answer with two sources stands in for a finished turn.
             if ProcessInfo.processInfo.arguments.contains("--native-ai-answer-fixture"), messages.isEmpty {
                 _ = try await store.invokePrivate("nativeChat:begin",identity.merging(["content":"이 노트 핵심만 요약해 줘"]) { _,new in new })
-                _ = try await store.invokePrivate("nativeChat:finish",["courseId":context.courseID,"sessionId":sessionID,"turnSeq":1,"text":"• 인터뷰 5명 중 4명이 ‘첫 화면이 복잡하다’고 답함\n• 다음 주: 팔레트 시안 2종 비교",
+                _ = try await store.invokePrivate("nativeChat:finish",["courseId":context.courseID,"sessionId":sessionID,"turnSeq":1,"text":NativeAnswerMarkdownFixture.enabled ? NativeAnswerMarkdownFixture.answer : "• 인터뷰 5명 중 4명이 ‘첫 화면이 복잡하다’고 답함\n• 다음 주: 팔레트 시안 2종 비교",
                     "sources":[["courseId":context.courseID,"relPath":"새 노트.pdf","page":2],["courseId":context.courseID,"relPath":"강의자료.pdf","page":12]]])
                 try await open()
             }
+            playMarkdownStreamFixture()
             #endif
             try restorePendingCaptures()
             await checkAvailability()

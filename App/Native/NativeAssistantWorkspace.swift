@@ -262,9 +262,11 @@ struct NativeAssistantPanel: View {
     private func answer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(alignment:.leading,spacing:look.answerGap) { answerLabel; content() }.frame(maxWidth:.infinity,alignment:.leading)
     }
+    /// The answer's Markdown (`NativeAnswerMarkdownView`). The one still arriving is the stream while a turn runs;
+    /// a link opens in a browser tab of the app.
     private func answerText(_ text: String) -> some View {
-        Text(.init(text)).font(.system(size:look.text)).assistantLine(look.text,look.lineHeight).foregroundStyle(NativeDesktopTheme.text)
-            .textSelection(.enabled).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading)
+        NativeAnswerMarkdownView(text:text,streaming:session.running && text == session.stream,size:look.text,lineHeight:look.lineHeight,
+                                 openLink:{ [store] url in NativeAnswerLink.open(url,store:store) }).equatable()
     }
     /// A3: the mark, three dots and what is being read.
     private var waitingRow: some View {
