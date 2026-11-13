@@ -313,11 +313,23 @@ struct NativeAssistantPanel: View {
               detachedDocumentID != document.id, canAnnotate else { return }
         perform { try await session.pin(document) }
     }
-    /// The note draws the memo and its "노트에 넣었어요 | 되돌리기" toast on the paper (A5).
+    /// The note draws the memo and its "노트에 넣었어요 | 되돌리기" toast on the paper (A5), next to the passage or
+    /// area the question was asked about (its attachments), when there is one.
     private func insertIntoNote(_ message: NativeChatMessage) {
         guard let document = insertableDocument else { return }
-        store.events.send(NativeWorkspaceEvent(channel:"nativeWorkspace:insertAINote",payload:["courseId":document.courseID,"relPath":document.relativePath,"tabID":document.id,"text":message.text,
-            "model":session.catalog.label(session.effectiveModel),"sources":message.sources.count]))
+        #if DEBUG
+        // UI tests have no AI to call draw_diagram, or to write an answer longer than a page: these stand in.
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--native-ai-diagram-fixture") {
+            Task { _ = try? await NativeAIDiagram.draw(NativeAIDiagram.fixture,document:["courseId":document.courseID,"relPath":document.relativePath,"kind":"pdf"]) { store.events.send(NativeWorkspaceEvent(channel:$0,payload:$1)) } }
+            return
+        }
+        let text = arguments.contains("--native-ai-long-answer-fixture") ? Array(repeating:message.text,count:60).joined(separator:"\n") : message.text
+        #else
+        let text = message.text
+        #endif
+        store.events.send(NativeWorkspaceEvent(channel:"nativeWorkspace:insertAINote",payload:["courseId":document.courseID,"relPath":document.relativePath,"tabID":document.id,"text":text,
+            "model":session.catalog.label(session.effectiveModel),"sources":message.sources.count,"question":NativeAINoteTarget.question(for:message,in:session.messages)]))
     }
     /// A source that was renamed or deleted since the answer says so instead of opening an empty tab.
     private func open(_ source: NativeChatSource) {
