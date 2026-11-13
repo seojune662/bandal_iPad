@@ -1,4 +1,1 @@
-A new design for windows, tabs, the note screen, the pen palette and settings.
-Handwriting search: handwriting is recognised on your iPad and found by search and Find in document.
-Added window colours, paper choice for new notes, folder windows in the sidebar and a formatting bar for notes.
-Fixed PDF input getting stuck and other bugs.
+Fixed a freeze on 11-inch iPads (iPadOS 27) when a side panel opened beside a PDF.
