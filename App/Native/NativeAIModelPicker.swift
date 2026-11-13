@@ -68,6 +68,9 @@ struct NativeAIModelPill: View {
     var onAttachDocument: (() -> Void)?
     var onAnnotate: (() -> Void)?
     var canAnnotate = false
+    /// 짚어주기 on or off; nil while no PDF is open.
+    var onGuide: (() -> Void)?
+    var guiding = false
     @State private var open = false
     private static let popoverWidth: CGFloat = 300
 
@@ -101,7 +104,8 @@ struct NativeAIModelPill: View {
                                         onSelect: { selected, chosenEffort, closes in onSelect(selected, chosenEffort); if closes { open = false } },
                                         onOpenUsage: { open = false; onOpenUsage() },
                                         onAttachDocument: onAttachDocument.map { action in { open = false; action() } },
-                                        onAnnotate: onAnnotate.map { action in { open = false; action() } }, canAnnotate: canAnnotate)
+                                        onAnnotate: onAnnotate.map { action in { open = false; action() } }, canAnnotate: canAnnotate,
+                                        onGuide: onGuide.map { action in { open = false; action() } }, guiding: guiding)
                         .task { await onAppear() }
                 }
                 .padding(.leading, Self.popoverWidth / 2 - 8)
@@ -122,6 +126,8 @@ struct NativeAIModelPicker: View {
     var onAttachDocument: (() -> Void)?
     var onAnnotate: (() -> Void)?
     var canAnnotate = false
+    var onGuide: (() -> Void)?
+    var guiding = false
     /// The popover carries the 모델 heading; Settings has its own card title.
     var titled = true
     @ObservedObject private var usage = AIUsage.shared
@@ -142,10 +148,11 @@ struct NativeAIModelPicker: View {
             divider
             effortRow
             if let percent = usage.percent { divider; usageBlock(percent) }
-            if onAttachDocument != nil || onAnnotate != nil {
+            if onAttachDocument != nil || onAnnotate != nil || onGuide != nil {
                 divider
                 if let onAttachDocument { extra("현재 문서 첨부", "doc.text", action: onAttachDocument).accessibilityIdentifier("native-ai-attach-document") }
                 if let onAnnotate { extra("지목해서 질문", "scope", action: onAnnotate).disabled(!canAnnotate).accessibilityIdentifier("native-ai-annotate") }
+                if let onGuide { extra(guiding ? "짚어주기 끄기" : "PDF에서 짚어주기", "hand.point.up.left", action: onGuide).accessibilityIdentifier("native-ai-guide") }
             }
         }
     }

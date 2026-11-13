@@ -111,7 +111,10 @@ struct NativeAssistantPanel: View {
                           onOpenUsage:{ onOpenSettings("subscription") },
                           onAppear:{ await session.loadCatalog() },
                           onAttachDocument:attachableDocument.map { document in { perform { try await session.pin(document) } } },
-                          onAnnotate:onAnnotate,canAnnotate:canAnnotate)
+                          onAnnotate:onAnnotate,canAnnotate:canAnnotate,
+                          // 짚어주기 is offered with a PDF open, and points into that PDF.
+                          onGuide:insertableDocument.map { document in { session.draft.mode = session.draft.mode == .guide ? .chat : .guide; if session.draft.mode == .guide, session.draft.document?.id != document.id { perform { try await session.pin(document) } } } },
+                          guiding:session.draft.mode == .guide)
     }
     /// 새 대화 on a tap. The history, rename and delete the design has no button for open on a long press (owner's decision 1).
     private func newChatMenu<Label: View>(@ViewBuilder label: () -> Label) -> some View {
@@ -342,6 +345,7 @@ struct NativeAssistantPanel: View {
                         }
                     }
             }
+            if session.draft.mode == .guide, insertableDocument != nil { NativePDFGuideModeRow { session.draft.mode = .chat } }
             if session.draft.mode.pack != nil {
                 Button { showingOptions = true } label: {
                     HStack { Text(session.draft.mode.title).foregroundStyle(NativeDesktopTheme.text); Text("· \(session.draft.count)개 · \(session.draft.difficulty)").foregroundStyle(NativeDesktopTheme.secondary); Spacer(); Image(systemName:"slider.horizontal.3").foregroundStyle(NativeDesktopTheme.secondary) }.font(.caption).frame(minHeight:44)

@@ -2,9 +2,11 @@ import Foundation
 
 enum NativeAssistantMode: String, Codable, CaseIterable, Identifiable {
     case chat, quiz, flashcards, expectedExam = "expected-exam", summary, english
+    /// 짚어주기: the answer pointed out inside the open PDF (`NativePDFGuideTool`). Offered only while a PDF is open.
+    case guide
     var id: String { rawValue }
-    var title: String { switch self { case .chat: "대화"; case .quiz: "퀴즈"; case .flashcards: "플래시카드"; case .expectedExam: "예상문제"; case .summary: "요약"; case .english: "영어 읽기" } }
-    var pack: String? { switch self { case .chat, .english: nil; case .quiz, .expectedExam: "quiz"; case .flashcards: "flashcards"; case .summary: "summary" } }
+    var title: String { switch self { case .chat: "대화"; case .quiz: "퀴즈"; case .flashcards: "플래시카드"; case .expectedExam: "예상문제"; case .summary: "요약"; case .english: "영어 읽기"; case .guide: "짚어주기" } }
+    var pack: String? { switch self { case .chat, .english, .guide: nil; case .quiz, .expectedExam: "quiz"; case .flashcards: "flashcards"; case .summary: "summary" } }
     static let primary: [Self] = [.chat, .quiz, .flashcards, .expectedExam]
 }
 
