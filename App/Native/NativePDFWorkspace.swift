@@ -20,32 +20,21 @@ struct NativePDFWorkspace: View {
     /// The band under the palette: the thumbnails button at its right end, the recording bar in its middle.
     private var belowPalette: CGFloat { showsPalette ? paletteTop + NativePDFFloatingPalette.height + 8 : paletteTop }
     @AppStorage("native.pdf.paletteCollapsed") private var paletteCollapsed = false
-    /// The pane's own palette when the window does not float one.
-    @State private var panePaletteFrame = CGRect.zero
-    private var paletteFrame: CGRect {
-        guard showsPalette else { return .zero }
-        return paletteHost?.floats(tabID) == true ? paletteHost?.paletteFrame ?? .zero : panePaletteFrame
-    }
-    /// The window's palette floats over the side panels when it is wider than the page area:
-    /// a panel's header starts under it only where the pill really covers that panel.
-    private var pagesPanelTop: CGFloat {
-        paletteHost?.floats(tabID) == true && !paletteFrame.isEmpty && paletteFrame.minX < bodyFrame.minX - 0.5 ? belowPalette : 0
-    }
-    private var annotationRailTop: CGFloat {
-        paletteHost?.floats(tabID) == true && !paletteFrame.isEmpty && paletteFrame.maxX > bodyFrame.maxX + 0.5 ? belowPalette : 0
-    }
-    /// The thumbnails button sits at the page area's left, in the palette's row when the pill leaves room for it, otherwise under it.
-    private var viewButtonTop: CGFloat {
-        let room = paletteFrame.isEmpty || paletteFrame.minX - bodyFrame.minX >= NativePDFViewButton.leading + NativePDFViewButton.width + 8
-        return room ? paletteTop + (NativePDFFloatingPalette.height - NativePDFViewButton.size) / 2 : belowPalette
-    }
-    /// The bars in the band under the palette keep clear of the thumbnails button only when it sits in that band.
-    private var bandSideInset: CGFloat { viewButtonTop == belowPalette ? NativePDFViewButton.leading + NativePDFViewButton.width + 8 : 16 }
+    /// The thumbnails button sits at the page area's left, in the palette's row. The pill keeps
+    /// `NativePDFFloatingPalette.leadingReserve` clear for it whether the window floats the palette or the pane
+    /// draws its own, so the button never has to move and nothing here measures the pill.
+    private var viewButtonTop: CGFloat { paletteTop + (NativePDFFloatingPalette.height - NativePDFViewButton.size) / 2 }
+    /// The bars in the band under the palette keep clear of the thumbnails button only when it sits in that band,
+    /// which is when there is no palette above it.
+    private var bandSideInset: CGFloat { showsPalette ? 16 : NativePDFFloatingPalette.leadingReserve }
     /// The window draws the palette above the side panels; this pane only says where its page area is.
+    /// An entry that says what the host already holds is not written again: every write redraws the palette.
     private func registerPalette() {
         guard let paletteHost else { return }
-        if showsPalette, bodyFrame.width > 0 { paletteHost.entries[tabID] = .init(model: model, frame: bodyFrame, top: paletteTop) }
-        else if paletteHost.entries[tabID] != nil { paletteHost.entries[tabID] = nil }
+        if showsPalette, bodyFrame.width > 0 {
+            if let entry = paletteHost.entries[tabID], entry.model === model, entry.frame == bodyFrame, entry.top == paletteTop { return }
+            paletteHost.entries[tabID] = .init(model: model, frame: bodyFrame, top: paletteTop)
+        } else if paletteHost.entries[tabID] != nil { paletteHost.entries[tabID] = nil }
     }
 
     init(document: NativeDocumentReference, store: NativeWorkspaceStore, onOpenDocument: ((NativeDocumentReference) -> Void)? = nil) {
@@ -79,7 +68,7 @@ struct NativePDFWorkspace: View {
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     if model.showPages && visible {
-                        NativePDFPagesPanel(model: model).padding(.top, pagesPanelTop).frame(width: geometry.size.width < 700 ? 128 : 160)
+                        NativePDFPagesPanel(model: model).frame(width: geometry.size.width < 700 ? 128 : 160)
                         Divider()
                     }
                     ZStack {
@@ -99,7 +88,7 @@ struct NativePDFWorkspace: View {
                         }
                         .overlay(alignment: .top) {
                             if showsPalette, paletteHost?.floats(tabID) != true {
-                                NativePDFFloatingPalette(model: model, onFrame: { panePaletteFrame = $0 })
+                                NativePDFFloatingPalette(model: model)
                                     .padding(.leading, NativePDFFloatingPalette.leadingReserve).padding(.trailing, NativePDFFloatingPalette.trailingReserve).padding(.top, paletteTop)
                             }
                         }
@@ -130,7 +119,7 @@ struct NativePDFWorkspace: View {
                             clearTop: belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
                     if model.showAnnotations && visible {
                         Divider()
-                        NativePDFAnnotationRail(model: model).padding(.top, annotationRailTop).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 220 : 280)
+                        NativePDFAnnotationRail(model: model).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 220 : 280)
                     }
                 }
                 .onChange(of: geometry.size.width, initial: true) { _, width in model.setAvailableWidth(width) }

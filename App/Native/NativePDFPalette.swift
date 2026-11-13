@@ -39,8 +39,6 @@ import SwiftUI
     /// `top`: the palette's distance from the top of the page area.
     struct Entry { let model: NativePDFWorkspaceModel; var frame: CGRect; var top = NativePDFFloatingPalette.top }
     var entries: [String: Entry] = [:]
-    /// The floating pill's own frame, global: the side panels only start under it where it actually covers them.
-    var paletteFrame = CGRect.zero
     /// A drawer covers the document, or another pane sits beside it: the palette stays inside its pane.
     var suspended = false
     func floats(_ id: String) -> Bool { !suspended && entries.count == 1 && entries[id] != nil }
@@ -57,15 +55,16 @@ struct NativePDFPaletteLayer: View {
                 // The pill has the page area's width, less the thumbnails button at its left and a margin at its
                 // right: it never spills over the side panels and never pushes that button down. With room to
                 // spare it sits on the page's centre; short of room it keeps to the right of the button.
+                // Where it sits in that room is the palette's own layout (`NativePDFPalettePlacement`): nothing
+                // here waits for the pill to report its size.
                 let left = entry.frame.minX - origin.x + NativePDFFloatingPalette.leadingReserve
                 let span = max(0, entry.frame.width - NativePDFFloatingPalette.leadingReserve - NativePDFFloatingPalette.trailingReserve)
-                let spare = max(0, span - host.paletteFrame.width) / 2
-                let toPageCentre = min(spare, (NativePDFFloatingPalette.leadingReserve - NativePDFFloatingPalette.trailingReserve) / 2)
-                NativePDFFloatingPalette(model: entry.model, onFrame: { if host.paletteFrame != $0 { host.paletteFrame = $0 } }).frame(width: span)
+                NativePDFFloatingPalette(model: entry.model, bias: (NativePDFFloatingPalette.trailingReserve - NativePDFFloatingPalette.leadingReserve) / 2)
+                    .frame(width: span)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .offset(x: left - (host.paletteFrame.isEmpty ? 0 : toPageCentre), y: entry.frame.minY - origin.y + entry.top)
+                    .offset(x: left, y: entry.frame.minY - origin.y + entry.top)
             }
-        }.onChange(of: covered, initial: true) { _, value in host.suspended = value; if value { host.paletteFrame = .zero } }
+        }.onChange(of: covered, initial: true) { _, value in if host.suspended != value { host.suspended = value } }
     }
 }
 
@@ -73,8 +72,9 @@ struct NativePDFPaletteLayer: View {
 /// Collapsed (130:4713) it keeps only the current tool and colour.
 struct NativePDFFloatingPalette: View {
     var model: NativePDFWorkspaceModel
-    /// The pill's global frame, for the views that must stay clear of it.
-    var onFrame: ((CGRect) -> Void)? = nil
+    /// How far from the middle of its room the pill would rather sit (negative is left), room allowing:
+    /// the window's palette asks for the page's centre, which is left of its room's.
+    var bias: CGFloat = 0
     @AppStorage("native.pdf.paletteCollapsed") private var collapsed = false
     /// Its gap below the tab strip and its height: the 34 pt row and 5 pt above and below.
     static let top: CGFloat = 14, height: CGFloat = 44
@@ -95,7 +95,7 @@ struct NativePDFFloatingPalette: View {
         // The row takes its shape from the room it is given, read here before the pill is built: a pill asked
         // for its own width answers with the row it already drew, and a row too wide for the room never narrowed.
         GeometryReader { proxy in
-            pill(offered: proxy.size.width).frame(width: proxy.size.width, height: proxy.size.height)
+            NativePDFPalettePlacement(bias: bias) { pill(offered: proxy.size.width) }.frame(width: proxy.size.width, height: proxy.size.height)
         }
         .frame(height: Self.height)
         .foregroundStyle(NativeDesktopTheme.text).buttonStyle(.plain)
@@ -122,7 +122,6 @@ struct NativePDFFloatingPalette: View {
                 }.padding(.horizontal, Self.inset)
             }
         }.padding(.vertical, 5).bandalGlass(in: Capsule())
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onFrame?($0) }
     }
     private var mini: some View {
         Button { collapsed = false } label: {
@@ -137,6 +136,84 @@ struct NativePDFFloatingPalette: View {
                 Image(systemName: "chevron.up").font(.system(size: 16)).frame(width: 34, height: 34)
             }.padding(.horizontal, 6).contentShape(Rectangle())
         }.accessibilityLabel("팔레트 펼치기").accessibilityIdentifier("native-pdf-palette-expand")
+    }
+}
+
+/// Where the pill sits in the room it is given: on the room's middle moved by `bias`, as far as the room lets it.
+/// A pill as wide as the room (or wider) starts at the room's left edge.
+///
+/// This is layout and nothing else. The window's palette used to read the pill's measured frame back to work
+/// the same position out, which made every report of that frame another pass over the palette.
+struct NativePDFPalettePlacement: Layout {
+    var bias: CGFloat = 0
+    /// The pill's left edge in a room from `room.lowerBound` to `room.upperBound`.
+    static func origin(width: CGFloat, room: ClosedRange<CGFloat>, bias: CGFloat) -> CGFloat {
+        let middle = (room.lowerBound + room.upperBound) / 2
+        return max(room.lowerBound, min(room.upperBound - width, middle + bias - width / 2))
+    }
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let size = subviews.first?.sizeThatFits(proposal) ?? .zero
+        return CGSize(width: proposal.width ?? size.width, height: proposal.height ?? size.height)
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let pill = subviews.first else { return }
+        let offered = ProposedViewSize(width: bounds.width, height: bounds.height), size = pill.sizeThatFits(offered)
+        pill.place(at: CGPoint(x: Self.origin(width: size.width, room: bounds.minX...max(bounds.minX, bounds.maxX), bias: bias), y: bounds.midY),
+                   anchor: .leading, proposal: offered)
+    }
+}
+
+/// Which edges of a sliding strip have cells waiting beyond them.
+struct NativePDFPaletteStripEdges: Equatable {
+    var leading = false, trailing = false
+    /// For a strip `container` wide showing cells `content` wide in all, scrolled `offset` from their start.
+    static func resolve(offset: CGFloat, container: CGFloat, content: CGFloat) -> NativePDFPaletteStripEdges {
+        .init(leading: offset > 1, trailing: offset + container < content - 1)
+    }
+}
+
+/// A strip of the palette that slides sideways under fading edges, keeping the cell `selection` names in view.
+///
+/// The fades are this view's own state, and a change of one redraws the mask and nothing else: the cells are
+/// built by the row and handed in, so they stay as they are. The fades used to be the row's state, so each
+/// change rebuilt every button of the row, this strip's cells among them, from inside the strip's own report
+/// of its scroll geometry. 1.4.2 (30) hung there on iPadOS 27.0.1: an 11-inch iPad's logs show one view update
+/// rebuilding the row's tools and its colour strip without end once the second side panel opened beside a PDF.
+struct NativePDFPaletteStrip<Content: View>: View {
+    /// The id of the cell to keep in view.
+    let selection: String
+    let width: CGFloat
+    /// How wide each edge fades when more cells wait beyond it.
+    let fade: CGFloat
+    /// The strip stops on a cell's edge.
+    var aligned = false
+    let identifier: String
+    @ViewBuilder let content: Content
+    @State private var more = NativePDFPaletteStripEdges()
+    var body: some View {
+        ScrollViewReader { reader in
+            scroller
+                .onScrollGeometryChange(for: NativePDFPaletteStripEdges.self) {
+                    .resolve(offset: $0.contentOffset.x, container: $0.containerSize.width, content: $0.contentSize.width)
+                } action: { _, value in if more != value { more = value } }
+                .mask {
+                    HStack(spacing: 0) {
+                        LinearGradient(colors: [.black.opacity(more.leading ? 0 : 1), .black], startPoint: .leading, endPoint: .trailing).frame(width: fade)
+                        Color.black
+                        LinearGradient(colors: [.black, .black.opacity(more.trailing ? 0 : 1)], startPoint: .leading, endPoint: .trailing).frame(width: fade)
+                    }
+                }
+                .frame(width: width)
+                .padding(.vertical, -5)
+                // A cell chosen elsewhere (Pencil double-tap, a shortcut) slides into view; the first placing does not animate.
+                .onChange(of: selection, initial: true) { old, id in
+                    if old == id { reader.scrollTo(id) } else { withAnimation(.easeOut(duration: 0.2)) { reader.scrollTo(id) } }
+                }
+        }.accessibilityElement(children: .contain).accessibilityIdentifier(identifier)
+    }
+    @ViewBuilder private var scroller: some View {
+        let scroll = ScrollView(.horizontal, showsIndicators: false) { content }
+        if aligned { scroll.scrollTargetBehavior(.viewAligned) } else { scroll }
     }
 }
 
@@ -167,10 +244,6 @@ struct NativePDFPaletteQuickControls: View {
         // Every swatch and ＋ are children of the row themselves.
         return fixed + swatch * CGFloat(slots + 1) + spacing * CGFloat(slots + 11)
     }
-    @State private var moreColorsLeft = false
-    @State private var moreColorsRight = false
-    @State private var moreLeft = false
-    @State private var moreRight = false
     var body: some View {
         // History · tools · colours · thicknesses stay put; only the tool strip slides.
         HStack(spacing: Self.spacing) {
@@ -196,52 +269,20 @@ struct NativePDFPaletteQuickControls: View {
     /// A tool chosen elsewhere (Pencil double-tap, a shortcut) scrolls just enough to come into view.
     private var toolStrip: some View {
         let cell = NativePDFPaletteLook.cell, shown = shownTools.rounded(.down), partial = shownTools - shown
-        let selected = model.isPenLike ? "pen" : model.tool
-        return ScrollViewReader { reader in
-            ScrollView(.horizontal, showsIndicators: false) {
-                // 5 pt above and below: the pill's padding is part of each tool's tap area.
-                HStack(spacing: Self.spacing) { toolButtons }.scrollTargetLayout().padding(.vertical, 5)
-            }
-            .scrollTargetBehavior(.viewAligned)
-            .onScrollGeometryChange(for: [Bool].self) { geometry in
-                [geometry.contentOffset.x > 1, geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1]
-            } action: { _, edges in moreLeft = edges[0]; moreRight = edges[1] }
-            .mask {
-                HStack(spacing: 0) {
-                    LinearGradient(colors: [.black.opacity(moreLeft ? 0 : 1), .black], startPoint: .leading, endPoint: .trailing).frame(width: 14)
-                    Color.black
-                    LinearGradient(colors: [.black, .black.opacity(moreRight ? 0 : 1)], startPoint: .leading, endPoint: .trailing).frame(width: 14)
-                }
-            }
-            .frame(width: cell * (shown + partial) + Self.spacing * shown)
-            .padding(.vertical, -5)
-            .onChange(of: selected, initial: true) { _, tool in
-                withAnimation(.easeOut(duration: 0.2)) { reader.scrollTo(tool) }
-            }
-        }.accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-tool-scroll")
+        return NativePDFPaletteStrip(selection: model.isPenLike ? "pen" : model.tool, width: cell * (shown + partial) + Self.spacing * shown,
+                                     fade: 14, aligned: true, identifier: "native-pdf-tool-scroll") {
+            // 5 pt above and below: the pill's padding is part of each tool's tap area.
+            HStack(spacing: Self.spacing) { toolButtons }.scrollTargetLayout().padding(.vertical, 5)
+        }
     }
     /// The swatches in a strip `count` wide that slides, the chosen one scrolled into view; ＋ stays outside it.
     private func colorStrip(_ count: Int) -> some View {
         let slots = model.usesColorSlots ? model.colorSlots : model.palette.colors(for: model.penKind)
         let width = CGFloat(count) * 30 + CGFloat(max(0, count - 1)) * Self.spacing + (slots.count > count ? 12 : 0)
         return HStack(spacing: Self.spacing) {
-            ScrollViewReader { reader in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Self.spacing) { swatches }.padding(.vertical, 5)
-                }
-                .onScrollGeometryChange(for: [Bool].self) { geometry in
-                    [geometry.contentOffset.x > 1, geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1]
-                } action: { _, edges in moreColorsLeft = edges[0]; moreColorsRight = edges[1] }
-                .mask {
-                    HStack(spacing: 0) {
-                        LinearGradient(colors: [.black.opacity(moreColorsLeft ? 0 : 1), .black], startPoint: .leading, endPoint: .trailing).frame(width: 10)
-                        Color.black
-                        LinearGradient(colors: [.black, .black.opacity(moreColorsRight ? 0 : 1)], startPoint: .leading, endPoint: .trailing).frame(width: 10)
-                    }
-                }
-                .frame(width: width).padding(.vertical, -5)
-                .onChange(of: model.activeColor, initial: true) { _, color in withAnimation(.easeOut(duration: 0.2)) { reader.scrollTo("color-" + color) } }
-            }.accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-color-scroll")
+            NativePDFPaletteStrip(selection: "color-" + model.activeColor, width: width, fade: 10, identifier: "native-pdf-color-scroll") {
+                HStack(spacing: Self.spacing) { swatches }.padding(.vertical, 5)
+            }
             addColor
         }
     }
