@@ -160,6 +160,8 @@ final class NativeQuickLookupAuto {
     var center: NativeQuickLookupCenter = .shared
     var resolver: NativeQuickLookupAutoResolver
     var explainer = NativeQuickLookupExplainer()
+    /// The decision step for passages (NativeQuickLookupDecide.swift), asked before AI 설명.
+    var decider = NativeQuickLookupDecider()
     var engine: (NativeWorkspaceStore?) async -> String = { store in
         ((try? await store?.invoke("settings:get")) as? [String: Any])?["browserSearchEngine"] as? String ?? "google"
     }
@@ -188,8 +190,10 @@ final class NativeQuickLookupAuto {
             guard let config = self?.aiConfig else { throw AIError.server(code: "AI_UNAVAILABLE", info: [:]) }
             return try await config()
         }
+        decider.config = explainer.config
         #if DEBUG
         NativeQuickLookupAutoFixture.install(on: self)
+        NativeQuickLookupDecideFixture.install(on: self)
         #endif
     }
     /// The ai-proxy's models and consents, through the store (cached there).
@@ -276,7 +280,7 @@ final class NativeQuickLookupAuto {
             return
         case .on: break
         }
-        let key = [source.text, source.heading ?? "", explainer.wouldTry(source.text) ? "ai" : ""].joined(separator: "\u{1}")
+        let key = [source.text, source.heading ?? "", explainer.wouldTry(source.text) ? "ai" : "", decider.wouldTry(source.text) ? "decide" : ""].joined(separator: "\u{1}")
         if let cached = cache.lookup(key) {
             guard let content = cached else { return }
             lookupOwner = source.owner
@@ -304,6 +308,7 @@ final class NativeQuickLookupAuto {
     /// AI 설명 when the passage gets one in time, else the lookup without a model. No content: no card;
     /// `final` says whether that answer holds next time (false after a failure).
     func resolve(_ source: Source) async -> (content: NativeQuickLookupAutoContent?, final: Bool) {
+        if let decided = await resolveByDecision(source) { return decided }
         if let answer = await explainer.explain(text: source.text, heading: source.heading, title: source.title) {
             // The model found nothing worth a card.
             guard case .explanation(let explanation) = answer else { return (nil, true) }

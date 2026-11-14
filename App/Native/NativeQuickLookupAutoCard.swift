@@ -159,11 +159,16 @@ struct NativeQuickLookupConsentCard: View {
 struct NativeQuickLookupSettingsGroup: View {
     @AppStorage(NativeQuickLookupPreferences.autoKey) private var auto: Bool?
     @AppStorage(NativeQuickLookupPreferences.explainKey) private var explains = NativeQuickLookupPreferences.explainsByDefault
-    init() { _ = NativeQuickLookupPreferences.ready }
+    @AppStorage(NativeQuickLookupPreferences.decideKey) private var decides = NativeQuickLookupPreferences.decidesByDefault
+    init() { _ = NativeQuickLookupPreferences.ready; _ = NativeQuickLookupPreferences.decideReady }
     var body: some View {
         NativeSettingsGroup(title: "찾아보기", description: "단어 하나는 내장 사전, 그 밖은 위키백과에서 찾아요. AI 설명은 Plus·Pro에서 여러 줄을 골랐을 때만, 이미 동의한 AI 제공사의 가장 저렴한 모델로 한 번 보내요. 하루 Plus 30회, Pro 100회까지예요.") {
             NativeSettingsToggle(title: "글을 고르면 자동으로 찾아보기", note: "선택한 글이 위키백과로 전송돼요",
                                  isOn: Binding(get: { auto == true }, set: { auto = $0 })).accessibilityIdentifier("native-settings-auto-lookup")
+            NativeSettingsToggle(title: "여러 줄은 AI가 맞는 문서 고르기",
+                                 note: "OpenAI에 동의했다면 고른 글과 위키백과 후보가 반달 서버를 거쳐 OpenAI로 전송돼요. 하루 무료 5회, Plus 50회, Pro 150회",
+                                 isOn: $decides)
+                .disabled(auto != true).accessibilityIdentifier("native-settings-lookup-decide")
             NativeSettingsToggle(title: "여러 줄은 AI가 짧게 설명", note: "선택한 글이 반달 서버를 거쳐 AI 제공사로 전송돼요", isOn: $explains)
                 .disabled(auto != true).accessibilityIdentifier("native-settings-auto-lookup-ai")
         }
