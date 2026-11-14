@@ -102,7 +102,7 @@ final class NativeLookupDecisionsUITests: XCTestCase {
         editor.typeText("\n" + text)
         // A selection right after typing counts as part of the typing.
         sleep(1)
-        editor.typeKey(.leftArrow, modifierFlags: [.shift, .command])
+        XCTAssertTrue(app.selectCaretLine(in: editor), "⇧⌘← left nothing selected in the note\n" + app.debugDescription)
     }
 
     @discardableResult

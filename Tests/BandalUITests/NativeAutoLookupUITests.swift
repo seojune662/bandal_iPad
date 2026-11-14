@@ -105,7 +105,7 @@ final class NativeAutoLookupUITests: XCTestCase {
 
         // Nothing found: one line to search the web, no page loaded by itself.
         sleep(1)
-        editor.typeKey(.leftArrow, modifierFlags: [.shift, .command])
+        XCTAssertTrue(app.selectCaretLine(in: editor), "⇧⌘← left nothing selected in the note\n" + app.debugDescription)
         let search = expectCard("auto-search", in: app)
         XCTAssertTrue(search.buttons["native-quick-lookup-open"].label.contains("웹에서 검색"), search.buttons["native-quick-lookup-open"].label)
         XCTAssertFalse(app.webViews["native-quick-lookup-preview"].exists)
@@ -226,7 +226,7 @@ final class NativeAutoLookupUITests: XCTestCase {
         editor.typeText("\n" + text)
         // A selection right after typing counts as part of the typing.
         sleep(1)
-        editor.typeKey(.leftArrow, modifierFlags: [.shift, .command])
+        XCTAssertTrue(app.selectCaretLine(in: editor), "⇧⌘← left nothing selected in the note\n" + app.debugDescription)
     }
 
     @MainActor private func backToTab(_ title: String, in app: XCUIApplication) {
