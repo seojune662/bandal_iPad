@@ -121,6 +121,8 @@ struct NativePDFWorkspace: View {
                             .padding(.top, paletteTop + NativePDFFloatingPalette.height + 8 + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
                         .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame,
                             clearTop: belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
+                        // 짚어주기: the AI's steps pointed out on the page.
+                        .overlay { if visible { NativePDFGuideOverlay(guide: model.guide, top: belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
                     if model.showAnnotations && visible {
                         Divider()
                         NativePDFAnnotationRail(model: model).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 220 : 280)
@@ -537,6 +539,7 @@ final class NativePDFWorkspaceModel {
         ["surfaceId": surfaceID, "generation": generation, "courseId": document.courseID, "relPath": document.relativePath]
     }
     private func call(_ command: String, _ request: [String: Any] = [:]) async throws -> Any {
+        if command == "navigate" || request["restoreViewport"] != nil { guide.interrupt() }
         guard let host else { throw NativePDFError.invalid("PDF 화면 연결이 닫혔습니다.") }
         return try await host.handle("pdfNative:" + command, request: identity.merging(request) { _, new in new })
     }
@@ -651,6 +654,7 @@ final class NativePDFWorkspaceModel {
     func setVisible(_ value: Bool) {
         guard value != visible else { return }
         visible = value
+        if !value { guide.suspend() }
         guard opened, !retired else { return }
         Task { do { try await publishLayout(); if !value { try await flush() } } catch { fail(error) } }
     }
@@ -672,6 +676,7 @@ final class NativePDFWorkspaceModel {
         do {
             _ = try await call("layout", request)
             if let saved, let requestedPage { acknowledgePendingPage(requestedPage, viewport: saved) }
+            guide.layoutApplied(visible: visible, ready: opened && !retired)
         }
         catch { if let saved { pendingViewportRestore = saved }; throw error }
         if setupComplete { restoreInput() }
@@ -805,6 +810,7 @@ final class NativePDFWorkspaceModel {
             guard errorMessage == nil else { return }
             Task { do { try await persistence.drain(); refreshHistory() } catch { fail(error) } }
         case "viewport":
+            if guide.hold(payload) { return }
             viewport = payload
             let nextZoom = (payload["zoom"] as? NSNumber)?.doubleValue ?? zoom
             if nextZoom != zoom { zoom = nextZoom }
@@ -835,7 +841,9 @@ final class NativePDFWorkspaceModel {
             guard pencilEraser, tool == "eraser" else { return }
             pencilEraser = false
             Task { @MainActor [weak self] in guard let self else { return }; self.chooseTool(self.previousTool) }
+        case "navigationGesture": guide.interrupt()
         case "activate":
+            guide.interrupt()
             // Pen-down must not trigger a SwiftUI pass or a host layout; assign only on change.
             if showStyle { showStyle = false }
             // A contact that begins after this editor was flushed must extend
@@ -2182,6 +2190,24 @@ final class NativePDFWorkspaceModel {
         search.currentPage = { [weak self] in self?.page ?? 1 }
         return search
     }()
+    /// 짚어주기 (`NativePDFGuidePlayer`): the AI's steps played over this document, holding the reading position meanwhile.
+    @ObservationIgnored private(set) lazy var guide: NativePDFGuidePlayer = {
+        let guide = NativePDFGuidePlayer(documentPath: document.relativePath)
+        guide.host = { [weak self] command, request in
+            guard let self else { throw CancellationError() }; return try await self.call(command, request)
+        }
+        guide.handwriting = { [weak self] page in
+            guard let self else { return [] }
+            return (try? await self.store.invokePrivate("nativeGuide:handwritingLines", ["courseId": self.document.courseID, "relPath": self.document.relativePath, "page": page])) as? [[String: Any]] ?? []
+        }
+        // The reader took over mid-step: the position they were left at is applied as it would have been.
+        guide.onRelease = { [weak self] latest in
+            guard let self, let latest else { return }
+            self.receive(["surfaceId": self.surfaceID, "generation": self.generation, "type": "viewport", "payload": latest])
+        }
+        guide.onRestoreLater = { [weak self] origin in self?.pendingViewportRestore = origin }
+        return guide
+    }()
     func exportPDF() {
         guard !isLoading, !isBusy, errorMessage == nil else { return }
         isBusy = true; host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
@@ -2260,7 +2286,7 @@ final class NativePDFWorkspaceModel {
             if let snapshot = self.snapshotTask { try await snapshot.value }
             // Read the host's exact position at the persistence barrier. The
             // coalesced UI event can still describe the previous page/zoom.
-            if let current = result["viewport"] as? [String: Any] { self.viewport = current }
+            if let current = result["viewport"] as? [String: Any] { self.viewport = self.guide.origin ?? current }
             var saved = self.viewport
             saved["courseId"] = self.document.courseID; saved["relPath"] = self.document.relativePath
             if !(saved as NSDictionary).isEqual(to: self.lastSavedViewport ?? [:]) {
@@ -2652,6 +2678,9 @@ final class NativePDFWorkspaceModel {
             guard let request = payload["request"] as? NativeAIDiagram.Request else { return }
             if visible { if request.claim() { insertAIDiagram(request) }; return }
             Task { @MainActor [weak self] in if let self, !self.retired, request.claim() { self.insertAIDiagram(request) } }
+        case NativePDFGuideTool.event:
+            guard assistantAnnotation == nil, errorMessage == nil, let steps = try? NativePDFGuideStep.list(payload["steps"]) else { return }
+            guide.play(steps, ready: visible && opened && !isLoading && !retired)
         case "nativeWorkspace:goToPage":
             if let tabID = payload["tabID"] as? String, tabID != document.id { return }
             guard let requested = payload["page"] as? Int, requested > 0 else { return }

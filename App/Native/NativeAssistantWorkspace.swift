@@ -126,7 +126,10 @@ struct NativeAssistantPanel: View {
                           onOpenUsage:{ onOpenSettings("subscription") },
                           onAppear:{ await session.loadCatalog() },
                           onAttachDocument:attachableDocument.map { document in { perform { try await session.pin(document) } } },
-                          onAnnotate:onAnnotate,canAnnotate:canAnnotate,arrowEdge:isFloating ? nil : .top)
+                          onAnnotate:onAnnotate,canAnnotate:canAnnotate,arrowEdge:isFloating ? nil : .top,
+                          // 짚어주기 is offered with a PDF open, and points into that PDF.
+                          onGuide:insertableDocument.map { document in { session.draft.mode = session.draft.mode == .guide ? .chat : .guide; if session.draft.mode == .guide, session.draft.document?.id != document.id { perform { try await session.pin(document) } } } },
+                          guiding:session.draft.mode == .guide)
     }
     /// 표시 방식: 사이드바 or 플로팅, the one in use checked. Both show this conversation; the workspace moves the panel.
     private var presentationMenu: some View {
@@ -412,6 +415,7 @@ struct NativeAssistantPanel: View {
                         }
                     }
             }
+            if session.draft.mode == .guide, insertableDocument != nil { NativePDFGuideModeRow { session.draft.mode = .chat } }
             if session.draft.mode.pack != nil {
                 Button { showingOptions = true } label: {
                     HStack { Text(session.draft.mode.title).foregroundStyle(NativeDesktopTheme.text); Text("· \(session.draft.count)개 · \(session.draft.difficulty)").foregroundStyle(NativeDesktopTheme.secondary); Spacer(); Image(systemName:"slider.horizontal.3").foregroundStyle(NativeDesktopTheme.secondary) }.font(.caption).frame(minHeight:44)

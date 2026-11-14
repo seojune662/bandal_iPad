@@ -244,6 +244,8 @@
 "PDF에 이미지 추가" = "Add image to PDF";
 "PDF에서 검색" = "Search in PDF";
 "PDF에서 사라진 페이지의 필기를 보존했습니다." = "Handwriting from pages no longer in the PDF is kept here.";
+"PDF에서 위치를 짚으며 설명해요" = "Points to each spot in the PDF as it explains";
+"PDF에서 짚어주기" = "Point It Out in the PDF";
 "PDF에서 찾기" = "Find in PDF";
 "PDF와 노트에는 Apple Pencil로 필기하고, 마크다운으로 정리하세요." = "Write on PDFs and notes with Apple Pencil, and organize your thoughts in Markdown.";
 "PDF와 노트에는 Apple Pencil로 필기할 수 있습니다." = "You can write on PDFs and notes with Apple Pencil.";
@@ -859,6 +861,7 @@
 "이전 페이지" = "Previous page";
 "인터넷에 연결할 수 없어 찾지 못했어요." = "Couldn't look it up without an internet connection.";
 "일시 정지" = "Pause";
+"일시정지" = "Pause";
 "일치하는 과목이 없어요" = "No matching courses";
 "일치하는 탭이 없어요" = "No matching tabs";
 "일치하는 탭이 없어요." = "No matching tabs.";
@@ -968,6 +971,9 @@
 "노트에 넣기" = "Add to note";
 "노트에 넣었어요" = "Added to the note";
 "복사" = "Copy";
+"짚어주기" = "Point It Out";
+"짚어주기 끄기" = "Turn Off Point It Out";
+"짚어주기 닫기" = "Close Point It Out";
 "찾는 중…" = "Looking up…";
 "찾아보기" = "Look Up";
 "추천" = "Recommended";
