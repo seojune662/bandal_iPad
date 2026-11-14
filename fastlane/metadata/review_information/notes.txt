@@ -1,4 +1,4 @@
-Version 1.4.4 adds AI inside notes, automatic Look Up, one Plans screen and a new in-app purchase, AI Credit (consumable). Labels below are Korean (English); the app follows the device language.
+Version 1.5.0 adds AI inside notes, automatic Look Up, one Plans screen and a new in-app purchase, AI Credit (consumable). Labels below are Korean (English); the app follows the device language.
 
 New in this version
 - AI panel (AI button, left rail): 사이드바 (Sidebar) or 플로팅 (Floating, a bar over the page), from the panel's 표시 방식 (Display mode) menu. Answers show lists, tables and math; links open in the in-app browser.

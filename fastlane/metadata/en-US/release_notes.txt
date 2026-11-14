@@ -1,1 +1,3 @@
-Fixed a freeze on 11-inch iPads (iPadOS 27) when a side panel opened beside a PDF.
+• AI inside notes: open it as a sidebar or floating bar, place answers in your note, or draw a simple diagram.
+• Look Up: select a word or passage and a dictionary or Wikipedia card appears by itself.
+• One Plans screen, where you can also buy AI Credit.
