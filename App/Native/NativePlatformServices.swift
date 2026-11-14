@@ -57,6 +57,8 @@ final class NativePlatformServices: ObservableObject {
                 catch { throw AIError.server(code: "SIGN_IN_REQUIRED", info: [:]) }
             })
         }
+        // 찾아보기's AI 설명 calls the same ai-proxy, quietly (NativeQuickLookupExplainer).
+        NativeQuickLookupExplainer.endpoint = aiEnvironment.endpoint
         store.schools = LiveSchoolDirectory(endpoint: aiEnvironment.endpoint, send: { [session = aiEnvironment.session] in try await session.data(for: $0) })
         store.referral.service = LiveReferralService(endpoint: aiEnvironment.endpoint, send: { [session = aiEnvironment.session] in try await session.data(for: $0) })
         #if DEBUG

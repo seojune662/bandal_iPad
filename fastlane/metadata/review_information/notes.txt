@@ -31,9 +31,9 @@ Unchanged from 1.4.0
 
 External services
 - Bandal server (auth.bandal.io / Supabase): account (ID, email, name, nickname); AI usage records; App Store transaction status; the invite code and which account invited which (account IDs only); the school directory.
-- Anthropic, OpenAI: AI requests after consent. Anthropic also runs the school website search (school name, country and app language only).
+- Anthropic, OpenAI: AI requests after consent. Anthropic also runs the school website search (school name, country and app language only). Optional "AI 설명" (AI explanation; off by default, Plus/Pro): a selected passage (up to 400 characters, its heading, the document title) goes once through our server to the cheapest model of a provider already agreed to, within the AI allowance; it never opens a purchase screen.
 - Apple: Sign in with Apple, In-App Purchase. Google: Sign in with Google, Google Drive API for sync.
-- Wikipedia (Wikimedia) and the search engine chosen in the app's browser settings: only when the user taps "찾아보기" (Look Up) on text they selected in a PDF or note. The selected text goes from the device straight to Wikipedia's summary API or to the search page shown in a small preview; nothing passes through our server, and the preview keeps no cookies or history.
+- Wikipedia (Wikimedia): "찾아보기" (Look Up). Automatic Look Up is asked once ("켜기" Turn On / "나중에" Later; off in Settings > AI > 찾아보기). Then printed text circled with the lasso in a PDF, or text selected in a note, goes from the device straight to Wikipedia's search API (the text or a key term from it, and the heading above; a generic app identifier, no user or device data, not through our server). The "찾아보기" button on selected text also opens the browser's search engine in a small preview without cookies or history.
 - No analytics, advertising or crash reporting. No device identifiers are collected.
 
 Not distributed in the EU or China mainland.
