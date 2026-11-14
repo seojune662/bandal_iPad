@@ -178,3 +178,22 @@ so showing it takes its height from the page.
 
 **Tests work around it.** `NativeQuickLookupUITests` brings the bar up with a first selection before the
 one it measures.
+
+---
+
+## 4. ⌘F does not open document search in a UI test
+
+Found 2026-11-14 (same on `main` d10f033: three feature branches that share nothing else fail the same way
+on the same simulator, iPad Air 13-inch, iOS 26.5).
+
+**Symptom.** `NativeSearchUITests.testDocumentSearch*` opens a PDF and sends ⌘F (`app.typeKey("f", .command)`).
+The search field (`native-pdf-search-field`) never appears. The view menu's PDF에서 찾기 opens it.
+
+**Not known.** Whether a hardware keyboard on a device is affected. Two routes answer ⌘F: a hidden SwiftUI
+button with `.keyboardShortcut("f")` in `NativePDFWorkspace.body` (for when focus is elsewhere) and the PDF
+view controller's `keyCommands` (when the page has the keyboard). The test presses the key before anything
+touched the page, so it depends on the first. The two Escape tests in `NativeWorkspaceWindowsUITests` fail
+on `main` in the same way (a key with nothing focused).
+
+**In the test.** `NativeSearchUITests.find(in:)` records the key as an expected failure and goes on through
+the view menu. When ⌘F works again XCTest reports the expected failure as not happening: take the fallback out then.

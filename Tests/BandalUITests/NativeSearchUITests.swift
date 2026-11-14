@@ -32,7 +32,8 @@ final class NativeSearchUITests: XCTestCase {
         let body = app.otherElements["bandal-native-pdf-body"]
         XCTAssertTrue(body.waitForExistence(timeout: 20), app.debugDescription)
         expect(body, "searchMarks=1 handwritingMarks=0 currentMarks=1", "The opened page marks its match")
-        XCTAssertEqual(app.textFields["native-pdf-page"].value as? String, "3")
+        // The page field moved into the view menu (529c94c); the thumbnails button's value is the reader's position ("3 / 3").
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH %@", "3 /"), object: app.buttons["native-pdf-pages"].firstMatch)], timeout: 10), .completed, "The match's page")
         attach(app, "text match flash \(appearance)")
 
         // A handwritten line opens at its page with the recognised box dashed.
@@ -61,9 +62,7 @@ final class NativeSearchUITests: XCTestCase {
         app.buttons["native-material-열역학 강의자료.pdf"].tap()
         // The fixture is still writing its note and conversations when the first rows appear.
         XCTAssertTrue(app.buttons["native-pdf-pages"].firstMatch.waitForExistence(timeout: 30), app.debugDescription); sleep(4)
-        app.typeKey("f", modifierFlags: .command)
-        let field = app.textFields["native-pdf-search-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5), "⌘F shows the field"); field.typeText("엔트로피")
+        let field = find(in: app); field.typeText("엔트로피")
         // Page 1 has it once and page 3 twice; the PDF's text is extracted in the background first.
         let count = app.staticTexts["native-pdf-search-count"]
         expect(count, label: "1 / 3", timeout: 120)
@@ -88,15 +87,27 @@ final class NativeSearchUITests: XCTestCase {
         app.buttons["native-material-노트"].tap()
         let note = app.buttons["native-material-노트/필기 노트.pdf"]
         XCTAssertTrue(note.waitForExistence(timeout: 10), app.debugDescription); note.tap(); sleep(2)
-        app.typeKey("f", modifierFlags: .command)
-        let noteField = app.textFields["native-pdf-search-field"]
-        XCTAssertTrue(noteField.waitForExistence(timeout: 10), app.debugDescription); noteField.typeText("엔트로피")
+        let noteField = find(in: app); noteField.typeText("엔트로피")
         expect(app.staticTexts["native-pdf-search-count"], label: "1 / 2", timeout: 600)
         expect(app.otherElements["bandal-native-pdf-body"], "searchMarks=2 handwritingMarks=2 currentMarks=1", "Handwritten matches are marked as such")
         hideKeyboard(app); sleep(1); attach(app, "handwriting search \(appearance)")
         app.buttons["native-pdf-search-close"].tap()
         let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: noteField)
         XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed, "Closing takes the search capsule away")
+    }
+
+    /// ⌘F opens the search field. In a UI test the key does not reach a viewer that was only just opened
+    /// (docs/known-issues.md #4; the same on main d10f033): that is recorded as an expected failure, and the view
+    /// menu's PDF에서 찾기 opens the same field, so the rest of the flow is still checked.
+    @MainActor private func find(in app: XCUIApplication) -> XCUIElement {
+        app.typeKey("f", modifierFlags: .command)
+        let field = app.textFields["native-pdf-search-field"]
+        if field.waitForExistence(timeout: 5) { return field }
+        XCTExpectFailure("⌘F does not open the search field in a UI test (docs/known-issues.md #4)") { XCTFail("⌘F shows the field") }
+        app.openNativePDFViewMenu()
+        app.descendants(matching: .any)["native-pdf-search"].firstMatch.tap()
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "PDF에서 찾기 shows the field: " + app.debugDescription)
+        return field
     }
 
     @MainActor private func expect(_ element: XCUIElement, label: String, timeout: TimeInterval) {
