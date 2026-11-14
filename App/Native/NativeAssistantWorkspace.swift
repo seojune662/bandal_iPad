@@ -303,7 +303,8 @@ struct NativeAssistantPanel: View {
             if message.interrupted { Button("요청 다시 준비") { session.restoreAttempt() }.font(.caption).frame(minHeight:44) }
         }.frame(maxWidth:.infinity,alignment:isUser ? .trailing : .leading)
             .padding(6).background(revealedMessageID == message.id ? NativeUnifiedSearchResults.matchTint.opacity(0.35) : .clear,in:RoundedRectangle(cornerRadius:10)).padding(-6)
-            .accessibilityIdentifier("native-assistant-message-" + message.id)
+            // A container: without this the row's identifier replaces its buttons' own (복사, 노트에 넣기).
+            .accessibilityElement(children:.contain).accessibilityIdentifier("native-assistant-message-" + message.id)
     }
     private func bubble(_ text: String) -> some View {
         Text(.init(text)).font(.system(size:look.text)).assistantLine(look.text,look.lineHeight).foregroundStyle(NativeDesktopTheme.onAccent)
