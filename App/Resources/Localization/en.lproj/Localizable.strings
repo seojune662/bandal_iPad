@@ -983,6 +983,7 @@
 "캘린더 연결 해제" = "Disconnect calendar";
 "캘린더 접근 허용" = "Allow calendar access";
 "코드 블록 언어" = "Code block language";
+"코드 복사" = "Copy code";
 "쿠키·사이트 저장소·캐시 삭제" = "Delete cookies, site storage and cache";
 "퀴즈나 카드를 만들면 원문과 함께 여기에 보관됩니다." = "Quizzes and cards you create are kept here with their source text.";
 "크기 %lld%%" = "Size %lld%%";
