@@ -68,6 +68,8 @@ struct NativeAIModelPill: View {
     var onAttachDocument: (() -> Void)?
     var onAnnotate: (() -> Void)?
     var canAnnotate = false
+    /// Where the picker may open: under the pill, or (nil) wherever it fits, for the floating AI card low on the screen.
+    var arrowEdge: Edge? = .top
     @State private var open = false
     private static let popoverWidth: CGFloat = 300
 
@@ -94,9 +96,9 @@ struct NativeAIModelPill: View {
         .buttonStyle(NativeAssistantButtonStyle()).disabled(disabled)
         .accessibilityLabel("AI 모델: " + Self.label(catalog, model: model, effort: effort)).accessibilityIdentifier("native-ai-model-pill")
         // The popover centres on its anchor: this one sits where the card's middle belongs.
-        .background(alignment: .bottomLeading) {
+        .background(alignment: arrowEdge == .top ? .bottomLeading : .topLeading) {
             Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
-                .bandalPopover(isPresented: $open, arrowEdge: .top, width: Self.popoverWidth, radius: 14, padding: 8) {
+                .bandalPopover(isPresented: $open, arrowEdge: arrowEdge, width: Self.popoverWidth, radius: 14, padding: 8) {
                     NativeAIModelPicker(catalog: catalog, model: model, effort: effort,
                                         onSelect: { selected, chosenEffort, closes in onSelect(selected, chosenEffort); if closes { open = false } },
                                         onOpenUsage: { open = false; onOpenUsage() },

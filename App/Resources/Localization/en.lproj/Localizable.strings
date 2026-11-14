@@ -396,6 +396,8 @@
 "답변" = "Answers";
 "답변 아래에 읽은 자료를 보여 줘요" = "Shows the materials an answer read, below it";
 "답변 언어" = "Answer language";
+"답변 접기" = "Collapse answer";
+"답변 펼치기" = "Expand answer";
 "답변을 받기 위해 다음 내용이 반달 서버를 거쳐 %@에 전송됩니다." = "To answer, the following is sent through the Bandal server to %@:";
 "답안 저장 중…" = "Saving answers…";
 "답안 저장됨" = "Answers saved";
@@ -1066,6 +1068,7 @@
 "폴더로 이동" = "Move to folder";
 "폴더에서 추가" = "Add from folder";
 "표 편집" = "Edit table";
+"표시 방식" = "Display mode";
 "표시 순서와 열리는 위치를 선택합니다. 보안 프로그램이 필요한 일부 사이트는 iPad에서 제공되지 않을 수 있습니다." = "Choose the order and where each site opens. Some sites that need security software may not work on iPad.";
 "표시할 캘린더" = "Calendars to show";
 "표현" = "Phrases";
@@ -1083,6 +1086,7 @@
 "플랜 선택" = "Choose a plan";
 "플러그인 관리" = "Manage plugins";
 "플러스는 과목·자료 무제한, 프로는 AI를 플러스의 4배" = "Plus: unlimited courses and materials. Pro: 4× the AI of Plus.";
+"플로팅" = "Floating";
 "필기 그대로 PDF 파일" = "A PDF file with your handwriting";
 "필기 글꼴" = "Editor font";
 "필기 다시 실행" = "Redo handwriting";

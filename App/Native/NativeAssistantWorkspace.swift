@@ -31,6 +31,12 @@ struct NativeAssistantPanel: View {
     /// "<message or draft>:<attachment id>": the same capture can sit in a message and in the draft.
     @State private var previewKey: String?
     @State private var showingArticleImport = false
+    /// 표시 방식: the workspace reads the same key to place the panel.
+    @AppStorage(NativeAssistantPresentation.key) private var presentation = NativeAssistantPresentation.sidebar
+    /// 플로팅: the card is folded to its header.
+    @State private var floatingFolded = false
+    /// 플로팅 rides above the keyboard only while its own input has it.
+    @FocusState private var composerFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var scheme
     private static let panelPrompts = ["이 노트 핵심만 요약해 줘", "시험에 나올 문제 3개 만들어 줘", "강의자료에서 관련 내용 찾아 줘"]
@@ -44,6 +50,7 @@ struct NativeAssistantPanel: View {
         _session = StateObject(wrappedValue:NativeAssistantSession(store:store,context:context))
     }
     private var isTab: Bool { style == .tab }
+    private var isFloating: Bool { style == .floating }
     private var look: NativeAssistantLook { isTab ? .tab : .panel }
     private var canAnnotate: Bool {
         guard let document = sourceDocument, document.learningTarget == nil else { return false }
@@ -55,13 +62,17 @@ struct NativeAssistantPanel: View {
 
     var body: some View {
         VStack(spacing:0) {
-            if isTab { tabBar } else { header }
-            errorRow
-            if isTab && isEmpty { tabWelcome } else { transcript; composerArea.frame(maxWidth:isTab ? Self.tabColumn : nil).padding(isTab ? EdgeInsets(top:24,leading:24,bottom:36,trailing:24) : EdgeInsets(top:14,leading:14,bottom:14,trailing:14)) }
+            if isFloating { floating } else {
+                if isTab { tabBar } else { header }
+                errorRow
+                if isTab && isEmpty { tabWelcome } else { transcript; composerArea.frame(maxWidth:isTab ? Self.tabColumn : nil).padding(isTab ? EdgeInsets(top:24,leading:24,bottom:36,trailing:24) : EdgeInsets(top:14,leading:14,bottom:14,trailing:14)) }
+            }
         }
             // Figma measures the composer from the screen's edge (14 pt, the tab 36), not from the home-indicator inset.
-            .ignoresSafeArea(.container,edges:.bottom)
-            .background(surface)
+            // Floating stays above the home indicator, and above the keyboard only while its own input has it:
+            // typing in a note or a web page leaves the bar under the keyboard instead of over the line being typed.
+            .ignoresSafeArea(isFloating ? (composerFocused ? [] : .keyboard) : .container,edges:.bottom)
+            .background(isFloating ? .clear : surface)
             .task { await session.start(); await consumePendingConversation(); consumeAttachments() }
             .onDisappear { session.flushDraft() }
             .bandalToast($toast)
@@ -71,6 +82,9 @@ struct NativeAssistantPanel: View {
             .onChange(of:store.pendingAssistantConversationIDs[context.id]) { _,_ in Task { await consumePendingConversation() } }
             .onChange(of:store.pendingAssistantRequests[context.id]) { _,_ in consumePendingRequest() }
             .onChange(of:session.ready) { _,ready in if ready { consumePendingRequest() } }
+            // A folded card opens again with the next question.
+            .onChange(of:session.sending) { _,sending in if sending { floatingFolded = false } }
+            .task { await session.playStreamFixture() }
             .onChange(of:scenePhase) { _,phase in if phase == .active { Task { await session.checkAvailability() } } else { session.flushDraft() } }
             .onReceive(store.events) { event in
                 // Signed in from the prompt: back to the same panel with the draft untouched.
@@ -80,14 +94,15 @@ struct NativeAssistantPanel: View {
 
     // MARK: Chrome
 
-    /// A1 header: one 50 pt row. Figma's row overflows its 18 pt trailing padding by 7, so the close mark sits 11 from the edge.
+    /// A1 header: one 50 pt row, the model on the left and the panel's controls on the right (the floating card's top too).
+    /// Figma's row overflows its 18 pt trailing padding by 7, so the close mark sits 11 from the edge.
     private var header: some View {
         HStack(spacing:8) {
-            Image(systemName:"sparkles").font(.system(size:17)).foregroundStyle(NativeDesktopTheme.accent).accessibilityHidden(true)
-            Text("AI 도우미").font(.system(size:17,weight:.semibold)).foregroundStyle(NativeDesktopTheme.text).lineLimit(1).fixedSize()
             modelPill
             Spacer(minLength:1)
+            presentationMenu
             newChatMenu { Image(systemName:"square.and.pencil").font(.system(size:15)).foregroundStyle(NativeDesktopTheme.secondary).assistantHitArea(10) }
+            if isFloating && hasTurn { foldButton }
             if let onClose {
                 Button(action:onClose) { Image(systemName:"xmark").font(.system(size:15)).foregroundStyle(NativeDesktopTheme.secondary).assistantHitArea(10) }
                     .buttonStyle(NativeAssistantButtonStyle()).accessibilityLabel("AI 닫기").accessibilityIdentifier("native-ai-close")
@@ -111,7 +126,48 @@ struct NativeAssistantPanel: View {
                           onOpenUsage:{ onOpenSettings("subscription") },
                           onAppear:{ await session.loadCatalog() },
                           onAttachDocument:attachableDocument.map { document in { perform { try await session.pin(document) } } },
-                          onAnnotate:onAnnotate,canAnnotate:canAnnotate)
+                          onAnnotate:onAnnotate,canAnnotate:canAnnotate,arrowEdge:isFloating ? nil : .top)
+    }
+    /// 표시 방식: 사이드바 or 플로팅, the one in use checked. Both show this conversation; the workspace moves the panel.
+    private var presentationMenu: some View {
+        Menu {
+            Picker(selection:$presentation) {
+                Label("사이드바",systemImage:NativeAssistantPresentation.sidebar.symbol).tag(NativeAssistantPresentation.sidebar)
+                Label("플로팅",systemImage:NativeAssistantPresentation.floating.symbol).tag(NativeAssistantPresentation.floating)
+            } label: { Text("표시 방식") }.pickerStyle(.inline)
+        } label: {
+            Image(systemName:presentation.symbol).font(.system(size:15)).foregroundStyle(NativeDesktopTheme.secondary).assistantHitArea(10)
+        }
+            .menuStyle(.button).buttonStyle(NativeAssistantButtonStyle())
+            .accessibilityLabel(Text("표시 방식")).accessibilityValue(presentation == .floating ? Text("플로팅") : Text("사이드바")).accessibilityIdentifier("native-ai-presentation")
+    }
+    /// 플로팅: the card folds to its header and opens again with the next question.
+    private var foldButton: some View {
+        Button { withAnimation(.easeOut(duration:0.2)) { floatingFolded.toggle() } } label: {
+            Image(systemName:floatingFolded ? "chevron.up" : "chevron.down").font(.system(size:14,weight:.medium)).foregroundStyle(NativeDesktopTheme.secondary).assistantHitArea(10)
+        }.buttonStyle(NativeAssistantButtonStyle())
+            .accessibilityLabel(floatingFolded ? Text("답변 펼치기") : Text("답변 접기")).accessibilityIdentifier("native-ai-floating-fold")
+    }
+    /// There is a turn to show: a message, an answer coming in, or one on its way.
+    private var hasTurn: Bool { !session.messages.isEmpty || !session.stream.isEmpty || session.running || session.sending }
+    /// 플로팅: the input as a small bar at the bottom centre of the document, the latest turn in a glass card above it.
+    private var floating: some View {
+        NativeAssistantFloatingStack(showsTranscript:hasTurn && !floatingFolded) {
+            VStack(spacing:0) { header; errorRow }
+        } transcript: {
+            floatingTranscript
+        } composer: {
+            composerArea
+        }
+    }
+    /// The question and its answer, streaming or done, through the panel's own rows; the whole conversation is in 사이드바.
+    private var floatingTranscript: some View {
+        let start = session.messages.lastIndex { $0.role == "user" } ?? max(0,session.messages.count - 1)
+        return VStack(alignment:.leading,spacing:look.messageGap) {
+            ForEach(session.messages[start...]) { message in messageRow(message) }
+            if !session.stream.isEmpty { answer { answerText(session.stream) } }
+            if (session.running || session.sending) && (session.stream.isEmpty || !session.activity.isEmpty) { waitingRow }
+        }.frame(maxWidth:.infinity,alignment:.leading)
     }
     /// 새 대화 on a tap. The history, rename and delete the design has no button for open on a long press (owner's decision 1).
     private func newChatMenu<Label: View>(@ViewBuilder label: () -> Label) -> some View {
@@ -414,14 +470,16 @@ struct NativeAssistantPanel: View {
             if isTab { attachMenu }
             TextField("",text:$session.draft.text,prompt:Text(LocalizedStringKey(session.draft.mode.title == "대화" ? "무엇이든 물어보세요" : "원하는 내용을 알려 주세요")).foregroundStyle(NativeDesktopTheme.muted),axis:.vertical)
                 .font(.system(size:isTab ? 16 : 15)).foregroundStyle(NativeDesktopTheme.text).tint(NativeDesktopTheme.accent).lineLimit(1...6).textFieldStyle(.plain).accessibilityIdentifier("native-chat-input")
+                .focused($composerFocused)
             // Voice input has no feature behind it yet (owner's decision 2).
             if NativeReleaseFlags.showsUnbuiltFeatures {
                 Button { toast = "음성 입력은 준비 중이에요" } label: { Image(systemName:"mic").font(.system(size:isTab ? 18 : 17)).foregroundStyle(NativeDesktopTheme.secondary).assistantHitArea(4) }
                     .buttonStyle(NativeAssistantButtonStyle()).accessibilityLabel("음성 입력 (준비 중)").accessibilityIdentifier("native-ai-voice")
             }
             sendButton
-        }.padding(.horizontal,isTab ? 20 : 14).padding(.vertical,isTab ? 12 : 10)
-            .background(NativeDesktopTheme.bgApp,in:shape).overlay { shape.strokeBorder(NativeDesktopTheme.border,lineWidth:1) }
+        }.padding(.horizontal,isTab ? 20 : isFloating ? 8 : 14).padding(.vertical,isTab ? 12 : isFloating ? 2 : 10)
+            // Floating, the bar's glass is the ground.
+            .background(isFloating ? .clear : NativeDesktopTheme.bgApp,in:shape).overlay { if !isFloating { shape.strokeBorder(NativeDesktopTheme.border,lineWidth:1) } }
             .shadow(color:.black.opacity(isTab ? (scheme == .dark ? 0.4 : 0.06) : 0),radius:10,y:6)
     }
     /// F1's ＋. The panel has none: there the same actions sit in the model popover.

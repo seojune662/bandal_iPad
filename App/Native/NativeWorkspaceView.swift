@@ -27,6 +27,8 @@ struct NativeWorkspaceView: View {
     @AppStorage("native.desktop.courseRailWidth") private var courseRailWidth = 240.0
     @AppStorage("native.inspector.width") private var materialsRailWidth = 360.0
     @AppStorage("native.desktop.aiRail") private var aiRailOpen = false
+    /// 사이드바 or 플로팅 (the AI panel's 표시 방식 menu). Floating, AI takes no slot and `aiRailOpen` says whether the bar shows.
+    @AppStorage(NativeAssistantPresentation.key) private var aiPresentation = NativeAssistantPresentation.sidebar
     /// The sidebar was open when AI took its slot, and comes back when AI closes.
     @State private var windowWidth: CGFloat = 1200
     @State private var markdownEditing = false
@@ -217,7 +219,7 @@ struct NativeWorkspaceView: View {
         GeometryReader { geometry in
             let chrome = chromeLayout(width: geometry.size.width)
             // AI chat stays on screen while annotating so the document does not jump sideways.
-            let aiVisible = showsWorkspaceChrome && navigation.active?.kind != "assistant" &&
+            let aiVisible = showsWorkspaceChrome && navigation.active?.kind != "assistant" && !aiFloating &&
                 (chrome.aiPinned || !NativeWorkspaceChromeLayout.fitsAI(geometry.size.width) && compactAIRail)
             let aiHostWidth = chrome.aiPinned ? chrome.aiWidth : chrome.compactAIWidth
             let aiLeading = NativeDesktopTheme.navigationWidth + (chrome.leftPinned ? chrome.leftWidth + 1 : 0)
@@ -236,15 +238,15 @@ struct NativeWorkspaceView: View {
                 }
                 .mask { Rectangle().padding(.vertical, -400) }
                 .zIndex(1)
-                // Always mounted so a draft or streaming reply survives closing the column;
-                // the width animates and the clipped content slides with it.
-                HStack(spacing: 0) { aiRail.frame(width: aiHostWidth); railDivider }
+                // The AI column: its glass and divider. The panel is drawn over it by `aiHost`, which can also float
+                // it over the document; the width animates and the panel, cut to the column, slides with it.
+                HStack(spacing: 0) { Color.clear.frame(width: aiHostWidth); railDivider }
                     .frame(width: aiVisible ? aiHostWidth + 1 : 0, alignment: .trailing)
                     // Cut at the sides only: the input capsule reaches below the home-indicator line.
                     .mask { Rectangle().padding(.bottom, -40) }
                     // Outside the clip, so the glass reaches under the home indicator like the other panels.
                     .background(NativeGlass.panel)
-                    .allowsHitTesting(aiVisible && annotation.request == nil).accessibilityHidden(!aiVisible)
+                    .accessibilityHidden(true)
                 // Editors and the inspector remain mounted while covered. Navigation
                 // and opening a keyboard must not discard an in-progress draft.
                 let covered = section != .library || auxiliary != nil || windowsOverviewOpen
@@ -283,6 +285,8 @@ struct NativeWorkspaceView: View {
                     Color.clear.frame(width: chrome.rightWidth)
                 }
             }
+            // Always mounted, in the column or floating, so a draft or streaming reply survives closing it and switching.
+            .overlay { aiHost(chrome: chrome, width: geometry.size.width, columnVisible: aiVisible, columnWidth: aiHostWidth, leading: aiLeading) }
             .overlay {
                 if chrome.leftPinned {
                     NativeDockRailResizer(side: .left, width: Binding(get: { chrome.leftWidth }, set: { courseRailWidth = $0 }), maximum: min(360, geometry.size.width - 48 - chrome.aiWidth - chrome.rightWidth - minimum - 3))
@@ -402,7 +406,7 @@ struct NativeWorkspaceView: View {
                 guard let saved = railsBeforeKeyboard else { return }
                 railsBeforeKeyboard = nil
                 // The home sidebar and AI share the left slot: AI opened meanwhile keeps it.
-                withAnimation(Self.railAnimation) { courseRailOpen = saved.0 && !aiRailOpen; materialsRailOpen = saved.1 }
+                withAnimation(Self.railAnimation) { courseRailOpen = saved.0 && !aiInSlot; materialsRailOpen = saved.1 }
             }
             .onChange(of: geometry.size.width) { _, width in updateWindowWidth(width) }
             .task(id: busy) {
@@ -520,6 +524,8 @@ struct NativeWorkspaceView: View {
             if old != nil && new == nil && restoreInspectorAfterAnnotation && showsWorkspace && !boardOverlayOpen { openAIRail() }
         }
         .onChange(of: openAdjacentTab) { _, value in navigation.openAdjacentTab = value }
+        // Switched from the panel's menu, so AI is open: the same panel, now in its new place.
+        .onChange(of: aiPresentation) { _, _ in compactAIRail = false; setRail(.ai, open: true, width: windowWidth) }
         .onChange(of: store.courses) { _, _ in refreshShareDestinations(); refreshWorkspaceContext() }
         .onChange(of: store.materials) { _, _ in refreshShareDestinations() }
         .onReceive(store.events) { event in
@@ -633,7 +639,7 @@ struct NativeWorkspaceView: View {
     private enum Rail { case course, ai, materials }
     private func chromeLayout(width: CGFloat) -> NativeWorkspaceChromeLayout {
         NativeWorkspaceChromeLayout(width: width, leftOpen: courseRailOpen, rightOpen: materialsRailOpen && annotation.request == nil,
-            aiOpen: aiRailOpen, leftRequested: courseRailWidth, rightRequested: materialsRailWidth,
+            aiOpen: aiInSlot, leftRequested: courseRailWidth, rightRequested: materialsRailWidth,
             showsWorkspace: showsWorkspaceChrome)
     }
     private func fitsAlone(_ rail: Rail, width: CGFloat) -> Bool {
@@ -644,13 +650,18 @@ struct NativeWorkspaceView: View {
         }
     }
     private func railIsOpen(_ rail: Rail) -> Bool {
-        switch rail { case .course: courseRailOpen; case .ai: aiRailOpen; case .materials: materialsRailOpen }
+        switch rail { case .course: courseRailOpen; case .ai: aiInSlot; case .materials: materialsRailOpen }
     }
+    private var aiFloating: Bool { aiPresentation == .floating }
+    /// AI open in the left slot; floating it takes none.
+    private var aiInSlot: Bool { aiRailOpen && !aiFloating }
     /// Pinned rails push the editor. Opening one closes the others, in this
     /// order, until the editor keeps its minimum width; narrow windows use drawers.
     private func setRail(_ rail: Rail, open: Bool, width: CGFloat) {
+        // Floating AI sits over the document: it opens and closes alone and moves no panel.
+        if rail == .ai && aiFloating { compactAIRail = false; aiRailOpen = open; return }
         // The home sidebar and AI trading the left slot is a swap, not a fold.
-        let swap = fitsAlone(rail, width: width) && open && (rail == .ai && courseRailOpen || rail == .course && aiRailOpen)
+        let swap = fitsAlone(rail, width: width) && open && (rail == .ai && courseRailOpen || rail == .course && aiInSlot)
         withAnimation(swap ? nil : Self.railAnimation) {
             guard fitsAlone(rail, width: width) else {
                 compactCourseRail = rail == .course && open
@@ -662,7 +673,7 @@ struct NativeWorkspaceView: View {
             switch rail { case .course: courseRailOpen = open; case .ai: aiRailOpen = open; case .materials: materialsRailOpen = open }
             // The home sidebar and AI share the left slot: opening one replaces the other,
             // and closing the open one folds the slot.
-            if open { if rail == .ai { courseRailOpen = false } else if rail == .course { aiRailOpen = false } }
+            if open { if rail == .ai { courseRailOpen = false } else if rail == .course && !aiFloating { aiRailOpen = false } }
             guard open else { return }
             let minimum: [Rail: Double] = [.course: NativeWorkspaceChromeLayout.leftMinimum, .ai: NativeWorkspaceChromeLayout.aiMinimum,
                                            .materials: NativeWorkspaceChromeLayout.rightMinimum]
@@ -678,7 +689,7 @@ struct NativeWorkspaceView: View {
         let chrome = chromeLayout(width: width)
         switch rail {
         case .course: return fitsAlone(.course, width: width) ? chrome.leftPinned : compactCourseRail
-        case .ai: return fitsAlone(.ai, width: width) ? chrome.aiPinned : compactAIRail
+        case .ai: return aiFloating ? aiRailOpen : fitsAlone(.ai, width: width) ? chrome.aiPinned : compactAIRail
         case .materials: return fitsAlone(.materials, width: width) ? chrome.rightPinned : compactMaterialsRail
         }
     }
@@ -979,11 +990,20 @@ struct NativeWorkspaceView: View {
                     attachments: pendingAttachments[context.id] ?? [],
                     onConsumeAttachments: { pendingAttachments[context.id] = nil },
                     onOpenDocument: openWorkspaceResult, onOpenSettings: openSettings, onAnnotate: beginAnnotation,
-                    onClose: { setRail(.ai, open: false, width: windowWidth) }, surface: .clear)
+                    onClose: { setRail(.ai, open: false, width: windowWidth) }, surface: .clear, style: aiFloating ? .floating : .panel)
                     .environment(\.nativeWorkspaceTarget, navigation.captureTarget())
                     .id(context.id)
-            } else { noWorkspacePlaceholder }
+            } else if !aiFloating { noWorkspacePlaceholder }
         }.padding(.top, NativeDockHeaderMetrics.statusBand)
+    }
+    /// The one AI panel, in its column (`leading`, `columnWidth`) or floating over the document area, which then
+    /// starts where the column would and ends at the right panel.
+    private func aiHost(chrome: NativeWorkspaceChromeLayout, width: CGFloat, columnVisible: Bool, columnWidth: CGFloat, leading: CGFloat) -> some View {
+        let floatingShown = aiFloating && aiRailOpen && showsWorkspaceChrome && navigation.active?.kind != "assistant"
+        return NativeAssistantHost(floating: aiFloating, visible: aiFloating ? floatingShown : columnVisible, interactive: annotation.request == nil,
+            columnLeading: leading, columnWidth: columnWidth,
+            documentLeading: leading, documentWidth: max(0, width - leading - (chrome.rightPinned ? chrome.rightWidth + 1 : 0)),
+            paletteHost: pdfPalette) { aiRail }
     }
     private var noWorkspacePlaceholder: some View {
         VStack(spacing: 12) {

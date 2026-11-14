@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// Where the conversation is drawn: the side panel (Figma A1–A6) or a whole tab (F1–F2).
-enum NativeAssistantStyle { case panel, tab }
+/// Where the conversation is drawn: the side panel (Figma A1–A6), a whole tab (F1–F2), or a bar and card floating
+/// over the document (표시 방식 › 플로팅), which keeps the panel's look.
+enum NativeAssistantStyle { case panel, tab, floating }
 
 /// The Figma numbers that differ between the side panel and the full tab.
 struct NativeAssistantLook {
