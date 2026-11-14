@@ -1,31 +1,29 @@
-Hello,
-
-Version 1.5.0 adds AI inside notes, automatic Look Up, one Plans screen and a new in-app purchase, AI Credit (consumable). The app starts in Korean or English by device language; labels below are Korean (English).
+Version 1.5.0 adds AI inside notes, automatic Look Up, one Plans screen and a new in-app purchase, AI Credit (consumable). Labels below are Korean (English); the app follows the device language.
 
 New in this version
-- AI panel (AI button, left rail): 사이드바 (Sidebar) or 플로팅 (Floating, a bar over the document), from the panel's 표시 방식 (Display mode) menu. Answers show headings, lists, tables and math; links open in the in-app browser.
+- AI panel (AI button, left rail): 사이드바 (Sidebar) or 플로팅 (Floating, a bar over the page), from the panel's 표시 방식 (Display mode) menu. Answers show lists, tables and math; links open in the in-app browser.
 - In a PDF: 노트에 넣기 (Add to note) places an answer in free space, and the AI can add a simple diagram; both undo. 짚어주기 (Point It Out; AI model menu > PDF에서 짚어주기) scrolls to passages and shows notes beside them; it saves nothing.
-- 찾아보기 (Look Up): a small card for selected text. Automatic Look Up is asked once ("켜기" Turn On / "나중에" Later; Settings > AI > 찾아보기). Then printed text circled with the lasso in a PDF, or text selected in a note, goes from the device straight to Wikipedia's search API (the text or a key term from it, and the heading above; no user or device data, not through our server). Optional "AI 설명" (AI explanation; off by default, Plus/Pro): the selected passage (up to 400 characters), its heading and the document title go once through our server to an AI provider already agreed to, within the AI allowance.
+- 찾아보기 (Look Up): a small card. Automatic Look Up is asked once ("켜기" Turn On / "나중에" Later; Settings > AI > 찾아보기). Then printed text circled with the lasso in a PDF, or text selected in a note, goes from the device straight to Wikipedia's search API (the text or a key term, and the heading above; no user or device data, not through our server). Two optional AI steps go through our server, within the AI allowance, opening no purchase or consent screen. "여러 줄은 AI가 맞는 문서 고르기" (AI picks the matching article; on by default; signed in, OpenAI agreed to): the passage (up to 300 characters), its heading, the document title and up to four Wikipedia results (title, first lines) go to OpenAI's Decisions API, which returns only probabilities and one of those titles. "AI 설명" (AI explanation; off by default, Plus/Pro): the passage (up to 400 characters), its heading and the document title go to an AI provider already agreed to.
 
 Plans and AI Credit (AI Credit is new)
-- Every purchase is on one screen, 요금제 (Plans): Settings (gear, left rail) > 구독·사용량 (Plan & usage) > 요금제 보기 (View plans). Also the profile menu > 요금제 보기, or a second folder on Free.
-- It shows the current plan, Monthly/Yearly with the Free, Plus and Pro cards at App Store prices, AI 충전 (AI Credit), Restore purchases, Billing history, App Store에서 구독 해지·관리 (Cancel or manage in the App Store), Terms of Use, Privacy Policy and the auto-renewal terms.
-- AI Credit adds to the account's AI allowance and never expires. Our server keeps the balance, so it needs sign-in (Account button, left rail > Sign in with Apple). Then AI 충전 > the price button: the card says "충전했어요" (Credit added) and the balance goes up. It is not restorable; it stays on the account.
+- Every purchase is on one screen, 요금제 (Plans): Settings (gear) > 구독·사용량 (Plan & usage) > 요금제 보기 (View plans). Also the profile menu, or a second folder on Free.
+- It shows the current plan, Monthly/Yearly with the Free, Plus and Pro cards at App Store prices, AI 충전 (AI Credit), Restore purchases, App Store에서 구독 해지·관리 (Cancel or manage in the App Store), Terms of Use, Privacy Policy and the auto-renewal terms.
+- AI Credit adds to the account's AI allowance and never expires. Our server keeps the balance, so it needs sign-in. Then AI 충전 > the price button: the card says "충전했어요" (Credit added) and the balance goes up. Not restorable; it stays on the account.
 
 From earlier versions
-- First-run setup (once): language, school shortcuts, an optional invite code; "나중에" (Later) skips it.
+- First-run setup (once): language, school shortcuts, optional invite code.
 - "AI로 찾기" (Find with AI) for a school not in the directory needs sign-in and sends only the school name, country and app language; our server searches via Anthropic's API and returns the school's own links for review.
-- Friend invites (profile menu > 친구 초대): when an invited friend signs in and creates a first folder, both accounts get in-app AI credit (at most 5 friends); no cash value, not transferable, no purchase needed. Links https://bandal.io/r/CODE open the app (Associated Domains).
+- Friend invites (profile menu > 친구 초대): both accounts get in-app AI credit when an invited friend creates a first folder (at most 5 friends); no cash value, not transferable, no purchase needed. bandal.io/r/CODE links open the app (Associated Domains).
 - AI goes through our server to Anthropic or OpenAI after a per-provider consent sheet (5.1.2(i)); the server stores no questions, materials or answers.
 - Sync is optional (the user's own iCloud or Google Drive). Recordings stay on the device. In-app browser (17+). Account deletion: Settings > 계정 > 계정 삭제 (Delete Account).
 
 How to test
-- Sign in for AI, AI Credit and invites: Account button, left rail (Apple or Google). Open a PDF, tap the AI button and ask; circle printed text with the lasso for Look Up.
+- Sign in (Account button, left rail; Apple or Google) for AI, AI Credit and invites. In a PDF, tap the AI button and ask; circle printed text with the lasso for Look Up.
 
 External services
 - Bandal server (auth.bandal.io / Supabase): account (ID, email, name, nickname); AI usage records; App Store transaction status; invite codes and who invited whom (account IDs); the school directory.
 - Anthropic, OpenAI: AI requests after consent. Apple: Sign in with Apple, In-App Purchase. Google: Sign in with Google, Google Drive API for sync.
-- Wikipedia (Wikimedia): Look Up. The 찾아보기 button can also show the browser's search engine in a small preview (no cookies or history).
+- Wikipedia (Wikimedia): Look Up. The 찾아보기 button can also preview the browser's search engine (no cookies or history).
 - No analytics, advertising or crash reporting. No device identifiers are collected.
 
 Not distributed in the EU or China mainland.
