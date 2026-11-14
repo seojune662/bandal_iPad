@@ -322,12 +322,16 @@ final class NativeWorkspaceFlowTests: XCTestCase {
         let category = app.buttons["native-settings-category-subscription"]
         XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription); category.tap()
         app.openNativeSettingsMore()
-        let open = app.buttons["native-membership-open"]
-        XCTAssertTrue(open.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any)["native-membership-state"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS '로그인'")).firstMatch.exists)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'I/O'")).firstMatch.exists, "a second reset deleted the live database")
         XCTAssertEqual(app.staticTexts["native-membership-state"].label.contains("무료") || app.otherElements["native-membership-state"].exists, true)
         attachScreenshot(app, name: "Settings subscription panel (free)")
+        // 요금제 opens from the section's own card, free or subscribed.
+        app.buttons["native-settings-back"].tap()
+        let open = app.buttons["native-membership-manage"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(open.label, "요금제 보기")
         open.tap()
         XCTAssertTrue(app.buttons["membership-close"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.staticTexts["membership-title"].waitForExistence(timeout: 5), app.debugDescription)

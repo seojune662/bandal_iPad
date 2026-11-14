@@ -89,6 +89,18 @@ targets:
         TARGETED_DEVICE_FAMILY: "2"
         SWIFT_OBJC_BRIDGING_HEADER: Tests/BandalUITests/BandalUITests-Bridging-Header.h
 schemes:
+  # Buying end to end on a simulator from Xcode (⌘R): the app buys from Tests/StoreKit/Bandal.storekit
+  # (Xcode's StoreKit Testing; Debug › StoreKit › Manage Transactions) instead of the App Store sandbox.
+  # A scheme of its own, so Bandal's runs and a device's sandbox purchases never use it; the file is in no
+  # target, so no build carries it. xcodebuild cannot load it here (storekitd refuses the configuration,
+  # SKInternalErrorDomain 3), so automated tests use the app's simulated store (`--plans-state`) instead.
+  BandalStoreKit:
+    build:
+      targets:
+        Bandal: all
+    run:
+      config: Debug
+      storeKitConfiguration: Tests/StoreKit/Bandal.storekit
   BandalDeviceSmoke:
     build:
       targets:

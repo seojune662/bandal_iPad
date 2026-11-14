@@ -166,6 +166,71 @@
 "페이지 필기에 넣지 못했어요." = "Couldn’t add it to Page handwriting";
 /* ===== END AI note placement and diagrams ===== */
 
+/* ===== BEGIN plans screen (seojune662/plans-screen) =====
+   요금제 (NativeMembershipPaywall.swift, NativePlansSections.swift) and its entries in Settings and the profile
+   menu. Some are LocalizedStringKey fields of the plan cards or format strings the extractor cannot type. Sorted by key. */
+"%@ 시작됐어요" = "%@ has started";
+"%@를 복원했어요" = "Restored %@";
+"%@에 끝나요" = "Ends on %@";
+"%lld일 무료 체험 시작" = "Start %lld-day free trial";
+"%lld일 무료 체험 후 결제" = "Billed after a %lld-day free trial";
+"AI 4배" = "4× AI";
+"AI 사용량 4배 (Auto 약 1,700회)" = "4× AI usage (about 1,700 Automatic requests)";
+"AI 충전" = "AI Credit";
+"AI 충전은 자동 갱신되지 않는 한 번의 구매예요. 로그인한 계정에 남고, 구매 복원으로 다시 받는 상품이 아니에요." = "AI Credit is a one-time purchase that does not renew. It stays with the signed-in account and is not brought back by Restore purchases.";
+"AI로 공부하는 학생" = "For students who study with AI";
+"App Store에서 구독 해지·관리" = "Cancel or manage in the App Store";
+"Plus의 모든 기능과…" = "Everything in Plus, and…";
+"가격을 불러오지 못했어요" = "Couldn’t load the price";
+"가장 인기" = "Most popular";
+"결제가 되지 않았어요" = "Payment didn’t go through";
+"결제가 되지 않았어요. App Store에서 결제 수단을 확인해 주세요." = "Payment didn’t go through. Check your payment method in the App Store.";
+"결제됐어요. 곧 사용량에 더해져요." = "Paid. It will be added to your usage shortly.";
+"결제일과 해지는 요금제 보기에서 볼 수 있어요" = "See billing dates and cancellation in View plans";
+"구매를 복원하지 못했어요." = "Couldn’t restore purchases.";
+"구매를 확인하지 못했어요. 잠시 후 구매 복원을 눌러 주세요." = "Couldn’t verify the purchase. Tap Restore purchases in a moment.";
+"구매하지 못했어요." = "Couldn’t complete the purchase.";
+"남은 충전 잔액: AI 약 %@회" = "Credit left: about %@ AI uses";
+"다음 갱신일(%@)부터 %@" = "From the next renewal (%1$@): %2$@";
+"다음 갱신일부터 %@으로 바뀌어요" = "Changes to %@ at the next renewal";
+"다음 갱신일에 변경" = "Change at next renewal";
+"로그인한 계정에 충전돼요. 로그인하면 살 수 있어요." = "Credit goes to the signed-in account. Sign in to buy it.";
+"모든 모델 선택 가능" = "Choose any model";
+"무료" = "Free";
+"무료 체험 중 · %lld일 남음" = "Free trial · %lld days left";
+"무료 체험 중 · %lld일 남음 · %@에 끝나요" = "Free trial · %1$lld days left · ends on %2$@";
+"무료 체험 중 · %lld일 남음 · %@에 첫 결제" = "Free trial · %1$lld days left · first charge on %2$@";
+"무료의 모든 기능과…" = "Everything in Free, and…";
+"변경 예약됨" = "Change scheduled";
+"복원할 구독이 없어요" = "No subscription to restore";
+"본인 iCloud·Drive 동기화" = "Sync with your own iCloud or Drive";
+"승인을 기다리고 있어요" = "Waiting for approval";
+"승인을 기다리고 있어요. 승인되면 바로 적용돼요." = "Waiting for approval. It applies as soon as it’s approved.";
+"시작해 보기" = "Get started";
+"업그레이드" = "Upgrade";
+"업그레이드는 바로 적용되고, 낮추기와 기간 변경은 다음 갱신일부터 적용돼요." = "Upgrades apply right away. Downgrades and period changes apply from the next renewal.";
+"연간" = "Yearly";
+"연간으로 변경" = "Switch to yearly";
+"요금제" = "Plans";
+"요금제 보기" = "View plans";
+"요금제를 불러오지 못했어요" = "Couldn’t load plans";
+"우선 지원" = "Priority support";
+"월간" = "Monthly";
+"월간보다 %lld%% 저렴" = "%lld%% less than monthly";
+"이 iPad에서 만든 폴더 %lld/%lld · 자료 %lld/%lld" = "Made on this iPad: %lld/%lld folders · %lld/%lld materials";
+"이번 달 AI 사용량에 더해지고, 만료되지 않아요." = "Adds to this month’s AI usage and never expires.";
+"인터넷 연결을 확인한 뒤 다시 시도해 주세요." = "Check your internet connection and try again.";
+"자동 갱신 꺼짐 · %@에 끝나요" = "Auto-renew off · ends on %@";
+"작업 1회 상한 Plus의 5배" = "5× the Plus limit per task";
+"최대 %lld%% 할인" = "Up to %lld%% off";
+"충전" = "Buy credit";
+"충전했어요" = "Credit added";
+"폴더 %lld개 · 자료 %lld개" = "%lld folder · %lld materials";
+"프로" = "Pro";
+"플러스" = "Plus";
+"현재 요금제" = "Current plan";
+/* ===== END plans screen ===== */
+
 /* ===== App strings (extracted) ===== */
 "%@ 개인정보 처리방침" = "%@ privacy policy";
 "%@ 전송에 동의함" = "Consent to send to %@ given";
