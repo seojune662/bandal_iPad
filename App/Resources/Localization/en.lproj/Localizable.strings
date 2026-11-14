@@ -300,6 +300,7 @@
 "JSON 가져오기" = "Import JSON";
 "JSON 내보내기" = "Export JSON";
 "Markdown 원문" = "Markdown source";
+"OpenAI에 동의했다면 고른 글과 위키백과 후보가 반달 서버를 거쳐 OpenAI로 전송돼요. 하루 무료 5회, Plus 50회, Pro 150회" = "If you agreed to OpenAI, the selected text and the Wikipedia candidates are sent through the Bandal server to OpenAI. Up to 5 a day on Free, 50 on Plus, 150 on Pro";
 "PDF · 폴더에서 추가" = "Add from PDF or folder";
 "PDF 검색" = "Search PDF";
 "PDF 보기 옵션" = "PDF view options";
@@ -807,6 +808,7 @@
 "업데이트 내역" = "What's new";
 "업로드 대기 %lld개" = "Waiting to upload: %lld";
 "여기까지 읽음" = "Mark read to here";
+"여러 줄은 AI가 맞는 문서 고르기" = "AI picks the matching article for passages";
 "여러 줄은 AI가 짧게 설명" = "Short AI explanation for passages";
 "연결 끊김" = "Disconnected";
 "연결 제외된 페이지" = "Unlinked pages";

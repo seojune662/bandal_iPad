@@ -70,9 +70,11 @@ enum NativeQuickLookupExplain {
         """
     }
 
-    static func user(text: String, heading: String?, title: String, language: String) -> String {
+    /// `topic`: the Wikipedia article the decision step chose for the passage, as context for the topic line.
+    static func user(text: String, heading: String?, title: String, language: String, topic: String? = nil) -> String {
         let passage = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(maximumInputCharacters))
-        return "문서: \(title.prefix(80))\n제목 줄: \(heading.map { String($0.prefix(80)) } ?? "없음")\n앱 언어: \(language)\n고른 글:\n\(passage)"
+        let article = topic.map { "찾은 위키백과 문서: \($0.prefix(80))\n" } ?? ""
+        return "문서: \(title.prefix(80))\n제목 줄: \(heading.map { String($0.prefix(80)) } ?? "없음")\n\(article)앱 언어: \(language)\n고른 글:\n\(passage)"
     }
 
     /// The provider's own request body as the ai-proxy relays it, with its output limit and the lowest effort.
@@ -192,15 +194,15 @@ final class NativeQuickLookupExplainer {
         enabled() && NativeQuickLookupExplain.isPassage(text) && tier() >= .plus
     }
 
-    func explain(text: String, heading: String?, title: String) async -> NativeQuickLookupExplain.Answer? {
+    func explain(text: String, heading: String?, title: String, topic: String? = nil) async -> NativeQuickLookupExplain.Answer? {
         let tier = tier()
         guard NativeQuickLookupExplain.allowedLocally(enabled: enabled(), text: text, tier: tier, usedToday: 0) else { return nil }
-        return await Self.within(deadline) { [self] in try await self.call(text: text, heading: heading, title: title, tier: tier) }
+        return await Self.within(deadline) { [self] in try await self.call(text: text, heading: heading, title: title, topic: topic, tier: tier) }
     }
 
     private enum Refusal: Error { case dayLimit, noModel, unreadable }
 
-    private func call(text: String, heading: String?, title: String, tier: Membership.Tier) async throws -> NativeQuickLookupExplain.Answer {
+    private func call(text: String, heading: String?, title: String, topic: String?, tier: Membership.Tier) async throws -> NativeQuickLookupExplain.Answer {
         let endpoint = try await endpoint()
         guard used(endpoint.userID) < NativeQuickLookupExplain.dailyLimit(tier) else { throw Refusal.dayLimit }
         let config = try await config()
@@ -209,7 +211,7 @@ final class NativeQuickLookupExplainer {
         guard let (model, provider) = NativeQuickLookupExplain.cheapest(config, consented: consented) else { throw Refusal.noModel }
         let english = english()
         let body = NativeQuickLookupExplain.body(provider: provider, model: model, system: NativeQuickLookupExplain.system(english: english),
-                                                 user: NativeQuickLookupExplain.user(text: text, heading: heading, title: title, language: english ? "en" : "ko"))
+                                                 user: NativeQuickLookupExplain.user(text: text, heading: heading, title: title, language: english ? "en" : "ko", topic: topic))
         // Counted when sent: a call the deadline gives up on is still answered, and paid for, upstream.
         record(endpoint.userID)
         let started = Date()
