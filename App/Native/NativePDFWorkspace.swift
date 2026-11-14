@@ -185,7 +185,7 @@ struct NativePDFWorkspace: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in model.recordingPausedForBackground() }
         .bandalToast(Binding(get: { model.recordingNotice }, set: { model.recordingNotice = $0 }))
         .bandalToast(Binding(get: { model.paletteNotice.map { NativeAppLocale.string($0, Locale(identifier: NativeAppLocale.current)) } }, set: { model.paletteNotice = $0 }))
-        .bandalToast(Binding(get: { model.aiNoteNotice }, set: { model.aiNoteNotice = $0 }), symbol: "checkmark.circle.fill", actionTitle: "되돌리기") { model.undo() }
+        .bandalToast(Binding(get: { model.aiNoteNotice }, set: { model.aiNoteNotice = $0 }), symbol: "checkmark.circle.fill", actionTitle: "되돌리기") { model.undoAINote() }
     }
 
 }
@@ -1750,6 +1750,7 @@ final class NativePDFWorkspaceModel {
                 guard let image = await NativePDFRegionCapture.annotatedImage(url: original, page: number, bounds: bounds, rows: rows, annotations: marks, images: images),
                       let dataURL = NativeAssistantAttachment.dataURL(image) else { throw NativePDFError.invalid("선택한 영역을 캡처하지 못했습니다. 다시 선택해 주세요.") }
                 guard !Task.isCancelled else { return }
+                NativeAINoteAnchors.remember(image: dataURL, page: number, area: bounds)
                 self.store.annotation.complete(.init(title: self.document.title, text: text, imageDataURL: dataURL,
                     courseID: self.document.courseID, relativePath: self.document.relativePath, page: number, revision: revision), requestID: request.id)
             } catch { self.store.annotation.fail(error.localizedDescription, requestID: request.id) }
@@ -2511,18 +2512,128 @@ final class NativePDFWorkspaceModel {
         host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
         host?.emit = { _, _ in }; host = nil
     }
-    /// An AI answer lands on the page in view as a text box: movable, editable, one undo step.
+    /// The AI insertion in flight ("노트에 넣기" or a diagram): one at a time.
+    private var aiInsertTask: Task<Void, Never>?
+    /// Set while the last AI note's toast stands for a page-note write rather than a page edit.
+    private var aiPageNoteUndo: NativeAIPageNote.Undo?
+    /// An AI answer lands on the page as a text box: movable, editable, one undo step. It goes next to what the
+    /// question was about (NativeAINoteTarget) in free space that covers no text, drawing or handwriting; failing
+    /// that, smaller in the margin; failing that, in this page's page note.
     /// Figma A5 draws a memo card (grey fill, left bar, 원문 보기 · 내 글로 바꾸기); a text box has only the
     /// seven palette fills and no actions, so the memo keeps the card's header line and body as text.
-    func insertAINote(_ text: String, model: String? = nil, sources: Int = 0) {
-        guard !isLoading, !isBusy, errorMessage == nil, assistantAnnotation == nil else { return }
+    func insertAINote(_ text: String, model: String? = nil, sources: Int = 0, question: [NativeAssistantAttachment] = []) {
+        guard !isLoading, !isBusy, errorMessage == nil, assistantAnnotation == nil, aiInsertTask == nil else { return }
         if textEditorDraft != nil { finishText() }
         let plain = text.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "(?m)^#+\\s*", with: "", options: .regularExpression)
         let header = (["✦ AI 메모"] + [model, sources > 0 ? "노트 \(sources)개 참고" : nil].compactMap { $0 }).joined(separator: " · ")
-        let row: [String: Any] = ["page": page, "kind": "textbox", "style": NativePDFTextStyle.load(defaults: defaults).dictionary,
-            "data": ["text": header + "\n" + plain, "box": ["x": 0.1, "y": 0.12, "width": 0.8, "height": 0.1]]]
-        performObjectEdit("create", values: [NativePDFTextDraft.fittedObject(row, pageSize: pageSize(page))], selectCreated: true)
-        aiNoteNotice = "노트에 넣었어요"
+        let visiblePage = page
+        let target = NativeAINoteTarget.resolve(question: question, answer: text, courseID: document.courseID, relativePath: document.relativePath,
+                                                visiblePage: visiblePage, pageCount: pageCount, region: NativeAINoteAnchors.area(for:))
+        let quotes = NativeAINotePlacement.quotes(in: text)
+        aiInsertTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.aiInsertTask = nil }
+            let revision = self.pageRevision
+            var number = min(max(1, target.page), max(1, self.pageCount))
+            var scan = await self.scanForAI(page: number, passages: target.passages)
+            // Nothing to point at on the page asked about: the note goes where the user is looking.
+            if target.region == nil, scan?.passage == nil, number != visiblePage {
+                number = visiblePage; scan = await self.scanForAI(page: number, passages: quotes)
+            }
+            guard await self.readyForAIInsertion(revision: revision) else {
+                self.mediaImportError = "PDF가 다른 작업 중이라 노트에 넣지 못했어요. 잠시 후 다시 시도해 주세요."; return
+            }
+            let anchor = target.region ?? scan?.passage ?? CGRect(origin: self.visibleCentre(page: number), size: .zero)
+            let style = NativePDFTextStyle.load(defaults: self.defaults)
+            var small = style; small.fontSizePt = min(style.fontSizePt, 10)
+            let pageSize = self.pageSize(number)
+            @MainActor func note(_ width: Double, _ style: NativePDFTextStyle) -> [String: Any] {
+                NativePDFTextDraft.fittedObject(["page": number, "kind": "textbox", "style": style.dictionary,
+                    "data": ["text": header + "\n" + plain, "box": ["x": 0.0, "y": 0.0, "width": width, "height": 0.1]]], pageSize: pageSize)
+            }
+            let wide = [0.8, 0.62, 0.46, 0.34].map { note($0, style) }, narrow = [0.22, 0.16, 0.12].map { note($0, small) }
+            func size(_ row: [String: Any]) -> CGSize { NativePDFEditingGeometry.bounds(row)?.size ?? .zero }
+            // A page that cannot be read cannot be checked for free space: then the page note is the safe place.
+            if let scan, let placed = NativeAINotePlacement.place(sizes: wide.map(size), marginSizes: narrow.map(size), anchor: anchor,
+                                                        obstacles: self.aiObstacles(page: number, scan: scan), aspect: self.aspect(number)) {
+                var row = (placed.inMargin ? narrow : wide)[placed.size], data = row["data"] as? [String: Any] ?? [:]
+                data["box"] = NativePDFEditingGeometry.dictionary(placed.rect); row["data"] = data
+                self.performObjectEdit("create", values: [row], selectCreated: true)
+                self.aiPageNoteUndo = nil
+                self.aiNoteNotice = placed.inMargin ? "여백에 넣었어요" : number == self.page ? "노트에 넣었어요" : "질문한 페이지에 넣었어요"
+                return
+            }
+            do {
+                self.aiPageNoteUndo = try await NativeAIPageNote.append(header + "\n\n" + text, page: number, courseID: self.document.courseID,
+                                                                         relativePath: self.document.relativePath, store: self.store)
+                self.aiNoteNotice = "빈 곳이 없어 페이지 필기에 넣었어요"
+            } catch { self.mediaImportError = error.localizedDescription }
+        }
+    }
+    /// The toast's 되돌리기: the page note's write when that is where the note went, otherwise the page's undo.
+    func undoAINote() {
+        guard let pageNote = aiPageNoteUndo else { undo(); return }
+        aiPageNoteUndo = nil
+        Task { @MainActor in
+            do { try await NativeAIPageNote.revert(pageNote, store: store) } catch { mediaImportError = error.localizedDescription }
+        }
+    }
+    /// A `draw_diagram` call: laid out and placed like a note (free space only), created as one undo step,
+    /// and answered to the model with where it went or why it could not.
+    func insertAIDiagram(_ request: NativeAIDiagram.Request) {
+        guard !retired, !isLoading, errorMessage == nil, assistantAnnotation == nil, aiInsertTask == nil else {
+            request.finish(.failure(DesktopRuntimeError("PDF가 다른 작업 중이라 도식을 넣지 못했습니다. 잠시 후 다시 시도하세요."))); return
+        }
+        if textEditorDraft != nil { finishText() }
+        let number = page, revision = pageRevision
+        aiInsertTask = Task { @MainActor [weak self] in
+            guard let self else { request.finish(.failure(CancellationError())); return }
+            defer { self.aiInsertTask = nil }
+            let scan = await self.scanForAI(page: number, passages: [])
+            guard await self.readyForAIInsertion(revision: revision), let scan else {
+                request.finish(.failure(DesktopRuntimeError("PDF가 다른 작업 중이라 도식을 넣지 못했습니다. 잠시 후 다시 시도하세요."))); return
+            }
+            let ratio = self.aspect(number), width = Double(self.pageSize(number).width)
+            guard let plan = NativeAIDiagram.plan(request.spec, anchor: CGRect(origin: self.visibleCentre(page: number), size: .zero),
+                    obstacles: self.aiObstacles(page: number, scan: scan), aspect: ratio, measure: { scale in
+                        { text, role, maxWidth in NativeAINoteMeasure.box(text, style: NativeAIDiagram.style(role, scale: scale), maxWidth: maxWidth, pageWidth: width) }
+                    }) else {
+                request.finish(.failure(DesktopRuntimeError("이 페이지에는 도식이 글씨나 필기를 가리지 않고 들어갈 빈 곳이 없습니다. 노드를 줄이거나 빈 페이지에서 다시 시도하세요."))); return
+            }
+            let rows = NativeAIDiagram.rows(plan.layout, spec: request.spec, page: number, origin: plan.rect.origin, aspect: ratio, scale: plan.scale)
+            self.performObjectEdit("create", values: rows, selectCreated: true)
+            guard let edit = self.editorTask else { request.finish(.failure(DesktopRuntimeError("도식을 저장하지 못했습니다."))); return }
+            do {
+                try await edit.value
+                self.aiPageNoteUndo = nil; self.aiNoteNotice = "도식을 넣었어요"
+                request.finish(.success("도식을 PDF \(number)쪽 빈 곳에 넣었습니다(상자 \(request.spec.nodes.count)개, 화살표 \(request.spec.edges.count)개). 사용자가 되돌리기로 지울 수 있습니다."))
+            } catch { request.finish(.failure(error)) }
+        }
+    }
+    /// The page's printed content off the main thread, from the original this editor shows.
+    private func scanForAI(page number: Int, passages: [String]) async -> NativeAINotePageScan? {
+        await NativeAINotePageScan.read(url: store.root.appendingPathComponent("PDFOriginals/" + pageRevision + ".pdf"), page: number, passages: passages)
+    }
+    /// After the scan's await: still the same pages, and free to edit. An edit already under way (the text box
+    /// `finishText` committed, a stroke being saved) gets up to two seconds to finish first.
+    private func readyForAIInsertion(revision: String) async -> Bool {
+        for _ in 0..<40 {
+            guard !retired, !isLoading, errorMessage == nil, assistantAnnotation == nil, persistence != nil, pageRevision == revision else { return false }
+            if editorTask == nil, !isBusy { return true }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return false
+    }
+    private func aiObstacles(page number: Int, scan: NativeAINotePageScan) -> NativeAINotePlacement.Obstacles {
+        let ratio = aspect(number), rows = rows(on: number)
+        let ink = rows.filter { $0["kind"] as? String == "ink" }.compactMap { NativePDFEditingGeometry.bounds($0, aspect: ratio) }
+        return .init(text: scan.printed, objects: rows.compactMap { NativePDFEditingGeometry.bounds($0, aspect: ratio) },
+                     handwriting: NativeAINotePlacement.handwritingLines(ink, aspect: ratio))
+    }
+    /// The middle of the view on `number`, or a spot near the top when that page is not the one in view.
+    private func visibleCentre(page number: Int) -> CGPoint {
+        guard (viewport["page"] as? NSNumber)?.intValue == number else { return CGPoint(x: 0.5, y: 0.25) }
+        return CGPoint(x: (viewport["horizontalProgress"] as? NSNumber)?.doubleValue ?? 0.5, y: (viewport["progress"] as? NSNumber)?.doubleValue ?? 0.5)
     }
     private func receiveStoreEvent(_ event: NativeWorkspaceEvent) {
         // This document's text was extracted, or its handwriting read, while its search is showing.
@@ -2533,7 +2644,14 @@ final class NativePDFWorkspaceModel {
         switch event.channel {
         case "nativeWorkspace:insertAINote":
             if let tabID = payload["tabID"] as? String, tabID != document.id { return }
-            if let text = payload["text"] as? String { insertAINote(text, model: payload["model"] as? String, sources: payload["sources"] as? Int ?? 0) }
+            if let text = payload["text"] as? String {
+                insertAINote(text, model: payload["model"] as? String, sources: payload["sources"] as? Int ?? 0, question: payload["question"] as? [NativeAssistantAttachment] ?? [])
+            }
+        case NativeAIDiagram.channel:
+            // A visible editor of this document claims it during delivery; a hidden one only if none did.
+            guard let request = payload["request"] as? NativeAIDiagram.Request else { return }
+            if visible { if request.claim() { insertAIDiagram(request) }; return }
+            Task { @MainActor [weak self] in if let self, !self.retired, request.claim() { self.insertAIDiagram(request) } }
         case "nativeWorkspace:goToPage":
             if let tabID = payload["tabID"] as? String, tabID != document.id { return }
             guard let requested = payload["page"] as? Int, requested > 0 else { return }

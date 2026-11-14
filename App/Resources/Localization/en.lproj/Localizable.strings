@@ -153,6 +153,19 @@
 "찾기 닫기" = "Close find";
 /* ===== END search inside a document ===== */
 
+/* ===== BEGIN AI note placement and diagrams (seojune662/ai-note-placement-diagram) =====
+   Toasts of 노트에 넣기 and draw_diagram on a PDF (NativePDFWorkspace.swift, NativeAINoteInsertion.swift). They are
+   String values shown through BandalText, which the extractor cannot see. Sorted by key. */
+"PDF가 다른 작업 중이라 노트에 넣지 못했어요. 잠시 후 다시 시도해 주세요." = "The PDF is busy, so the note wasn’t added. Try again in a moment.";
+"도식을 넣었어요" = "Diagram added";
+"빈 곳이 없어 페이지 필기에 넣었어요" = "No room on the page, so it went into Page handwriting";
+"여백에 넣었어요" = "Added in the margin";
+"질문한 페이지에 넣었어요" = "Added on the page you asked about";
+"페이지 필기가 바뀌어 되돌리지 못했어요." = "Page handwriting has changed, so this can’t be undone";
+"페이지 필기를 읽지 못했어요." = "Couldn’t read Page handwriting";
+"페이지 필기에 넣지 못했어요." = "Couldn’t add it to Page handwriting";
+/* ===== END AI note placement and diagrams ===== */
+
 /* ===== App strings (extracted) ===== */
 "%@ 개인정보 처리방침" = "%@ privacy policy";
 "%@ 전송에 동의함" = "Consent to send to %@ given";
