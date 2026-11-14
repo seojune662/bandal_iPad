@@ -33,6 +33,7 @@ External services
 - Bandal server (auth.bandal.io / Supabase): account (ID, email, name, nickname); AI usage records; App Store transaction status; the invite code and which account invited which (account IDs only); the school directory.
 - Anthropic, OpenAI: AI requests after consent. Anthropic also runs the school website search (school name, country and app language only).
 - Apple: Sign in with Apple, In-App Purchase. Google: Sign in with Google, Google Drive API for sync.
+- Wikipedia (Wikimedia) and the search engine chosen in the app's browser settings: only when the user taps "찾아보기" (Look Up) on text they selected in a PDF or note. The selected text goes from the device straight to Wikipedia's summary API or to the search page shown in a small preview; nothing passes through our server, and the preview keeps no cookies or history.
 - No analytics, advertising or crash reporting. No device identifiers are collected.
 
 Not distributed in the EU or China mainland.

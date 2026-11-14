@@ -154,3 +154,27 @@ instantly, so the lift survives.
 (UIDropInteraction target, `acceptsTouches` while `drag.transfer != nil`),
 `NativeDockDragPayload.trace`. Churn source: `App/Native/NativePDFWorkspace.swift`
 reopen/restore path.
+
+---
+
+## 3. Selecting PDF text shifts the page, so a held press selects the line above too
+
+Found 2026-11-14 while building 찾아보기 (same on `main` d10f033, checked on the same simulator).
+
+**Symptom.** A long press on a word in a PDF's printed text selects it, the selected-quote bar appears,
+and the page moves down 44 pt under the finger. With the finger still down the selection grows up a line:
+a 0.7 s press on "Entropy" gives "고립계의 … 않는다.\nEntropy". 형광 표시, 메모 and 찾아보기 all act on that
+longer quote.
+
+**Where it comes from.** The quote bar is a row of the `VStack` above the page area in
+`NativePDFWorkspace.body` (`if !model.sourceQuote.isEmpty, visible, model.assistantAnnotation == nil`),
+so showing it takes its height from the page.
+
+**Leads for next time.**
+- Draw the bar over the page instead of above it. The tool palette floats in the same band at the top
+  (`paletteTop`, `registerPalette`), so the two need one place each; that band is also where a layout
+  that fed its own measurements back hung the app on iPadOS 27 (commit `74d434d`), so check a fix on a device.
+- Or keep the bar's height reserved whenever the select tool is active.
+
+**Tests work around it.** `NativeQuickLookupUITests` brings the bar up with a first selection before the
+one it measures.
