@@ -166,6 +166,9 @@ final class DesktopRuntime: @unchecked Sendable {
             // A PDF opened before its text was extracted gets it now; `search:changed` repeats the search.
             refreshSearchIndexes(course)
             return result
+        case "nativeGuide:handwritingLines":
+            guard let context else { throw DesktopRuntimeError("저장소가 준비되지 않았습니다.") }
+            return try NativePDFGuideHandwriting.lines(context:context,request:request)
         case "nativeRuntime:active": active = request["active"] as? Bool == true; if active { poll() }; return NativeValue.ok
         case "pdf:openPageNote":
             guard let context, let pdf else { throw DesktopRuntimeError("PDF 저장소가 준비되지 않았습니다.") }

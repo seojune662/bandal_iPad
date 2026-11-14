@@ -154,3 +154,46 @@ instantly, so the lift survives.
 (UIDropInteraction target, `acceptsTouches` while `drag.transfer != nil`),
 `NativeDockDragPayload.trace`. Churn source: `App/Native/NativePDFWorkspace.swift`
 reopen/restore path.
+
+---
+
+## 3. Selecting PDF text shifts the page, so a held press selects the line above too
+
+Found 2026-11-14 while building 찾아보기 (same on `main` d10f033, checked on the same simulator).
+
+**Symptom.** A long press on a word in a PDF's printed text selects it, the selected-quote bar appears,
+and the page moves down 44 pt under the finger. With the finger still down the selection grows up a line:
+a 0.7 s press on "Entropy" gives "고립계의 … 않는다.\nEntropy". 형광 표시, 메모 and 찾아보기 all act on that
+longer quote.
+
+**Where it comes from.** The quote bar is a row of the `VStack` above the page area in
+`NativePDFWorkspace.body` (`if !model.sourceQuote.isEmpty, visible, model.assistantAnnotation == nil`),
+so showing it takes its height from the page.
+
+**Leads for next time.**
+- Draw the bar over the page instead of above it. The tool palette floats in the same band at the top
+  (`paletteTop`, `registerPalette`), so the two need one place each; that band is also where a layout
+  that fed its own measurements back hung the app on iPadOS 27 (commit `74d434d`), so check a fix on a device.
+- Or keep the bar's height reserved whenever the select tool is active.
+
+**Tests work around it.** `NativeQuickLookupUITests` brings the bar up with a first selection before the
+one it measures.
+
+---
+
+## 4. ⌘F does not open document search in a UI test
+
+Found 2026-11-14 (same on `main` d10f033: three feature branches that share nothing else fail the same way
+on the same simulator, iPad Air 13-inch, iOS 26.5).
+
+**Symptom.** `NativeSearchUITests.testDocumentSearch*` opens a PDF and sends ⌘F (`app.typeKey("f", .command)`).
+The search field (`native-pdf-search-field`) never appears. The view menu's PDF에서 찾기 opens it.
+
+**Not known.** Whether a hardware keyboard on a device is affected. Two routes answer ⌘F: a hidden SwiftUI
+button with `.keyboardShortcut("f")` in `NativePDFWorkspace.body` (for when focus is elsewhere) and the PDF
+view controller's `keyCommands` (when the page has the keyboard). The test presses the key before anything
+touched the page, so it depends on the first. The two Escape tests in `NativeWorkspaceWindowsUITests` fail
+on `main` in the same way (a key with nothing focused).
+
+**In the test.** `NativeSearchUITests.find(in:)` records the key as an expected failure and goes on through
+the view menu. When ⌘F works again XCTest reports the expected failure as not happening: take the fallback out then.

@@ -355,6 +355,8 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
         case "pdfNative:searchMarks":
             item.setSearchMarks(request["marks"] as? [[String: Any]] ?? [])
             return [:]
+        case "pdfNative:guide":
+            return try item.guide(request)
         case "pdfNative:ack":
             let started = CACurrentMediaTime()
             defer { item.recordLatency("ackCallback", startedAt: started); reportJournalTimings() }
@@ -1077,6 +1079,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     @objc private func pinchChanged(_ pinch: UIPinchGestureRecognizer) {
         pinchEvents += 1; lastPinchState = pinch.state.rawValue; lastPinchScale = pinch.scale
         if pinch.state == .began {
+            onEvent("navigationGesture", [:])
             do { try prepareForNavigation() } catch { onEvent("error", ["message": error.localizedDescription]) }
             pinchGeneration &+= 1
             pinchFallback = nil
@@ -1165,6 +1168,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     #endif
     @objc private func panChanged(_ pan: UIPanGestureRecognizer) {
         if pan.state == .began {
+            // The reader moves the view: a finger, a trackpad or a wheel. A drag does not always report its contact first.
+            onEvent("navigationGesture", [:])
             do { try prepareForNavigation() } catch { onEvent("error", ["message": error.localizedDescription]) }
         }
     }
@@ -1595,6 +1600,12 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
                 scroll.contentOffset.x = max(-scroll.adjustedContentInset.left, min(max(-scroll.adjustedContentInset.left, scroll.contentSize.width-scroll.bounds.width+scroll.adjustedContentInset.right), desiredX))
             }
         }
+    }
+    /// 짚어주기 (`NativePDFGuideStage`): finds passages, moves the view and says where they are. Nothing is drawn or saved.
+    func guide(_ request: [String: Any]) throws -> [String: Any] {
+        if request["action"] as? String == "origin" { return persistedViewport }
+        if ["show", "restore"].contains(request["action"] as? String) { cancelPinchFallback(); try flush() }
+        return try NativePDFGuideStage.run(request, view: pdfView, scroll: scrollView, document: document)
     }
     func pageGeometry(_ number: Int) throws -> [String: Double] {
         guard let page = document.page(at: number-1), !suspended else { throw NativePDFError.invalid("PDF 편집 페이지가 닫혔습니다.") }

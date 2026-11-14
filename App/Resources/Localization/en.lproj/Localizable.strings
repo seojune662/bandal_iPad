@@ -153,6 +153,19 @@
 "찾기 닫기" = "Close find";
 /* ===== END search inside a document ===== */
 
+/* ===== BEGIN AI note placement and diagrams (seojune662/ai-note-placement-diagram) =====
+   Toasts of 노트에 넣기 and draw_diagram on a PDF (NativePDFWorkspace.swift, NativeAINoteInsertion.swift). They are
+   String values shown through BandalText, which the extractor cannot see. Sorted by key. */
+"PDF가 다른 작업 중이라 노트에 넣지 못했어요. 잠시 후 다시 시도해 주세요." = "The PDF is busy, so the note wasn’t added. Try again in a moment.";
+"도식을 넣었어요" = "Diagram added";
+"빈 곳이 없어 페이지 필기에 넣었어요" = "No room on the page, so it went into Page handwriting";
+"여백에 넣었어요" = "Added in the margin";
+"질문한 페이지에 넣었어요" = "Added on the page you asked about";
+"페이지 필기가 바뀌어 되돌리지 못했어요." = "Page handwriting has changed, so this can’t be undone";
+"페이지 필기를 읽지 못했어요." = "Couldn’t read Page handwriting";
+"페이지 필기에 넣지 못했어요." = "Couldn’t add it to Page handwriting";
+/* ===== END AI note placement and diagrams ===== */
+
 /* ===== App strings (extracted) ===== */
 "%@ 개인정보 처리방침" = "%@ privacy policy";
 "%@ 전송에 동의함" = "Consent to send to %@ given";
@@ -195,6 +208,7 @@
 "AI는 반달이 제공해요. 키를 따로 넣지 않아도 돼요." = "AI is provided by Bandal. You don't need to enter an API key.";
 "AI로 만들기" = "Create with AI";
 "AI를 쓰려면 로그인이 필요해요" = "Sign in to use AI";
+"AI에게 묻기" = "Ask AI";
 "AI의 브라우저 접근 허용" = "Allow AI to access the browser";
 "App Store 구독 상품을 아직 사용할 수 없어요. 데스크톱 구독도 이 계정에 적용됩니다." = "App Store subscriptions aren't available yet. A desktop subscription also applies to this account.";
 "Apple 연결" = "Link Apple";
@@ -208,8 +222,10 @@
 "Auto로 바꾸기" = "Switch to auto";
 "Chrome: 비밀번호 관리자 › 설정 › 비밀번호 내보내기, 북마크 관리자 › ⋮ › 북마크 내보내기. Safari(Mac): 파일 › 내보내기. iPhone·iPad 암호 앱: ⋯ › 모든 암호 내보내기. 가져온 뒤 CSV 파일은 삭제하세요." = "Chrome: Password Manager › Settings › Export passwords, and Bookmark manager › ⋮ › Export bookmarks. Safari (Mac): File › Export. Passwords app on iPhone and iPad: ⋯ › Export All Passwords. Delete the CSV file after importing.";
 "Chrome·Safari·Edge·Firefox에서 내보낸 파일을 선택한 프로필로 가져옵니다." = "Imports a file exported from Chrome, Safari, Edge or Firefox into the selected profile.";
+"DuckDuckGo 검색" = "DuckDuckGo search";
 "GoodNotes·Notability: 설정 › 자동 백업 › 형식 PDF로 백업한 뒤 그 폴더를 고르세요. 폴더 구조 그대로 복사되고, 기존 필기 위에 이어서 쓸 수 있어요." = "GoodNotes · Notability: back up with Settings › Auto-Backup › Format: PDF, then choose that folder. The folder structure is copied as is, and you can keep writing on top of your existing handwriting.";
 "GoodNotes·Notability에서 가져오기" = "Import from GoodNotes or notability";
+"Google 검색" = "Google search";
 "Google 계정" = "Google account";
 "Google 계정 다시 고르기" = "Choose Google account again";
 "Google 연결" = "Link Google";
@@ -228,6 +244,8 @@
 "PDF에 이미지 추가" = "Add image to PDF";
 "PDF에서 검색" = "Search in PDF";
 "PDF에서 사라진 페이지의 필기를 보존했습니다." = "Handwriting from pages no longer in the PDF is kept here.";
+"PDF에서 위치를 짚으며 설명해요" = "Points to each spot in the PDF as it explains";
+"PDF에서 짚어주기" = "Point It Out in the PDF";
 "PDF에서 찾기" = "Find in PDF";
 "PDF와 노트에는 Apple Pencil로 필기하고, 마크다운으로 정리하세요." = "Write on PDFs and notes with Apple Pencil, and organize your thoughts in Markdown.";
 "PDF와 노트에는 Apple Pencil로 필기할 수 있습니다." = "You can write on PDFs and notes with Apple Pencil.";
@@ -350,6 +368,7 @@
 "내어쓰기" = "Outdent";
 "내용" = "Text";
 "네이버" = "Naver";
+"네이버 검색" = "Naver search";
 "노트" = "Notes";
 "노트 연결" = "Link a note";
 "노트를 불러오는 중…" = "Loading note…";
@@ -385,6 +404,7 @@
 "다운로드" = "Downloads";
 "다운로드 완료" = "Download finished";
 "다음 갱신" = "Next renewal";
+"다음 검색" = "Daum search";
 "다음 검색 결과" = "Next search result";
 "다음 결과" = "Next result";
 "다음 셀" = "Next cell";
@@ -396,6 +416,8 @@
 "답변" = "Answers";
 "답변 아래에 읽은 자료를 보여 줘요" = "Shows the materials an answer read, below it";
 "답변 언어" = "Answer language";
+"답변 접기" = "Collapse answer";
+"답변 펼치기" = "Expand answer";
 "답변을 받기 위해 다음 내용이 반달 서버를 거쳐 %@에 전송됩니다." = "To answer, the following is sent through the Bandal server to %@:";
 "답안 저장 중…" = "Saving answers…";
 "답안 저장됨" = "Answers saved";
@@ -557,6 +579,7 @@
 "붙여넣기" = "Paste";
 "브라우저 메뉴" = "Browser menu";
 "브라우저 프로필" = "Browser profiles";
+"브라우저에서 열기" = "Open in browser";
 "브라우저의 열린 탭 %lld개" = "Open browser tabs: %lld";
 "브라우징 데이터" = "Browsing data";
 "비밀번호 가져오기 (CSV)" = "Import passwords (CSV)";
@@ -725,11 +748,13 @@
 "열린 탭 %lld개" = "Open tabs: %lld";
 "열린 탭 검색" = "Search open tabs";
 "열려 있던 탭만 닫혀요. 파일은 폴더에 그대로 있어요." = "Only its open tabs close. Your files stay in the folder.";
+"영어 위키백과" = "English Wikipedia";
 "영어 이어읽기" = "Continue reading in English";
 "영어 읽기 · 표현 저장" = "English reading · saved phrases";
 "영역" = "Area";
 "영역 %lld / %lld" = "Pane %lld / %lld";
 "영역·요소" = "Area · Element";
+"영한사전 · Wiktionary" = "English–Korean dictionary · Wiktionary";
 "오늘" = "Today";
 "오늘 복습할 카드" = "Cards to review today";
 "오늘로 이동" = "Go to today";
@@ -775,6 +800,7 @@
 "위로 이동" = "Move up";
 "위에 행 추가" = "Add row above";
 "위치" = "Position";
+"위키백과" = "Wikipedia";
 "윈도우" = "Windows";
 "윈도우 관리" = "Manage windows";
 "윈도우 관리 닫기" = "Close window manager";
@@ -833,7 +859,9 @@
 "이전 자료" = "Earlier materials";
 "이전 자료로 돌아가기" = "Return to previous materials";
 "이전 페이지" = "Previous page";
+"인터넷에 연결할 수 없어 찾지 못했어요." = "Couldn't look it up without an internet connection.";
 "일시 정지" = "Pause";
+"일시정지" = "Pause";
 "일치하는 과목이 없어요" = "No matching courses";
 "일치하는 탭이 없어요" = "No matching tabs";
 "일치하는 탭이 없어요." = "No matching tabs.";
@@ -943,6 +971,11 @@
 "노트에 넣기" = "Add to note";
 "노트에 넣었어요" = "Added to the note";
 "복사" = "Copy";
+"짚어주기" = "Point It Out";
+"짚어주기 끄기" = "Turn Off Point It Out";
+"짚어주기 닫기" = "Close Point It Out";
+"찾는 중…" = "Looking up…";
+"찾아보기" = "Look Up";
 "추천" = "Recommended";
 "질문에 맞춰 알아서 고름" = "Picks one to fit the question";
 "지금 동기화" = "Sync now";
@@ -983,6 +1016,7 @@
 "캘린더 연결 해제" = "Disconnect calendar";
 "캘린더 접근 허용" = "Allow calendar access";
 "코드 블록 언어" = "Code block language";
+"코드 복사" = "Copy code";
 "쿠키·사이트 저장소·캐시 삭제" = "Delete cookies, site storage and cache";
 "퀴즈나 카드를 만들면 원문과 함께 여기에 보관됩니다." = "Quizzes and cards you create are kept here with their source text.";
 "크기 %lld%%" = "Size %lld%%";
@@ -1065,6 +1099,7 @@
 "폴더로 이동" = "Move to folder";
 "폴더에서 추가" = "Add from folder";
 "표 편집" = "Edit table";
+"표시 방식" = "Display mode";
 "표시 순서와 열리는 위치를 선택합니다. 보안 프로그램이 필요한 일부 사이트는 iPad에서 제공되지 않을 수 있습니다." = "Choose the order and where each site opens. Some sites that need security software may not work on iPad.";
 "표시할 캘린더" = "Calendars to show";
 "표현" = "Phrases";
@@ -1082,6 +1117,7 @@
 "플랜 선택" = "Choose a plan";
 "플러그인 관리" = "Manage plugins";
 "플러스는 과목·자료 무제한, 프로는 AI를 플러스의 4배" = "Plus: unlimited courses and materials. Pro: 4× the AI of Plus.";
+"플로팅" = "Floating";
 "필기 그대로 PDF 파일" = "A PDF file with your handwriting";
 "필기 글꼴" = "Editor font";
 "필기 다시 실행" = "Redo handwriting";

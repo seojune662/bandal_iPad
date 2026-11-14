@@ -68,6 +68,11 @@ struct NativeAIModelPill: View {
     var onAttachDocument: (() -> Void)?
     var onAnnotate: (() -> Void)?
     var canAnnotate = false
+    /// Where the picker may open: under the pill, or (nil) wherever it fits, for the floating AI card low on the screen.
+    var arrowEdge: Edge? = .top
+    /// 짚어주기 on or off; nil while no PDF is open.
+    var onGuide: (() -> Void)?
+    var guiding = false
     @State private var open = false
     private static let popoverWidth: CGFloat = 300
 
@@ -94,14 +99,15 @@ struct NativeAIModelPill: View {
         .buttonStyle(NativeAssistantButtonStyle()).disabled(disabled)
         .accessibilityLabel("AI 모델: " + Self.label(catalog, model: model, effort: effort)).accessibilityIdentifier("native-ai-model-pill")
         // The popover centres on its anchor: this one sits where the card's middle belongs.
-        .background(alignment: .bottomLeading) {
+        .background(alignment: arrowEdge == .top ? .bottomLeading : .topLeading) {
             Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
-                .bandalPopover(isPresented: $open, arrowEdge: .top, width: Self.popoverWidth, radius: 14, padding: 8) {
+                .bandalPopover(isPresented: $open, arrowEdge: arrowEdge, width: Self.popoverWidth, radius: 14, padding: 8) {
                     NativeAIModelPicker(catalog: catalog, model: model, effort: effort,
                                         onSelect: { selected, chosenEffort, closes in onSelect(selected, chosenEffort); if closes { open = false } },
                                         onOpenUsage: { open = false; onOpenUsage() },
                                         onAttachDocument: onAttachDocument.map { action in { open = false; action() } },
-                                        onAnnotate: onAnnotate.map { action in { open = false; action() } }, canAnnotate: canAnnotate)
+                                        onAnnotate: onAnnotate.map { action in { open = false; action() } }, canAnnotate: canAnnotate,
+                                        onGuide: onGuide.map { action in { open = false; action() } }, guiding: guiding)
                         .task { await onAppear() }
                 }
                 .padding(.leading, Self.popoverWidth / 2 - 8)
@@ -122,6 +128,8 @@ struct NativeAIModelPicker: View {
     var onAttachDocument: (() -> Void)?
     var onAnnotate: (() -> Void)?
     var canAnnotate = false
+    var onGuide: (() -> Void)?
+    var guiding = false
     /// The popover carries the 모델 heading; Settings has its own card title.
     var titled = true
     @ObservedObject private var usage = AIUsage.shared
@@ -142,10 +150,11 @@ struct NativeAIModelPicker: View {
             divider
             effortRow
             if let percent = usage.percent { divider; usageBlock(percent) }
-            if onAttachDocument != nil || onAnnotate != nil {
+            if onAttachDocument != nil || onAnnotate != nil || onGuide != nil {
                 divider
                 if let onAttachDocument { extra("현재 문서 첨부", "doc.text", action: onAttachDocument).accessibilityIdentifier("native-ai-attach-document") }
                 if let onAnnotate { extra("지목해서 질문", "scope", action: onAnnotate).disabled(!canAnnotate).accessibilityIdentifier("native-ai-annotate") }
+                if let onGuide { extra(guiding ? "짚어주기 끄기" : "PDF에서 짚어주기", "hand.point.up.left", action: onGuide).accessibilityIdentifier("native-ai-guide") }
             }
         }
     }
