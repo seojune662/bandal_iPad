@@ -1254,6 +1254,9 @@ final class NativePDFWorkspaceModel {
                         selectionOutline = (polygon, box)
                     }
                 }
+                // 자동 찾아보기: a lasso that caught no ink and no object looks up the printed text in it.
+                NativeQuickLookupAuto.shared.lasso(region: region, caughtObjects: !(palette.lassoInkOnly ? NativePDFEditingGeometry.lasso(polygon, rows: rows(on: number), aspect: aspect(number)) : ids).isEmpty,
+                    page: number, original: store.root.appendingPathComponent("PDFOriginals/" + pageRevision + ".pdf"), title: document.title, owner: document.id, store: store)
             } else if contact.tool == "text" {
                 openText(at: last, page: number)
             } else if contact.tool == "select", contact.onSelection, contact.corner == nil, selectedText, distance <= 0.002 {

@@ -388,6 +388,7 @@ struct NativeSettingsWorkspace: View {
       }
       NativeSettingsToggle(title: "AI 답변 출처 표시", isOn: $showsSources).accessibilityIdentifier("native-settings-ai-sources")
     }
+    NativeQuickLookupSettingsGroup()
     NativeSettingsGroup(title: "대화 기록", description: savesHistory ? "" : "지금부터 시작하는 대화는 목록에 남지 않고, 앱을 다시 열면 지워져요") {
       NativeSettingsToggle(title: "대화 기록 저장", isOn: $savesHistory).accessibilityIdentifier("native-settings-ai-saves-history")
       NativeSettingsActionRow(title: "대화 기록 모두 지우기", destructive: true) { deleteChatsConfirmation = true }.accessibilityIdentifier("native-settings-delete-chats")

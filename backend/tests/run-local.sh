@@ -24,7 +24,9 @@ psql -X -q -v ON_ERROR_STOP=1 -h "$socket" -p 54583 -U bandal_test -d postgres \
   -f "$test_root/supabase/migrations/202611100002_schools.sql" \
   -f "$test_root/tests/schools.sql" \
   -f "$test_root/supabase/migrations/202611110001_referral.sql" \
-  -f "$test_root/tests/referral.sql"
+  -f "$test_root/tests/referral.sql" \
+  -f "$test_root/supabase/migrations/202611140001_ai_decisions.sql" \
+  -f "$test_root/tests/ai_decisions.sql"
 # Referral from several sessions at once, on what referral.sql left open. The first session
 # completes invitee 25, takes account 28's `ai:` lock through a grant of its own, makes account
 # 29's code, and keeps its transaction open while the others run into it:

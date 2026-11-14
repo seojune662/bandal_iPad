@@ -57,6 +57,8 @@ final class NativePlatformServices: ObservableObject {
                 catch { throw AIError.server(code: "SIGN_IN_REQUIRED", info: [:]) }
             })
         }
+        // 찾아보기's AI 설명 calls the same ai-proxy, quietly (NativeQuickLookupExplainer).
+        NativeQuickLookupExplainer.endpoint = aiEnvironment.endpoint
         store.schools = LiveSchoolDirectory(endpoint: aiEnvironment.endpoint, send: { [session = aiEnvironment.session] in try await session.data(for: $0) })
         store.referral.service = LiveReferralService(endpoint: aiEnvironment.endpoint, send: { [session = aiEnvironment.session] in try await session.data(for: $0) })
         #if DEBUG
@@ -81,6 +83,7 @@ final class NativePlatformServices: ObservableObject {
         recording = DesktopRecordingService(root:runtime.legacyRoot,invoke:{ channel,request in try await runtime.invokePrivate(channel,request:request) })
         connectAccount()
         Membership.shared.accountToken = { [weak account] in account?.userID.flatMap(UUID.init(uuidString:)) }
+        MembershipPaywall.freeUsage = { [weak store] in try? await store?.invokePrivate("nativeMembership:usage") as? [String: Any] }
         StoreSync.shared.post = { [weak account] body in
             guard let account, account.userID != nil else { throw AIError.server(code: "SIGN_IN_REQUIRED", info: [:]) }
             return try await account.serviceRequest(path: "/functions/v1/ipad-store", body: body)

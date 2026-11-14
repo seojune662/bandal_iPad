@@ -93,11 +93,11 @@ struct NativeMarkdownWorkspace: View {
                         sourceMode: sourceMode, fontScale: fontScale * noteFontScale, editorFont: editorFont,
                         loadImage: loadImage, openLink: openLink, requestInsertion: requestInsertion,
                         importMedia: importMedia, mediaError: { copyMessage = $0 },
-                        selectionChanged: { store.documentSelections[document.id] = $0.isEmpty ? nil : $0 },
+                        selectionChanged: selectionChanged,
                         formatsChanged: { activeFormats = $0 }, codeLanguageChanged: { activeCodeLanguage = $0 }, pageActivated: selectPage)
                 } else {
                     NativeAnnotatableTextEditor(editor: NativeRichTextEditor(session: session, pageIndex: nil, appendix: false,
-                        sourceMode: sourceMode, fontScale: fontScale * noteFontScale, editorFont: editorFont, loadImage: loadImage, openLink: openLink, requestInsertion: requestInsertion, importMedia: importMedia, mediaError: { copyMessage = $0 }, selectionChanged: { store.documentSelections[document.id] = $0.isEmpty ? nil : $0 }, formatsChanged: { activeFormats = $0 }, codeLanguageChanged: { activeCodeLanguage = $0 }), document: document, page: nil,
+                        sourceMode: sourceMode, fontScale: fontScale * noteFontScale, editorFont: editorFont, loadImage: loadImage, openLink: openLink, requestInsertion: requestInsertion, importMedia: importMedia, mediaError: { copyMessage = $0 }, selectionChanged: selectionChanged, formatsChanged: { activeFormats = $0 }, codeLanguageChanged: { activeCodeLanguage = $0 }), document: document, page: nil,
                         editorAccessibilityID: "native-markdown-editor", coordinator: annotation)
                 }
             } else {
@@ -169,6 +169,7 @@ struct NativeMarkdownWorkspace: View {
             }
         }
         .onChange(of: session.text) { _, text in
+            NativeQuickLookupAuto.shared.edited(owner: document.id)
             if let note = NativePDFPageNoteDocument(text), pageIndex >= note.pages.count || pageIndex < 0 { pageIndex = max(0, min(pageIndex, note.pages.count - 1)) }
         }
         .onChange(of: scenePhase) { _, phase in if phase != .active { save() } }
@@ -210,6 +211,12 @@ struct NativeMarkdownWorkspace: View {
             .presentationCompactAdaptation(.popover)
         }
         .bandalToast($copyMessage)
+    }
+
+    /// The note's selection: 찾아보기 and AI read it from the store; once it settles it may look itself up.
+    private func selectionChanged(_ text: String) {
+        store.documentSelections[document.id] = text.isEmpty ? nil : text
+        NativeQuickLookupAuto.shared.selectionChanged(text, owner: document.id, title: document.title, store: store, target: workspaceTarget) { [session] in session.text }
     }
 
     private func attachAnnotatedText() {

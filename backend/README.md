@@ -72,6 +72,7 @@ through the `ai-proxy` Edge Function, never PostgREST.
 | `GET /config` | enabled models (badge = input price ÷ Auto's), Auto model, usage, consent version |
 | `POST /consent` | `{provider, version}` |
 | `POST /v1/anthropic`, `/v1/openai` | provider body; headers `X-Bandal-Task` (UUID), `X-Bandal-Kind` |
+| `POST /v1/openai/decisions` | Decisions API `{model, input, questions}`, header `X-Bandal-Task`; returns `{answers}` (see below) |
 
 The relay keeps only known body fields, forces streaming, caps output, turns on
 Anthropic prompt caching, streams the provider's bytes through unchanged and appends
@@ -79,6 +80,13 @@ Anthropic prompt caching, streams the provider's bytes through unchanged and app
 cut off by the client or the network is charged with an estimate. Secrets:
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (optional `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`
 for a fake upstream in local tests).
+
+Decisions (`_shared/ai/decisions.ts`, `202611140001_ai_decisions.sql`): OpenAI's `POST /v1/decisions` for
+찾아보기. Only `gpt-6-luna`, text input (no images, files or tool items), at most 8 questions of type
+predicate/choice/score, 12 choices, 10 levels and about 4,000 input tokens. Same sign-in, OpenAI consent and budget
+checks as the relay; `ai_begin` is called with `max_output = 0`, which reserves the input alone, and the step is
+settled from `usage.input_tokens` with no output, kind `decide`. The app gets `{answers}` with only each answer's
+probability, choice or score, confidence and probabilities; a reply of nothing but refusals is not charged.
 
 Tests: `sh tests/run-local.sh` (SQL) and `cd supabase/functions && deno test`.
 

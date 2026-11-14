@@ -313,9 +313,7 @@ final class NativeQuickLookupUITests: XCTestCase {
         editor.tap()
         editor.typeKey(.downArrow, modifierFlags: .command)
         editor.typeText("\n" + text)
-        editor.typeKey(.leftArrow, modifierFlags: [.shift, .command])
-        let button = app.buttons["native-quick-lookup"]
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "selecting the line shows 찾아보기\n" + app.debugDescription)
+        XCTAssertTrue(app.selectCaretLine(in: editor), "selecting the line shows 찾아보기\n" + app.debugDescription)
     }
 
     @MainActor private func selectTool(_ name: String, in app: XCUIApplication) {

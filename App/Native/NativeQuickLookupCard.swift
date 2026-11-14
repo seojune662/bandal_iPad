@@ -23,8 +23,15 @@ final class NativeQuickLookupCenter {
         var phase = Phase.loading
         /// The search preview could not load its page.
         var previewFailed = false
+        /// Shown by itself (자동 찾아보기): the small card at the pane's bottom corner, never a preview or an error.
+        var automatic = false
+        /// AI 설명 for a passage; `phase` then holds the page the card opens.
+        var explanation: NativeQuickLookupExplanation?
     }
     private(set) var card: Card?
+    /// The pane asking whether 자동 찾아보기 may run, the first time it would.
+    private(set) var consentOwner: String?
+    @ObservationIgnored private var consentAnswer: ((Bool) -> Void)?
     /// A touched card stays until it is closed: the reader is reading it.
     private(set) var held = false
 
@@ -36,13 +43,41 @@ final class NativeQuickLookupCenter {
     @ObservationIgnored private var session: URLSession?
     @ObservationIgnored private(set) var preview: NativeQuickLookupPreview?
 
-    /// Runs only from the reader's tap on 찾아보기, never from a selection by itself.
+    /// The reader's tap on 찾아보기. A selection that looks itself up comes through `showAutomatic` instead
+    /// (NativeQuickLookupAuto), once its answer is there.
     func lookUp(_ selection: String, owner: String, store: NativeWorkspaceStore, target: NativeWorkspaceTarget? = nil) {
         guard let query = NativeQuickLookupQuery.classify(selection) else { return }
         dismiss()
         self.store = store; self.target = target
         card = Card(owner: owner, query: query)
         start()
+    }
+
+    /// An automatic lookup's answer replaces whatever card there is.
+    func showAutomatic(_ content: NativeQuickLookupAutoContent, owner: String, engine: String, store: NativeWorkspaceStore?, target: NativeWorkspaceTarget?) {
+        dismiss()
+        self.store = store; self.target = target
+        var card = Card(owner: owner, query: NativeQuickLookupQuery.classify(content.query) ?? .phrase(content.query))
+        card.engine = engine; card.phase = .result(content.result); card.automatic = true; card.explanation = content.explanation
+        self.card = card
+        let shown: Int
+        switch content.result {
+        case .dictionary(let definition): shown = definition.lines.joined().count
+        case .wikipedia(let summary): shown = summary.extract.count
+        case .search, .unreachable: shown = 0
+        }
+        // About five seconds: the small card shows two or three lines, however long the article's lead is.
+        scheduleDismissal(characters: min(content.explanation?.summary.count ?? shown, 72))
+    }
+
+    /// Asks once whether selections may look themselves up; `answer` gets the reader's choice.
+    func askAutomatic(owner: String, answer: @escaping (Bool) -> Void) {
+        consentOwner = owner; consentAnswer = answer
+    }
+    func answerAutomatic(_ on: Bool) {
+        let answer = consentAnswer
+        consentOwner = nil; consentAnswer = nil
+        answer?(on)
     }
 
     func retry() {
@@ -84,8 +119,10 @@ final class NativeQuickLookupCenter {
         held = true; dismissal?.cancel(); dismissal = nil
     }
 
-    /// `owner` closes the card only if it is that pane's (the pane went away).
+    /// `owner` closes the card only if it is that pane's (the pane went away); the question about 자동 찾아보기
+    /// goes with its pane unanswered.
     func dismiss(owner: String? = nil) {
+        if let owner, consentOwner == owner { consentOwner = nil; consentAnswer = nil }
         guard card != nil, owner == nil || card?.owner == owner else { return }
         lookup?.cancel(); lookup = nil
         dismissal?.cancel(); dismissal = nil
@@ -260,15 +297,26 @@ struct NativeQuickLookupCardHost: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.clear.frame(width: 1, height: 1).allowsHitTesting(false).accessibilityHidden(true)
-            if visible, let card = center.card, card.owner == owner {
+            if visible, let card = center.card, card.owner == owner, !card.automatic {
                 NativeQuickLookupCard(card: card, center: center).id(card.id)
                     .transition(.opacity.combined(with: .offset(x: -12)))
             }
         }
+        // The pane's whole area, so a card by itself sits at its bottom corner; the empty rest takes no touches.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .bottomLeading) {
+            if visible, center.consentOwner == owner {
+                NativeQuickLookupConsentCard(center: center).transition(.opacity.combined(with: .offset(y: 8)))
+            } else if visible, let card = center.card, card.owner == owner, card.automatic {
+                NativeQuickLookupCompactCard(card: card, center: center).id(card.id)
+                    .transition(.opacity.combined(with: .offset(y: 8)))
+            }
+        }
         .animation(.easeOut(duration: 0.2), value: center.card?.id)
+        .animation(.easeOut(duration: 0.2), value: center.consentOwner)
         // A retained tab that is hidden keeps its view: its card goes when the tab does.
-        .onChange(of: visible) { _, value in if !value { center.dismiss(owner: owner) } }
-        .onDisappear { center.dismiss(owner: owner) }
+        .onChange(of: visible) { _, value in if !value { center.dismiss(owner: owner); NativeQuickLookupAuto.shared.cancel(owner: owner) } }
+        .onDisappear { center.dismiss(owner: owner); NativeQuickLookupAuto.shared.cancel(owner: owner) }
     }
 }
 

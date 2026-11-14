@@ -149,6 +149,21 @@ extension XCUIElement {
 }
 
 extension XCUIApplication {
+    /// Selects the line the caret is on in a note with ⇧⌘← and waits until the note's toolbar offers 찾아보기,
+    /// which it does only while text is selected. False when no selection showed up.
+    ///
+    /// ⇧⌘← is a hardware key event, and in a UI test the simulator's software keyboard comes and goes as hardware
+    /// keys and typed text alternate. Pressed while that is happening, the key can leave nothing selected: in a full
+    /// run on 2026-11-15 one launch, the first after the unit tests, ended with the typed line unselected and the
+    /// keyboard only then coming up, so a lookup test saw "no card". The key is pressed again, up to three times.
+    @MainActor func selectCaretLine(in editor: XCUIElement) -> Bool {
+        let offered = buttons["native-quick-lookup"]
+        for _ in 0..<3 {
+            editor.typeKey(.leftArrow, modifierFlags: [.shift, .command])
+            if offered.waitForExistence(timeout: 2) { return true }
+        }
+        return false
+    }
     /// 새 노트 asks for its paper first (＋ › 노트, the home screen's 새 노트): this keeps the sheet's answers,
     /// types `title` when one is given, and makes the note.
     @MainActor func confirmNewNote(title: String? = nil, file: StaticString = #filePath, line: UInt = #line) {

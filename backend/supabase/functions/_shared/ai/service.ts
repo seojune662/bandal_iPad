@@ -4,6 +4,8 @@
 //   POST /v1/anthropic    Messages API body (streamed back as-is, plus a final bandal_usage event)
 //   POST /v1/openai       Responses API body (same)
 //   POST /v1/google       Gemini generateContent body plus `model` (same; sent to :streamGenerateContent?alt=sse)
+//   POST /v1/openai/decisions  Decisions API body (JSON in, `{answers}` out; input tokens only, see decisions.ts)
+import { decide } from './decisions.ts'
 import { prepare, ProxyError, withOutputLimit, type ModelRow } from './request.ts'
 import { UsageMeter, type Provider, type Usage } from './usage.ts'
 
@@ -176,6 +178,7 @@ export function createAIProxy(deps: Deps): (request: Request) => Promise<Respons
         }
         return json(await deps.store.consent(actor, provider, version))
       }
+      if (request.method === 'POST' && path === '/v1/openai/decisions') return await decide(deps, request, actor)
       if (request.method === 'POST' && (path === '/v1/anthropic' || path === '/v1/openai' || path === '/v1/google')) {
         return await relay(request, actor, path.slice(4) as Provider)
       }
