@@ -62,6 +62,7 @@ struct NativePDFWorkspace: View {
                     } label: { Label("형광 표시", systemImage: "highlighter").frame(minHeight: 44) }
                         .accessibilityIdentifier("native-pdf-highlight-source")
                     Button("메모") { model.commentSource() }.frame(minHeight: 44).accessibilityIdentifier("native-pdf-comment-source")
+                    NativeQuickLookupButton { model.lookUpSource() }
                     Button { model.clearSourceSelection() } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }.accessibilityLabel("원문 선택 해제")
                 }.padding(.horizontal, 16).background(.bar).disabled(model.isBusy || model.errorMessage != nil)
             }
@@ -115,6 +116,9 @@ struct NativePDFWorkspace: View {
                                     .frame(maxWidth: 760).padding(.horizontal, 8).padding(.top, belowPalette)
                             }
                         }
+                        // 찾아보기: the card sits at the leading edge, under the palette row and the find or recording bar.
+                        .overlay(alignment: .topLeading) { if visible { NativeQuickLookupCardHost(owner: tabID).padding(.leading, 12).padding(.bottom, 12)
+                            .padding(.top, paletteTop + NativePDFFloatingPalette.height + 8 + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
                         .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame,
                             clearTop: belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
                     if model.showAnnotations && visible {
@@ -1762,6 +1766,26 @@ final class NativePDFWorkspaceModel {
             self.regionCopyTask = nil; self.isCopyingRegion = false
             guard let image else { self.mediaImportError = "선택한 PDF 영역을 이미지로 복사하지 못했습니다. 다시 선택해 주세요."; return }
             UIPasteboard.general.image = image; self.canPaste = true
+        }
+    }
+    /// 찾아보기 on the selected text: a card at this pane's leading edge (NativeQuickLookupCenter).
+    func lookUpSource() { NativeQuickLookupCenter.shared.lookUp(sourceQuote, owner: document.id, store: store) }
+    private(set) var isAskingAI = false
+    /// AI에게 묻기: the lasso's area as it looks on the page goes into the AI panel's composer (NativePDFAskAI).
+    func askAIAboutSelection() {
+        guard !isAskingAI, let number = selectionPage,
+              let region = selectedRegion ?? NativePDFEditingGeometry.union(selectedRows, aspect: aspect(number)) else { return }
+        let capture = NativePDFAskAI.Capture(title: document.title, courseID: document.courseID, relativePath: document.relativePath, page: number, bounds: region,
+            rows: (persistence?.rows ?? displayRows).filter {
+                ($0["page"] as? NSNumber)?.intValue == number && (NativePDFEditingGeometry.bounds($0, aspect: aspect(number))?.intersects(region) ?? true)
+            },
+            annotations: annotations.filter { ($0["page"] as? NSNumber)?.intValue == number },
+            revision: pageRevision + ":" + String(drawingRevision), original: store.root.appendingPathComponent("PDFOriginals/" + pageRevision + ".pdf"))
+        isAskingAI = true
+        Task { @MainActor [weak self, store] in
+            do { NativePDFAskAI.open(try await NativePDFAskAI.attachment(capture, store: store), store: store) }
+            catch { self?.mediaImportError = error.localizedDescription }
+            self?.isAskingAI = false
         }
     }
     func cutSelection() { guard !isBusy, selectionCount > 0 else { return }; copySelectedObjects(cut: true) }

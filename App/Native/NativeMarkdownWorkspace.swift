@@ -105,6 +105,7 @@ struct NativeMarkdownWorkspace: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             }.background(NativeGlass.paper)
+                .overlay(alignment: .topLeading) { NativeQuickLookupCardHost(owner: document.id).padding(12) }
         }
         .padding(.top, chromeMode == .toolsHidden && annotation.request?.documentID != document.id ? (controlInset > 0 ? topInset + 44 : topInset) : 0)
         .task {
@@ -263,6 +264,7 @@ struct NativeMarkdownWorkspace: View {
                     }
                 }
             }
+            NativeQuickLookupSelectionButton(store: store, documentID: document.id, target: workspaceTarget)
             Menu {
                 ForEach(NativeRichTextCommands.insertions.filter { !Self.formatIDs.contains($0.id) }, id: \.id) { item in
                     Button(item.title) { session.applyFormat?(item.id) }.accessibilityIdentifier("native-markdown-format-" + item.id)

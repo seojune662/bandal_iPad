@@ -195,6 +195,7 @@
 "AI는 반달이 제공해요. 키를 따로 넣지 않아도 돼요." = "AI is provided by Bandal. You don't need to enter an API key.";
 "AI로 만들기" = "Create with AI";
 "AI를 쓰려면 로그인이 필요해요" = "Sign in to use AI";
+"AI에게 묻기" = "Ask AI";
 "AI의 브라우저 접근 허용" = "Allow AI to access the browser";
 "App Store 구독 상품을 아직 사용할 수 없어요. 데스크톱 구독도 이 계정에 적용됩니다." = "App Store subscriptions aren't available yet. A desktop subscription also applies to this account.";
 "Apple 연결" = "Link Apple";
@@ -208,8 +209,10 @@
 "Auto로 바꾸기" = "Switch to auto";
 "Chrome: 비밀번호 관리자 › 설정 › 비밀번호 내보내기, 북마크 관리자 › ⋮ › 북마크 내보내기. Safari(Mac): 파일 › 내보내기. iPhone·iPad 암호 앱: ⋯ › 모든 암호 내보내기. 가져온 뒤 CSV 파일은 삭제하세요." = "Chrome: Password Manager › Settings › Export passwords, and Bookmark manager › ⋮ › Export bookmarks. Safari (Mac): File › Export. Passwords app on iPhone and iPad: ⋯ › Export All Passwords. Delete the CSV file after importing.";
 "Chrome·Safari·Edge·Firefox에서 내보낸 파일을 선택한 프로필로 가져옵니다." = "Imports a file exported from Chrome, Safari, Edge or Firefox into the selected profile.";
+"DuckDuckGo 검색" = "DuckDuckGo search";
 "GoodNotes·Notability: 설정 › 자동 백업 › 형식 PDF로 백업한 뒤 그 폴더를 고르세요. 폴더 구조 그대로 복사되고, 기존 필기 위에 이어서 쓸 수 있어요." = "GoodNotes · Notability: back up with Settings › Auto-Backup › Format: PDF, then choose that folder. The folder structure is copied as is, and you can keep writing on top of your existing handwriting.";
 "GoodNotes·Notability에서 가져오기" = "Import from GoodNotes or notability";
+"Google 검색" = "Google search";
 "Google 계정" = "Google account";
 "Google 계정 다시 고르기" = "Choose Google account again";
 "Google 연결" = "Link Google";
@@ -350,6 +353,7 @@
 "내어쓰기" = "Outdent";
 "내용" = "Text";
 "네이버" = "Naver";
+"네이버 검색" = "Naver search";
 "노트" = "Notes";
 "노트 연결" = "Link a note";
 "노트를 불러오는 중…" = "Loading note…";
@@ -385,6 +389,7 @@
 "다운로드" = "Downloads";
 "다운로드 완료" = "Download finished";
 "다음 갱신" = "Next renewal";
+"다음 검색" = "Daum search";
 "다음 검색 결과" = "Next search result";
 "다음 결과" = "Next result";
 "다음 셀" = "Next cell";
@@ -559,6 +564,7 @@
 "붙여넣기" = "Paste";
 "브라우저 메뉴" = "Browser menu";
 "브라우저 프로필" = "Browser profiles";
+"브라우저에서 열기" = "Open in browser";
 "브라우저의 열린 탭 %lld개" = "Open browser tabs: %lld";
 "브라우징 데이터" = "Browsing data";
 "비밀번호 가져오기 (CSV)" = "Import passwords (CSV)";
@@ -727,11 +733,13 @@
 "열린 탭 %lld개" = "Open tabs: %lld";
 "열린 탭 검색" = "Search open tabs";
 "열려 있던 탭만 닫혀요. 파일은 폴더에 그대로 있어요." = "Only its open tabs close. Your files stay in the folder.";
+"영어 위키백과" = "English Wikipedia";
 "영어 이어읽기" = "Continue reading in English";
 "영어 읽기 · 표현 저장" = "English reading · saved phrases";
 "영역" = "Area";
 "영역 %lld / %lld" = "Pane %lld / %lld";
 "영역·요소" = "Area · Element";
+"영한사전 · Wiktionary" = "English–Korean dictionary · Wiktionary";
 "오늘" = "Today";
 "오늘 복습할 카드" = "Cards to review today";
 "오늘로 이동" = "Go to today";
@@ -777,6 +785,7 @@
 "위로 이동" = "Move up";
 "위에 행 추가" = "Add row above";
 "위치" = "Position";
+"위키백과" = "Wikipedia";
 "윈도우" = "Windows";
 "윈도우 관리" = "Manage windows";
 "윈도우 관리 닫기" = "Close window manager";
@@ -835,6 +844,7 @@
 "이전 자료" = "Earlier materials";
 "이전 자료로 돌아가기" = "Return to previous materials";
 "이전 페이지" = "Previous page";
+"인터넷에 연결할 수 없어 찾지 못했어요." = "Couldn't look it up without an internet connection.";
 "일시 정지" = "Pause";
 "일치하는 과목이 없어요" = "No matching courses";
 "일치하는 탭이 없어요" = "No matching tabs";
@@ -945,6 +955,8 @@
 "노트에 넣기" = "Add to note";
 "노트에 넣었어요" = "Added to the note";
 "복사" = "Copy";
+"찾는 중…" = "Looking up…";
+"찾아보기" = "Look Up";
 "추천" = "Recommended";
 "질문에 맞춰 알아서 고름" = "Picks one to fit the question";
 "지금 동기화" = "Sync now";

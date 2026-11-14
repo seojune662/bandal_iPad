@@ -147,7 +147,7 @@ struct NativePDFSelectionBar: View {
                         .accessibilityLabel("선택 더 보기").accessibilityIdentifier("native-pdf-selection-more")
                         .bandalPopover(isPresented: $showMore, arrowEdge: nil, width: 240, radius: 14, padding: 8, dims: false) { more }
                 } else {
-                    if model.selectedRegion != nil { copyRegion }
+                    if model.selectedRegion != nil { copyRegion; askAI }
                     Button { model.pasteObjects() } label: { action("붙여넣기") }
                         .disabled(!model.canPaste).opacity(model.canPaste ? 1 : 0.4).accessibilityIdentifier("native-pdf-paste")
                     Button { model.clearSelection() } label: {
@@ -169,10 +169,17 @@ struct NativePDFSelectionBar: View {
             if model.isCopyingRegion { ProgressView().frame(width: 92, height: 36) } else { action("이미지로 복사") }
         }.disabled(model.isCopyingRegion).accessibilityIdentifier("native-pdf-copy-region")
     }
+    /// An empty lasso has no ⋯: AI에게 묻기 sits beside 이미지로 복사.
+    private var askAI: some View {
+        Button { model.askAIAboutSelection() } label: {
+            if model.isAskingAI { ProgressView().frame(width: 92, height: 36) } else { action("AI에게 묻기") }
+        }.disabled(model.isAskingAI).accessibilityIdentifier("native-pdf-ask-ai")
+    }
     private var more: some View {
         BandalMenu {
             if model.selectedText { BandalMenuRow("텍스트 편집", symbol: "character.cursor.ibeam") { showMore = false; model.editSelectedText() }.accessibilityIdentifier("native-pdf-edit-text") }
             BandalMenuRow("이미지로 복사", symbol: "photo.on.rectangle") { showMore = false; model.copyPDFRegion() }.disabled(model.isCopyingRegion).accessibilityIdentifier("native-pdf-copy-region")
+            BandalMenuRow("AI에게 묻기", symbol: "sparkles") { showMore = false; model.askAIAboutSelection() }.disabled(model.isAskingAI).accessibilityIdentifier("native-pdf-ask-ai")
             BandalMenuRow("붙여넣기", symbol: "square.and.pencil") { showMore = false; model.pasteObjects() }.disabled(!model.canPaste).accessibilityIdentifier("native-pdf-paste")
             BandalMenuDivider()
             ForEach([1.0, 0.6, 0.3], id: \.self) { value in
