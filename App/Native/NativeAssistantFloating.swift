@@ -128,7 +128,8 @@ struct NativeAssistantHost<Panel: View>: View {
 
     var body: some View {
         let page = floating ? pageBottom : (selecting: false, notice: false)
-        // Marking an area for AI, or acting on a selection whose menu comes down where the bar is: out of the way until done.
+        // Marking an area for AI, acting on a selection whose menu comes down where the bar is, or 짚어주기 playing on
+        // the page: out of the way until done.
         let shown = visible && (!floating || interactive && !page.selecting)
         HStack(spacing: 0) {
             panel.frame(width: floating ? documentWidth : columnWidth)
@@ -160,7 +161,10 @@ struct NativeAssistantHost<Panel: View>: View {
             return lowest > entry.frame.maxY - NativeAssistantFloatingMetrics.reach && abs(centre - middle) < half + 180
         }
         let models = entries.map(\.model)
-        return (selecting, models.contains { $0.aiNoteNotice != nil || $0.paletteNotice != nil || $0.recordingNotice != nil || $0.mediaImportError != nil })
+        // 짚어주기 points at passages and writes its notes beside them, often right where the card sits; its own
+        // caption carries the controls. The bar comes back when the steps end or are closed.
+        let guiding = models.contains { $0.guide.playing }
+        return (selecting || guiding, models.contains { $0.aiNoteNotice != nil || $0.paletteNotice != nil || $0.recordingNotice != nil || $0.mediaImportError != nil })
     }
 }
 

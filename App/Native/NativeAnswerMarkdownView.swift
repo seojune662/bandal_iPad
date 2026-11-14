@@ -368,7 +368,8 @@ private struct NativeAnswerDisplayMath: View {
 
 #if DEBUG
 /// UI tests: `--native-ai-markdown-fixture` makes the stored answer this one, and
-/// `--native-ai-stream-fixture` types it into the panel as if it were arriving.
+/// `--native-ai-markdown-stream-fixture` types it into the panel as if it were arriving.
+/// (`--native-ai-stream-fixture` is the floating panel's own slower, plain-text answer: NativeAssistantStreamFixture.swift.)
 enum NativeAnswerMarkdownFixture {
     static var enabled: Bool { ProcessInfo.processInfo.arguments.contains("--native-ai-markdown-fixture") }
     static let answer = """
@@ -414,7 +415,7 @@ extension NativeAssistantSession {
     /// Types the fixture answer into `stream` a few characters at a time, shows it finished for
     /// four seconds and starts over, so a test can catch a run from its beginning.
     func playMarkdownStreamFixture() {
-        guard ProcessInfo.processInfo.arguments.contains("--native-ai-stream-fixture") else { return }
+        guard ProcessInfo.processInfo.arguments.contains("--native-ai-markdown-stream-fixture") else { return }
         Task { @MainActor [weak self] in
             let characters = Array(NativeAnswerMarkdownFixture.answer)
             try? await Task.sleep(for: .seconds(2))

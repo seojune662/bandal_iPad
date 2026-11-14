@@ -122,7 +122,14 @@ final class NativeAssistantService {
     ] }
     private func tool(_ request: String,_ tool: [String:Any]) async throws -> String {
         guard let turn = turns.values.first(where: { $0.requestID == request }) else { throw CancellationError() }
-        publish(turn.session,["type":"tool-start","label":tool["name"] as? String == "list_materials" ? "자료 목록 확인하는 중" : "원문 읽는 중"])
+        let activity: String
+        switch tool["name"] as? String {
+        case "list_materials": activity = "자료 목록 확인하는 중"
+        case NativeAIDiagram.toolName: activity = "도식 그리는 중"
+        case NativePDFGuideTool.name: activity = "PDF에서 짚어 주는 중"
+        default: activity = "원문 읽는 중"
+        }
+        publish(turn.session,["type":"tool-start","label":activity])
         defer { publish(turn.session,["type":"tool-end"]) }
         let args: [String: Any]
         if let value = tool["arguments"] as? [String: Any] { args = value }
@@ -168,7 +175,6 @@ final class NativeAssistantService {
             guard let text = String(data:bytes,encoding:.utf8) else { throw DesktopRuntimeError("텍스트를 읽을 수 없습니다.") }
             cite(turn.session,course:sourceCourse,path:path,page:nil); return String(text.prefix(100_000))
         case NativeAIDiagram.toolName:
-            publish(turn.session,["type":"tool-start","label":"도식 그리는 중"])
             return try await NativeAIDiagram.draw(args,document:turn.document) { [runtime] in runtime.onEmit?($0,$1) }
         default:throw DesktopRuntimeError("지원하지 않는 자료 작업입니다.")
         }

@@ -101,6 +101,13 @@ private struct NativePDFGuideCaption: View {
         return text
     }
     var body: some View {
+        // The same glass as the floating AI card: the page shows through beside the passage being pointed at.
+        NativeGlassSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), veil: NativePDFGuideCaption.veil) { note }
+            .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-guide-caption")
+    }
+    /// Thicker than the AI card's wash: this text sits right on a page of print, with nothing behind it to quiet it.
+    private static let veil = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.11, alpha: 0.62) : UIColor(white: 1, alpha: 0.62) })
+    private var note: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 0) {
                 Text(verbatim: "\(number)/\(count) · p.\(step.page)").font(.system(size: 12, weight: .semibold).monospacedDigit())
@@ -119,10 +126,6 @@ private struct NativePDFGuideCaption: View {
                 .accessibilityIdentifier("native-pdf-guide-note")
         }
         .padding(.leading, 14).padding(.trailing, 4).padding(.top, 2).padding(.bottom, 12)
-        .background(NativeDesktopTheme.overlay.opacity(0.97), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(NativeDesktopTheme.border, lineWidth: 1) }
-        .shadow(color: .black.opacity(0.14), radius: 14, y: 5)
-        .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-guide-caption")
     }
     private func control(_ symbol: String, _ label: Text, identifier: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {

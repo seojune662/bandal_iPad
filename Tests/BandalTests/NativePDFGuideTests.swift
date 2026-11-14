@@ -386,11 +386,11 @@ final class NativePDFGuideTurnTests: XCTestCase {
         XCTAssertTrue(output.contains("2단계"), output)
         XCTAssertEqual(NativePDFGuideAIProtocol.requests.count, 2, "one turn: the steps call and the closing line")
 
-        // The same question in 대화 never offers the tool.
+        // The same question in 대화 never offers the tool; with a PDF open it offers the diagram tool, which 짚어주기 leaves out.
         NativePDFGuideAIProtocol.requests = []
         NativePDFGuideAIProtocol.replies = [try event(["type": "response.output_text.delta", "delta": "답"]) + "data: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n"]
         let plain = try await send(identity.merging(["content": "효율 공식", "mode": "chat", "documentContext": document]) { _, new in new })
-        XCTAssertEqual((NativePDFGuideAIProtocol.requests.first?["tools"] as? [[String: Any]])?.compactMap { $0["name"] as? String }, ["list_materials", "read_material"])
+        XCTAssertEqual((NativePDFGuideAIProtocol.requests.first?["tools"] as? [[String: Any]])?.compactMap { $0["name"] as? String }, ["list_materials", "read_material", NativeAIDiagram.toolName])
         XCTAssertFalse(plain.contains { $0.0 == NativePDFGuideTool.event })
     }
 }

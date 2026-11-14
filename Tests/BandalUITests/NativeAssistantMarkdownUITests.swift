@@ -2,7 +2,7 @@ import XCTest
 
 /// The AI answer drawn from Markdown (`--native-ai-markdown-fixture`): headings, lists, a table,
 /// TeX and code on screen, and a link that opens a browser tab of the app instead of Safari.
-/// The captures are attached for a look; `--native-ai-stream-fixture` types the same answer in.
+/// The captures are attached for a look; `--native-ai-markdown-stream-fixture` types the same answer in.
 final class NativeAssistantMarkdownUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
@@ -55,7 +55,7 @@ final class NativeAssistantMarkdownUITests: XCTestCase {
 
     /// Captures while the answer is typed in, for a look at half-written tables, lists and code.
     @MainActor func testStreamingAnswerCaptures() {
-        let app = launch("light", ["--native-ai-stream-fixture"])
+        let app = launch("light", ["--native-ai-markdown-stream-fixture"])
         openNoteAndPanel(app)
         let stop = app.buttons["native-chat-send"]
         XCTAssertTrue(stop.waitForExistence(timeout: 10), app.debugDescription)

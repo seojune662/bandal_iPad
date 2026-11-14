@@ -48,6 +48,8 @@ enum NativePDFGuideTool {
     static func configure(_ input: inout [String: Any], mode: String?, document: [String: Any], course: String, workspace: [String: Any]) {
         var tools = (input["tools"] as? [[String: Any]] ?? []).filter { $0["name"] as? String != name }
         if mode == NativeAssistantMode.guide.rawValue, target(document, course: course, workspace: workspace) != nil {
+            // Pointing is this mode's whole answer; the diagram tool would write on the page instead.
+            tools.removeAll { $0["name"] as? String == NativeAIDiagram.toolName }
             tools.append(definition)
             input["system"] = (input["system"] as? String ?? "") + instruction
         }

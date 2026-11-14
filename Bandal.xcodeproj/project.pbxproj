@@ -102,6 +102,7 @@
 		271B068AAB5A3B13C5CE844B /* LocalSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5866A7018E825050DA9AEADE /* LocalSpeech.swift */; };
 		2A22C907CF9352BD9DC9745A /* NativeBrowserWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2913FBEF8207B5BDB666CC5C /* NativeBrowserWorkspace.swift */; };
 		2AB603008FC52023A2E5D841 /* NativePDFPageNoteDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03F1FD03DB1CCBBCF7C2D556 /* NativePDFPageNoteDocument.swift */; };
+		2BEF8ACAAE5CBF987F9D9909 /* NativeAIIntegrationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB75D68E1D2ADFFF3A727A00 /* NativeAIIntegrationUITests.swift */; };
 		2DE33922B2CBD594261CC7A6 /* NativeWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 434FA4AE4A6A5D1A9D3731FF /* NativeWorkspaceView.swift */; };
 		2E303DFC1716516879A1CC28 /* NativeDockTabButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61ABE7B79A5B6C81737BE29C /* NativeDockTabButton.swift */; };
 		2EEB19162846FDABA7B4DA00 /* AppStoreScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E44669BA478AFAE36158A0C /* AppStoreScreenshotTests.swift */; };
@@ -1117,6 +1118,7 @@
 		C9E915538FB54C15EC6C1FF0 /* BrowserPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPage.swift; sourceTree = "<group>"; };
 		CA395AF2FC56908E85AC9803 /* NativeAssistantSourcesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAssistantSourcesUITests.swift; sourceTree = "<group>"; };
 		CAC011059AC8F60222CEE81B /* NativeReferral.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeReferral.swift; sourceTree = "<group>"; };
+		CB75D68E1D2ADFFF3A727A00 /* NativeAIIntegrationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAIIntegrationUITests.swift; sourceTree = "<group>"; };
 		CB80A07DC9285E521ACE1B1A /* NativeUnifiedSearchRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeUnifiedSearchRepository.swift; sourceTree = "<group>"; };
 		CB81661EF8912C63F02C7802 /* NativeLegacyMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLegacyMigration.swift; sourceTree = "<group>"; };
 		CC04CC437CCDA00509756560 /* NativePDFInkVertexCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFInkVertexCacheTests.swift; sourceTree = "<group>"; };
@@ -1920,6 +1922,7 @@
 				DA1B0B9EAA9ABC68950D8420 /* FigmaSettingsScreenshotTests.swift */,
 				89159E0F81215474D59C0D4C /* FigmaTabStripScreenshotTests.swift */,
 				D5DC5F80E3200C3FBA664CD1 /* FigmaViewsScreenshotTests.swift */,
+				CB75D68E1D2ADFFF3A727A00 /* NativeAIIntegrationUITests.swift */,
 				DEE90787A9EB52F9E38987C7 /* NativeAIModelPickerUITests.swift */,
 				B0CC01F9C2BFED275902A90A /* NativeAINotePlacementUITests.swift */,
 				033D44E19032ECF43A49CD24 /* NativeAnnotationUITests.swift */,
@@ -2423,6 +2426,7 @@
 				E7A3F5A37EBBB07D3E491C7A /* FigmaSettingsScreenshotTests.swift in Sources */,
 				7E197A0E2434B9D9D3BB949A /* FigmaTabStripScreenshotTests.swift in Sources */,
 				B34AF97C140D45A81C55EE14 /* FigmaViewsScreenshotTests.swift in Sources */,
+				2BEF8ACAAE5CBF987F9D9909 /* NativeAIIntegrationUITests.swift in Sources */,
 				AE9AAB69F4CC2EC89D6E0B76 /* NativeAIModelPickerUITests.swift in Sources */,
 				662849FEE1DB6D4E49C2FE28 /* NativeAINotePlacementUITests.swift in Sources */,
 				A85DC63DF09E5B2BCA7B9736 /* NativeAnnotationUITests.swift in Sources */,
