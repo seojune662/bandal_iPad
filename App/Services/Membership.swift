@@ -41,6 +41,9 @@ final class Membership: ObservableObject {
 
     func start() {
         guard updates == nil else { return }
+        #if DEBUG
+        PlansServerFixture.install()
+        #endif
         updates = Task { [weak self] in
             for await update in Transaction.updates {
                 await Self.settle(update)
@@ -62,7 +65,8 @@ final class Membership: ObservableObject {
     static func settle(_ result: VerificationResult<Transaction>) async -> Bool {
         guard case .verified(let transaction) = result else { return false }
         if transaction.productType == .consumable {
-            guard await StoreSync.shared.redeem(result) else { return false }
+            guard let pack = StoreSync.Pack(result) else { return false }
+            return await StoreSync.shared.settle(pack)
         }
         await transaction.finish()
         return true

@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// The profile button at the bottom of the rail. Signed out it offers sign-in in place; signed in
-/// it opens the account menu (Figma 130:5623): email, name · plan, then 설정 / 사용량 / 도움말 › / 플랜 보기 /
+/// it opens the account menu (Figma 130:5623): email, name · plan, then 설정 / 사용량 / 도움말 › / 요금제 보기 /
 /// 로그아웃. 도움말 opens its own card beside the row. 친구 초대 is not in the design: it is a long press on
-/// 플랜 보기 (and in 설정 › 계정), and takes the menu's place in the same popover.
+/// 요금제 보기 (and in 설정 › 계정), and takes the menu's place in the same popover.
 struct NativeAccountRailButton: View {
     var store: NativeWorkspaceStore
     let openSettings: (String) -> Void
@@ -116,7 +116,7 @@ struct NativeAccountRailButton: View {
                     .accessibilityIdentifier("native-account-usage")
             }
             helpRow
-            BandalMenuRow("플랜 보기", asset: "MenuIconSpark") { close(); MembershipPaywall.present() }
+            BandalMenuRow("요금제 보기", asset: "MenuIconSpark") { close(); MembershipPaywall.present() }
                 .contextMenu { Button(invite, systemImage: "gift") { inviting = true }.accessibilityIdentifier("native-referral-menu") }
                 .accessibilityIdentifier("native-account-plans")
             BandalMenuDivider()

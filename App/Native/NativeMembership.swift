@@ -3,7 +3,8 @@ import SwiftUI
 import UIKit
 
 /// 충전 (consumable `app.bandal.ipad.credit.pack1`): one line and one price button, in a popover on the
-/// 충전 button that opened it. The server holds the credit, so the transaction is finished only after it paid.
+/// 충전 button that opened it. It buys like 요금제 › AI 충전 (StorePurchase.credit): the server holds the
+/// credit, so the transaction is finished only after it paid.
 struct AICreditPopover: View {
     var message: String?
     let close: () -> Void
@@ -11,6 +12,7 @@ struct AICreditPopover: View {
     @State private var failed = false
     @State private var buying = false
     @State private var outcome: String?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -54,17 +56,9 @@ struct AICreditPopover: View {
     }
 
     private func buy() async {
-        guard let product = offer?.product else { return }
+        guard let offer else { return }
         buying = true; defer { buying = false }
-        do {
-            switch try await product.purchase(options: await Membership.shared.purchaseOptions()) {
-            case .success(let verification):
-                outcome = await Membership.settle(verification) ? "충전했어요" : "결제됐어요. 곧 사용량에 더해져요."
-            case .pending: outcome = "승인을 기다리고 있어요"
-            case .userCancelled: break
-            @unknown default: break
-            }
-        } catch { failed = true }
+        if let line = AICreditPurchase.message(await StorePurchase.credit(offer), locale) { outcome = line }
     }
 }
 
@@ -95,8 +89,9 @@ struct AICreditButton: View {
 }
 
 /// Settings › 구독·사용량 (Figma 132:3441): the plan card, this month's AI use and this iPad's storage, the usage
-/// alert and Apple's purchase history. `detail` is its 더 보기: the free allowance, restore, 충전 and invitation
-/// credit. Signing in is never asked for.
+/// alert and Apple's purchase history. `detail` is its 더 보기: the free allowance, 충전 and invitation credit.
+/// Buying, changing, restoring and cancelling are all on 요금제 (MembershipPaywall), which the card opens.
+/// Signing in is never asked for.
 struct NativeSettingsSubscriptionPanel: View {
     var store: NativeWorkspaceStore
     var detail = false
@@ -104,40 +99,38 @@ struct NativeSettingsSubscriptionPanel: View {
     @ObservedObject private var membership = Membership.shared
     @ObservedObject private var ai = AIUsage.shared
     @State private var usage: [String: Any] = [:]
-    @State private var managing = false
     @AppStorage(NativeAIPreferences.usageAlertKey) private var usageAlert = true
-    @State private var notice: String?
     @State private var error: String?
-    /// When the subscription renews (StoreKit), and what Bandal keeps on this iPad against the iPad's capacity.
-    @State private var renewal: Date?
+    /// What the subscription does next (StoreKit), and what Bandal keeps on this iPad against the iPad's capacity.
+    @State private var status: PlanStatus?
     @State private var storage: (used: Int64, total: Int64)?
     @Environment(\.locale) private var locale
-    private static let planFill = NativeDesktopTheme.adaptive(0xfff5de, 0x3a2f1a)
-    private static let planBadge = NativeDesktopTheme.adaptive(0xf5b83d, 0xe6a93a)
     #if DEBUG
     /// A Plus member renewing on 10 December, for the design screenshots.
     private static let fixture = ProcessInfo.processInfo.arguments.contains("--native-settings-plan-fixture")
     #else
     private static let fixture = false
     #endif
-    private var tier: Membership.Tier { Self.fixture ? .plus : membership.tier }
+    private var tier: Membership.Tier {
+        #if DEBUG
+        // `--plans-state`: the same plan as 요금제 shows.
+        if PlanStatus.Fixture.active { return status?.tier ?? .free }
+        #endif
+        return Self.fixture ? .plus : membership.tier
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
             if let error { NativeToolError(message: error) }
-            if let notice { Label(notice, systemImage: "checkmark.circle").font(.system(size: 13)).foregroundStyle(NativeSettingsRowMetrics.green) }
             if detail { details } else { overview }
         }
-        .manageSubscriptionsSheet(isPresented: $managing)
         .task(id: membership.tier) {
             do { usage = try await store.invokePrivate("nativeMembership:usage") as? [String: Any] ?? [:] }
             catch { self.error = error.localizedDescription }
         }
         .task(id: membership.currentProduct) {
-            renewal = Self.fixture ? Calendar.current.date(from: DateComponents(year: 2026, month: 12, day: 10)) : nil
-            for await result in Transaction.currentEntitlements {
-                if case .verified(let transaction) = result, transaction.productID == membership.currentProduct, transaction.revocationDate == nil { renewal = transaction.expirationDate }
-            }
+            status = Self.fixture ? PlanStatus(productID: "app.bandal.ipad.plus.monthly", periodEnd: Calendar.current.date(from: DateComponents(year: 2026, month: 12, day: 10)))
+                : await PlanStatus.load()
         }
         .task {
             await membership.refresh()
@@ -156,19 +149,18 @@ struct NativeSettingsSubscriptionPanel: View {
     @ViewBuilder private var overview: some View {
         HStack(spacing: 16) {
             Image(systemName: "moon").font(.system(size: 22)).foregroundStyle(NativeDesktopTheme.bgApp).frame(width: 48, height: 48)
-                .background(Self.planBadge, in: RoundedRectangle(cornerRadius: 12)).accessibilityHidden(true)
+                .background(PlanPalette.badge, in: RoundedRectangle(cornerRadius: 12)).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(tier == .pro ? "반달 프로" : tier == .plus ? "반달 플러스" : "반달 무료").font(.system(size: 20, weight: .bold))
                 Group {
                     if tier == .free { Text("플러스는 폴더·자료 무제한, 프로는 AI를 플러스의 4배") }
-                    else if let renewal { Text("다음 결제일 \(renewal, format: .dateTime.month().day())") }
-                    else { Text("결제일과 해지는 구독 관리에서 볼 수 있어요") }
+                    else { summary(status?.lines().first) }
                 }.font(.system(size: 14)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(2)
             }
             Spacer(minLength: 8)
-            Button(tier == .free ? "플랜 보기" : "구독 관리") { if tier == .free { MembershipPaywall.present() } else { managing = true } }
+            Button("요금제 보기") { MembershipPaywall.present() }
                 .buttonStyle(BandalButtonStyle(kind: .soft)).frame(height: 31).accessibilityIdentifier("native-membership-manage")
-        }.padding(20).background(Self.planFill, in: RoundedRectangle(cornerRadius: 12))
+        }.padding(20).background(PlanPalette.fill, in: RoundedRectangle(cornerRadius: 12))
         VStack(alignment: .leading, spacing: 8) {
             Text("이번 달 사용량").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityAddTraits(.isHeader)
             VStack(spacing: 20) {
@@ -185,6 +177,17 @@ struct NativeSettingsSubscriptionPanel: View {
                 .buttonStyle(.plain).accessibilityIdentifier("native-settings-purchase-history")
         }
         NativeSettingsMoreRow(action: openDetail)
+    }
+
+    /// The plan card's second line: what happens next, in short (요금제 has it in full).
+    @ViewBuilder private func summary(_ line: PlanStatus.Line?) -> some View {
+        switch line {
+        case .renews(let date): Text("다음 결제일 \(date, format: .dateTime.month().day())")
+        case .trial(let days, _, _): Text("무료 체험 중 · \(days)일 남음")
+        case .ends(let date): Text("\(date, format: .dateTime.month().day())에 끝나요")
+        case .billingIssue: Text("결제가 되지 않았어요")
+        case .changes, nil: Text("결제일과 해지는 요금제 보기에서 볼 수 있어요")
+        }
     }
 
     /// One line of the usage card: the name, the amount, and a 6 pt bar.
@@ -209,17 +212,13 @@ struct NativeSettingsSubscriptionPanel: View {
                 LabeledContent("이 iPad에서 만든 폴더", value: "\(usage["courses"] as? Int ?? 0) / \(FreeTier.courses)")
                 LabeledContent("이 iPad에서 만든 자료", value: "\(usage["documents"] as? Int ?? 0) / \(FreeTier.documents)")
             }
-            HStack {
-                Button("플랜 변경") { MembershipPaywall.present() }.accessibilityIdentifier("native-membership-open")
-                Button("구매 복원") { restore() }
-                Button("구독 관리") { managing = true }
-            }
         }
         if ai.percent != nil {
             NativeSettingsGroup(title: "AI 사용량", description: "매달 1일 00시(한국 시간)에 다시 채워져요") {
                 if let left = ai.autoQuestionsLeft { Text("Auto 질문 약 \(left.formatted())회 남음") }
                 if ai.creditUcents > 0 { Text("충전한 사용량이 남아 있어요 (위 회수에 포함).").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary) }
-                AICreditButton()
+                // 충전 is bought on 요금제, as everything else here.
+                Button("충전") { MembershipPaywall.present(focus: .credit) }.accessibilityIdentifier("native-settings-credit")
             }
         }
         // What invitations have brought this account so far. The server keeps one pooled balance,
@@ -235,15 +234,5 @@ struct NativeSettingsSubscriptionPanel: View {
 
     static func title(_ tier: Membership.Tier) -> String {
         switch tier { case .free: "무료"; case .plus: "플러스 이용 중"; case .pro: "프로 이용 중" }
-    }
-
-    private func restore() {
-        Task {
-            error = nil; notice = nil
-            do { try await AppStore.sync() } catch { self.error = "구매를 복원하지 못했어요. \(error.localizedDescription)"; return }
-            await membership.refresh()
-            await StoreSync.shared.syncSubscriptions()
-            notice = membership.tier >= .plus ? "\(membership.tier == .pro ? "반달 프로" : "반달 플러스")를 복원했어요." : "복원할 구독이 없어요."
-        }
     }
 }

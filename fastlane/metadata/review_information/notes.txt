@@ -1,39 +1,29 @@
-Hello,
+Version 1.5.0 adds AI inside notes, automatic Look Up, one Plans screen and a new in-app purchase, AI Credit (consumable). Labels below are Korean (English); the app follows the device language.
 
-Version 1.4.1 adds three things. No new in-app purchases; purchases, AI, sync and account deletion work as in 1.4.0. The app starts in the device language (Korean or English); labels below are Korean (English).
+New in this version
+- AI panel (AI button, left rail): 사이드바 (Sidebar) or 플로팅 (Floating, a bar over the page), from the panel's 표시 방식 (Display mode) menu. Answers show lists, tables and math; links open in the in-app browser.
+- In a PDF: 노트에 넣기 (Add to note) places an answer in free space, and the AI can add a simple diagram; both undo. 짚어주기 (Point It Out; AI model menu > PDF에서 짚어주기) scrolls to passages and shows notes beside them; it saves nothing.
+- 찾아보기 (Look Up): a small card. Automatic Look Up is asked once ("켜기" Turn On / "나중에" Later; Settings > AI > 찾아보기). Then printed text circled with the lasso in a PDF, or text selected in a note, goes from the device straight to Wikipedia's search API (the text or a key term, and the heading above; no user or device data, not through our server). Two optional AI steps go through our server, within the AI allowance, opening no purchase or consent screen. "여러 줄은 AI가 맞는 문서 고르기" (AI picks the matching article; on by default; signed in, OpenAI agreed to): the passage (up to 300 characters), its heading, the document title and up to four Wikipedia results (title, first lines) go to OpenAI's Decisions API, which returns only probabilities and one of those titles. "AI 설명" (AI explanation; off by default, Plus/Pro): the passage (up to 400 characters), its heading and the document title go to an AI provider already agreed to.
 
-1. First-run setup (4 steps, once, on a new install)
-- "나중에" (Later) leaves it on steps 1-3; step 4 ends with "시작하기" (Get started).
-- Language: Korean or English, applied at once; later in Settings > 일반 (General) > 언어 (Language).
-- School: search our school directory and pick one; the school's websites (portal, LMS, library...) appear as shortcuts in the sidebar. No sign-in needed.
-- Invite code: an optional 6-character code from a friend; "없어요, 건너뛰기" (I don't have one, skip). The system Paste button reads the clipboard only when tapped.
+Plans and AI Credit (AI Credit is new)
+- Every purchase is on one screen, 요금제 (Plans): Settings (gear) > 구독·사용량 (Plan & usage) > 요금제 보기 (View plans). Also the profile menu, or a second folder on Free.
+- It shows the current plan, Monthly/Yearly with the Free, Plus and Pro cards at App Store prices, AI 충전 (AI Credit), Restore purchases, App Store에서 구독 해지·관리 (Cancel or manage in the App Store), Terms of Use, Privacy Policy and the auto-renewal terms.
+- AI Credit adds to the account's AI allowance and never expires. Our server keeps the balance, so it needs sign-in. Then AI 충전 > the price button: the card says "충전했어요" (Credit added) and the balance goes up. Not restorable; it stays on the account.
 
-2. School setup with AI
-- When a school is not in the directory, "AI로 찾기" (Find with AI) asks our server to find its official websites. The server runs a web search through Anthropic's API and returns only links on the school's own domain. The user reviews, edits or removes them before saving; they are labelled "AI가 찾은 정보 · 검토 전" (Found by AI · Not reviewed yet).
-- It needs sign-in (3 searches per account per day) and sends only the school name and country the user typed, plus the app language: no personal data, notes or documents. We pay for it; the user's AI allowance is not used.
-- Links the user edits before saving are also sent to our server (no personal data) as a suggestion for the shared directory.
-- Without sign-in the user can enter the school name alone: "직접 입력" (Enter it myself).
-
-3. Friend invites
-- Profile menu (left rail) > 친구 초대 (Invite a friend), or Settings > 계정 (Account) > 친구 초대: the account's invite code with Copy and Share.
-- When an invited friend signs in and creates their first course, both accounts receive AI credit worth about 100 AI uses. It is the same in-app AI credit as before: used after the monthly allowance, never expires. An account is rewarded for at most 5 friends.
-- The reward is AI usage inside the app only. It has no cash value, cannot be transferred, exchanged or withdrawn, and unlocks no paid plan. No purchase is needed to invite or to be invited.
-- The share text and "링크 복사" (Copy link) carry the link https://bandal.io/r/CODE. On an iPad with the app installed the link opens the app with the code filled in; the user still taps "이 코드 적용" (Apply this code). The app adds Associated Domains (applinks:bandal.io) for this.
-
-How to test
-- New install: the setup appears on first launch. In step 2, with the country chip on United States, type "Stanford" and pick Stanford University (AI-found, so its links are shown for review); tap "이 학교로 설정" (Use this school). Or type any name and choose "직접 입력".
-- AI search and invites need an account: Account button in the left rail (Sign in with Apple or Google).
-
-Unchanged from 1.4.0
+From earlier versions
+- First-run setup (once): language, school shortcuts, optional invite code.
+- "AI로 찾기" (Find with AI) for a school not in the directory needs sign-in and sends only the school name, country and app language; our server searches via Anthropic's API and returns the school's own links for review.
+- Friend invites (profile menu > 친구 초대): both accounts get in-app AI credit when an invited friend creates a first folder (at most 5 friends); no cash value, not transferable, no purchase needed. bandal.io/r/CODE links open the app (Associated Domains).
 - AI goes through our server to Anthropic or OpenAI after a per-provider consent sheet (5.1.2(i)); the server stores no questions, materials or answers.
-- Plans: Free, Bandal Plus, Bandal Pro and AI Credit (consumable) in Settings > 구독·사용량 (Plan & usage). Restore Purchases is on the plan screen.
 - Sync is optional (the user's own iCloud or Google Drive). Recordings stay on the device. In-app browser (17+). Account deletion: Settings > 계정 > 계정 삭제 (Delete Account).
 
+How to test
+- Sign in (Account button, left rail; Apple or Google) for AI, AI Credit and invites. In a PDF, tap the AI button and ask; circle printed text with the lasso for Look Up.
+
 External services
-- Bandal server (auth.bandal.io / Supabase): account (ID, email, name, nickname); AI usage records; App Store transaction status; the invite code and which account invited which (account IDs only); the school directory.
-- Anthropic, OpenAI: AI requests after consent. Anthropic also runs the school website search (school name, country and app language only).
-- Apple: Sign in with Apple, In-App Purchase. Google: Sign in with Google, Google Drive API for sync.
-- Wikipedia (Wikimedia) and the search engine chosen in the app's browser settings: only when the user taps "찾아보기" (Look Up) on text they selected in a PDF or note. The selected text goes from the device straight to Wikipedia's summary API or to the search page shown in a small preview; nothing passes through our server, and the preview keeps no cookies or history.
+- Bandal server (auth.bandal.io / Supabase): account (ID, email, name, nickname); AI usage records; App Store transaction status; invite codes and who invited whom (account IDs); the school directory.
+- Anthropic, OpenAI: AI requests after consent. Apple: Sign in with Apple, In-App Purchase. Google: Sign in with Google, Google Drive API for sync.
+- Wikipedia (Wikimedia): Look Up. The 찾아보기 button can also preview the browser's search engine (no cookies or history).
 - No analytics, advertising or crash reporting. No device identifiers are collected.
 
 Not distributed in the EU or China mainland.
