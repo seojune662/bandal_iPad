@@ -38,25 +38,25 @@ final class NativeAssistantFloatingUITests: XCTestCase {
     @MainActor func testSwitchingWhileTheAnswerStreams() {
         let app = launch(extra: ["--native-ai-catalog-fixture", "--native-ai-stream-fixture"])
         openNoteAndAI(app)
-        let answer = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "1. 인터뷰")).firstMatch
-        XCTAssertTrue(answer.waitForExistence(timeout: 20), app.debugDescription)
-        waitFor(answer, "label CONTAINS %@", "2. 인터뷰")
+        // The fixture's sixteen numbered paragraphs are drawn as a numbered list: one "N." marker per item that has arrived.
+        func item(_ number: Int, in scope: XCUIElement) -> XCUIElement { scope.staticTexts["\(number)."].firstMatch }
+        XCTAssertTrue(item(1, in: app).waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(item(2, in: app).waitForExistence(timeout: 20), app.debugDescription)
         attach("1 streaming in the sidebar")
         choose("플로팅", in: app, checking: "사이드바")
         let card = app.otherElements["native-ai-floating-card"]
         XCTAssertTrue(card.waitForExistence(timeout: 10), app.debugDescription)
-        // The answer is the same one, from its first word, and still coming in.
-        let floating = card.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "1. 인터뷰")).firstMatch
-        XCTAssertTrue(floating.waitForExistence(timeout: 10), app.debugDescription)
-        let atSwitch = floating.label
-        XCTAssertTrue(atSwitch.contains("2. 인터뷰"), atSwitch)
+        // The answer is the same one, from its first item, and still coming in.
+        XCTAssertTrue(item(1, in: card).waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(item(2, in: card).exists, app.debugDescription)
+        let atSwitch = (1...16).last { item($0, in: card).exists } ?? 0
         XCTAssertEqual(app.buttons["native-chat-send"].label, "응답 중지")
         attach("2 streaming in the card")
-        let next = atSwitch.components(separatedBy: ". 인터뷰").count - 1 + 2
-        waitFor(floating, "label CONTAINS %@", "\(next). 인터뷰", timeout: 40)
+        XCTAssertLessThan(atSwitch, 15, "still on its way at the switch")
+        XCTAssertTrue(item(atSwitch + 2, in: card).waitForExistence(timeout: 40), "it carries on in the card past item \(atSwitch): " + app.debugDescription)
         attach("3 still streaming in the card")
         choose("사이드바", in: app, checking: "플로팅")
-        waitFor(answer, "label CONTAINS %@", "16. 인터뷰", timeout: 90)
+        XCTAssertTrue(item(16, in: app).waitForExistence(timeout: 90), app.debugDescription)
         let done = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "보내기"), object: app.buttons["native-chat-send"])
         XCTAssertEqual(XCTWaiter.wait(for: [done], timeout: 15), .completed, app.debugDescription)
         XCTAssertTrue(app.buttons["복사"].waitForExistence(timeout: 10), app.debugDescription)
