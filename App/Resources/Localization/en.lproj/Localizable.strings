@@ -202,6 +202,7 @@
 "AI 사용량" = "AI usage";
 "AI 사용량 %lld%%" = "AI usage %lld%%";
 "AI 생성 예상문제" = "AI-generated practice exam";
+"AI 설명" = "AI explanation";
 "AI 응답 완료" = "AI response finished";
 "AI 튜터에게 이 자료 물어보기" = "Ask the AI tutor about this material";
 "AI가 읽도록 선택한 자료, 노트, 웹페이지 내용" = "Materials, notes or web pages you let the AI read";
@@ -297,6 +298,7 @@
 "계정에서 고르기" = "Choose in account";
 "계정을 삭제할까요?" = "Delete your account?";
 "고급" = "Advanced";
+"고른 글을 바로 찾아볼까요?" = "Look up text as you select it?";
 "고른 캘린더의 일정을 반달에서 보여 줘요." = "Shows events from the calendars you choose in Bandal.";
 "고정폭" = "Monospaced";
 "공간 검색" = "Search spaces";
@@ -328,6 +330,8 @@
 "그린 뒤 유지하여 도형 정리" = "Draw and hold to tidy shapes";
 "글" = "Articles";
 "글꼴과 밀도" = "Font and density";
+"글을 고르면 위키백과에서 찾아 작은 카드로 보여 줘요. 선택한 글이 위키백과로 전송돼요. 설정 › AI에서 언제든 바꿀 수 있어요." = "When you select text, Bandal looks it up on Wikipedia and shows a small card. The selected text is sent to Wikipedia. You can change this anytime in Settings › AI.";
+"글을 고르면 자동으로 찾아보기" = "Look up selected text automatically";
 "글의 문단에서 표현 저장을 눌러 원문과 함께 모아 보세요." = "Tap Save Phrase on a paragraph to collect phrases along with their source text.";
 "글자 서식" = "Text format";
 "글자 작게" = "Smaller text";
@@ -409,6 +413,7 @@
 "다음 결과" = "Next result";
 "다음 셀" = "Next cell";
 "다음 페이지" = "Next page";
+"단어 하나는 내장 사전, 그 밖은 위키백과에서 찾아요. AI 설명은 Plus·Pro에서 여러 줄을 골랐을 때만, 이미 동의한 AI 제공사의 가장 저렴한 모델로 한 번 보내요. 하루 Plus 30회, Pro 100회까지예요." = "A single English word comes from the built-in dictionary, anything else from Wikipedia. AI explanations are for Plus and Pro when you select a passage: one request to the lowest-cost model of an AI provider you already agreed to, up to 30 a day on Plus and 100 on Pro.";
 "단축키 검색" = "Search shortcuts";
 "단축키 우선권" = "Shortcut priority";
 "닫기" = "Close";
@@ -578,6 +583,7 @@
 "불투명도" = "Opacity";
 "붙여넣기" = "Paste";
 "브라우저 메뉴" = "Browser menu";
+"브라우저 탭에서 열기" = "Open in a browser tab";
 "브라우저 프로필" = "Browser profiles";
 "브라우저에서 열기" = "Open in browser";
 "브라우저의 열린 탭 %lld개" = "Open browser tabs: %lld";
@@ -674,6 +680,8 @@
 "선택한 과목의 자료를 사용합니다." = "Uses the materials of the selected course.";
 "선택한 글 제외" = "Remove selected text";
 "선택한 글만 사용" = "Use selected text only";
+"선택한 글이 반달 서버를 거쳐 AI 제공사로 전송돼요" = "The selected text is sent through the Bandal server to the AI provider";
+"선택한 글이 위키백과로 전송돼요" = "The selected text is sent to Wikipedia";
 "선택한 영역 크게 보기" = "The selected pane is shown enlarged";
 "선택한 충돌 사본을 적용할까요?" = "Apply the selected conflict copy?";
 "선택한 텍스트 강조" = "Highlight selected text";
@@ -734,6 +742,7 @@
 "업데이트 내역" = "What's new";
 "업로드 대기 %lld개" = "Waiting to upload: %lld";
 "여기까지 읽음" = "Mark read to here";
+"여러 줄은 AI가 짧게 설명" = "Short AI explanation for passages";
 "연결 끊김" = "Disconnected";
 "연결 제외된 페이지" = "Unlinked pages";
 "연결 제외된 필기" = "Unlinked handwriting";
@@ -796,6 +805,7 @@
 "원음 자동 저장 중 · 다른 탭에서도 녹음이 계속됩니다." = "Saving original audio automatically · Recording continues in other tabs.";
 "웹 탐색과 보호" = "Browsing and protection";
 "웹사이트 표시" = "Show website as";
+"웹에서 검색" = "Search the web";
 "위로" = "Up";
 "위로 이동" = "Move up";
 "위에 행 추가" = "Add row above";
@@ -1015,6 +1025,7 @@
 "캐시를 비울까요?" = "Clear the cache?";
 "캘린더 연결 해제" = "Disconnect calendar";
 "캘린더 접근 허용" = "Allow calendar access";
+"켜기" = "Turn On";
 "코드 블록 언어" = "Code block language";
 "코드 복사" = "Copy code";
 "쿠키·사이트 저장소·캐시 삭제" = "Delete cookies, site storage and cache";
