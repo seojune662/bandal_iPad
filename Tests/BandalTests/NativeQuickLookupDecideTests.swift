@@ -409,8 +409,8 @@ final class NativeQuickLookupDecideTests: XCTestCase {
         XCTAssertFalse(explained[0].contains("찾은 위키백과 문서"), "the model reads the passage itself, not a chosen article")
         XCTAssertEqual(center.card?.explanation?.summary, "고립계의 엔트로피는 줄지 않아요.")
         XCTAssertEqual(calls.sent.count, 0, "one call: the decision is not asked when the model answered")
-        guard case .result(.wikipedia(let topic)) = center.card?.phase else { return XCTFail("\(String(describing: center.card))") }
-        XCTAssertEqual(topic.title, "검색 엔트로피", "the link is the article on the model's topic")
+        XCTAssertEqual(center.card?.phase, .result(.search("entropy second law")), "the link searches for the model's words")
+        XCTAssertFalse(calls.searches.contains { $0.hasPrefix("resolver:") }, "Wikipedia is not asked first")
 
         // The model gave no answer: the article the decision is sure of, without an explanation.
         center.dismiss()

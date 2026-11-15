@@ -459,6 +459,49 @@ final class NativeQuickLookupAutoTests: XCTestCase {
         XCTAssertThrowsError(try NativeQuickLookupExplainTransport.read(["error": ["message": "Overloaded"]], provider: .claude, into: &claude))
     }
 
+    // MARK: the answer as it arrives
+
+    func testAnAnswerStillArrivingIsShownOnceItsTopicIsWrittenAndItsExplanationHasBegun() {
+        let selection = "고립계의 엔트로피는 감소하지 않는다."
+        let reply = "주제: 엔트로피\n설명: 고립계의 엔트로피는 줄지 않아요.\n수식: $\\Delta S \\geq 0$\n검색어: second law entropy"
+        var seen: [NativeQuickLookupExplanation] = []
+        for end in reply.indices.dropFirst() + [reply.endIndex] {
+            guard let part = NativeQuickLookupExplain.partial(String(reply[..<end]), selection: selection, picture: true), part != seen.last else { continue }
+            seen.append(part)
+        }
+        // Nothing until "설명: " has a character after it; then the explanation grows.
+        XCTAssertEqual(seen.first, .init(topic: "엔트로피", summary: "고", formula: nil))
+        XCTAssertEqual(seen.map(\.summary).last, "고립계의 엔트로피는 줄지 않아요.")
+        XCTAssertTrue(seen.allSatisfy { $0.topic == "엔트로피" }, "the topic is shown once its line is finished, never half of it")
+        // The formula and the search words come only with their lines finished.
+        XCTAssertEqual(seen.filter { $0.formula != nil }.first?.formula, "\\Delta S \\geq 0")
+        XCTAssertNil(seen.first { $0.search != nil }, "the last line is never finished before the reply ends")
+        XCTAssertEqual(NativeQuickLookupExplain.partial(reply + "\n", selection: selection, picture: true)?.search, "second law entropy")
+        XCTAssertEqual(NativeQuickLookupExplain.parse(reply, selection: selection, picture: true),
+                       .explanation(.init(topic: "엔트로피", summary: "고립계의 엔트로피는 줄지 않아요.", formula: "\\Delta S \\geq 0", search: "second law entropy")))
+
+        for early in ["", "주제: 엔트", "주제: 엔트로피", "주제: 엔트로피\n", "주제: 엔트로피\n설명:", "주제: 엔트로피\n설명: ", "건너뛰기", "건너뛰기\n", "주제: 건너뛰기\n설명: 쪽 번호"] {
+            XCTAssertNil(NativeQuickLookupExplain.partial(early, selection: selection), early)
+        }
+        // A link in what has come is dropped, as in the whole answer.
+        XCTAssertEqual(NativeQuickLookupExplain.partial("주제: 엔트로피\n설명: https://evil.example 상태", selection: selection)?.summary, "상태")
+    }
+
+    @MainActor
+    func testTheTransportPassesOnTheTextAsItGrows() throws {
+        var reply = NativeQuickLookupExplainer.Reply()
+        var parts: [String] = []
+        let progress: (String) -> Void = { parts.append($0) }
+        for event: [String: Any] in [["type": "response.created"], ["type": "response.output_text.delta", "delta": "주제: "],
+                                     ["type": "response.output_text.delta", "delta": "엔트로피\n설명: 줄지"],
+                                     ["type": "response.completed", "response": ["usage": ["input_tokens": 470, "output_tokens": 41]]]] {
+            let before = reply.text.count
+            try NativeQuickLookupExplainTransport.read(event, provider: .openai, into: &reply)
+            if reply.text.count != before { progress(reply.text) }
+        }
+        XCTAssertEqual(parts, ["주제: ", "주제: 엔트로피\n설명: 줄지"], "only events with text, each with all the text so far")
+    }
+
     // MARK: the call and its fallbacks
 
     @MainActor
@@ -708,30 +751,38 @@ final class NativeQuickLookupAutoTests: XCTestCase {
         XCTAssertEqual(calls.search, [], "the passage's words were not searched for")
         XCTAssertEqual(auto.cache.count, 0, "a failure is tried again next time")
 
-        // An answer: AI 설명 with the topic's article as the link.
+        // An answer: AI 설명, opening a search for its topic (no search words in this reply).
         let (working, _) = explainer { _ in .init(text: "주제: 엔트로피\n설명: 줄지 않아요.\n수식:") }
         auto.explainer = working
         auto.look(.init(owner: "pdf", text: passage + " ", heading: "열역학 제2법칙", title: ""), store: nil, target: nil)
         try await waitForCard(center)
         XCTAssertEqual(center.card?.explanation?.topic, "엔트로피")
-        XCTAssertEqual(center.card?.phase, .result(.wikipedia(article("ko", "엔트로피"))))
-        XCTAssertEqual(NativeQuickLookupCenter.pageURL(center.card!)?.host, "ko.wikipedia.org", "the link is Wikipedia's, never the model's")
+        XCTAssertEqual(center.card?.phase, .result(.search("엔트로피")))
+        XCTAssertEqual(NativeQuickLookupCenter.pageURL(center.card!)?.host, "www.google.com", "the link is the search engine's, never the model's")
+        XCTAssertEqual(calls.search, [], "nothing is asked of Wikipedia before the card shows")
     }
 
     @MainActor
-    func testATopicWithoutAnArticleLinksToAWebSearchForTheModelsWords() async throws {
+    func testAnExplanationOpensTheSearchEngineForTheModelsWords() async throws {
         NativeQuickLookupPreferences.auto = .on
         let center = NativeQuickLookupCenter(), calls = Calls()
-        let auto = controller(center, resolverCalls: calls) { _, _ in nil }
+        let auto = controller(center, resolverCalls: calls) { language, query in self.article(language, query) }
         let (searching, _) = explainer { _ in .init(text: "주제: 정체점 가열\n설명: 앞이 뭉툭할수록 정체점이 덜 뜨거워져요.\n수식:\n검색어: stagnation point heating blunt body") }
         auto.explainer = searching
         auto.look(.init(owner: "pdf", text: passage, heading: "Aerodynamic Heating", title: ""), store: nil, target: nil)
         try await waitForCard(center)
         XCTAssertEqual(center.card?.phase, .result(.search("stagnation point heating blunt body")))
-        XCTAssertEqual(center.card?.explanation?.topic, "정체점 가열", "the card is still the explanation")
-        XCTAssertTrue(calls.search.contains("ko:정체점 가열"), "\(calls.search)")
+        XCTAssertEqual(center.card?.explanation?.topic, "정체점 가열", "the card is the explanation")
+        XCTAssertEqual(calls.search, [], "Wikipedia is not asked, even where it has an article")
         XCTAssertEqual(NativeQuickLookupCenter.pageURL(center.card!)?.host, "www.google.com")
         XCTAssertTrue(NativeQuickLookupCenter.pageURL(center.card!)?.query?.contains("stagnation") == true)
+        // The reader's own search engine.
+        center.dismiss()
+        auto.engine = { _ in "naver" }
+        auto.look(.init(owner: "pdf", text: passage + "\n다른 줄", heading: "Aerodynamic Heating", title: ""), store: nil, target: nil)
+        try await waitForCard(center)
+        XCTAssertEqual(NativeQuickLookupCenter.pageURL(center.card!)?.host, "search.naver.com")
+        auto.engine = { _ in "google" }
 
         // No search words either: the topic is searched for.
         center.dismiss()
@@ -777,7 +828,7 @@ final class NativeQuickLookupAutoTests: XCTestCase {
         XCTAssertTrue(image.hasPrefix("data:image/jpeg;base64,"))
         XCTAssertNotNil(UIImage(data: try XCTUnwrap(Data(base64Encoded: String(image.dropFirst("data:image/jpeg;base64,".count))))), "the area, rendered")
         XCTAssertEqual(center.card?.explanation?.formula, "\\Delta S \\geq 0", "read off the picture: its letters need not be in the text")
-        XCTAssertEqual(center.card?.phase, .result(.wikipedia(article("ko", "엔트로피"))))
+        XCTAssertEqual(center.card?.phase, .result(.search("second law entropy")))
 
         // AI 설명 switched off: no card, and nothing looked up from the pieces.
         center.dismiss(); calls.search = []
@@ -789,6 +840,91 @@ final class NativeQuickLookupAutoTests: XCTestCase {
         XCTAssertNil(center.card)
         XCTAssertEqual(offCalls.calls, [])
         XCTAssertEqual(calls.search, [], "what has to be seen is not guessed from the pieces of text in it")
+    }
+
+    /// A model's reply that streams: `parts` are the text so far at each step, `gap` apart; then `end` (the whole
+    /// reply), or a failure.
+    @MainActor
+    private func streaming(_ parts: [String], gap: Duration = .milliseconds(150), end: String?) -> (NativeQuickLookupExplainer, Recorder) {
+        explainer { call in
+            for part in parts { try await Task.sleep(for: gap); call.progress(part) }
+            try await Task.sleep(for: gap)
+            guard let end else { throw URLError(.networkConnectionLost) }
+            return .init(text: end)
+        }
+    }
+    private static let streamed = ["주제: 엔트로피\n설명: 고립계의", "주제: 엔트로피\n설명: 고립계의 엔트로피는 줄지 않아요.\n수식:"]
+    private static let whole = "주제: 엔트로피\n설명: 고립계의 엔트로피는 줄지 않아요.\n수식:\n검색어: second law entropy"
+
+    @MainActor
+    func testTheCardShowsTheAnswerAsItArrivesInOneCard() async throws {
+        NativeQuickLookupPreferences.auto = .on
+        let center = NativeQuickLookupCenter(), calls = Calls()
+        let auto = controller(center, resolverCalls: calls) { _, _ in nil }
+        auto.explainer = streaming(Self.streamed, end: Self.whole).0
+        auto.look(.init(owner: "pdf", text: passage, heading: nil, title: ""), store: nil, target: nil)
+        try await waitForReading(center)
+        let id = try XCTUnwrap(center.card?.id)
+        try await waitForCard(center)
+        // The first part, on the same card as 읽는 중…, still arriving.
+        XCTAssertEqual(center.card?.id, id, "updated in place, not a new card")
+        XCTAssertEqual(center.card?.explanation?.summary, "고립계의")
+        XCTAssertEqual(center.card?.streaming, true)
+        XCTAssertEqual(center.card?.phase, .result(.search("엔트로피")), "until the search words come, the topic is searched for")
+        XCTAssertTrue(center.isPending(owner: "pdf"))
+        for _ in 0..<40 where center.card?.streaming == true { try await Task.sleep(for: .milliseconds(25)) }
+        XCTAssertEqual(center.card?.id, id)
+        XCTAssertEqual(center.card?.explanation?.summary, "고립계의 엔트로피는 줄지 않아요.")
+        XCTAssertEqual(center.card?.streaming, false, "all of it is there: the card counts down to leave")
+        XCTAssertEqual(center.card?.phase, .result(.search("second law entropy")))
+        XCTAssertEqual(auto.cache.count, 1)
+    }
+
+    @MainActor
+    func testAnAnswerCutOffHalfwayKeepsWhatCameAndIsAskedAgain() async throws {
+        NativeQuickLookupPreferences.auto = .on
+        let center = NativeQuickLookupCenter(), calls = Calls()
+        let auto = controller(center, resolverCalls: calls) { language, query in self.article(language, query) }
+        let (cut, cutCalls) = streaming(Array(Self.streamed.prefix(1)), end: nil)
+        auto.explainer = cut
+        auto.look(.init(owner: "pdf", text: passage, heading: nil, title: ""), store: nil, target: nil)
+        try await waitForCard(center)
+        for _ in 0..<40 where center.card?.streaming == true { try await Task.sleep(for: .milliseconds(25)) }
+        XCTAssertEqual(center.card?.explanation?.summary, "고립계의", "what came stays")
+        XCTAssertEqual(center.card?.streaming, false, "and leaves by itself like any card")
+        XCTAssertEqual(calls.search, [], "not replaced by a guess from the passage")
+        XCTAssertEqual(auto.cache.count, 0, "asked for again next time")
+        XCTAssertEqual(cutCalls.calls.count, 1)
+    }
+
+    @MainActor
+    func testACardClosedWhileTheAnswerArrivesStaysClosed() async throws {
+        NativeQuickLookupPreferences.auto = .on
+        let center = NativeQuickLookupCenter(), calls = Calls()
+        let auto = controller(center, resolverCalls: calls) { _, _ in nil }
+        auto.explainer = streaming(Self.streamed, gap: .milliseconds(200), end: Self.whole).0
+        let source = NativeQuickLookupAuto.Source(owner: "pdf", text: passage, heading: nil, title: "")
+        auto.look(source, store: nil, target: nil)
+        try await waitForCard(center)
+        XCTAssertEqual(center.card?.streaming, true)
+        center.dismiss()
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertNil(center.card, "neither the rest of the answer nor its end brings it back")
+        XCTAssertEqual(auto.cache.count, 1, "the answer is kept for the next time")
+        auto.look(source, store: nil, target: nil)
+        try await waitForCard(center)
+        XCTAssertEqual(center.card?.explanation?.summary, "고립계의 엔트로피는 줄지 않아요.")
+
+        // A newer selection while an answer arrives: that card goes, and the newer selection's comes.
+        center.dismiss()
+        auto.explainer = streaming(Self.streamed, gap: .milliseconds(200), end: Self.whole).0
+        auto.look(.init(owner: "pdf", text: passage + "\n셋째 줄", heading: nil, title: ""), store: nil, target: nil)
+        try await waitForCard(center)
+        XCTAssertEqual(center.card?.streaming, true)
+        auto.cancel(owner: "pdf")
+        XCTAssertNil(center.card, "the pane went away: its unfinished card with it")
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertNil(center.card)
     }
 
     @MainActor

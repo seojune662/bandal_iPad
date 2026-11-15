@@ -122,7 +122,7 @@ struct NativeQuickLookupRateLimit {
 }
 
 /// What an automatic card shows: the lookup's result (dictionary, article, or a link to search the web),
-/// with AI 설명 on top of it for a passage.
+/// with AI 설명 on top of it for a passage (NativeQuickLookupAuto.content).
 struct NativeQuickLookupAutoContent: Equatable {
     let query: String
     let result: NativeQuickLookupResult
@@ -184,8 +184,12 @@ final class NativeQuickLookupAuto {
     private var lookup: Task<Void, Never>?
     private var lookupOwner: String?
     private var pending: Task<Void, Never>?
-    /// 읽는 중… was shown for the running lookup.
-    private var readingShown = false
+    /// The card the running lookup shows: its 읽는 중…, then its answer as it arrives.
+    private var lookupCard: UUID?
+    /// The running lookup's card was closed, or another card took its place: nothing more of it is shown.
+    private var lookupClosed = false
+    /// Counts lookups, so that a late part of an older answer never reaches a newer selection's card.
+    private var generation = 0
     private var reading: Task<Void, Never>?
     private var settling: Task<Void, Never>?
     private var settlingOwner: String?
@@ -277,12 +281,22 @@ final class NativeQuickLookupAuto {
         lastSelection[owner] = nil
     }
 
-    /// The running lookup stops, and its "읽는 중…" card with it.
+    /// The running lookup stops, and its unfinished card with it (읽는 중…, or an answer still arriving).
     private func stopLookup() {
         lookup?.cancel(); lookup = nil
         pending?.cancel(); pending = nil
-        readingShown = false
+        generation += 1
+        lookupCard = nil; lookupClosed = false
         if let owner = lookupOwner { center.dismissPending(owner: owner) }
+    }
+
+    /// Shows the running lookup's answer, or the part of it that has come, on its card in place; nothing once the
+    /// reader closed that card.
+    private func show(_ content: NativeQuickLookupAutoContent, owner: String, engine: String, store: NativeWorkspaceStore?, target: NativeWorkspaceTarget?, done: Bool) {
+        pending?.cancel(); pending = nil
+        guard !lookupClosed else { return }
+        if let id = center.showAutomatic(content, owner: owner, engine: engine, store: store, target: target, updating: lookupCard, done: done) { lookupCard = id }
+        else { lookupClosed = true }
     }
 
     // MARK: the lookup
@@ -319,53 +333,58 @@ final class NativeQuickLookupAuto {
         }
         guard rate.allow(at: now()) else { return }
         lookupOwner = source.owner
+        let generation = generation
         lookup = Task { @MainActor [weak self, weak store] in
             guard let self else { return }
-            let answer = await self.resolve(source)
-            let chosen = await self.engine(store)
-            // Cancelled: whoever cancelled took the pending card away, or put its own there.
+            let engine = await self.engine(store)
             guard !Task.isCancelled else { return }
+            let answer = await self.resolve(source) { [weak self, weak store] part in
+                // AI 설명 as the model writes it: on the card at once.
+                guard let self, self.generation == generation else { return }
+                self.show(part, owner: source.owner, engine: engine, store: store, target: target, done: false)
+            }
+            // Cancelled: whoever cancelled took the unfinished card away, or put its own there.
+            guard !Task.isCancelled, self.generation == generation else { return }
             self.pending?.cancel(); self.pending = nil
-            // 읽는 중… was there and is gone: the reader closed it, or opened another card over it.
-            let closed = self.readingShown && !self.center.isPending(owner: source.owner)
-            self.readingShown = false
             // A failure (offline, a server error) is tried again next time; an answer, or knowing there is none, is kept.
             if answer.final { self.cache.store(answer.content, for: key) }
             // A closed card's answer is kept for the next time and not put back in front of the reader.
-            guard !closed else { return }
-            if let content = answer.content { self.center.showAutomatic(content, owner: source.owner, engine: chosen, store: store, target: target) }
-            else { self.center.dismissPending(owner: source.owner) }
+            if let content = answer.content { self.show(content, owner: source.owner, engine: engine, store: store, target: target, done: true) }
+            else if !self.lookupClosed { self.center.dismissPending(owner: source.owner) }
+            self.lookupCard = nil
         }
-        // A model's answer takes a few seconds: the corner says something is being read meanwhile.
+        // A model's answer takes a few seconds: the corner says something is being read until its first part comes.
         if reads {
             let delay = readingDelay
             pending = Task { @MainActor [weak self] in
                 try? await Task.sleep(for: delay)
-                guard let self, !Task.isCancelled else { return }
+                guard let self, !Task.isCancelled, self.generation == generation, self.lookupCard == nil, !self.lookupClosed else { return }
                 self.pending = nil
-                self.readingShown = true
-                self.center.showAutomaticPending(owner: source.owner)
+                self.lookupCard = self.center.showAutomaticPending(owner: source.owner)
             }
         }
     }
 
     /// A passage, or an area that has to be seen, is read by the model when it may be (AI 설명), and the card says
-    /// what the model read. Without the model such a selection gets a card only when the decision step is sure of
-    /// an article, never one guessed from its words; a word or a term is looked up as it is. No content: no card;
-    /// `final` says whether that answer holds next time (false after a failure).
-    func resolve(_ source: Source) async -> (content: NativeQuickLookupAutoContent?, final: Bool) {
+    /// what the model read, part by part as it arrives (`partial`). Without the model such a selection gets a card
+    /// only when the decision step is sure of an article, never one guessed from its words; a word or a term is
+    /// looked up as it is. No content: no card; `final` says whether that answer holds next time (false after a failure).
+    func resolve(_ source: Source, partial: (@MainActor (NativeQuickLookupAutoContent) -> Void)? = nil) async -> (content: NativeQuickLookupAutoContent?, final: Bool) {
         if explainer.wouldTry(source.text, picture: source.picture != nil) {
             let picture = source.picture.map { area in { @Sendable in await NativeQuickLookupPDFText.picture(url: area.url, page: area.page, region: area.region) } }
-            if let answer = await explainer.explain(text: source.text, heading: source.heading, title: source.title, picture: picture) {
+            var shown: NativeQuickLookupAutoContent?
+            let answer = await explainer.explain(text: source.text, heading: source.heading, title: source.title, picture: picture) { part in
+                let content = Self.content(part)
+                shown = content
+                partial?(content)
+            }
+            if let answer {
                 // The model found nothing worth a card.
                 guard case .explanation(let explanation) = answer else { return (nil, true) }
-                guard !Task.isCancelled else { return (nil, false) }
-                // The link is Wikipedia's article on the topic when there is one, else a web search for the model's words.
-                let article = (try? await resolver.wikipedia(text: explanation.topic, query: explanation.topic, heading: source.heading)) ?? nil
-                let words = explanation.search ?? explanation.topic
-                return (NativeQuickLookupAutoContent(query: article == nil ? words : explanation.topic, result: article.map { .wikipedia($0) } ?? .search(words),
-                                                     explanation: explanation), true)
+                return (Self.content(explanation), true)
             }
+            // Cut off after part of the answer was on the card: that part stays, and is asked for again next time.
+            if let shown { return (shown, false) }
             guard !Task.isCancelled else { return (nil, false) }
         }
         // What has to be seen cannot be told from the pieces of text in it.
@@ -374,5 +393,13 @@ final class NativeQuickLookupAuto {
         guard !Task.isCancelled, !NativeQuickLookupExplain.isPassage(source.text) else { return (nil, false) }
         guard let outcome = await resolver.resolve(source.text, heading: source.heading) else { return (nil, false) }
         return (NativeQuickLookupAutoContent(query: outcome.query, result: outcome.result), true)
+    }
+
+    /// AI 설명's card: the topic and the explanation, opening the reader's search engine for the model's search
+    /// words (or its topic). Nothing more is asked of anyone before it shows; a tap opens the search page, where
+    /// Google's AI 개요 sits above the results.
+    static func content(_ explanation: NativeQuickLookupExplanation) -> NativeQuickLookupAutoContent {
+        let words = explanation.search ?? explanation.topic
+        return NativeQuickLookupAutoContent(query: words, result: .search(words), explanation: explanation)
     }
 }

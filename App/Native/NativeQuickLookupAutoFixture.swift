@@ -3,8 +3,9 @@ import Foundation
 
 /// UI tests of 자동 찾아보기 (`--native-ui-testing --native-auto-lookup-fixture`): Wikipedia's search answers from
 /// three articles about the seeded lecture, with no network. `--native-auto-lookup-ai-fixture` also makes the
-/// reader a signed-in Pro member who agreed to OpenAI and Anthropic, and the model a fixed reply after 0.4 s
-/// (엔트로피 with its article, 카르노 순환 with none, anything else 건너뛰기).
+/// reader a signed-in Pro member who agreed to OpenAI and Anthropic, and the model a fixed reply (엔트로피 or
+/// 카르노 순환 with search words, anything else 건너뛰기) that streams in: its first half after 0.4 s, the rest
+/// 0.3 s later.
 /// `--native-auto-lookup-on` (NativeQuickLookupPreferences) skips the one-time question.
 @MainActor
 enum NativeQuickLookupAutoFixture {
@@ -54,6 +55,11 @@ enum NativeQuickLookupAutoFixture {
             else if text.contains("엔트로피") || text.contains("Entropy") { reply = "주제: 엔트로피\n설명: 고립된 계의 엔트로피는 시간이 지나도 줄지 않는다는 열역학 제2법칙을 말해요.\n수식:\n검색어: second law of thermodynamics entropy" }
             else if text.contains("카르노") { reply = "주제: 카르노 순환\n설명: 두 등온 과정과 두 단열 과정으로 된 이상적인 열기관의 순환이에요.\n수식:\n검색어: Carnot cycle ideal heat engine" }
             else { reply = "건너뛰기" }
+            // As a stream comes: the topic and the start of the explanation, then the rest.
+            if let explanation = reply.range(of: "설명: ") {
+                call.progress(String(reply[..<(reply.index(explanation.upperBound, offsetBy: 6, limitedBy: reply.endIndex) ?? reply.endIndex)]))
+                try await Task.sleep(for: .milliseconds(300))
+            }
             return .init(text: reply, inputTokens: picture ? 1_150 : 480, outputTokens: 58)
         }
     }

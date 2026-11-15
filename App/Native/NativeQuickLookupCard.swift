@@ -18,7 +18,7 @@ final class NativeQuickLookupCenter {
     struct Card: Identifiable, Equatable {
         let id = UUID()
         let owner: String
-        let query: NativeQuickLookupQuery
+        var query: NativeQuickLookupQuery
         var engine = "google"
         var phase = Phase.loading
         /// The search preview could not load its page.
@@ -27,6 +27,9 @@ final class NativeQuickLookupCenter {
         var automatic = false
         /// AI 설명 for a passage; `phase` then holds the page the card opens.
         var explanation: NativeQuickLookupExplanation?
+        /// An automatic card whose answer is still arriving (AI 설명 is shown as the model writes it): it does
+        /// not leave by itself until all of it is there.
+        var streaming = false
     }
     private(set) var card: Card?
     /// The pane asking whether 자동 찾아보기 may run, the first time it would.
@@ -53,13 +56,32 @@ final class NativeQuickLookupCenter {
         start()
     }
 
-    /// An automatic lookup's answer replaces whatever card there is.
-    func showAutomatic(_ content: NativeQuickLookupAutoContent, owner: String, engine: String, store: NativeWorkspaceStore?, target: NativeWorkspaceTarget?) {
-        dismiss()
+    /// An automatic lookup's answer replaces whatever card there is. `updating`: the card this lookup already
+    /// shows (its 읽는 중…, or the part of the answer that has come), changed in place so it does not blink; when
+    /// that card is gone (closed, or another card took its place) nothing is shown and nil comes back.
+    /// `done: false`: more of the answer is coming, and the card does not count down to leave until it is all
+    /// there. Returns the card's id.
+    @discardableResult
+    func showAutomatic(_ content: NativeQuickLookupAutoContent, owner: String, engine: String, store: NativeWorkspaceStore?, target: NativeWorkspaceTarget?,
+                       updating id: UUID? = nil, done: Bool = true) -> UUID? {
+        var card: Card
+        if let id {
+            guard let current = self.card, current.id == id else { return nil }
+            card = current
+        } else {
+            dismiss()
+            card = Card(owner: owner, query: .phrase(""))
+        }
         self.store = store; self.target = target
-        var card = Card(owner: owner, query: NativeQuickLookupQuery.classify(content.query) ?? .phrase(content.query))
+        card.query = NativeQuickLookupQuery.classify(content.query) ?? .phrase(content.query)
         card.engine = engine; card.phase = .result(content.result); card.automatic = true; card.explanation = content.explanation
+        card.streaming = !done
         self.card = card
+        if done { scheduleDismissal(for: content) }
+        return card.id
+    }
+
+    private func scheduleDismissal(for content: NativeQuickLookupAutoContent) {
         let shown: Int
         switch content.result {
         case .dictionary(let definition): shown = definition.lines.joined().count
@@ -73,20 +95,24 @@ final class NativeQuickLookupCenter {
 
     /// A model is reading the selection: the small card says so until `showAutomatic` replaces it or
     /// `dismissPending` takes it away (nothing worth a card, or no answer).
-    func showAutomaticPending(owner: String) {
+    @discardableResult
+    func showAutomaticPending(owner: String) -> UUID {
         dismiss()
         var card = Card(owner: owner, query: .phrase(""))
         card.automatic = true
         self.card = card
+        return card.id
     }
+    /// The pane's automatic card goes if its lookup has not finished it (읽는 중…, or an answer still arriving):
+    /// the lookup stopped. A finished card stays.
     func dismissPending(owner: String) {
         guard isPending(owner: owner) else { return }
         dismiss()
     }
-    /// 읽는 중… is showing for this pane.
+    /// An unfinished automatic card is showing for this pane.
     func isPending(owner: String) -> Bool {
         guard let card else { return false }
-        return card.owner == owner && card.automatic && card.phase == .loading
+        return card.owner == owner && card.automatic && (card.phase == .loading || card.streaming)
     }
 
     /// Asks once whether selections may look themselves up; `answer` gets the reader's choice.
