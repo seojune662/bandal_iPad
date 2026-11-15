@@ -94,8 +94,14 @@ Tests: `sh tests/run-local.sh` (SQL) and `cd supabase/functions && deno test`.
 
 `202611060002_ipad_store.sql` + Edge Functions `ipad-store` and
 `ipad-store-notifications` (both `verify_jwt = false`) keep `ipad_entitlements` current
-for the AI plan. JWS are verified with `@apple/app-store-server-library` against Apple's
-roots (`_shared/store/certificates.ts`), production first and sandbox when Apple says so.
+for the AI plan. JWS are verified in `_shared/store/apple.ts` with WebCrypto against Apple's
+roots (`_shared/store/certificates.ts`): the chain to a pinned root, Apple's two certificate
+extensions, the dates, the ES256 signature, then the bundle id, the app id (production
+notifications) and the environment the signed payload names. Apple's own
+`@apple/app-store-server-library` does not work in the Edge runtime (its node:crypto has no
+`X509Certificate.verify`; every purchase was refused until 2026-11-15); OCSP revocation, which
+that library adds, is not checked. A refused payload is logged with its reason
+(`apple verification refused`): look there first when purchases stop arriving.
 
 - `ipad-store` (user JWT): `{action:"sync", transactions:[jws…]}` from
   `Transaction.currentEntitlements`, and `{action:"redeem", transaction: jws}` for the
