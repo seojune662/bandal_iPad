@@ -2,8 +2,8 @@ import Foundation
 import os
 
 /// AI 설명: what the model wrote about a passage or a lassoed area, after the app checked it. The link is never the
-/// model's: the topic is looked up on Wikipedia like any other term, and when it has no article there the card
-/// searches the web for the model's search words.
+/// model's: the card opens the reader's own search engine (설정's browser search engine, Google unless changed) for
+/// the model's search words, where the engine's own summary (Google's AI 개요) is a tap away.
 struct NativeQuickLookupExplanation: Equatable, Sendable {
     let topic: String
     let summary: String
@@ -123,8 +123,26 @@ enum NativeQuickLookupExplain {
     static func parse(_ output: String, selection: String, picture: Bool = false) -> Answer? {
         let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
         if isSkip(text) { return .skip }
+        return answer(fields(text.split(whereSeparator: \.isNewline)), selection: selection, picture: picture)
+    }
+
+    /// What a reply still arriving already says, once it is worth showing: its topic line is finished and is not
+    /// 건너뛰기, and its explanation has begun (as far as it has come). A formula or search words count only once
+    /// their line is finished. nil until then.
+    static func partial(_ output: String, selection: String, picture: Bool = false) -> NativeQuickLookupExplanation? {
+        let lines = output.split(maxSplits: .max, omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        // The last line is still being written.
+        guard lines.count >= 2, let open = lines.last else { return nil }
+        var finished = fields(lines.dropLast())
+        if finished["summary"] == nil, let summary = fields([open])["summary"] { finished["summary"] = summary }
+        guard case .explanation(let explanation)? = answer(finished, selection: selection, picture: picture) else { return nil }
+        return explanation
+    }
+
+    /// The four lines' values, by name; the first of each counts.
+    private static func fields<Lines: Sequence>(_ lines: Lines) -> [String: String] where Lines.Element == Substring {
         var fields: [String: String] = [:]
-        for raw in text.split(whereSeparator: \.isNewline) {
+        for raw in lines {
             let line = raw.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "-*•# "))
             guard let colon = line.firstIndex(where: { $0 == ":" || $0 == "：" }) else { continue }
             let key = line[..<colon].replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespaces).lowercased()
@@ -137,6 +155,10 @@ enum NativeQuickLookupExplain {
             default: continue
             }
         }
+        return fields
+    }
+
+    private static func answer(_ fields: [String: String], selection: String, picture: Bool) -> Answer? {
         let topic = clean(fields["topic"] ?? "")
         if isSkip(topic) { return .skip }
         let summary = clean(fields["summary"] ?? "")
@@ -187,6 +209,8 @@ final class NativeQuickLookupExplainer {
         let model: String
         let body: [String: Any]
         let endpoint: AIEndpoint
+        /// The reply's text so far, after each part of it that arrives.
+        var progress: @MainActor (String) -> Void = { _ in }
     }
     struct Reply: Equatable {
         var text = ""
@@ -215,23 +239,29 @@ final class NativeQuickLookupExplainer {
         enabled() && (picture || NativeQuickLookupExplain.isPassage(text)) && NativeQuickLookupExplain.dailyLimit(tier()) > 0
     }
 
-    /// `picture`: makes the area's JPEG (base64) when the area has to be seen; it is made only once the call is sure to go out.
-    func explain(text: String, heading: String?, title: String, picture: (@Sendable () async -> String?)? = nil) async -> NativeQuickLookupExplain.Answer? {
+    /// `picture`: makes the area's JPEG (base64) when the area has to be seen; it is sent only once the call is sure
+    /// to go out. `partial`: the answer as it arrives, each time more of it is worth showing (NativeQuickLookupExplain.partial).
+    func explain(text: String, heading: String?, title: String, picture: (@Sendable () async -> String?)? = nil,
+                 partial: (@MainActor (NativeQuickLookupExplanation) -> Void)? = nil) async -> NativeQuickLookupExplain.Answer? {
         let tier = tier()
         guard NativeQuickLookupExplain.allowedLocally(enabled: enabled(), text: text, picture: picture != nil, tier: tier, usedToday: 0) else { return nil }
-        return await Self.within(deadline) { [self] in try await self.call(text: text, heading: heading, title: title, picture: picture, tier: tier) }
+        return await Self.within(deadline) { [self] in try await self.call(text: text, heading: heading, title: title, picture: picture, tier: tier, partial: partial) }
     }
 
     private enum Refusal: Error { case dayLimit, noModel, unreadable, nothingToSend }
 
-    private func call(text: String, heading: String?, title: String, picture: (@Sendable () async -> String?)?, tier: Membership.Tier) async throws -> NativeQuickLookupExplain.Answer {
+    private func call(text: String, heading: String?, title: String, picture: (@Sendable () async -> String?)?, tier: Membership.Tier,
+                      partial: (@MainActor (NativeQuickLookupExplanation) -> Void)?) async throws -> NativeQuickLookupExplain.Answer {
+        // The picture is drawn while the account and the model are checked.
+        let drawing = picture.map { make in Task { await make() } }
+        defer { drawing?.cancel() }
         let endpoint = try await endpoint()
         guard used(endpoint.userID) < NativeQuickLookupExplain.dailyLimit(tier) else { throw Refusal.dayLimit }
         let config = try await config()
         try Task.checkCancellation()
         let consented = NativeQuickLookupExplain.consented(config, user: endpoint.userID, granted: granted)
         guard let (model, provider) = NativeQuickLookupExplain.cheapest(config, consented: consented) else { throw Refusal.noModel }
-        let image = await picture?()
+        let image = await drawing?.value
         try Task.checkCancellation()
         // The picture could not be made: the text goes alone when there is some.
         guard image != nil || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Refusal.nothingToSend }
@@ -242,10 +272,22 @@ final class NativeQuickLookupExplainer {
         // Counted when sent: a call the deadline gives up on is still answered, and paid for, upstream.
         record(endpoint.userID)
         let started = Date()
-        let reply = try await send(Call(provider: provider, model: model, body: body, endpoint: endpoint))
+        var request = Call(provider: provider, model: model, body: body, endpoint: endpoint)
+        var firstPart: Int?
+        if let partial {
+            var shown: NativeQuickLookupExplanation?
+            let seen = image != nil
+            request.progress = { sofar in
+                guard let part = NativeQuickLookupExplain.partial(sofar, selection: text, picture: seen), part != shown else { return }
+                if shown == nil { firstPart = Int(Date().timeIntervalSince(started) * 1000) }
+                shown = part
+                partial(part)
+            }
+        }
+        let reply = try await send(request)
         let answer = NativeQuickLookupExplain.parse(reply.text, selection: text, picture: image != nil)
         let outcome = switch answer { case .explanation: "explanation"; case .skip: "skip"; case nil: "unreadable" }
-        Self.log.info("explain model=\(model, privacy: .public) picture=\(image == nil ? 0 : 1, privacy: .public) pictureBytes=\((image?.count ?? 0) * 3 / 4, privacy: .public) in=\(reply.inputTokens, privacy: .public) out=\(reply.outputTokens, privacy: .public) ms=\(Int(Date().timeIntervalSince(started) * 1000), privacy: .public) answer=\(outcome, privacy: .public)")
+        Self.log.info("explain model=\(model, privacy: .public) picture=\(image == nil ? 0 : 1, privacy: .public) pictureBytes=\((image?.count ?? 0) * 3 / 4, privacy: .public) in=\(reply.inputTokens, privacy: .public) out=\(reply.outputTokens, privacy: .public) firstMs=\(firstPart ?? -1, privacy: .public) ms=\(Int(Date().timeIntervalSince(started) * 1000), privacy: .public) answer=\(outcome, privacy: .public)")
         guard let answer else { throw Refusal.unreadable }
         return answer
     }
@@ -300,7 +342,9 @@ enum NativeQuickLookupExplainTransport {
             let data = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
             guard data != "[DONE]", let object = (try? JSONSerialization.jsonObject(with: Data(data.utf8))) as? [String: Any] else { continue }
             if let usage = object["bandal_usage"] as? [String: Any] { AIUsage.shared.update(usage); continue }
+            let before = reply.text.count
             try read(object, provider: call.provider, into: &reply)
+            if reply.text.count != before { call.progress(reply.text) }
         }
         return reply
     }

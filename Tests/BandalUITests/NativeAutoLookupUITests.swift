@@ -159,8 +159,8 @@ final class NativeAutoLookupUITests: XCTestCase {
         attach(app, "Turned off: the lasso only selects")
     }
 
-    /// A Pro member who agreed to both providers: a passage gets AI 설명 (the fixed reply) with its formula,
-    /// linked to the topic's article; a topic with no article links to a web search for the model's words.
+    /// A Pro member who agreed to both providers: a passage gets AI 설명 (the fixed reply, streamed in two parts)
+    /// with its formula, and the card opens the search engine for the model's search words.
     @MainActor
     func testAPassageGetsAnAIExplanationWithItsFormula() throws {
         let app = launch(["--native-auto-lookup-on", "--native-auto-lookup-ai-fixture", "--native-pencil-dispatch-fixture"])
@@ -168,10 +168,11 @@ final class NativeAutoLookupUITests: XCTestCase {
         let editor = app.textViews["native-markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 15), app.debugDescription)
         selectNewLine("엔트로피는 무질서도의 척도이고 볼츠만 식 S = k ln W 로 쓴다.", in: editor, app: app)
-        let card = expectCard("auto-ai-wikipedia-ko", in: app)
+        let card = expectCard("auto-ai-search", in: app)
         XCTAssertTrue(card.descendants(matching: .any)["native-quick-lookup-ai"].exists, app.debugDescription)
-        XCTAssertTrue(card.descendants(matching: .any)["native-quick-lookup-formula"].exists, "the formula is in the text, so it is shown\n" + app.debugDescription)
-        XCTAssertTrue(card.buttons["native-quick-lookup-open"].label.contains("ko.wikipedia.org"), card.buttons["native-quick-lookup-open"].label)
+        // The formula line comes after the first part of the answer.
+        XCTAssertTrue(card.descendants(matching: .any)["native-quick-lookup-formula"].waitForExistence(timeout: 5), "the formula is in the text, so it is shown\n" + app.debugDescription)
+        XCTAssertTrue(card.buttons["native-quick-lookup-open"].label.contains("google.com"), card.buttons["native-quick-lookup-open"].label)
         attach(app, "Markdown passage: AI 설명 with a formula")
         app.buttons["native-quick-lookup-close"].tap()
 
@@ -183,19 +184,28 @@ final class NativeAutoLookupUITests: XCTestCase {
         let first = app.staticTexts["고립계의 엔트로피는 감소하지 않는다."].frame, second = app.staticTexts[Self.sentence].frame
         screen(app, first.minX - 12, first.minY - 8).press(forDuration: 0.05, thenDragTo: screen(app, max(first.maxX, second.maxX) + 12, second.maxY + 8),
                                                            withVelocity: .slow, thenHoldForDuration: 0.05)
-        let pdfCard = expectCard("auto-ai-wikipedia-ko", in: app)
+        let pdfCard = expectCard("auto-ai-search", in: app)
+        sleep(1)
         XCTAssertFalse(pdfCard.descendants(matching: .any)["native-quick-lookup-formula"].exists)
         attach(app, "PDF passage: AI 설명")
         app.buttons["native-quick-lookup-close"].tap()
 
-        // A topic Wikipedia (the fixture) has no article on: still AI 설명, and the link searches for the model's words.
+        // A tap opens the search for the model's words in a browser tab, where the engine's own summary is.
         backToTab("2주차 정리.md", in: app)
         selectNewLine("카르노 순환은 두 등온 과정과 두 단열 과정으로 이루어진다.", in: editor, app: app)
         let searchCard = expectCard("auto-ai-search", in: app)
         XCTAssertTrue(searchCard.descendants(matching: .any)["native-quick-lookup-ai"].exists, app.debugDescription)
         let label = searchCard.buttons["native-quick-lookup-open"].label
         XCTAssertTrue(label.contains("카르노 순환") && label.contains("google.com"), label)
-        attach(app, "AI 설명 with a web search link")
+        attach(app, "AI 설명 with the search engine's link")
+        sleep(1)
+        searchCard.buttons["native-quick-lookup-open"].tap()
+        XCTAssertTrue(searchCard.waitForNonExistence(timeout: 5))
+        let address = app.textFields["native-browser-address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 15), app.debugDescription)
+        let opened = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "google.com"), object: address)
+        XCTAssertEqual(XCTWaiter.wait(for: [opened], timeout: 20), .completed, "address: \(address.value as? String ?? "")")
+        attach(app, "The AI card tapped: the search in a browser tab")
     }
 
     // MARK: helpers
