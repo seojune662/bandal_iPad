@@ -4,7 +4,8 @@
     "jsr:@std/assert@1.0.13": "1.0.13",
     "jsr:@std/internal@^1.0.6": "1.0.14",
     "npm:@apple/app-store-server-library@3.1.0": "3.1.0",
-    "npm:@supabase/supabase-js@2.112.1": "2.112.1"
+    "npm:@supabase/supabase-js@2.112.1": "2.112.1",
+    "npm:jsrsasign@11.1.5": "11.1.5"
   },
   "jsr": {
     "@std/assert@1.0.13": {

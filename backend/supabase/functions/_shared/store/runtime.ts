@@ -21,16 +21,18 @@ export function runtime(env: (key: string) => string | undefined) {
     status: actor => rpc<Json>('ai_status', { actor }),
   }
   const testers = new Set((env('APPLE_SANDBOX_ALLOWED_USER_IDS') ?? '').split(',').map(id => id.trim().toLowerCase()).filter(Boolean))
+  const log = (message: string, detail: unknown) => console.error(message, JSON.stringify(detail))
   return createStore({
     // '*' lets every account use sandbox purchases (App Review buys in the sandbox with its own account).
     sandboxAllowed: actor => testers.has('*') || testers.has(actor.toLowerCase()),
     db: store,
-    verifier: createAppleVerifier(Number(env('APPLE_APP_ID') ?? '6824053530')),
+    // A refused payload is logged with its reason: a verifier that refuses everything must not go unnoticed again.
+    verifier: createAppleVerifier(Number(env('APPLE_APP_ID') ?? '6824053530'), { log }),
     async authenticate(token) {
       const { data, error } = await db.auth.getClaims(token)
       const claims = data?.claims
       return !error && typeof claims?.sub === 'string' && claims.role === 'authenticated' && claims.is_anonymous !== true ? claims.sub : null
     },
-    log: (message, detail) => console.error(message, JSON.stringify(detail)),
+    log,
   })
 }
