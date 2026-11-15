@@ -2,24 +2,24 @@ import XCTest
 
 /// 찾아보기's decision step against the seeded Markdown note (`--native-search-fixture`), with Wikipedia answered by
 /// `--native-auto-lookup-fixture` and the decision by `--lookup-decisions-fixture` (NativeQuickLookupDecideFixture):
-/// no network is used. Each passage is one whose card the decision changes: without it the search's own pick differs.
+/// no network is used. A passage no model read gets a card only for an article the decision is sure of.
 final class NativeLookupDecisionsUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    /// The decision picks 열역학 제2법칙 (the search alone finds no article for its key term "않는다").
+    /// The decision picks 열역학 제2법칙.
     private static let lawPassage = "고립계에서 엔트로피가 줄지 않는다는 법칙을 말한다."
-    /// The decision says none of the articles fits (the search alone shows the 엔트로피 article).
+    /// The decision says none of the articles fits.
     private static let unrelatedPassage = "엔트로피 경제학이라는 말은 경제를 엔트로피에 빗댄 표현이다."
-    /// Not worth a card (the search alone shows a 웹에서 검색 line).
+    /// Not worth a card.
     private static let noticePassage = "과제는 다음 주 금요일까지 제출하세요."
 
     @MainActor
-    func testTheDecisionChoosesTheArticleASearchLinkOrNoCard() throws {
+    func testTheDecisionChoosesTheArticleOrNoCard() throws {
         let app = launch()
         let editor = openNote(in: app)
 
         selectNewLine(Self.lawPassage, in: editor, app: app)
-        var card = expectCard("auto-wikipedia-ko", in: app)
+        let card = expectCard("auto-wikipedia-ko", in: app)
         let open = card.buttons["native-quick-lookup-open"]
         XCTAssertTrue(open.label.contains("열역학 제2법칙") && open.label.contains("ko.wikipedia.org"), open.label)
         XCTAssertFalse(card.descendants(matching: .any)["native-quick-lookup-ai"].exists, "a decision writes nothing: no AI 설명 badge")
@@ -27,11 +27,9 @@ final class NativeLookupDecisionsUITests: XCTestCase {
         close(card, in: app)
 
         selectNewLine(Self.unrelatedPassage, in: editor, app: app)
-        card = expectCard("auto-search", in: app)
-        XCTAssertTrue(card.buttons["native-quick-lookup-open"].label.contains("웹에서 검색"), card.buttons["native-quick-lookup-open"].label)
-        XCTAssertFalse(app.webViews["native-quick-lookup-preview"].exists, "a search link loads nothing by itself")
-        attach(app, "Decision: none of the articles, a search link")
-        close(card, in: app)
+        sleep(4)
+        XCTAssertFalse(app.descendants(matching: .any)["native-quick-lookup-card"].exists, "none of the articles fits: no card, and no link for one of its words\n" + app.debugDescription)
+        attach(app, "Decision: none of the articles, no card")
 
         selectNewLine(Self.noticePassage, in: editor, app: app)
         sleep(4)
@@ -40,8 +38,8 @@ final class NativeLookupDecisionsUITests: XCTestCase {
         attach(app, "Decision: not worth a card")
     }
 
-    /// 설정 › AI › 찾아보기 has the switch, on by default and following the automatic lookup; off, a passage gets the
-    /// search's own pick again.
+    /// 설정 › AI › 찾아보기 has the switch, on by default and following the automatic lookup; off, a passage nobody
+    /// read gets no card, and a term is looked up as ever.
     @MainActor
     func testTheDecisionIsASwitchInSettings() throws {
         let app = launch()
@@ -67,9 +65,12 @@ final class NativeLookupDecisionsUITests: XCTestCase {
 
         let editor = openNote(in: app)
         selectNewLine(Self.lawPassage, in: editor, app: app)
-        let card = expectCard("auto-search", in: app)
-        XCTAssertFalse(card.buttons["native-quick-lookup-open"].label.contains("열역학 제2법칙"), card.buttons["native-quick-lookup-open"].label)
-        attach(app, "Decision off: the search's own pick")
+        sleep(4)
+        XCTAssertFalse(app.descendants(matching: .any)["native-quick-lookup-card"].exists, "nobody read the passage\n" + app.debugDescription)
+        attach(app, "Decision off: a passage shows no card")
+        selectNewLine("엔트로피", in: editor, app: app)
+        let card = expectCard("auto-wikipedia-ko", in: app)
+        XCTAssertTrue(card.buttons["native-quick-lookup-open"].label.contains("엔트로피"), card.buttons["native-quick-lookup-open"].label)
     }
 
     // MARK: helpers

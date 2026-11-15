@@ -3,7 +3,8 @@ import Foundation
 
 /// UI tests of 자동 찾아보기 (`--native-ui-testing --native-auto-lookup-fixture`): Wikipedia's search answers from
 /// three articles about the seeded lecture, with no network. `--native-auto-lookup-ai-fixture` also makes the
-/// reader a signed-in Pro member who agreed to OpenAI and Anthropic, and the model a fixed reply after 0.4 s.
+/// reader a signed-in Pro member who agreed to OpenAI and Anthropic, and the model a fixed reply after 0.4 s
+/// (엔트로피 with its article, 카르노 순환 with none, anything else 건너뛰기).
 /// `--native-auto-lookup-on` (NativeQuickLookupPreferences) skips the one-time question.
 @MainActor
 enum NativeQuickLookupAutoFixture {
@@ -42,16 +43,21 @@ enum NativeQuickLookupAutoFixture {
         explainer.granted = { _, _, _ in true }
         explainer.send = { call in
             try await Task.sleep(for: .milliseconds(400))
-            let text = ((call.body["input"] as? [[String: Any]])?.first?["content"] as? String) ?? ""
-            calls.append((call.model, text))
+            // The text alone, or the text and the area's picture (NativeQuickLookupExplain.body).
+            let content = (call.body["input"] as? [[String: Any]])?.first?["content"]
+            let parts = content as? [[String: Any]] ?? []
+            let text = content as? String ?? parts.compactMap { $0["text"] as? String }.joined()
+            let picture = parts.contains { $0["type"] as? String == "input_image" }
+            calls.append((call.model, text, picture))
             let reply: String
-            if text.contains("S = k ln W") { reply = "주제: 엔트로피\n설명: 볼츠만 식은 엔트로피를 한 상태가 가질 수 있는 미시 상태의 수로 나타내요.\n수식: S = k \\ln W" }
-            else if text.contains("엔트로피") || text.contains("Entropy") { reply = "주제: 엔트로피\n설명: 고립된 계의 엔트로피는 시간이 지나도 줄지 않는다는 열역학 제2법칙을 말해요.\n수식:" }
+            if text.contains("S = k ln W") { reply = "주제: 엔트로피\n설명: 볼츠만 식은 엔트로피를 한 상태가 가질 수 있는 미시 상태의 수로 나타내요.\n수식: S = k \\ln W\n검색어: Boltzmann entropy formula" }
+            else if text.contains("엔트로피") || text.contains("Entropy") { reply = "주제: 엔트로피\n설명: 고립된 계의 엔트로피는 시간이 지나도 줄지 않는다는 열역학 제2법칙을 말해요.\n수식:\n검색어: second law of thermodynamics entropy" }
+            else if text.contains("카르노") { reply = "주제: 카르노 순환\n설명: 두 등온 과정과 두 단열 과정으로 된 이상적인 열기관의 순환이에요.\n수식:\n검색어: Carnot cycle ideal heat engine" }
             else { reply = "건너뛰기" }
-            return .init(text: reply, inputTokens: 480, outputTokens: 58)
+            return .init(text: reply, inputTokens: picture ? 1_150 : 480, outputTokens: 58)
         }
     }
-    /// Model and passage of every fixture call, for a test that wants to see what would have been sent.
-    static var calls: [(model: String, text: String)] = []
+    /// Model, passage and whether the area's picture went with it, of every fixture call.
+    static var calls: [(model: String, text: String, picture: Bool)] = []
 }
 #endif

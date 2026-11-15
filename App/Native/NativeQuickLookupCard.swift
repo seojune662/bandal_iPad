@@ -67,7 +67,26 @@ final class NativeQuickLookupCenter {
         case .search, .unreachable: shown = 0
         }
         // About five seconds: the small card shows two or three lines, however long the article's lead is.
-        scheduleDismissal(characters: min(content.explanation?.summary.count ?? shown, 72))
+        // AI 설명 is shown whole (its formula reads as a line more), so it stays by its length.
+        scheduleDismissal(characters: content.explanation.map { $0.summary.count + ($0.formula == nil ? 0 : 24) } ?? min(shown, 72))
+    }
+
+    /// A model is reading the selection: the small card says so until `showAutomatic` replaces it or
+    /// `dismissPending` takes it away (nothing worth a card, or no answer).
+    func showAutomaticPending(owner: String) {
+        dismiss()
+        var card = Card(owner: owner, query: .phrase(""))
+        card.automatic = true
+        self.card = card
+    }
+    func dismissPending(owner: String) {
+        guard isPending(owner: owner) else { return }
+        dismiss()
+    }
+    /// 읽는 중… is showing for this pane.
+    func isPending(owner: String) -> Bool {
+        guard let card else { return false }
+        return card.owner == owner && card.automatic && card.phase == .loading
     }
 
     /// Asks once whether selections may look themselves up; `answer` gets the reader's choice.

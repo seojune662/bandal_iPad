@@ -4,15 +4,17 @@ import os
 /// 찾아보기's decision step: OpenAI's Decisions API (gpt-6-luna) through the ai-proxy, which answers with probabilities
 /// and one of the app's own choices, never with text or links, and is paid in input tokens only. For a passage it
 /// decides, in one call, whether there is anything worth an automatic card (가) and which of the Wikipedia articles
-/// found for its key terms is the one it is about, or none of them (나). Every failure leaves the lookup as it was.
+/// found for its key terms is the one it is about, or none of them (나). It is asked for a passage no model read
+/// (AI 설명 off, a free plan, or the model gave no answer); such a passage gets a card only for an article the
+/// decision is sure of.
 enum NativeQuickLookupDecide {
     static let model = "gpt-6-luna"
     static let route = "v1/openai/decisions"
-    /// A decision later than this is not waited for: the lookup goes on without it.
+    /// A decision later than this is not waited for.
     static let deadline: Duration = .milliseconds(1500)
     /// 가 below this: no automatic card. Low on purpose: a card shown for little costs a glance, a missing one a lookup.
     static let minimumWorth = 0.3
-    /// 나 below this confidence is not trusted: the lookup goes on as without a decision (the search's own pick).
+    /// 나 below this confidence is not trusted: no card.
     static let minimumConfidence = 0.5
     /// The choice that says none of the articles fits. A candidate of this title is left out.
     static let noArticle = "맞는 문서 없음"
@@ -21,7 +23,7 @@ enum NativeQuickLookupDecide {
     /// UI tests: the decision answered by `NativeQuickLookupDecideFixture`. Without it no decision is made under `--native-ui-testing`.
     static let fixtureArgument = "--lookup-decisions-fixture"
 
-    /// Calls a day per plan, per account on this iPad. Past it the lookup goes on without a decision.
+    /// Calls a day per plan, per account on this iPad. Past it nothing is decided.
     static func dailyLimit(_ tier: Membership.Tier) -> Int {
         switch tier { case .free: 5; case .plus: 50; case .pro: 150 }
     }
@@ -136,9 +138,9 @@ enum NativeQuickLookupDecide {
         case skip
         /// Worth a card, and 나 chose this article with enough confidence.
         case article(Candidate)
-        /// Worth a card; none of the articles is it, or none was found: a link to search.
+        /// Worth a card, but none of the articles is it, or none was found.
         case noArticle
-        /// Worth a card, but 나 is unsure: the lookup goes on as without a decision.
+        /// Worth a card, but 나 is unsure which article.
         case unsure
     }
 
@@ -154,17 +156,11 @@ enum NativeQuickLookupDecide {
         guard let candidate = candidates.first(where: { $0.value == choice }) else { return nil }
         return confidence >= minimumConfidence ? .article(candidate) : .unsure
     }
-
-    /// What the search link of a passage searches for when no article fits.
-    static func searchQuery(_ text: String, heading: String?) -> String {
-        let normalized = NativeQuickLookupQuery.normalized(text)
-        return NativeQuickLookupTerm.query(for: normalized, heading: heading) ?? NativeQuickLookupQuery.classify(normalized)?.text ?? normalized
-    }
 }
 
 /// Asks the decision for one passage, quietly: no consent sheet, no paywall or 충전 popover. Whatever goes wrong
 /// (signed out, OpenAI not agreed to on the iPad or at the server, the day's limit, no route on the server, a refusal,
-/// a budget refusal, 1.5 seconds passing, the network) comes back as nil, and the lookup goes on without it.
+/// a budget refusal, 1.5 seconds passing, the network) comes back as nil.
 @MainActor
 final class NativeQuickLookupDecider {
     struct Call {
@@ -229,7 +225,7 @@ final class NativeQuickLookupDecider {
     }
 
     /// The candidate articles; [] when the passage has no term or Wikipedia has nothing for them, nil when no search
-    /// could be made at all (offline, Wikipedia failing): then nothing is known and the lookup goes on without a decision.
+    /// could be made at all (offline, Wikipedia failing): then nothing is known and nothing is decided.
     private func gather(text: String, heading: String?) async -> [NativeQuickLookupDecide.Candidate]? {
         let searches = NativeQuickLookupDecide.searches(text: text, heading: heading)
         guard !searches.isEmpty else { return [] }
@@ -302,29 +298,18 @@ extension NativeWikipediaSearch {
 }
 
 extension NativeQuickLookupAuto {
-    /// The decision first, for a passage. nil: no decision (not asked, failed, or unsure of the article), and the
-    /// lookup goes on as before. With AI 설명 on, it is asked only for a passage worth a card, with the chosen title.
+    /// The decision for a passage no model read (AI 설명 off, not Plus or Pro, or it failed). A card only for an
+    /// article the decision is sure of. Nothing fits, or it is not worth a card: no card, rather than a link that
+    /// searches the web for one of the passage's words. nil: no decision (not asked, failed, or unsure).
     func resolveByDecision(_ source: Source) async -> (content: NativeQuickLookupAutoContent?, final: Bool)? {
         guard let verdict = await decider.decide(text: source.text, heading: source.heading, title: source.title) else { return nil }
         guard !Task.isCancelled else { return (nil, false) }
         switch verdict {
         case .unsure: return nil
-        case .skip: return (nil, true)
+        case .skip, .noArticle: return (nil, true)
         case .article(let candidate):
-            let explanation = await explanation(of: source, topic: candidate.hit.title)
-            guard !Task.isCancelled else { return (nil, false) }
-            return (NativeQuickLookupAutoContent(query: candidate.hit.title, result: .wikipedia(candidate.summary), explanation: explanation), true)
-        case .noArticle:
-            let explanation = await explanation(of: source, topic: nil)
-            guard !Task.isCancelled else { return (nil, false) }
-            let query = explanation?.topic ?? NativeQuickLookupDecide.searchQuery(source.text, heading: source.heading)
-            return (NativeQuickLookupAutoContent(query: query, result: .search(query), explanation: explanation), true)
+            return (NativeQuickLookupAutoContent(query: candidate.hit.title, result: .wikipedia(candidate.summary)), true)
         }
-    }
-
-    private func explanation(of source: Source, topic: String?) async -> NativeQuickLookupExplanation? {
-        guard case .explanation(let explanation)? = await explainer.explain(text: source.text, heading: source.heading, title: source.title, topic: topic) else { return nil }
-        return explanation
     }
 }
 

@@ -364,6 +364,7 @@
 "계정에서 고르기" = "Choose in account";
 "계정을 삭제할까요?" = "Delete your account?";
 "고급" = "Advanced";
+"고른 글과, 수식·그림이 있으면 두른 영역의 이미지가 반달 서버를 거쳐 AI 제공사로 전송돼요" = "The selected text and, for formulas and figures, a picture of the circled area are sent through the Bandal server to the AI provider";
 "고른 글을 바로 찾아볼까요?" = "Look up text as you select it?";
 "고른 캘린더의 일정을 반달에서 보여 줘요." = "Shows events from the calendars you choose in Bandal.";
 "고정폭" = "Monospaced";
@@ -396,7 +397,7 @@
 "그린 뒤 유지하여 도형 정리" = "Draw and hold to tidy shapes";
 "글" = "Articles";
 "글꼴과 밀도" = "Font and density";
-"글을 고르면 위키백과에서 찾아 작은 카드로 보여 줘요. 선택한 글이 위키백과로 전송돼요. 설정 › AI에서 언제든 바꿀 수 있어요." = "When you select text, Bandal looks it up on Wikipedia and shows a small card. The selected text is sent to Wikipedia. You can change this anytime in Settings › AI.";
+"글을 고르거나 PDF에서 올가미로 두르면 찾아서 작은 카드로 보여 줘요. 고른 글은 위키백과로 전송돼요. 여러 줄·수식·그림은 이미 동의한 AI 제공사가 읽고 설명해요(고른 글과 두른 영역의 이미지 전송, AI 사용량에 포함). 설정 › AI에서 언제든 바꿀 수 있어요." = "Text you select, or circle with the lasso in a PDF, is looked up and shown on a small card. The selected text is sent to Wikipedia. Passages, formulas and figures are read and explained by an AI provider you already agreed to (the selected text and a picture of the circled area are sent; it counts toward your AI usage). You can change this anytime in Settings › AI.";
 "글을 고르면 자동으로 찾아보기" = "Look up selected text automatically";
 "글의 문단에서 표현 저장을 눌러 원문과 함께 모아 보세요." = "Tap Save Phrase on a paragraph to collect phrases along with their source text.";
 "글자 서식" = "Text format";
@@ -479,7 +480,7 @@
 "다음 결과" = "Next result";
 "다음 셀" = "Next cell";
 "다음 페이지" = "Next page";
-"단어 하나는 내장 사전, 그 밖은 위키백과에서 찾아요. AI 설명은 Plus·Pro에서 여러 줄을 골랐을 때만, 이미 동의한 AI 제공사의 가장 저렴한 모델로 한 번 보내요. 하루 Plus 30회, Pro 100회까지예요." = "A single English word comes from the built-in dictionary, anything else from Wikipedia. AI explanations are for Plus and Pro when you select a passage: one request to the lowest-cost model of an AI provider you already agreed to, up to 30 a day on Plus and 100 on Pro.";
+"단어 하나는 내장 사전, 그 밖은 위키백과에서 찾아요. 여러 줄·수식·그림은 이미 동의한 AI 제공사의 가장 저렴한 모델이 한 번 읽고 짧게 설명해요. AI 사용량에 포함되고, 하루 무료 5회, Plus 30회, Pro 100회까지예요." = "A single English word comes from the built-in dictionary, anything else from Wikipedia. Passages, formulas and figures are read once by the lowest-cost model of an AI provider you already agreed to, which explains them briefly. This counts toward your AI usage: up to 5 a day on Free, 30 on Plus and 100 on Pro.";
 "단축키 검색" = "Search shortcuts";
 "단축키 우선권" = "Shortcut priority";
 "닫기" = "Close";
@@ -746,7 +747,6 @@
 "선택한 과목의 자료를 사용합니다." = "Uses the materials of the selected course.";
 "선택한 글 제외" = "Remove selected text";
 "선택한 글만 사용" = "Use selected text only";
-"선택한 글이 반달 서버를 거쳐 AI 제공사로 전송돼요" = "The selected text is sent through the Bandal server to the AI provider";
 "선택한 글이 위키백과로 전송돼요" = "The selected text is sent to Wikipedia";
 "선택한 영역 크게 보기" = "The selected pane is shown enlarged";
 "선택한 충돌 사본을 적용할까요?" = "Apply the selected conflict copy?";
@@ -808,8 +808,8 @@
 "업데이트 내역" = "What's new";
 "업로드 대기 %lld개" = "Waiting to upload: %lld";
 "여기까지 읽음" = "Mark read to here";
+"여러 줄·수식·그림은 AI가 읽고 설명" = "AI reads and explains passages, formulas and figures";
 "여러 줄은 AI가 맞는 문서 고르기" = "AI picks the matching article for passages";
-"여러 줄은 AI가 짧게 설명" = "Short AI explanation for passages";
 "연결 끊김" = "Disconnected";
 "연결 제외된 페이지" = "Unlinked pages";
 "연결 제외된 필기" = "Unlinked handwriting";
@@ -948,6 +948,7 @@
 "읽기 수준" = "Reading level";
 "읽기 완료" = "Finished";
 "읽는 시간" = "Reading time";
+"읽는 중…" = "Reading…";
 "읽은 글 %lld · 표현 %lld · 복습 %lld" = "Read %lld · Phrases %lld · Review %lld";
 "입력한 질문과 대화 내용" = "Your question and the conversation";
 "입문" = "Beginner";
