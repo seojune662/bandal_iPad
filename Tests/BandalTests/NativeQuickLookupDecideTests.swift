@@ -287,11 +287,13 @@ final class NativeQuickLookupDecideTests: XCTestCase {
         auto.explainer.enabled = { false }
         auto.decider = decider
         auto.engine = { _ in "google" }
+        auto.readingDelay = .milliseconds(20)
         return auto
     }
+    /// Waits for a card with an answer on it; 읽는 중… is not one.
     @MainActor
     private func waitForCard(_ center: NativeQuickLookupCenter, seconds: Double = 3) async throws {
-        for _ in 0..<Int(seconds * 20) where center.card == nil { try await Task.sleep(for: .milliseconds(50)) }
+        for _ in 0..<Int(seconds * 20) where center.card == nil || center.card?.phase == .loading { try await Task.sleep(for: .milliseconds(50)) }
     }
     private var savedAuto: Any?
     override func setUp() { savedAuto = UserDefaults.standard.object(forKey: NativeQuickLookupPreferences.autoKey) }
@@ -316,18 +318,22 @@ final class NativeQuickLookupDecideTests: XCTestCase {
     }
 
     @MainActor
-    func testNoArticleIsASearchLinkAndNotWorthItIsNoCard() async throws {
+    func testNoArticleAndNotWorthItAreBothNoCard() async throws {
         NativeQuickLookupPreferences.auto = .on
         let center = NativeQuickLookupCenter()
+        // Worth a card, but none of the articles is it: no card, rather than a link that searches for one of the passage's words.
         let (none, noneCalls) = decider { _ in Self.answers(worth: 0.9, choice: NativeQuickLookupDecide.noArticle) }
         let auto = controller(center, decider: none, searches: noneCalls)
         auto.look(.init(owner: "pdf", text: passage, heading: nil, title: ""), store: nil, target: nil)
-        try await waitForCard(center)
-        guard case .result(.search(let query)) = center.card?.phase else { return XCTFail("\(String(describing: center.card))") }
-        XCTAssertFalse(query.isEmpty)
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertNil(center.card)
+        XCTAssertEqual(noneCalls.sent.count, 1)
         XCTAssertFalse(noneCalls.searches.contains { $0.hasPrefix("resolver:") })
+        auto.look(.init(owner: "pdf", text: passage, heading: nil, title: ""), store: nil, target: nil)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertNil(center.card)
+        XCTAssertEqual(noneCalls.sent.count, 1, "knowing there is nothing is kept")
 
-        center.dismiss()
         let (worthless, worthlessCalls) = decider { _ in Self.answers(worth: 0.05, choice: "엔트로피") }
         auto.decider = worthless
         let page = "과제는 다음 주 금요일까지 제출하세요.\n3쪽"
@@ -342,39 +348,47 @@ final class NativeQuickLookupDecideTests: XCTestCase {
     }
 
     @MainActor
-    func testAnUnsureOrFailedDecisionLeavesTheLookupAsItWas() async throws {
+    func testAnUnsureOrFailedDecisionOnAPassageIsNoCard() async throws {
         NativeQuickLookupPreferences.auto = .on
         let center = NativeQuickLookupCenter()
+        // Unsure: the search's own pick for one of the passage's words used to be shown here. It is not any more.
         let (unsure, unsureCalls) = decider { _ in Self.answers(worth: 0.9, choice: "엔트로피", confidence: 0.2) }
         let auto = controller(center, decider: unsure, searches: unsureCalls)
         auto.look(.init(owner: "pdf", text: passage, heading: nil, title: ""), store: nil, target: nil)
-        try await waitForCard(center)
-        guard case .result(.wikipedia(let summary)) = center.card?.phase else { return XCTFail("\(String(describing: center.card))") }
-        XCTAssertTrue(summary.title.hasPrefix("검색 "), "the search's own pick: \(summary.title)")
-        XCTAssertTrue(unsureCalls.searches.contains { $0.hasPrefix("resolver:") })
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertNil(center.card)
+        XCTAssertEqual(unsureCalls.sent.count, 1)
+        XCTAssertFalse(unsureCalls.searches.contains { $0.hasPrefix("resolver:") }, "\(unsureCalls.searches)")
+        XCTAssertEqual(auto.cache.count, 0, "not an answer: asked again next time")
 
         // No route on the server: the same, and no decision is asked again this run.
-        center.dismiss()
         let (missing, missingCalls) = decider { _ in throw NativeQuickLookupDecideTransport.Failure.routeMissing }
         auto.decider = missing
         auto.look(.init(owner: "pdf", text: passage + "\n둘째 글", heading: nil, title: ""), store: nil, target: nil)
-        try await waitForCard(center)
-        guard case .result(.wikipedia(let fallback)) = center.card?.phase else { return XCTFail("\(String(describing: center.card))") }
-        XCTAssertTrue(fallback.title.hasPrefix("검색 "))
-        center.dismiss()
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertNil(center.card)
         auto.look(.init(owner: "pdf", text: passage + "\n셋째 글", heading: nil, title: ""), store: nil, target: nil)
-        try await waitForCard(center)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertNil(center.card)
         XCTAssertEqual(missingCalls.sent.count, 1)
+        XCTAssertFalse(missingCalls.searches.contains { $0.hasPrefix("resolver:") })
+
+        // A word or a term is still looked up as it is, with or without a decision step.
+        auto.look(.init(owner: "pdf", text: "엔트로피", heading: nil, title: ""), store: nil, target: nil)
+        try await waitForCard(center)
+        guard case .result(.wikipedia(let summary)) = center.card?.phase else { return XCTFail("\(String(describing: center.card))") }
+        XCTAssertEqual(summary.title, "검색 엔트로피")
     }
 
     @MainActor
-    func testWithAIExplanationTheDecisionComesFirstAndPassesTheChosenTitle() async throws {
+    func testWithAIExplanationTheModelReadsFirstAndTheDecisionIsOnlyItsFallback() async throws {
         NativeQuickLookupPreferences.auto = .on
         let center = NativeQuickLookupCenter()
         let (decider, calls) = decider { _ in Self.answers(worth: 0.9, choice: "열역학 제2법칙") }
         let auto = controller(center, decider: decider, searches: calls)
         let explainer = NativeQuickLookupExplainer()
         var explained: [String] = []
+        var fails = false
         explainer.enabled = { true }
         explainer.tier = { .pro }
         explainer.endpoint = { AIEndpoint(userID: "u", projectURL: URL(string: "https://example.invalid")!, publishableKey: "", token: { "" }) }
@@ -384,24 +398,28 @@ final class NativeQuickLookupDecideTests: XCTestCase {
         explainer.used = { _ in 0 }
         explainer.record = { _ in }
         explainer.send = { call in
-            XCTAssertEqual(calls.sent.count, 1, "the decision was asked first")
             explained.append((call.body["input"] as? [[String: Any]])?.first?["content"] as? String ?? "")
-            return .init(text: "주제: 열역학 제2법칙\n설명: 고립계의 엔트로피는 줄지 않아요.\n수식:")
+            if fails { throw AIError.server(code: "AI_UNAVAILABLE", info: [:]) }
+            return .init(text: "주제: 엔트로피\n설명: 고립계의 엔트로피는 줄지 않아요.\n수식:\n검색어: entropy second law")
         }
         auto.explainer = explainer
         auto.look(.init(owner: "pdf", text: passage, heading: "열역학", title: "강의.pdf"), store: nil, target: nil)
         try await waitForCard(center)
         XCTAssertEqual(explained.count, 1)
-        XCTAssertTrue(explained[0].contains("찾은 위키백과 문서: 열역학 제2법칙"), explained[0])
+        XCTAssertFalse(explained[0].contains("찾은 위키백과 문서"), "the model reads the passage itself, not a chosen article")
         XCTAssertEqual(center.card?.explanation?.summary, "고립계의 엔트로피는 줄지 않아요.")
-        XCTAssertEqual(NativeQuickLookupCenter.pageURL(center.card!), Self.law.url, "the link is the chosen article")
+        XCTAssertEqual(calls.sent.count, 0, "one call: the decision is not asked when the model answered")
+        guard case .result(.wikipedia(let topic)) = center.card?.phase else { return XCTFail("\(String(describing: center.card))") }
+        XCTAssertEqual(topic.title, "검색 엔트로피", "the link is the article on the model's topic")
 
-        // Not worth a card: AI 설명 is not asked.
+        // The model gave no answer: the article the decision is sure of, without an explanation.
         center.dismiss()
-        auto.decider = self.decider { _ in Self.answers(worth: 0.1, choice: "엔트로피") }.0
-        auto.look(.init(owner: "pdf", text: "과제는 금요일까지 제출하세요.\n3쪽", heading: nil, title: ""), store: nil, target: nil)
-        try await Task.sleep(for: .milliseconds(600))
-        XCTAssertNil(center.card)
-        XCTAssertEqual(explained.count, 1)
+        fails = true
+        auto.look(.init(owner: "pdf", text: passage + " ", heading: "열역학", title: "강의.pdf"), store: nil, target: nil)
+        try await waitForCard(center)
+        XCTAssertEqual(explained.count, 2)
+        XCTAssertEqual(calls.sent.count, 1)
+        XCTAssertNil(center.card?.explanation)
+        XCTAssertEqual(NativeQuickLookupCenter.pageURL(center.card!), Self.law.url, "the chosen article")
     }
 }

@@ -69,10 +69,28 @@ final class NativeAutoLookupUITests: XCTestCase {
 
         // Printed text on the same page still looks itself up.
         pdf.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)).tap()
+        lasso(around: app.staticTexts["열역학 제2법칙"], in: app)
+        let card = expectCard("auto-wikipedia-ko", in: app)
+        XCTAssertTrue(card.buttons["native-quick-lookup-open"].label.contains("열역학 제2법칙"), card.buttons["native-quick-lookup-open"].label)
+        attach(app, "Lasso over the heading on a page with ink")
+    }
+
+    /// A sentence is only worth a card when a model read it. This reader has none (Free, signed out): no card, and
+    /// nothing guessed from one of the sentence's words. A term on the same page is still looked up.
+    @MainActor
+    func testASentenceNobodyReadShowsNoCard() throws {
+        let app = launch(["--native-pencil-dispatch-fixture", "--native-auto-lookup-on"])
+        openLecture(in: app)
+        selectTool("lasso", in: app)
+        lassoOption("native-pdf-lasso-mode-box", in: app)
         lasso(around: app.staticTexts[Self.sentence], in: app)
-        let card = expectCard("auto-wikipedia-en", in: app)
-        XCTAssertTrue(card.buttons["native-quick-lookup-open"].label.contains("Entropy"), card.buttons["native-quick-lookup-open"].label)
-        attach(app, "Lasso over an English line: English Wikipedia")
+        XCTAssertTrue(app.buttons["native-pdf-ask-ai"].waitForExistence(timeout: 10), "the lasso is still a selection\n" + app.debugDescription)
+        sleep(4)
+        XCTAssertFalse(app.descendants(matching: .any)["native-quick-lookup-card"].exists, app.debugDescription)
+        attach(app, "Lasso over a sentence without a model: no card")
+        app.otherElements["native-pdf-workspace"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)).tap()
+        lasso(around: app.staticTexts["열역학 제2법칙"], in: app)
+        expectCard("auto-wikipedia-ko", in: app)
     }
 
     /// A Markdown selection that rests looks itself up; the card opens its article in a browser tab.
@@ -142,7 +160,7 @@ final class NativeAutoLookupUITests: XCTestCase {
     }
 
     /// A Pro member who agreed to both providers: a passage gets AI 설명 (the fixed reply) with its formula,
-    /// linked to the topic's article.
+    /// linked to the topic's article; a topic with no article links to a web search for the model's words.
     @MainActor
     func testAPassageGetsAnAIExplanationWithItsFormula() throws {
         let app = launch(["--native-auto-lookup-on", "--native-auto-lookup-ai-fixture", "--native-pencil-dispatch-fixture"])
@@ -168,6 +186,16 @@ final class NativeAutoLookupUITests: XCTestCase {
         let pdfCard = expectCard("auto-ai-wikipedia-ko", in: app)
         XCTAssertFalse(pdfCard.descendants(matching: .any)["native-quick-lookup-formula"].exists)
         attach(app, "PDF passage: AI 설명")
+        app.buttons["native-quick-lookup-close"].tap()
+
+        // A topic Wikipedia (the fixture) has no article on: still AI 설명, and the link searches for the model's words.
+        backToTab("2주차 정리.md", in: app)
+        selectNewLine("카르노 순환은 두 등온 과정과 두 단열 과정으로 이루어진다.", in: editor, app: app)
+        let searchCard = expectCard("auto-ai-search", in: app)
+        XCTAssertTrue(searchCard.descendants(matching: .any)["native-quick-lookup-ai"].exists, app.debugDescription)
+        let label = searchCard.buttons["native-quick-lookup-open"].label
+        XCTAssertTrue(label.contains("카르노 순환") && label.contains("google.com"), label)
+        attach(app, "AI 설명 with a web search link")
     }
 
     // MARK: helpers

@@ -23,18 +23,19 @@ struct NativeQuickLookupCompactCard: View {
                     .onEnded { _ in
                         let tap = !moved && Date().timeIntervalSince(touchedAt ?? .distantPast) < 0.5
                         touchedAt = nil; moved = false
-                        if tap { center.openInBrowser() }
+                        // While the model is reading there is no page yet.
+                        if tap, card.phase != .loading { center.openInBrowser() }
                     })
                 .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
-                .accessibilityAction { center.openInBrowser() }
+                .accessibilityAction { if card.phase != .loading { center.openInBrowser() } }
                 .accessibilityIdentifier("native-quick-lookup-open").accessibilityHint(Text("브라우저 탭에서 열기"))
             Button { center.dismiss() } label: {
                 Image(systemName: "xmark").font(.system(size: 11, weight: .semibold)).frame(width: 30, height: 30).contentShape(Rectangle())
             }.buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary).padding(.top, 2).padding(.trailing, 4)
                 .accessibilityLabel("닫기").accessibilityIdentifier("native-quick-lookup-close")
         }
-        .frame(maxWidth: searchOnly ? 340 : 300, alignment: .leading)
-        .fixedSize(horizontal: searchOnly, vertical: true)
+        .frame(maxWidth: oneLine ? 340 : 300, alignment: .leading)
+        .fixedSize(horizontal: oneLine, vertical: true)
         .foregroundStyle(NativeDesktopTheme.text)
         .background(NativeGlass.paper, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NativeDesktopTheme.border) }
@@ -43,7 +44,13 @@ struct NativeQuickLookupCompactCard: View {
     }
 
     @ViewBuilder private var content: some View {
-        if searchOnly {
+        if card.phase == .loading {
+            // A model is reading the selection; the answer takes a few seconds.
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("읽는 중…").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary).lineLimit(1).fixedSize()
+            }.padding(.leading, 12).padding(.trailing, 38).frame(minHeight: 36)
+        } else if searchOnly {
             // Nothing was found: one line that searches the web when tapped, no page loaded by itself.
             HStack(spacing: 6) {
                 Image(systemName: "globe").font(.system(size: 12, weight: .medium)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityHidden(true)
@@ -64,7 +71,7 @@ struct NativeQuickLookupCompactCard: View {
                 Text(verbatim: title).font(.system(size: 15, weight: .semibold)).lineLimit(1)
                 if let formula = card.explanation?.formula { NativeQuickLookupFormula(latex: formula) }
                 Text(verbatim: summary).font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.text.opacity(0.85))
-                    .lineLimit(card.explanation?.formula == nil ? 3 : 2).fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(summaryLines).fixedSize(horizontal: false, vertical: true)
             }.padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 10)
         }
     }
@@ -73,6 +80,14 @@ struct NativeQuickLookupCompactCard: View {
         if card.explanation == nil, case .result(.search) = card.phase { return true }
         return false
     }
+    /// An article's lead is cut at three lines. AI 설명 was written for the card (about a hundred characters) and
+    /// is read whole; a formula takes one of the lines.
+    private var summaryLines: Int {
+        guard let explanation = card.explanation else { return 3 }
+        return explanation.formula == nil ? 5 : 4
+    }
+    /// The card is one short line: reading, or only a search link.
+    private var oneLine: Bool { searchOnly || card.phase == .loading }
     /// The site the card opens, without "www.".
     private var domain: String {
         let host = NativeQuickLookupCenter.pageURL(card)?.host ?? ""
@@ -98,6 +113,7 @@ struct NativeQuickLookupCompactCard: View {
     private var state: String {
         let base: String
         switch card.phase {
+        case .loading: base = "reading"
         case .result(.dictionary): base = "dictionary"
         case .result(.wikipedia(let summary)): base = "wikipedia-" + summary.language
         default: base = "search"
@@ -132,7 +148,7 @@ struct NativeQuickLookupConsentCard: View {
             Label { Text("고른 글을 바로 찾아볼까요?").font(.system(size: 15, weight: .semibold)) } icon: {
                 Image(systemName: "text.magnifyingglass").font(.system(size: 13, weight: .medium))
             }
-            Text("글을 고르면 위키백과에서 찾아 작은 카드로 보여 줘요. 선택한 글이 위키백과로 전송돼요. 설정 › AI에서 언제든 바꿀 수 있어요.")
+            Text("글을 고르거나 PDF에서 올가미로 두르면 찾아서 작은 카드로 보여 줘요. 고른 글은 위키백과로 전송돼요. 여러 줄·수식·그림은 이미 동의한 AI 제공사가 읽고 설명해요(고른 글과 두른 영역의 이미지 전송, AI 사용량에 포함). 설정 › AI에서 언제든 바꿀 수 있어요.")
                 .font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.secondary).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Button { withAnimation(.easeOut(duration: 0.2)) { center.answerAutomatic(true) } } label: {
@@ -162,14 +178,14 @@ struct NativeQuickLookupSettingsGroup: View {
     @AppStorage(NativeQuickLookupPreferences.decideKey) private var decides = NativeQuickLookupPreferences.decidesByDefault
     init() { _ = NativeQuickLookupPreferences.ready; _ = NativeQuickLookupPreferences.decideReady }
     var body: some View {
-        NativeSettingsGroup(title: "찾아보기", description: "단어 하나는 내장 사전, 그 밖은 위키백과에서 찾아요. AI 설명은 Plus·Pro에서 여러 줄을 골랐을 때만, 이미 동의한 AI 제공사의 가장 저렴한 모델로 한 번 보내요. 하루 Plus 30회, Pro 100회까지예요.") {
+        NativeSettingsGroup(title: "찾아보기", description: "단어 하나는 내장 사전, 그 밖은 위키백과에서 찾아요. 여러 줄·수식·그림은 이미 동의한 AI 제공사의 가장 저렴한 모델이 한 번 읽고 짧게 설명해요. AI 사용량에 포함되고, 하루 무료 5회, Plus 30회, Pro 100회까지예요.") {
             NativeSettingsToggle(title: "글을 고르면 자동으로 찾아보기", note: "선택한 글이 위키백과로 전송돼요",
                                  isOn: Binding(get: { auto == true }, set: { auto = $0 })).accessibilityIdentifier("native-settings-auto-lookup")
             NativeSettingsToggle(title: "여러 줄은 AI가 맞는 문서 고르기",
                                  note: "OpenAI에 동의했다면 고른 글과 위키백과 후보가 반달 서버를 거쳐 OpenAI로 전송돼요. 하루 무료 5회, Plus 50회, Pro 150회",
                                  isOn: $decides)
                 .disabled(auto != true).accessibilityIdentifier("native-settings-lookup-decide")
-            NativeSettingsToggle(title: "여러 줄은 AI가 짧게 설명", note: "선택한 글이 반달 서버를 거쳐 AI 제공사로 전송돼요", isOn: $explains)
+            NativeSettingsToggle(title: "여러 줄·수식·그림은 AI가 읽고 설명", note: "고른 글과, 수식·그림이 있으면 두른 영역의 이미지가 반달 서버를 거쳐 AI 제공사로 전송돼요", isOn: $explains)
                 .disabled(auto != true).accessibilityIdentifier("native-settings-auto-lookup-ai")
         }
     }

@@ -7,8 +7,9 @@ enum NativeQuickLookupPreferences {
     static let autoKey = "native.quickLookup.auto"
     static let explainKey = "native.quickLookup.aiExplain"
     private static let explanationCountKey = "native.quickLookup.aiExplainCount"
-    /// AI 설명 until the reader sets it. Off for now.
-    static let explainsByDefault = false
+    /// AI 설명 until the reader sets it. On: a passage, a formula or a figure is only worth a card when a model
+    /// has read it (signed in, a provider agreed to; without it those selections show no card).
+    static let explainsByDefault = true
 
     enum Auto: Equatable { case undecided, on, off }
     static var auto: Auto {
@@ -155,23 +156,36 @@ final class NativeQuickLookupAuto {
         let text: String
         let heading: String?
         let title: String
+        /// The lassoed area, when it has to be seen to be understood (NativeQuickLookupRegion).
+        var picture: Picture? = nil
+    }
+    struct Picture: Equatable {
+        let url: URL
+        let page: Int
+        let region: CGRect
     }
 
     var center: NativeQuickLookupCenter = .shared
     var resolver: NativeQuickLookupAutoResolver
     var explainer = NativeQuickLookupExplainer()
-    /// The decision step for passages (NativeQuickLookupDecide.swift), asked before AI 설명.
+    /// The decision step for passages (NativeQuickLookupDecide.swift), asked when no model read the passage.
     var decider = NativeQuickLookupDecider()
     var engine: (NativeWorkspaceStore?) async -> String = { store in
         ((try? await store?.invoke("settings:get")) as? [String: Any])?["browserSearchEngine"] as? String ?? "google"
     }
     var now: () -> Date = Date.init
     var settle = NativeQuickLookupTrigger.settle
+    /// 읽는 중… comes only when the model's answer is not there this soon. A reader the model cannot be asked for
+    /// (signed out, no provider agreed to, the day's limit) is refused at once and sees nothing come and go.
+    var readingDelay: Duration = .milliseconds(300)
     /// Lookups that reach the network, per minute; the cache does not count.
     static let perMinute = 12
 
     private var lookup: Task<Void, Never>?
     private var lookupOwner: String?
+    private var pending: Task<Void, Never>?
+    /// 읽는 중… was shown for the running lookup.
+    private var readingShown = false
     private var reading: Task<Void, Never>?
     private var settling: Task<Void, Never>?
     private var settlingOwner: String?
@@ -244,28 +258,37 @@ final class NativeQuickLookupAuto {
         reading?.cancel(); reading = nil
         guard NativeQuickLookupTrigger.lasso(caughtObjects: caughtObjects, region: region), let region, Self.active,
               NativeQuickLookupPreferences.auto != .off else {
-            if lookupOwner == owner { lookup?.cancel(); lookup = nil }
+            if lookupOwner == owner { stopLookup() }
             return
         }
         reading = Task { @MainActor [weak self, weak store] in
             let read = await NativeQuickLookupPDFText.read(url: original, page: page, region: region)
             guard let self, !Task.isCancelled, let read else { return }
             self.reading = nil
-            self.look(Source(owner: owner, text: read.text, heading: read.heading, title: title), store: store, target: nil)
+            let picture = read.picture ? Picture(url: original, page: page, region: region) : nil
+            self.look(Source(owner: owner, text: read.text, heading: read.heading, title: title, picture: picture), store: store, target: nil)
         }
     }
 
     /// Everything this pane started stops (the pane went away).
     func cancel(owner: String) {
         if settlingOwner == owner { settling?.cancel(); settling = nil }
-        if lookupOwner == owner { lookup?.cancel(); lookup = nil }
+        if lookupOwner == owner { stopLookup() }
         lastSelection[owner] = nil
+    }
+
+    /// The running lookup stops, and its "읽는 중…" card with it.
+    private func stopLookup() {
+        lookup?.cancel(); lookup = nil
+        pending?.cancel(); pending = nil
+        readingShown = false
+        if let owner = lookupOwner { center.dismissPending(owner: owner) }
     }
 
     // MARK: the lookup
 
     func look(_ source: Source, store: NativeWorkspaceStore?, target: NativeWorkspaceTarget?) {
-        lookup?.cancel(); lookup = nil
+        stopLookup()
         if let store { aiConfig = { [weak store] in
             guard let store, let config = try await store.invokePrivate("native:aiConfig") as? [String: Any] else { throw CancellationError() }
             return config
@@ -280,7 +303,9 @@ final class NativeQuickLookupAuto {
             return
         case .on: break
         }
-        let key = [source.text, source.heading ?? "", explainer.wouldTry(source.text) ? "ai" : "", decider.wouldTry(source.text) ? "decide" : ""].joined(separator: "\u{1}")
+        let reads = explainer.wouldTry(source.text, picture: source.picture != nil)
+        let area = source.picture.map { "\($0.page):\(Int($0.region.minX * 500)),\(Int($0.region.minY * 500)),\(Int($0.region.width * 500)),\(Int($0.region.height * 500))" } ?? ""
+        let key = [source.text, source.heading ?? "", reads ? "ai" : "", decider.wouldTry(source.text) ? "decide" : "", area].joined(separator: "\u{1}")
         if let cached = cache.lookup(key) {
             guard let content = cached else { return }
             lookupOwner = source.owner
@@ -298,27 +323,55 @@ final class NativeQuickLookupAuto {
             guard let self else { return }
             let answer = await self.resolve(source)
             let chosen = await self.engine(store)
+            // Cancelled: whoever cancelled took the pending card away, or put its own there.
             guard !Task.isCancelled else { return }
+            self.pending?.cancel(); self.pending = nil
+            // 읽는 중… was there and is gone: the reader closed it, or opened another card over it.
+            let closed = self.readingShown && !self.center.isPending(owner: source.owner)
+            self.readingShown = false
             // A failure (offline, a server error) is tried again next time; an answer, or knowing there is none, is kept.
             if answer.final { self.cache.store(answer.content, for: key) }
+            // A closed card's answer is kept for the next time and not put back in front of the reader.
+            guard !closed else { return }
             if let content = answer.content { self.center.showAutomatic(content, owner: source.owner, engine: chosen, store: store, target: target) }
+            else { self.center.dismissPending(owner: source.owner) }
+        }
+        // A model's answer takes a few seconds: the corner says something is being read meanwhile.
+        if reads {
+            let delay = readingDelay
+            pending = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: delay)
+                guard let self, !Task.isCancelled else { return }
+                self.pending = nil
+                self.readingShown = true
+                self.center.showAutomaticPending(owner: source.owner)
+            }
         }
     }
 
-    /// AI 설명 when the passage gets one in time, else the lookup without a model. No content: no card;
+    /// A passage, or an area that has to be seen, is read by the model when it may be (AI 설명), and the card says
+    /// what the model read. Without the model such a selection gets a card only when the decision step is sure of
+    /// an article, never one guessed from its words; a word or a term is looked up as it is. No content: no card;
     /// `final` says whether that answer holds next time (false after a failure).
     func resolve(_ source: Source) async -> (content: NativeQuickLookupAutoContent?, final: Bool) {
-        if let decided = await resolveByDecision(source) { return decided }
-        if let answer = await explainer.explain(text: source.text, heading: source.heading, title: source.title) {
-            // The model found nothing worth a card.
-            guard case .explanation(let explanation) = answer else { return (nil, true) }
+        if explainer.wouldTry(source.text, picture: source.picture != nil) {
+            let picture = source.picture.map { area in { @Sendable in await NativeQuickLookupPDFText.picture(url: area.url, page: area.page, region: area.region) } }
+            if let answer = await explainer.explain(text: source.text, heading: source.heading, title: source.title, picture: picture) {
+                // The model found nothing worth a card.
+                guard case .explanation(let explanation) = answer else { return (nil, true) }
+                guard !Task.isCancelled else { return (nil, false) }
+                // The link is Wikipedia's article on the topic when there is one, else a web search for the model's words.
+                let article = (try? await resolver.wikipedia(text: explanation.topic, query: explanation.topic, heading: source.heading)) ?? nil
+                let words = explanation.search ?? explanation.topic
+                return (NativeQuickLookupAutoContent(query: article == nil ? words : explanation.topic, result: article.map { .wikipedia($0) } ?? .search(words),
+                                                     explanation: explanation), true)
+            }
             guard !Task.isCancelled else { return (nil, false) }
-            // The link is Wikipedia's article on the topic when there is one, else a search for it.
-            let article = try? await resolver.wikipedia(text: explanation.topic, query: explanation.topic, heading: source.heading)
-            return (NativeQuickLookupAutoContent(query: explanation.topic, result: (article ?? nil).map { .wikipedia($0) } ?? .search(explanation.topic),
-                                                 explanation: explanation), true)
         }
-        guard !Task.isCancelled else { return (nil, false) }
+        // What has to be seen cannot be told from the pieces of text in it.
+        if source.picture != nil { return (nil, false) }
+        if let decided = await resolveByDecision(source) { return decided }
+        guard !Task.isCancelled, !NativeQuickLookupExplain.isPassage(source.text) else { return (nil, false) }
         guard let outcome = await resolver.resolve(source.text, heading: source.heading) else { return (nil, false) }
         return (NativeQuickLookupAutoContent(query: outcome.query, result: outcome.result), true)
     }

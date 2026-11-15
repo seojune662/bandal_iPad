@@ -5,7 +5,7 @@ import Foundation
 /// signed-in Plus reader who agreed to OpenAI on this iPad and at the server, Wikipedia's search answered from
 /// `NativeQuickLookupAutoFixture.articles`, and the decision a fixed reply after 0.3 s, read from the passage:
 ///   "제출" or "쪽": not worth a card · "경제": none of the articles · "법칙": 열역학 제2법칙 ·
-///   "엔트로피" or "Entropy": that article · anything else: unsure (the lookup goes on without the decision).
+///   "엔트로피" or "Entropy": that article · anything else: unsure.
 @MainActor
 enum NativeQuickLookupDecideFixture {
     static func install(on auto: NativeQuickLookupAuto) {

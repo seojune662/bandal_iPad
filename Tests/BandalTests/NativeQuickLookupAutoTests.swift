@@ -268,14 +268,21 @@ final class NativeQuickLookupAutoTests: XCTestCase {
 
     func testThePlanTheSwitchAndTheDailyLimitGateTheModel() {
         let passage = "고립계의 엔트로피는 감소하지 않는다."
-        XCTAssertFalse(NativeQuickLookupExplain.allowedLocally(enabled: true, text: passage, tier: .free, usedToday: 0))
+        XCTAssertTrue(NativeQuickLookupExplain.allowedLocally(enabled: true, text: passage, tier: .free, usedToday: 4), "Free has five a day")
+        XCTAssertFalse(NativeQuickLookupExplain.allowedLocally(enabled: true, text: passage, tier: .free, usedToday: 5))
         XCTAssertTrue(NativeQuickLookupExplain.allowedLocally(enabled: true, text: passage, tier: .plus, usedToday: 29))
         XCTAssertFalse(NativeQuickLookupExplain.allowedLocally(enabled: true, text: passage, tier: .plus, usedToday: 30))
         XCTAssertTrue(NativeQuickLookupExplain.allowedLocally(enabled: true, text: passage, tier: .pro, usedToday: 99))
         XCTAssertFalse(NativeQuickLookupExplain.allowedLocally(enabled: true, text: passage, tier: .pro, usedToday: 100))
         XCTAssertFalse(NativeQuickLookupExplain.allowedLocally(enabled: false, text: passage, tier: .pro, usedToday: 0))
         XCTAssertFalse(NativeQuickLookupExplain.allowedLocally(enabled: true, text: "엔트로피", tier: .pro, usedToday: 0), "one term is looked up, not explained")
-        XCTAssertFalse(NativeQuickLookupPreferences.explainsByDefault, "AI 설명 starts off")
+        XCTAssertTrue(NativeQuickLookupPreferences.explainsByDefault, "AI 설명 starts on: a passage is only worth a card when a model read it")
+        // An area that has to be seen is read whatever its text is; the plan and the day's limit still hold.
+        XCTAssertTrue(NativeQuickLookupExplain.allowedLocally(enabled: true, text: "q w ~ 1 R", picture: true, tier: .plus, usedToday: 0))
+        XCTAssertTrue(NativeQuickLookupExplain.allowedLocally(enabled: true, text: "", picture: true, tier: .pro, usedToday: 0))
+        XCTAssertFalse(NativeQuickLookupExplain.allowedLocally(enabled: true, text: "", picture: true, tier: .free, usedToday: 5))
+        XCTAssertFalse(NativeQuickLookupExplain.allowedLocally(enabled: true, text: "", picture: true, tier: .plus, usedToday: 30))
+        XCTAssertFalse(NativeQuickLookupExplain.allowedLocally(enabled: false, text: "", picture: true, tier: .pro, usedToday: 0))
     }
 
     func testTheDailyCountIsPerAccountAndPerDay() {
@@ -317,22 +324,67 @@ final class NativeQuickLookupAutoTests: XCTestCase {
         let passage = try XCTUnwrap(user.components(separatedBy: "고른 글:\n").last)
         XCTAssertEqual(passage.count, NativeQuickLookupExplain.maximumInputCharacters)
         let system = NativeQuickLookupExplain.system(english: false)
-        // The proxy estimates a token per three UTF-8 bytes; the whole request stays near 500.
-        XCTAssertLessThanOrEqual((system + user).utf8.count / 3, 650)
+        // The proxy estimates a token per three UTF-8 bytes; the text of the whole request stays under 900.
+        XCTAssertLessThanOrEqual((system + user).utf8.count / 3, 900)
+        XCTAssertTrue(system.contains("검색어:") && system.contains("건너뛰기"), system)
 
         let openai = NativeQuickLookupExplain.body(provider: .openai, model: "gpt-6-luna", system: system, user: user)
-        XCTAssertEqual(openai["max_output_tokens"] as? Int, 120)
+        XCTAssertEqual(openai["max_output_tokens"] as? Int, 400)
         XCTAssertEqual((openai["reasoning"] as? [String: String])?["effort"], "low")
         XCTAssertEqual(openai["store"] as? Bool, false)
         XCTAssertTrue(Set(openai.keys).isSubset(of: ["model", "instructions", "input", "stream", "store", "include", "tools", "reasoning", "max_output_tokens"]))
         let claude = NativeQuickLookupExplain.body(provider: .claude, model: "claude-haiku-5-5", system: system, user: user)
-        XCTAssertEqual(claude["max_tokens"] as? Int, 120)
+        XCTAssertEqual(claude["max_tokens"] as? Int, 400)
         XCTAssertEqual((claude["output_config"] as? [String: String])?["effort"], "low")
         XCTAssertTrue(Set(claude.keys).isSubset(of: ["model", "system", "messages", "max_tokens", "stream", "tools", "output_config"]))
         let gemini = NativeQuickLookupExplain.body(provider: .gemini, model: "gemini-test", system: system, user: user)
-        XCTAssertEqual((gemini["generationConfig"] as? [String: Int])?["maxOutputTokens"], 120)
+        XCTAssertEqual((gemini["generationConfig"] as? [String: Int])?["maxOutputTokens"], 400)
         XCTAssertTrue(Set(gemini.keys).isSubset(of: ["model", "systemInstruction", "contents", "tools", "generationConfig"]))
         for body in [openai, claude, gemini] { XCTAssertNil(body["tools"], "no tools: one answer, no steps") }
+        XCTAssertEqual((openai["input"] as? [[String: Any]])?.first?["content"] as? String, user, "no picture: the text alone")
+    }
+
+    func testAnAreaThatHasToBeSeenGoesAsAPictureWithItsText() throws {
+        let system = NativeQuickLookupExplain.system(english: false)
+        let user = NativeQuickLookupExplain.user(text: "q w ~ 1 R", heading: "Aerodynamic Heating", title: "re-entry.pdf", language: "ko")
+        let jpeg = "AAAA"
+        // Each provider's own shape, the one the chat sends an attached image in and the proxy counts as an image.
+        let openai = NativeQuickLookupExplain.body(provider: .openai, model: "gpt-6-luna", system: system, user: user, picture: jpeg)
+        let parts = try XCTUnwrap((openai["input"] as? [[String: Any]])?.first?["content"] as? [[String: Any]])
+        XCTAssertEqual(parts.map { $0["type"] as? String }, ["input_text", "input_image"])
+        XCTAssertEqual(parts[0]["text"] as? String, user)
+        XCTAssertEqual(parts[1]["image_url"] as? String, "data:image/jpeg;base64,AAAA")
+        let claude = NativeQuickLookupExplain.body(provider: .claude, model: "claude-haiku-5-5", system: system, user: user, picture: jpeg)
+        let blocks = try XCTUnwrap((claude["messages"] as? [[String: Any]])?.first?["content"] as? [[String: Any]])
+        XCTAssertEqual(blocks.map { $0["type"] as? String }, ["image", "text"])
+        XCTAssertEqual(blocks[0]["source"] as? [String: String], ["type": "base64", "media_type": "image/jpeg", "data": "AAAA"])
+        XCTAssertEqual(blocks[1]["text"] as? String, user)
+        let gemini = NativeQuickLookupExplain.body(provider: .gemini, model: "gemini-test", system: system, user: user, picture: jpeg)
+        let pieces = try XCTUnwrap((gemini["contents"] as? [[String: Any]])?.first?["parts"] as? [[String: Any]])
+        XCTAssertEqual(pieces[0]["inlineData"] as? [String: String], ["mimeType": "image/jpeg", "data": "AAAA"])
+        XCTAssertEqual(pieces[1]["text"] as? String, user)
+        // Still only what the proxy accepts, with the same limits.
+        XCTAssertTrue(Set(openai.keys).isSubset(of: ["model", "instructions", "input", "stream", "store", "include", "tools", "reasoning", "max_output_tokens"]))
+        XCTAssertTrue(Set(claude.keys).isSubset(of: ["model", "system", "messages", "max_tokens", "stream", "tools", "output_config"]))
+        XCTAssertTrue(Set(gemini.keys).isSubset(of: ["model", "systemInstruction", "contents", "tools", "generationConfig"]))
+    }
+
+    func testThePictureIsSmall() throws {
+        // A lassoed area rendered large comes down to `pictureSide` on its longer side, as a JPEG.
+        let big = UIGraphicsImageRenderer(size: CGSize(width: 1800, height: 900)).image { context in
+            UIColor.white.setFill(); context.fill(CGRect(x: 0, y: 0, width: 1800, height: 900))
+            ("q = 1 / √R" as NSString).draw(at: CGPoint(x: 80, y: 300), withAttributes: [.font: UIFont.systemFont(ofSize: 160)])
+        }
+        let encoded = try XCTUnwrap(NativeQuickLookupPDFText.jpeg(big))
+        let data = try XCTUnwrap(Data(base64Encoded: encoded))
+        let image = try XCTUnwrap(UIImage(data: data))
+        XCTAssertEqual(max(image.size.width * image.scale, image.size.height * image.scale), NativeQuickLookupPDFText.pictureSide)
+        XCTAssertEqual(data.prefix(2), Data([0xFF, 0xD8]), "a JPEG")
+        XCTAssertLessThan(data.count, 150_000)
+        // A small area is not blown up.
+        let small = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 60)).image { context in UIColor.white.setFill(); context.fill(CGRect(x: 0, y: 0, width: 120, height: 60)) }
+        let kept = try XCTUnwrap(UIImage(data: try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(NativeQuickLookupPDFText.jpeg(small))))))
+        XCTAssertLessThanOrEqual(max(kept.size.width * kept.scale, kept.size.height * kept.scale), 120 * small.scale)
     }
 
     // MARK: the model's answer
@@ -347,6 +399,31 @@ final class NativeQuickLookupAutoTests: XCTestCase {
         XCTAssertEqual(NativeQuickLookupExplain.parse("주제: 건너뛰기", selection: selection), .skip)
         XCTAssertNil(NativeQuickLookupExplain.parse("엔트로피에 대한 설명입니다.", selection: selection), "no format, no answer")
         XCTAssertNil(NativeQuickLookupExplain.parse("주제: 엔트로피\n수식: S", selection: selection), "no explanation")
+    }
+
+    func testTheSearchWordsAreReadAndAPictureLetsTheFormulaBeReadOffIt() {
+        // What the text layer gives for q̇_w ∼ 1/√R: pieces. The formula the model reads is not in them.
+        let selection = "A concept of a blunt re-entry capsule\nq w ~ 1 R"
+        let output = "주제: 정체점 가열\n설명: 뭉툭한 앞부분일수록 정체점의 열유속이 줄어요. 열유속은 곡률 반지름의 제곱근에 반비례해요.\n수식: $\\dot{q}_w \\sim \\frac{1}{\\sqrt{R}}$\n검색어: stagnation point heating blunt body"
+        XCTAssertEqual(NativeQuickLookupExplain.parse(output, selection: selection, picture: true),
+                       .explanation(.init(topic: "정체점 가열", summary: "뭉툭한 앞부분일수록 정체점의 열유속이 줄어요. 열유속은 곡률 반지름의 제곱근에 반비례해요.",
+                                          formula: "\\dot{q}_w \\sim \\frac{1}{\\sqrt{R}}", search: "stagnation point heating blunt body")))
+        // Without the picture the model only had the pieces: a formula with letters that are not there is dropped.
+        guard case .explanation(let blind)? = NativeQuickLookupExplain.parse(output.replacingOccurrences(of: "\\sim", with: "= k"), selection: selection) else { return XCTFail("no answer") }
+        XCTAssertNil(blind.formula)
+        XCTAssertEqual(blind.search, "stagnation point heating blunt body")
+        guard case .explanation(let seen)? = NativeQuickLookupExplain.parse(output.replacingOccurrences(of: "\\sim", with: "= k"), selection: selection, picture: true) else { return XCTFail("no answer") }
+        XCTAssertEqual(seen.formula, "\\dot{q}_w = k \\frac{1}{\\sqrt{R}}", "read off the picture")
+        // No search words, or too many: none, and the topic is what is searched for.
+        guard case .explanation(let bare)? = NativeQuickLookupExplain.parse("주제: 엔트로피\n설명: 상태 함수예요.\n수식:\n검색어:", selection: selection) else { return XCTFail("no answer") }
+        XCTAssertNil(bare.search)
+        let long = String(repeating: "entropy ", count: 12)
+        guard case .explanation(let wordy)? = NativeQuickLookupExplain.parse("주제: 엔트로피\n설명: 상태 함수예요.\n검색어: \(long)", selection: selection) else { return XCTFail("no answer") }
+        XCTAssertNil(wordy.search)
+        // A link is never the model's, in the search words either.
+        guard case .explanation(let linked)? = NativeQuickLookupExplain.parse("주제: 엔트로피\n설명: 상태 함수예요.\n검색어: entropy https://evil.example", selection: selection) else { return XCTFail("no answer") }
+        XCTAssertEqual(linked.search, "entropy")
+        XCTAssertEqual(NativeQuickLookupExplain.parse("건너뛰기", selection: "", picture: true), .skip)
     }
 
     func testTheModelGivesNoLinksAndNoFormulaThatIsNotInTheText() {
@@ -420,11 +497,17 @@ final class NativeQuickLookupAutoTests: XCTestCase {
     }
 
     @MainActor
-    func testFreeSignedOutWordsAndTheDailyLimitNeverCall() async {
+    func testSignedOutWordsAndTheDailyLimitNeverCall() async {
         let fail: (NativeQuickLookupExplainer.Call) async throws -> NativeQuickLookupExplainer.Reply = { _ in XCTFail("no call"); return .init() }
-        let (free, freeCalls) = explainer(tier: .free, send: fail)
-        let none = await free.explain(text: passage, heading: nil, title: "")
-        XCTAssertNil(none); XCTAssertEqual(freeCalls.endpoint, 0, "a free reader is not even signed in for it")
+        let (free, freeCalls) = explainer(tier: .free, used: 4) { _ in .init(text: "건너뛰기") }
+        let fifth = await free.explain(text: passage, heading: nil, title: "")
+        XCTAssertEqual(fifth, .skip, "Free has five a day")
+        let sixth = await free.explain(text: passage, heading: nil, title: "")
+        XCTAssertNil(sixth); XCTAssertEqual(freeCalls.calls.count, 1)
+        let (off, offCalls) = explainer(send: fail)
+        off.enabled = { false }
+        let none = await off.explain(text: passage, heading: nil, title: "")
+        XCTAssertNil(none); XCTAssertEqual(offCalls.endpoint, 0, "switched off: not even signed in for it")
         let (word, _) = explainer(send: fail)
         let term = await word.explain(text: "엔트로피", heading: nil, title: "")
         XCTAssertNil(term)
@@ -447,7 +530,7 @@ final class NativeQuickLookupAutoTests: XCTestCase {
         let late = await slow.explain(text: passage, heading: nil, title: "")
         XCTAssertNil(late)
         XCTAssertLessThan(Date().timeIntervalSince(started), 2, "the deadline does not wait for the call")
-        XCTAssertEqual(NativeQuickLookupExplain.deadline, .seconds(2))
+        XCTAssertEqual(NativeQuickLookupExplain.deadline, .seconds(6), "a picture takes a few seconds to read; the card says 읽는 중… meanwhile")
         let (refused, _) = explainer { _ in throw AIError.server(code: "BUDGET_EXHAUSTED", info: ["usage": ["plan": "plus"]]) }
         let budget = await refused.explain(text: passage, heading: nil, title: "")
         XCTAssertNil(budget)
@@ -467,13 +550,25 @@ final class NativeQuickLookupAutoTests: XCTestCase {
             resolverCalls.search.append(language + ":" + query); return try await search(language, query)
         })
         auto.explainer.enabled = { false }
+        auto.decider.enabled = { false }
         auto.engine = { _ in "google" }
         auto.settle = .milliseconds(80)
+        auto.readingDelay = .milliseconds(20)
         return auto
     }
+    /// Waits for a card with an answer on it; 읽는 중… is not one.
     @MainActor
     private func waitForCard(_ center: NativeQuickLookupCenter, seconds: Double = 3) async throws {
-        for _ in 0..<Int(seconds * 20) where center.card == nil { try await Task.sleep(for: .milliseconds(50)) }
+        for _ in 0..<Int(seconds * 20) where center.card == nil || center.card?.phase == .loading { try await Task.sleep(for: .milliseconds(50)) }
+    }
+    @MainActor
+    private func waitForNoCard(_ center: NativeQuickLookupCenter, seconds: Double = 3) async throws {
+        for _ in 0..<Int(seconds * 20) where center.card != nil { try await Task.sleep(for: .milliseconds(50)) }
+    }
+    /// Waits for 읽는 중….
+    @MainActor
+    private func waitForReading(_ center: NativeQuickLookupCenter, seconds: Double = 2) async throws {
+        for _ in 0..<Int(seconds * 100) where center.card?.phase != .loading { try await Task.sleep(for: .milliseconds(10)) }
     }
     private var savedAuto: Any?
     override func setUp() { savedAuto = UserDefaults.standard.object(forKey: NativeQuickLookupPreferences.autoKey) }
@@ -593,20 +688,27 @@ final class NativeQuickLookupAutoTests: XCTestCase {
     }
 
     @MainActor
-    func testAFailedExplanationFallsBackToTheLookupWithoutAModel() async throws {
+    func testAPassageTheModelCouldNotReadGetsNoCardRatherThanAGuess() async throws {
         NativeQuickLookupPreferences.auto = .on
         let center = NativeQuickLookupCenter(), calls = Calls()
         let auto = controller(center, resolverCalls: calls) { language, query in self.article(language, query) }
-        let (failing, recorder) = explainer { _ in throw AIError.server(code: "TASK_CAP_REACHED", info: [:]) }
+        let (failing, recorder) = explainer { _ in
+            try await Task.sleep(for: .milliseconds(400))
+            throw AIError.server(code: "TASK_CAP_REACHED", info: [:])
+        }
         auto.explainer = failing
         auto.look(.init(owner: "pdf", text: passage, heading: "열역학 제2법칙", title: ""), store: nil, target: nil)
-        try await waitForCard(center)
+        XCTAssertNil(center.card, "not at once")
+        try await waitForReading(center)
+        XCTAssertEqual(center.card?.phase, .loading, "읽는 중… while the model reads")
+        XCTAssertEqual(center.card?.automatic, true)
+        try await waitForNoCard(center)
+        XCTAssertNil(center.card, "nobody read the passage: no card made from one of its words")
         XCTAssertEqual(recorder.calls, ["gpt-6-luna"])
-        XCTAssertNil(center.card?.explanation)
-        guard case .result(.wikipedia) = center.card?.phase else { return XCTFail("\(String(describing: center.card))") }
+        XCTAssertEqual(calls.search, [], "the passage's words were not searched for")
+        XCTAssertEqual(auto.cache.count, 0, "a failure is tried again next time")
 
         // An answer: AI 설명 with the topic's article as the link.
-        center.dismiss()
         let (working, _) = explainer { _ in .init(text: "주제: 엔트로피\n설명: 줄지 않아요.\n수식:") }
         auto.explainer = working
         auto.look(.init(owner: "pdf", text: passage + " ", heading: "열역학 제2법칙", title: ""), store: nil, target: nil)
@@ -614,6 +716,130 @@ final class NativeQuickLookupAutoTests: XCTestCase {
         XCTAssertEqual(center.card?.explanation?.topic, "엔트로피")
         XCTAssertEqual(center.card?.phase, .result(.wikipedia(article("ko", "엔트로피"))))
         XCTAssertEqual(NativeQuickLookupCenter.pageURL(center.card!)?.host, "ko.wikipedia.org", "the link is Wikipedia's, never the model's")
+    }
+
+    @MainActor
+    func testATopicWithoutAnArticleLinksToAWebSearchForTheModelsWords() async throws {
+        NativeQuickLookupPreferences.auto = .on
+        let center = NativeQuickLookupCenter(), calls = Calls()
+        let auto = controller(center, resolverCalls: calls) { _, _ in nil }
+        let (searching, _) = explainer { _ in .init(text: "주제: 정체점 가열\n설명: 앞이 뭉툭할수록 정체점이 덜 뜨거워져요.\n수식:\n검색어: stagnation point heating blunt body") }
+        auto.explainer = searching
+        auto.look(.init(owner: "pdf", text: passage, heading: "Aerodynamic Heating", title: ""), store: nil, target: nil)
+        try await waitForCard(center)
+        XCTAssertEqual(center.card?.phase, .result(.search("stagnation point heating blunt body")))
+        XCTAssertEqual(center.card?.explanation?.topic, "정체점 가열", "the card is still the explanation")
+        XCTAssertTrue(calls.search.contains("ko:정체점 가열"), "\(calls.search)")
+        XCTAssertEqual(NativeQuickLookupCenter.pageURL(center.card!)?.host, "www.google.com")
+        XCTAssertTrue(NativeQuickLookupCenter.pageURL(center.card!)?.query?.contains("stagnation") == true)
+
+        // No search words either: the topic is searched for.
+        center.dismiss()
+        let (bare, _) = explainer { _ in .init(text: "주제: 정체점 가열\n설명: 앞이 뭉툭할수록 덜 뜨거워져요.") }
+        auto.explainer = bare
+        auto.look(.init(owner: "pdf", text: passage + " ", heading: nil, title: ""), store: nil, target: nil)
+        try await waitForCard(center)
+        XCTAssertEqual(center.card?.phase, .result(.search("정체점 가열")))
+
+        // 건너뛰기: no card, and the same selection is not asked about again.
+        center.dismiss()
+        let (skipping, skipped) = explainer { _ in .init(text: "건너뛰기") }
+        auto.explainer = skipping
+        let page = "3쪽\n목차는 다음과 같다."
+        auto.look(.init(owner: "pdf", text: page, heading: nil, title: ""), store: nil, target: nil)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertNil(center.card)
+        auto.look(.init(owner: "pdf", text: page, heading: nil, title: ""), store: nil, target: nil)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertNil(center.card)
+        XCTAssertEqual(skipped.calls.count, 1, "knowing there is nothing is kept too")
+    }
+
+    @MainActor
+    func testAnAreaThatHasToBeSeenIsSentAsItsPictureAndNeverGuessedFromItsText() async throws {
+        NativeQuickLookupPreferences.auto = .on
+        let center = NativeQuickLookupCenter(), calls = Calls()
+        let auto = controller(center, resolverCalls: calls) { language, query in self.article(language, query) }
+        let url = try lecturePDF()
+        let area = NativeQuickLookupAuto.Picture(url: url, page: 1, region: CGRect(x: 0.08, y: 0.18, width: 0.7, height: 0.12))
+        var sent: [[String: Any]] = []
+        let (reader, recorder) = explainer { call in
+            sent.append(call.body)
+            return .init(text: "주제: 엔트로피\n설명: 고립계의 엔트로피는 줄지 않아요.\n수식: $\\Delta S \\geq 0$\n검색어: second law entropy", inputTokens: 900, outputTokens: 60)
+        }
+        auto.explainer = reader
+        // Pieces of a formula: one "term", which without the picture would be looked up as a word.
+        auto.look(.init(owner: "pdf", text: "S 0", heading: "열역학 제2법칙", title: "열역학.pdf", picture: area), store: nil, target: nil)
+        try await waitForCard(center)
+        XCTAssertEqual(recorder.calls, ["gpt-6-luna"])
+        let parts = try XCTUnwrap((sent.first?["input"] as? [[String: Any]])?.first?["content"] as? [[String: Any]])
+        let image = try XCTUnwrap(parts.last?["image_url"] as? String)
+        XCTAssertTrue(image.hasPrefix("data:image/jpeg;base64,"))
+        XCTAssertNotNil(UIImage(data: try XCTUnwrap(Data(base64Encoded: String(image.dropFirst("data:image/jpeg;base64,".count))))), "the area, rendered")
+        XCTAssertEqual(center.card?.explanation?.formula, "\\Delta S \\geq 0", "read off the picture: its letters need not be in the text")
+        XCTAssertEqual(center.card?.phase, .result(.wikipedia(article("ko", "엔트로피"))))
+
+        // AI 설명 switched off: no card, and nothing looked up from the pieces.
+        center.dismiss(); calls.search = []
+        let (off, offCalls) = explainer { _ in XCTFail("no call"); return .init() }
+        off.enabled = { false }
+        auto.explainer = off
+        auto.look(.init(owner: "pdf", text: "S 0", heading: "열역학 제2법칙", title: "열역학.pdf", picture: area), store: nil, target: nil)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertNil(center.card)
+        XCTAssertEqual(offCalls.calls, [])
+        XCTAssertEqual(calls.search, [], "what has to be seen is not guessed from the pieces of text in it")
+    }
+
+    @MainActor
+    func testANewerSelectionTakesTheReadingCardAway() async throws {
+        NativeQuickLookupPreferences.auto = .on
+        let center = NativeQuickLookupCenter(), calls = Calls()
+        let auto = controller(center, resolverCalls: calls) { _, _ in nil }
+        let (slow, _) = explainer { _ in try await Task.sleep(for: .seconds(3)); return .init(text: "주제: x\n설명: y") }
+        auto.explainer = slow
+        auto.look(.init(owner: "pdf", text: passage, heading: nil, title: ""), store: nil, target: nil)
+        try await waitForReading(center)
+        XCTAssertEqual(center.card?.phase, .loading)
+        // The pane goes away, or the lasso closes on ink: the lookup stops and so does its card.
+        auto.cancel(owner: "pdf")
+        XCTAssertNil(center.card)
+        // Stopped before 읽는 중… came: it does not come afterwards.
+        auto.readingDelay = .milliseconds(200)
+        auto.look(.init(owner: "pdf", text: passage + " ", heading: nil, title: ""), store: nil, target: nil)
+        auto.cancel(owner: "pdf")
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertNil(center.card)
+        // 읽는 중… closed with ✕: the answer does not come up afterwards, and is there the next time.
+        auto.readingDelay = .milliseconds(20)
+        let (answering, answered) = explainer { _ in try await Task.sleep(for: .milliseconds(300)); return .init(text: "주제: 엔트로피\n설명: 줄지 않아요.") }
+        auto.explainer = answering
+        let closed = NativeQuickLookupAuto.Source(owner: "pdf", text: passage + "\n닫은 글", heading: nil, title: "")
+        auto.look(closed, store: nil, target: nil)
+        try await waitForReading(center)
+        center.dismiss()
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertNil(center.card, "closed is closed")
+        auto.look(closed, store: nil, target: nil)
+        try await waitForCard(center)
+        XCTAssertEqual(center.card?.explanation?.topic, "엔트로피")
+        XCTAssertEqual(answered.calls.count, 1, "from the cache")
+        center.dismiss()
+        auto.readingDelay = .milliseconds(200)
+        // A reader the model cannot be asked for (signed out) is refused at once: nothing comes and goes.
+        let (signedOut, _) = explainer(signedIn: false) { _ in XCTFail("no call"); return .init() }
+        auto.explainer = signedOut
+        auto.look(.init(owner: "pdf", text: passage + "  ", heading: nil, title: ""), store: nil, target: nil)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertNil(center.card)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertNil(center.card, "the lookup was over before 읽는 중… was due")
+        // A card with an answer on it is not the lookup's to take away.
+        center.showAutomatic(.init(query: "엔트로피", result: .search("엔트로피")), owner: "pdf", engine: "google", store: nil, target: nil)
+        center.dismissPending(owner: "pdf")
+        XCTAssertNotNil(center.card)
+        auto.cancel(owner: "pdf")
+        XCTAssertNotNil(center.card)
     }
 
     @MainActor
