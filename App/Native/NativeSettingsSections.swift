@@ -164,6 +164,10 @@ struct NativeSettingsSections: View {
     @State private var tab = "note"
     @State private var devices: [[String: Any]] = []
     @AppStorage(NativeLocalPreferences.newDocumentKind) private var newDocumentKind = "note"
+    @AppStorage(NativeTabGesturePreferences.enabledKey) private var tabGestureEnabled = true
+    @AppStorage(NativeTabGesturePreferences.openKindKey) private var tabGestureKind = NativeTabGesturePreferences.choose
+    @State private var pickingGestureKind = false
+    @AppStorage(NativeFirstUseTip.offKey) private var tipsOff = false
     @State private var pickingLead = false
     @State private var pickingLocale = false
     @Environment(\.locale) private var locale
@@ -251,9 +255,43 @@ struct NativeSettingsSections: View {
     }
     /// 일반 › 더 보기: what the design's 새 문서 card leaves out.
     private var generalExtra: some View {
-        NativeSettingsGroup(title: "탭") {
-            NativeSettingsToggle(title: "새 탭을 현재 탭 옆에서 열기", isOn: boolean("openAdjacentTab", fallback: false)).accessibilityIdentifier("native-settings-adjacent-tabs")
+        VStack(alignment: .leading, spacing: 28) {
+            tabGroup
+            NativeSettingsGroup(title: "사용 안내") {
+                Button { NotificationCenter.default.post(name: NativeGuideGate.openTour, object: nil) } label: {
+                    NativeSettingsRow(title: "반달 잘 쓰는 법", note: "공부 흐름으로 보는 짧은 예시") { NativeSettingsValue() }
+                }.buttonStyle(.plain).accessibilityIdentifier("native-settings-guide-tour")
+                NativeSettingsToggle(title: "처음 쓸 때 팁 보기", note: "PDF, 올가미, AI를 처음 쓸 때 한 줄씩 알려 줘요",
+                                     isOn: Binding(get: { !tipsOff }, set: { NativeFirstUseTip.setEnabled($0); tipsOff = !$0 }))
+                    .accessibilityIdentifier("native-settings-guide-tips")
+            }
         }
+    }
+    private var tabGroup: some View {
+        NativeSettingsGroup(title: "탭", description: tabGestureEnabled ? "켜 두면 반달의 노트와 글상자에서는 세 손가락 복사·붙여넣기·실행 취소 대신 이 동작을 써요. 단축키와 편집 메뉴는 그대로예요." : "") {
+            NativeSettingsToggle(title: "새 탭을 현재 탭 옆에서 열기", isOn: boolean("openAdjacentTab", fallback: false)).accessibilityIdentifier("native-settings-adjacent-tabs")
+            NativeSettingsToggle(title: "세 손가락으로 탭 열고 닫기", note: "모으면 탭이 닫히고, 모았다가 펴면 새 탭을 열어요", isOn: $tabGestureEnabled)
+                .accessibilityIdentifier("native-settings-tab-gesture")
+            if tabGestureEnabled { tabGestureKindRow }
+        }
+    }
+    /// What a three-finger spread opens: the ＋ menu, or one of its kinds straight away.
+    private var tabGestureKindRow: some View {
+        let kinds = NativeTabGesturePreferences.kinds
+        let chosen = kinds.first { $0.id == tabGestureKind }
+        return Button { pickingGestureKind = true } label: {
+            NativeSettingsRow(title: "세 손가락으로 펼쳐서 열기") { NativeSettingsValue(chosen?.title ?? "매번 고르기") }
+        }.buttonStyle(.plain).accessibilityIdentifier("native-settings-tab-gesture-open")
+            .bandalPopover(isPresented: $pickingGestureKind, width: 240, radius: 16, padding: 8) {
+                VStack(spacing: 0) {
+                    BandalMenuRow("매번 고르기", symbol: "plus", detail: "＋ 메뉴를 띄워요", checked: chosen == nil) { pickingGestureKind = false; tabGestureKind = NativeTabGesturePreferences.choose }
+                        .accessibilityIdentifier("native-settings-tab-gesture-open-" + NativeTabGesturePreferences.choose)
+                    ForEach(kinds) { item in
+                        BandalMenuRow(item.title, symbol: item.symbol, checked: chosen?.id == item.id) { pickingGestureKind = false; tabGestureKind = item.id }
+                            .accessibilityIdentifier("native-settings-tab-gesture-open-" + item.id)
+                    }
+                }
+            }
     }
     private var tabPanel: some View {
         VStack(alignment: .leading, spacing: 28) {

@@ -18,6 +18,7 @@ struct NativeHelpView: View {
                         Label("폴더를 만들고 오른쪽 자료 목록에서 파일을 가져오세요.", systemImage: "folder.badge.plus")
                         Label(NativeReleaseFlags.showsRecording ? "탭 옆 +에서 브라우저, 노트, 마크다운, AI, 녹음을 여세요." : "탭 옆 +에서 브라우저, 노트, 마크다운, AI를 여세요.", systemImage: "plus")
                         Label("탭을 끌어 나누거나 화면 배치 메뉴로 여러 자료를 함께 보세요.", systemImage: "rectangle.split.2x1")
+                        Label("세 손가락을 모으면 탭이 닫히고, 모았다가 펴면 새 탭이 열려요.", systemImage: "hand.raised")
                         Label("PDF와 노트에는 Apple Pencil로 필기할 수 있습니다.", systemImage: "pencil.tip")
                     }.font(.system(size: 13))
                 }

@@ -303,6 +303,8 @@ struct NativePDFTextSizeField: UIViewRepresentable {
 }
 
 final class NativePDFTextInputView: UITextView {
+    /// Three fingers close and open tabs while that gesture is on (NativeTabGesturePreferences).
+    override var editingInteractionConfiguration: UIEditingInteractionConfiguration { NativeTabGesturePreferences.editingInteraction }
     /// While this box has the keyboard the window keeps its size (see `NativeWorkspaceView`); focus moving to
     /// any other field, in this pane or another, hands keyboard avoidance back to the window.
     override func becomeFirstResponder() -> Bool {

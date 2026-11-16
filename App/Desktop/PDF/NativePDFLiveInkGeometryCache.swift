@@ -24,14 +24,15 @@ final class NativePDFLiveInkGeometryCache {
                   width: Double, aspect: Double, highlighter: Bool, fixedWidth: Bool = false, heldShape: NativePDFHeldShape? = nil,
                   taper: Bool = true) -> [[CGPoint]] {
         revision &+= 1
-        // A held ballpoint shape keeps its outline; only the stroke width is constant.
         let constantWidth = highlighter || fixedWidth
-        if let heldShape, heldShape.kind != "ink", !highlighter {
-            if shape == heldShape && shapeWidth == width {
+        // A held shape is drawn exactly as it is saved: even inkVersion 5 ink at the stroke's own width.
+        if let heldShape {
+            let evenWidth = heldShape.width ?? width
+            if shape == heldShape && shapeWidth == evenWidth {
                 retainedPrefixPolygonCount = shapePolygons.count
             } else {
-                reset(); shape = heldShape; shapeWidth = width
-                shapePolygons = heldShape.outlinePolygons(width: width)
+                reset(); shape = heldShape; shapeWidth = evenWidth
+                shapePolygons = NativePDFInkGeometryV5.polygons(points: heldShape.points, width: evenWidth, aspect: aspect, highlighter: true)
             }
             return shapePolygons
         }

@@ -526,10 +526,9 @@ final class NativePDFPersistence {
             } else { throw NativePDFError.invalid("필기의 저장 영수증을 확인하지 못했습니다.") }
             if let heldShape, isLive {
                 var replacement = identity
-                let fit = input["kind"] as? String == "highlighter" ? heldShape.inkPayload : heldShape.payload
+                let fit = heldShape.correction(kind: input["kind"] as? String ?? "ink", style: input["style"] as? [String: Any] ?? [:])
                 replacement.merge(["id": id, "operationId": mutation, "documentRevision": documentRevision,
-                    "expected": input, "kind": input["kind"] as? String == "highlighter" ? "highlighter" : fit["kind"]!,
-                    "data": fit["data"]!, "style": heldShape.shapeStyle(input["style"] as? [String: Any] ?? [:])]) { _, new in new }
+                    "expected": input, "kind": fit.kind, "data": fit.data, "style": fit.style]) { _, new in new }
                 guard let result = try await backend("drawings:replace", replacement) as? [String: Any],
                       let before = result["before"] as? [String: Any], let after = result["after"] as? [String: Any] else {
                     throw NativePDFError.invalid("도형 보정의 저장 영수증을 확인하지 못했습니다.")

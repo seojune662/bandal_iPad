@@ -10,6 +10,8 @@ final class NativePlatformServices: ObservableObject {
     private let ai: DesktopAIService
     private let assistant: NativeAssistantService
     private let recording: DesktopRecordingService
+    /// The recording the microphone is taking now: a three-finger pinch does not close its tab.
+    var activeRecording: (id: String, courseID: String)? { recording.activeCapture }
     private let settingsService: NativeSettingsPlatformService
     private let articles = DesktopArticleService()
     private lazy var cloud = DesktopCloudService(environment: DesktopCloudEnvironment(

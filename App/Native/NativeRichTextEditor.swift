@@ -695,6 +695,8 @@ final class NativeRichTextView: UITextView {
     }
     private var previousLayoutWidth: CGFloat = 0
     override var undoManager: UndoManager? { sourceUndo }
+    /// Three fingers close and open tabs while that gesture is on (NativeTabGesturePreferences).
+    override var editingInteractionConfiguration: UIEditingInteractionConfiguration { NativeTabGesturePreferences.editingInteraction }
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         if let textContainer { super.init(frame: frame, textContainer: textContainer) }
         else {

@@ -196,10 +196,12 @@ final class NativePDFInkV5Tests: XCTestCase {
         let live = NativePDFLiveInkGeometryCache()
         let constant = live.polygons(version: 5, points: points, width: 0.02, aspect: 1.5, highlighter: false, fixedWidth: true)
         XCTAssertEqual(constant, NativePDFInkGeometryV5.polygons(points: points, predictions: [], width: 0.02, aspect: 1.5, highlighter: true))
-        let held = NativePDFHeldShape(kind: "line", points: [.init(x: 0.1, y: 0.1, p: 0.5), .init(x: 0.6, y: 0.4, p: 0.5)], box: [0.1, 0.1, 0.5, 0.3])
+        let line = NativePDFShapeFigure(kind: .line, name: "line", vertices: [CGPoint(x: 0.1, y: 0.15), CGPoint(x: 0.6, y: 0.6)])
+        let held = NativePDFHeldShape(line, width: 0.02, aspect: 1.5)
         live.reset()
-        XCTAssertEqual(live.polygons(version: 5, points: points, width: 0.02, aspect: 1.5, highlighter: false, fixedWidth: true, heldShape: held), held.outlinePolygons(width: 0.02),
-                       "A held ballpoint shape keeps its clean outline")
+        XCTAssertEqual(live.polygons(version: 5, points: points, width: 0.02, aspect: 1.5, highlighter: false, fixedWidth: true, heldShape: held),
+                       NativePDFInkGeometryV5.polygons(points: held.points, width: 0.02, aspect: 1.5, highlighter: true),
+                       "A held ballpoint shape is drawn as the even ink it is saved as")
     }
 
     func testHighlighterKeepsExactV4WidthAndPolygonsIncludingPredictions() {
