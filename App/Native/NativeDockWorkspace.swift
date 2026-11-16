@@ -1005,31 +1005,75 @@ private struct NativeDockDraggableTab: UIViewRepresentable {
     }
 }
 
+extension View {
+    /// Touches on this view never choose the pane under it (`NativeDockTouchFocus`): for controls drawn over a pane
+    /// that act on the pane chosen before them, such as the window buttons and their 공유.
+    func nativeDockTouchFocusExcluded() -> some View { background(NativeDockTouchFocusExclusion()) }
+}
+
+/// Marks the region of `nativeDockTouchFocusExcluded()`: a plain view that takes no touches, only says where it is.
+private struct NativeDockTouchFocusExclusion: UIViewRepresentable {
+    func makeUIView(context: Context) -> Marker { let view = Marker(); view.isUserInteractionEnabled = false; view.isAccessibilityElement = false; return view }
+    func updateUIView(_ view: Marker, context: Context) {}
+    final class Marker: UIView {
+        static let all = NSHashTable<Marker>.weakObjects()
+        override func didMoveToWindow() { super.didMoveToWindow(); if window != nil { Self.all.add(self) } else { Self.all.remove(self) } }
+    }
+    static var markers: [UIView] { Marker.all.allObjects }
+}
+
 /// Watches every touch in the window without taking part in it: a recognizer that fails on its first
 /// touch, never cancels or delays, and reports where the touch began in this view's space.
-private struct NativeDockTouchFocus: UIViewRepresentable {
+struct NativeDockTouchFocus: UIViewRepresentable {
     let panes: [(String, CGRect)]
     let onFocus: (String) -> Void
     func makeUIView(context: Context) -> Probe { let view = Probe(); view.isUserInteractionEnabled = false; view.isAccessibilityElement = false; return view }
     func updateUIView(_ view: Probe, context: Context) {
         let panes = panes, onFocus = onFocus
-        view.onTouch = { point in if let pane = panes.first(where: { $0.1.contains(point) }) { onFocus(pane.0) } }
+        view.onTouch = { point in
+            guard let index = panes.firstIndex(where: { $0.1.contains(point) }) else { return }
+            NativeInputTrace.record("dock.touchFocus", "pane=\(index)")
+            onFocus(panes[index].0)
+        }
         view.active = !panes.isEmpty
     }
     static func dismantleUIView(_ view: Probe, coordinator: ()) { view.detach() }
+    /// Whether a touch that began on `view` at `location` (window space) chooses a pane. Not when it is on something
+    /// presented over the dock's own screen (a popover such as 공유's, a sheet, a menu, their dimming): those belong
+    /// to `root`'s presentations, not to `root`. Not on a marked region either (`nativeDockTouchFocusExcluded`).
+    static func counts(view: UIView?, location: CGPoint, window: UIWindow, root: UIView?, excluded: [UIView]) -> Bool {
+        if let view, let root, !view.isDescendant(of: root) { return false }
+        return !excluded.contains { marker in
+            marker.window === window && !marker.isHidden && marker.alpha > 0.01
+                && marker.convert(marker.bounds, to: window).contains(location)
+        }
+    }
     final class Probe: UIView {
         var onTouch: (CGPoint) -> Void = { _ in }
         /// Only with panes side by side does the window carry the watcher at all.
         var active = false { didSet { if active != oldValue { attach() } } }
         private var watcher: Watcher?
         override func didMoveToWindow() { super.didMoveToWindow(); attach() }
+        /// The view of the controller this dock's screen belongs to, above any child controllers: what is presented
+        /// from it (popovers, sheets) lies outside it.
+        private var presentationRoot: UIView? {
+            var responder: UIResponder? = self
+            while let next = responder, !(next is UIViewController) { responder = next.next }
+            guard var controller = responder as? UIViewController else { return nil }
+            while let parent = controller.parent { controller = parent }
+            return controller.view
+        }
         private func attach() {
             detach()
             guard active, let window else { return }
             let watcher = Watcher { [weak self] touch in
-                guard let self, self.active, self.window != nil, !self.isHidden else { return }
+                guard let self, self.active, let window = self.window, !self.isHidden else { return }
                 let point = touch.location(in: self)
                 guard self.bounds.contains(point) else { return }
+                guard NativeDockTouchFocus.counts(view: touch.view, location: touch.location(in: window), window: window,
+                                                  root: self.presentationRoot, excluded: NativeDockTouchFocusExclusion.markers) else {
+                    NativeInputTrace.record("dock.touchFocus", "kept: over a control or a presentation"); return
+                }
                 DispatchQueue.main.async { self.onTouch(point) }
             }
             window.addGestureRecognizer(watcher); self.watcher = watcher

@@ -61,6 +61,8 @@ struct NativeWorkspaceWindowControls: View {
         .background(NativeGlass.selection.opacity(overview ? 0 : 1), in: RoundedRectangle(cornerRadius: 11))
         .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(NativeGlass.fieldStroke, lineWidth: 1).opacity(overview ? 0 : 1) }
         .accessibilityElement(children: .contain).accessibilityIdentifier("native-workspace-controls")
+        // The group lies over the right pane's corner: pressing it must not make that pane the one 공유 acts on.
+        .nativeDockTouchFocusExcluded()
     }
 
     /// Cells of 36 · 36 · 36 · 34 in a 169 × 40 group; the chosen one carries a 34 × 30 pill.
