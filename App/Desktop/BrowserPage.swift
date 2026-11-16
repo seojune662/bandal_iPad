@@ -306,6 +306,9 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         guard let url = navigationAction.request.url else { decisionHandler(.cancel, preferences); return }
         preferences.preferredContentMode = host?.presentation(for: self, url: url).contentMode ?? .recommended
         let scheme = url.scheme?.lowercased() ?? ""
+        #if DEBUG
+        if NativeVideoUITestFixture.allowsFileNavigation(url) { decisionHandler(.allow, preferences); return }
+        #endif
         guard ["http", "https", "about", "data", "blob"].contains(scheme) else {
             host?.emit("browser:external-scheme", ["tabId": tabID, "url": url.absoluteString, "origin": webView.url.flatMap(DesktopBrowserHost.origin) ?? "", "outcome": "blocked", "reason": "이 링크는 다른 앱이 필요합니다. 웹사이트의 웹 버전 링크를 사용하거나 주소를 복사해 해당 앱에서 열어 주세요."])
             decisionHandler(.cancel, preferences); return

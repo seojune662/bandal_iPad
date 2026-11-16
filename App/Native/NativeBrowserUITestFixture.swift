@@ -11,6 +11,11 @@ extension NativeBrowserSession {
             ? "Native browser fixture — 아주 긴 학교 학습 자료 제목과 여러 강의 안내 및 학기별 과제 페이지를 동시에 확인하는 브라우저와 프로젝트별 참고 자료 상세 안내"
             : "Native browser fixture"
         guard page.liveWebView?.title != title else { return }
+        if NativeVideoUITestFixture.webRequested {
+            // A page coming back from PiP keeps playing; only a new tab loads the video page.
+            if page.liveWebView?.url?.isFileURL != true { await NativeVideoUITestFixture.loadWebPage(into: page) }
+            return
+        }
         if args.contains("--native-browser-login-ui-fixture") {
             // An https base URL gives the page a real https origin without a network.
             page.webView.loadHTMLString("""
