@@ -1635,8 +1635,20 @@ final class NativePDFWorkspaceModel {
         editorTask = task
         Task { @MainActor in
             do { try await task.value; self.isBusy = self.materialMutating; self.restoreInput() }
-            catch { self.clearGesture(); self.isBusy = self.materialMutating; self.fail(error) }
+            catch { self.clearGesture(); self.isBusy = self.materialMutating; self.refusedByPeer(error) ? () : self.fail(error) }
         }
+    }
+    /// Another pane (or sync) changed these objects first, so this edit or undo was not applied:
+    /// show what is saved now and keep the page writable, with a toast instead of the banner.
+    private func refusedByPeer(_ error: Error) -> Bool {
+        guard NativePDFPersistence.refusedByPeer(error) else { return false }
+        mediaImportError = "다른 창에서 먼저 바뀌어 이 편집은 적용하지 않았어요."
+        restoreInput()
+        Task { @MainActor [weak self] in
+            guard let self, !self.retired else { return }
+            try? await self.publishSnapshot(); self.refreshHistory()
+        }
+        return true
     }
     private func restoreInput() {
         NativeInputTrace.change("pdf.gate", "busy=\(isBusy ? 1 : 0) mutating=\(materialMutating ? 1 : 0) error=\(blockedForError ? 1 : 0) closing=\(closing == nil ? 0 : 1) annotation=\(showAnnotationEditor ? 1 : 0) loading=\(isLoading ? 1 : 0) visible=\(visible ? 1 : 0)")
@@ -2317,7 +2329,7 @@ final class NativePDFWorkspaceModel {
                 try await task.value
                 isBusy = materialMutating
                 host?.setPresentation(blocked: false, inputBlocked: materialMutating || blockedForError || closing != nil, overlays: [])
-            } catch { isBusy = materialMutating; fail(error) }
+            } catch { isBusy = materialMutating; if !refusedByPeer(error) { fail(error) } }
         }
     }
     func flush(keepingText: Bool = false) async throws {
@@ -2624,8 +2636,11 @@ final class NativePDFWorkspaceModel {
                             Task { @MainActor [weak self] in self?.resumePageOperation() }
                             return
                         }
-                    } catch { NativePDFPageDocument.log.error("page operation reopen failed") }
-                } else if stale { try? await self.reopen() }
+                    } catch { self.fail(error); return }
+                } else if stale {
+                    // The surface must show the PDF as it is now before it takes ink again.
+                    do { try await self.reopen() } catch { self.fail(error); return }
+                }
                 self.restoreInput()
                 self.pageNoticeSucceeded = false; self.pageNotice = Self.pageFailureNotice(error)
             }

@@ -77,7 +77,7 @@ enum NativePDFPageDocument {
         func elapsed() -> Int { Int(Date().timeIntervalSince(started) * 1000) }
         do {
             let output = try NativePDFIncrementalUpdate.write(bytes, pages: recipe, newPage: mode)
-            let proof = try NativePDFIncrementalUpdate.verify(source: bytes, target: output.data, pages: recipe)
+            let proof = try NativePDFIncrementalUpdate.verify(source: bytes, target: output.data, pages: recipe, parsedSource: output.source)
             log.info("page edit: incremental pages=\(document.pageCount, privacy: .public)->\(recipe.count, privacy: .public) new=\(mode.rawValue, privacy: .public) rewritten=\(proof.rewrittenPages, privacy: .public) bytes=+\(output.data.count - bytes.count, privacy: .public) ms=\(elapsed(), privacy: .public)")
             return output.data
         } catch {

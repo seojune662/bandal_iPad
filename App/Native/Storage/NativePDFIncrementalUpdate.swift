@@ -149,7 +149,8 @@ enum NativePDFIncrementalUpdate {
 
     // MARK: write
 
-    struct Output { let data: Data; let rewrittenPages: Int; let otherObjects: Int }
+    /// `source` is the parsed original, for the proof that follows.
+    struct Output { let data: Data; let rewrittenPages: Int; let otherObjects: Int; let source: File }
 
     static func write(_ source: Data, pages recipe: [Int], newPage: NewPage) throws -> Output {
         let file = try File(source)
@@ -235,15 +236,16 @@ enum NativePDFIncrementalUpdate {
             }
         }
 
-        var out = [UInt8](source)
-        if let last = out.last, last != 10, last != 13 { out.append(10) }
+        // Only the appended section is built; the original is never copied into it.
+        let separator = source.last.map { $0 != 10 && $0 != 13 } ?? false, base = source.count + (separator ? 1 : 0)
+        var out: [UInt8] = []
         var offsets: [Int: (Int, Int)] = [:]
         if let contents = emptyContents {
-            offsets[contents.number] = (out.count, 0)
+            offsets[contents.number] = (base + out.count, 0)
             out += Array("\(contents.number) 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\n".utf8)
         }
         for (reference, body) in objects {
-            offsets[reference.number] = (out.count, reference.generation)
+            offsets[reference.number] = (base + out.count, reference.generation)
             out += Array("\(reference.number) \(reference.generation) obj\n".utf8); out += body; out += Array("\nendobj\n".utf8)
         }
         var trailer = Dict()
@@ -265,7 +267,7 @@ enum NativePDFIncrementalUpdate {
                 }
             }
         } else { trailer["Prev"] = .integer(file.startxref) }
-        let xref = out.count
+        let xref = base + out.count
         if file.newestIsStream || !compressed.isEmpty {
             // Updates to a cross-reference-stream file continue in that format (§7.5.8.4).
             let own = next; next += 1
@@ -296,8 +298,11 @@ enum NativePDFIncrementalUpdate {
             out += Array("trailer\n".utf8); try File.serialize(.dictionary(trailer), into: &out); out.append(10)
         }
         out += Array("startxref\n\(xref)\n%%EOF\n".utf8)
-        guard out.count < File.maximumBytes else { throw Unsupported("result too large") }
-        return Output(data: Data(out), rewrittenPages: rewrittenPages, otherObjects: offsets.count - rewrittenPages)
+        guard base + out.count < File.maximumBytes else { throw Unsupported("result too large") }
+        var result = source
+        if separator { result.append(10) }
+        result.append(contentsOf: out)
+        return Output(data: result, rewrittenPages: rewrittenPages, otherObjects: offsets.count - rewrittenPages, source: file)
     }
     private static func runs(_ numbers: [Int]) -> [ClosedRange<Int>] {
         var result: [ClosedRange<Int>] = []
@@ -369,10 +374,10 @@ enum NativePDFIncrementalUpdate {
     /// same objects drawing the same content. Works in both directions, so an
     /// undo (the shorter, older bytes) is proven against the edit it reverses.
     @discardableResult
-    static func verify(source: Data, target: Data, pages recipe: [Int]) throws -> Proof {
+    static func verify(source: Data, target: Data, pages recipe: [Int], parsedSource: File? = nil) throws -> Proof {
         let longer = target.count >= source.count ? target : source, shorter = target.count >= source.count ? source : target
         guard longer.count > shorter.count, longer.prefix(shorter.count) == shorter else { throw Unsupported("not an incremental update") }
-        let s = try File(source), t = try File(target), long = longer == target ? t : s, short = longer == target ? s : t
+        let s = try parsedSource ?? File(source), t = try File(target), long = longer == target ? t : s, short = longer == target ? s : t
         let (_, sRoot, sPages) = try pages(s), (_, tRoot, tPages) = try pages(t)
         guard sRoot == tRoot, tPages.count == recipe.count else { throw Unsupported("page tree differs") }
         let kept = recipe.filter { $0 != 0 }

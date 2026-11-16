@@ -240,6 +240,7 @@
 "놓으면 새 페이지를 추가해요" = "Release to add a page";
 "다른 곳에서 바뀐 내용" = "changed elsewhere";
 "다른 곳에서 바뀐 내용은 ‘%@’에 보관했어요." = "The version changed elsewhere was kept in “%@”.";
+"다른 창에서 먼저 바뀌어 이 편집은 적용하지 않았어요." = "Another window changed it first, so this edit wasn’t applied.";
 "동기화 중인 문서는 페이지 순서를 바꾸거나 지울 수 없어요." = "While a document syncs, its pages can’t be reordered or deleted.";
 "동적 양식 또는 서명 정보가 있는 PDF는 원본 보존을 위해 페이지 편집을 지원하지 않습니다." = "Pages of a PDF with dynamic forms or signatures can’t be edited, to keep the original intact.";
 "서명된 PDF의 페이지는 변경할 수 없습니다." = "Pages of a signed PDF can’t be changed.";
