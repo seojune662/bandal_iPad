@@ -51,6 +51,16 @@ struct NativeWorkspaceView: View {
     @AppStorage("native.fontScale") private var fontScale = 1.0
     @AppStorage("native.density") private var density = "comfortable"
     @State private var showingNewTabMenu = false
+    /// The tab a three-finger pinch closed, while its toast offers 되돌리기.
+    @State private var closedTab: NativeClosedTab?
+    @State private var closedTabNotice: String?
+    @State private var tabGestureNotice: String?
+    /// 반달 잘 쓰는 법 or the new-feature card, on screen.
+    @State private var guideCard: NativeGuideGate.Card?
+    /// One of them is waiting for the workspace to be quiet; first-use tips wait for it.
+    @State private var guideDue = false
+    @State private var onboardedThisLaunch = false
+    @State private var tip: NativeFirstUseTip?
     @State private var workspaceSettings: [String: Any] = [:]
     @State private var busy = false
     @State private var showBusy = false
@@ -257,7 +267,8 @@ struct NativeWorkspaceView: View {
                         materialsOpen: rightVisible,
                         toggleMaterials: { toggleMaterialsRail(width: geometry.size.width) },
                         openNewTab: openNewTab, covered: covered, select: selectTab,
-                        chromeMode: navigation.chromeMode, controlInset: chrome.rightPinned ? 0 : NativeWorkspaceWindowControls.width + NativeWorkspaceWindowControls.trailing)
+                        chromeMode: navigation.chromeMode, controlInset: chrome.rightPinned ? 0 : NativeWorkspaceWindowControls.width + NativeWorkspaceWindowControls.trailing,
+                        closeTabByGesture: closeTabByGesture, tabGestureBlocked: tabGestureBlocked(width: geometry.size.width))
                         .environment(\.nativeWorkspacePreviewController, previews)
                         .environment(\.nativePDFPaletteHost, pdfPalette)
                     }
@@ -440,9 +451,12 @@ struct NativeWorkspaceView: View {
     }
 
     var body: some View {
-        workspaceChrome
+        guidedChrome
         .bandalToast(Binding(get: { store.errorMessage }, set: { store.errorMessage = $0 }))
         .bandalToast($shareNotice, symbol: "checkmark.circle.fill")
+        .bandalToast($tabGestureNotice)
+        .bandalToast($closedTabNotice, actionTitle: "되돌리기") { reopenClosedTab() }
+        .onChange(of: closedTabNotice) { _, notice in if notice == nil { closedTab = nil } }
         .modifier(NativeReferralHost(referral: store.referral, ready: restored && onboarding == .closed, openSettings: openSettings))
         .task {
             await store.start()
@@ -539,6 +553,70 @@ struct NativeWorkspaceView: View {
             }
         }
         .onOpenURL(perform: receiveURL)
+    }
+
+    /// The workspace with what shows once: 반달 잘 쓰는 법, the new-feature card and the first-use tips.
+    /// Its own expression: `body` is already near what the type checker gets through in a Release archive.
+    private var guidedChrome: some View {
+        workspaceChrome
+            .overlay(alignment: .bottom) { tipLayer }
+            .overlay { guideLayer }
+            .onChange(of: onboarding) { _, stage in if stage == .showing { onboardedThisLaunch = true } }
+            .task(id: restored && onboarding == .closed) { await presentGuideWhenQuiet() }
+            .onReceive(NotificationCenter.default.publisher(for: NativeGuideGate.openTour)) { _ in tip = nil; withAnimation { guideCard = .tour } }
+            .onChange(of: navigation.activeID) { _, _ in
+                let kind = navigation.active?.kind
+                if kind == "pdf" { offerTip(.pdf) } else if kind == "assistant" { offerTip(.ai) }
+            }
+            .onChange(of: aiRailOpen) { _, open in if open { offerTip(.ai) } }
+            .onChange(of: pdfPalette.entries.values.contains { $0.model.tool == "lasso" }) { _, lasso in if lasso { offerTip(.lasso) } }
+    }
+    @ViewBuilder private var guideLayer: some View {
+        switch guideCard {
+        case .intro:
+            NativeGuideBackdrop(width: min(460, windowWidth - 32), identifier: "native-tab-gesture-intro", dismiss: { closeGuide(.intro) }) {
+                NativeTabGestureIntro(openSettings: { closeGuide(.intro); openSettings("tab-gestures") }, close: { closeGuide(.intro) })
+            }
+        case .tour:
+            NativeGuideBackdrop(width: min(520, windowWidth - 32), identifier: "native-guide-tour", dismiss: { closeGuide(.tour) }) {
+                NativeUsageTour(close: { closeGuide(.tour) })
+            }
+        case nil: EmptyView()
+        }
+    }
+    @ViewBuilder private var tipLayer: some View {
+        if let tip {
+            NativeFirstUseTipCard(tip: tip, dismiss: { withAnimation { self.tip = nil } }, stopAll: { NativeFirstUseTip.stopAll(); withAnimation { self.tip = nil } })
+                .padding(.bottom, 76).padding(.horizontal, 16)
+                .task(id: tip) {
+                    try? await Task.sleep(for: .seconds(8))
+                    if self.tip == tip { withAnimation { self.tip = nil } }
+                }
+        }
+    }
+    /// Waits until nothing lies over the workspace for a moment, then shows what is due (NativeGuideGate).
+    private func presentGuideWhenQuiet() async {
+        guard restored, onboarding == .closed, guideCard == nil, let due = NativeGuideGate.due(onboardedThisLaunch: onboardedThisLaunch) else { return }
+        guideDue = true
+        defer { guideDue = false }
+        var quiet = 0
+        while !Task.isCancelled, guideCard == nil {
+            try? await Task.sleep(for: .milliseconds(500))
+            let idle = NativeGuideGate.idle(restored: restored, onboardingClosed: onboarding == .closed, workspaceShown: showsWorkspace && !windowsOverviewOpen,
+                                            overlay: newNoteGroupID != nil || boardOverlayOpen || annotation.request != nil || busy,
+                                            presented: NativeGuideGate.somethingPresented)
+            quiet = idle ? quiet + 1 : 0
+            if quiet >= 3, !Task.isCancelled { tip = nil; withAnimation { guideCard = due }; return }
+        }
+    }
+    private func closeGuide(_ card: NativeGuideGate.Card) {
+        NativeGuideGate.markSeen(card)
+        withAnimation { guideCard = nil }
+    }
+    private func offerTip(_ candidate: NativeFirstUseTip) {
+        guard tip == nil, guideCard == nil, !guideDue, onboarding == .closed, candidate.isDue() else { return }
+        candidate.markSeen()
+        withAnimation { tip = candidate }
     }
 
     /// A file handed to the app is imported. A web address is a universal link, never a file, and
@@ -1251,7 +1329,44 @@ struct NativeWorkspaceView: View {
         syncNavigationInstances(); saveNavigation()
         if !background, navigation.target(containing: child.id)?.ref == navigation.currentWindowRef { section = .library; auxiliary = nil; learningHome = false }
     }
-    private func closeDocuments(_ documentIDs: [String]) {
+    /// A three-finger pinch over a pane: its chosen tab closes as with ✕, and for a few seconds a toast offers it
+    /// back. A tab taking a lecture recording stays open.
+    private func closeTabByGesture(_ groupID: String) {
+        guard let id = navigation.groups.first(where: { $0.id == groupID })?.activeID, let document = navigation.document(id), !busy else { return }
+        Task { @MainActor in
+            if await closingStopsRecording(document) { tabGestureNotice = "녹음 중인 탭은 닫지 않았어요. 녹음을 멈춘 뒤 닫아 주세요."; return }
+            guard var record = navigation.closedTab(id) else { return }
+            if document.kind == "browser" { record.browserURL = NativeBrowserSession.currentPage(workspaceID: document.relativePath, store: store, host: services.browser)?.url }
+            closeDocuments([id]) { closedTab = record; closedTabNotice = "탭을 닫았어요" }
+        }
+    }
+    /// The microphone is recording into this tab: the recordings tab of its folder, or the PDF it was started from.
+    private func closingStopsRecording(_ document: NativeDocumentReference) async -> Bool {
+        guard let recording = services.activeRecording, recording.courseID.isEmpty || recording.courseID == document.courseID else { return false }
+        if document.kind == "recordings" { return true }
+        guard document.kind == "pdf" else { return false }
+        let detail = (try? await store.invoke("recordings:read", ["id": recording.id])) as? [String: Any]
+        return (detail?["anchors"] as? [[String: Any]] ?? []).contains { $0["relPath"] as? String == document.relativePath }
+    }
+    /// 되돌리기: the same document back in its pane, at its place, chosen.
+    private func reopenClosedTab() {
+        guard let record = closedTab else { return }
+        closedTab = nil
+        guard !refused("reopenTab") else { return }
+        if let url = record.browserURL, url != "about:blank", NativeSettingsSchema.webURL(url) { store.pendingBrowserURLs[record.document.relativePath] = url }
+        persistWindowMetadata { _ = navigation.reopen(record) }
+        syncNavigationInstances()
+        if navigation.currentWindowRef == record.ref { section = .library; auxiliary = nil; learningHome = false }
+    }
+    /// A drawer, sheet or first-run screen lies over the panes: three fingers there are not on a tab.
+    private func tabGestureBlocked(width: CGFloat) -> Bool {
+        newNoteGroupID != nil || windowsOverviewOpen || boardOverlayOpen || annotation.request != nil || onboarding != .closed || guideCard != nil
+            || compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(width)
+            || compactMaterialsRail && !NativeWorkspaceChromeLayout.fitsRight(width)
+            || compactAIRail && !NativeWorkspaceChromeLayout.fitsAI(width)
+    }
+    private func closeDocuments(_ documentIDs: [String]) { closeDocuments(documentIDs, onClosed: nil) }
+    private func closeDocuments(_ documentIDs: [String], onClosed: (() -> Void)?) {
         guard !refused("closeDocuments") else { return }
         let windowRef = navigation.currentWindowRef
         let current = Set(navigation.groups.flatMap(\.tabs))
@@ -1289,6 +1404,7 @@ struct NativeWorkspaceView: View {
                     store.assistantDocumentIDs.remove(document.id)
                 }
                 syncNavigationInstances()
+                onClosed?()
             } catch { store.errorMessage = error.localizedDescription }
         }
     }

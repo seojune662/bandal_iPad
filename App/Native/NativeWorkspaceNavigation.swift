@@ -383,6 +383,36 @@ final class NativeWorkspaceNavigation: ObservableObject {
         edit(in: ref) { layout in layout.root = layout.root.mapGroups { item in var group = item; group.remove(id); return group } }
         removeUnplacedDocuments()
     }
+    /// Where a tab sits, taken just before it closes, so 되돌리기 can put it back in the same place.
+    func closedTab(_ id: String) -> NativeClosedTab? {
+        guard let ref = currentWindowRef, let document = document(id),
+              let group = window(ref)?.layout.groups.first(where: { $0.tabs.contains(id) }), let index = group.tabs.firstIndex(of: id) else { return nil }
+        return NativeClosedTab(document: document, ref: ref, groupID: group.id, index: index, duplicateSourceID: documentDuplicateSourceIDs[id],
+                               pageNotes: pageNoteSourceTabIDs.filter { $0.key == id || $0.value == id })
+    }
+    /// Opens a closed tab again as it was: the same document (and identity), in its pane at its place, chosen.
+    /// A pane closed meanwhile gives way to the focused one; a tab open again elsewhere is only chosen.
+    @discardableResult
+    func reopen(_ closed: NativeClosedTab) -> Bool {
+        guard let layout = window(closed.ref)?.layout else { return false }
+        let id = closed.document.id
+        if let existing = layout.groups.first(where: { $0.tabs.contains(id) }) {
+            return edit(in: closed.ref) { $0.updateGroup(existing.id) { $0.activeID = id }; $0.focusedGroupID = existing.id }
+        }
+        // Moved into another window meanwhile: one tab is never placed twice.
+        if target(containing: id) != nil { return false }
+        if !documents.contains(where: { $0.id == id }) { documents.append(closed.document) }
+        if let source = closed.duplicateSourceID { documentDuplicateSourceIDs[id] = source }
+        let open = Set(documents.map(\.id))
+        for (note, source) in closed.pageNotes where open.contains(note) && open.contains(source) { pageNoteSourceTabIDs[note] = source }
+        return edit(in: closed.ref) { layout in
+            let own = layout.root.groups.contains { $0.id == closed.groupID }
+            guard let groupID = own ? closed.groupID : layout.focused?.id else { return }
+            // Its place is kept in its own pane; in another it goes last, as a new tab would.
+            layout.updateGroup(groupID) { pane in pane.tabs.insert(id, at: own ? min(max(0, closed.index), pane.tabs.count) : pane.tabs.count); pane.activeID = id }
+            layout.focusedGroupID = groupID
+        }
+    }
     func closeOthers(keeping id: String, groupID: String? = nil) {
         let ids = groupID.flatMap { wanted in groups.first { $0.id == wanted }?.tabs } ?? groups.flatMap(\.tabs)
         ids.filter { $0 != id }.forEach(closeTab)

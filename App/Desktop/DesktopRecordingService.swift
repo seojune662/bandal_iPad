@@ -48,6 +48,11 @@ final class DesktopRecordingService {
     }
     deinit { timer?.invalidate(); observers.forEach(NotificationCenter.default.removeObserver); jobs.values.forEach { $0.cancel() } }
 
+    /// The recording the microphone is taking now (recording or paused), and its course.
+    var activeCapture: (id: String, courseID: String)? {
+        guard let id = capture?["id"] as? String, ["recording", "paused"].contains(capture?["status"] as? String ?? "") else { return nil }
+        return (id, capture?["courseId"] as? String ?? "")
+    }
     func canHandle(_ channel: String) -> Bool {
         ["recordings:create", "recordings:control", "recordings:append", "recordings:models", "recordings:downloadModel", "recordings:cancelDownload", "runtime:recordingStart", "runtime:recordingDevices", "runtime:recordingAbandon"].contains(channel)
     }

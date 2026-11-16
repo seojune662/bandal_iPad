@@ -140,6 +140,7 @@ struct NativeAccountRailButton: View {
     private var helpCard: some View {
         VStack(spacing: 2) {
             helpLine("처음 사용 안내 다시 보기", "native-help-onboarding") { NotificationCenter.default.post(name: Self.restartOnboarding, object: nil) }
+            helpLine("반달 잘 쓰는 법", "native-help-tour") { NotificationCenter.default.post(name: NativeGuideGate.openTour, object: nil) }
             helpLine("펜슬·손가락 사용법", "native-help-guide", action: openHelp)
             helpLine("단축키", "native-help-shortcuts") { openSettings("shortcuts") }
             helpLine("문의하기 · 버그 신고", "native-help-contact") { UIApplication.shared.open(Self.contactURL) }
