@@ -306,7 +306,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     private func sizing(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, available: CGFloat) -> NativeDockTabSizing {
         let split = navigation.groups.count > 1
         let widths = group.tabs.map { id in
-            navigation.document(id).map { NativeDockTabButton.naturalWidth(title: $0.title, symbol: Self.symbol($0, split: split), metrics: metrics, fontScale: fontScale, selected: id == group.activeID) } ?? 44
+            navigation.document(id).map { NativeDockTabButton.naturalWidth(title: $0.title, symbol: Self.symbol($0, split: split), metrics: metrics, fontScale: fontScale,
+                                                                            selected: id == group.activeID, pageIcon: $0.kind == "browser") } ?? 44
         }
         return NativeDockTabSizing(availableWidth: max(0, available), naturalWidths: widths,
             activeIndex: group.tabs.firstIndex(of: group.activeID ?? "") ?? -1, spacing: density == "compact" ? 0 : metrics.gap)
@@ -450,8 +451,10 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         // Only the pane being written in fills its selected tab; the others stay at full strength in grey.
         let active = selected && (!split || group.id == navigation.focusedGroupID)
         let width = sizing.width(of: index)
+        // A web page's own icon (Safari-style), the globe until it arrives.
+        let favicon = document.kind == "browser" ? NativeTabFavicons.shared.image(forBrowser: document.relativePath, dark: scheme == .dark, store: store) : nil
         return HStack(spacing: 0) {
-            NativeDockDraggableTab(document: document, selected: selected, symbol: Self.symbol(document, split: split), image: nil, metrics: metrics,
+            NativeDockDraggableTab(document: document, selected: selected, symbol: Self.symbol(document, split: split), image: favicon, metrics: metrics,
                 dimmed: !active, mutedIcon: split && !active, closeInside: true,
                 fontScale: fontScale, density: sizing.density, courseID: navigation.activeCourseID ?? document.courseID, drag: drag,
                 close: { closeDocuments([document.id]) }) {
@@ -988,6 +991,10 @@ private struct NativeDockDraggableTab: UIViewRepresentable {
         view.configure(title: document.title, symbol: symbol, image: image, density: density, fontScale: fontScale, selected: selected,
                        metrics: metrics, dimmed: dimmed, mutedIcon: mutedIcon, closeInside: closeInside)
         view.accessibilityIdentifier = "native-document-tab-" + document.id
+        #if DEBUG
+        // UI tests read whether the page's icon is shown; VoiceOver has nothing to say about it.
+        if NativeTabFavicons.marksTabsForTests { view.accessibilityValue = image == nil ? nil : "favicon" }
+        #endif
         view.accessibilityHint = "길게 눌러 다른 영역이나 탭 사이로 드래그할 수 있습니다"
         view.accessibilityCustomActions = [UIAccessibilityCustomAction(name: "닫기", actionHandler: { [weak coordinator = context.coordinator] _ in coordinator?.owner.close(); return true })]
     }
