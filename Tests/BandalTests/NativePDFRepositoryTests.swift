@@ -311,6 +311,44 @@ final class NativePDFRepositoryTests: XCTestCase {
         XCTAssertTrue(try recovery.records().isEmpty)
     }
 
+    /// A shape is saved as even ink with its corners; one undo gives the handwriting back, redo the shape again,
+    /// and a relaunch reads the same rows.
+    func testRecognizedShapeSavesAsEvenInkWithCornersAndUndoRestoresHandwriting() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let path = try fixture.paper(), binding = try fixture.call("nativePDF:binding", fixture.identity(path)) as! [String: Any]
+        let revision = binding["documentRevision"] as! String, raw = fixture.stroke(path, revision: revision)
+        var input = try JSONDecoder().decode(NativePDFStrokeInput.self, from: JSONSerialization.data(withJSONObject: raw))
+        let triangle = NativePDFShapeFigure(kind: .polygon, name: "triangle", vertices: [CGPoint(x: 0.2, y: 0.5), CGPoint(x: 0.4, y: 0.2), CGPoint(x: 0.6, y: 0.5)])
+        input.heldShape = NativePDFHeldShape(triangle, width: 0.0021, aspect: 1.4)
+        let journal = try NativePDFJournal(root: fixture.root)
+        try journal.append(input, documentRevision: revision)
+        let host: NativePDFPersistence.Invoke = { command, request in
+            if command == "mutationStatus" { return try fixture.call("nativePDF:mutationStatus", request["input"] as! [String: Any]) }
+            if command == "ack" { try journal.acknowledge(request["clientMutationId"] as! String, courseID: fixture.course, relativePath: path); return [:] }
+            throw NativePDFError.invalid("Unexpected command")
+        }
+        let owner = NativePDFPersistence(courseID: fixture.course, relativePath: path, documentRevision: revision,
+            backend: { try fixture.call($0, $1) }, host: host)
+        try await owner.recoverStrokes([try NativePDFHost.json(input)])
+        let row = try XCTUnwrap(owner.rows.first), data = try XCTUnwrap(row["data"] as? [String: Any]), style = try XCTUnwrap(row["style"] as? [String: Any])
+        XCTAssertEqual(row["kind"] as? String, "ink")
+        XCTAssertEqual(data["inkVersion"] as? Int, 5)
+        XCTAssertEqual((data["shape"] as? [String: Any])?["type"] as? String, "polygon")
+        XCTAssertEqual(style["width"] as? Double, 0.0021); XCTAssertEqual(style["fixedWidth"] as? Bool, true)
+        XCTAssertEqual(style["color"] as? String, "blue")
+        XCTAssertEqual(NativePDFShapeFigure(data: data, aspect: 1.4)?.name, "triangle", "The saved row reads back as the figure")
+        // Read straight from storage, as after a relaunch or a sync.
+        let stored = try fixture.call("drawings:listForFile", fixture.identity(path)) as! [[String: Any]]
+        XCTAssertEqual((stored.first?["data"] as? [String: Any])?["shape"] as? NSDictionary, data["shape"] as? NSDictionary)
+        try await owner.undo()
+        XCTAssertEqual(owner.rows.first?["kind"] as? String, "ink")
+        XCTAssertEqual(owner.rows.first?["data"] as? NSDictionary, raw["data"] as? NSDictionary, "One undo: the handwriting as drawn")
+        XCTAssertNil((owner.rows.first?["style"] as? [String: Any])?["fixedWidth"])
+        try await owner.redo()
+        XCTAssertNotNil((owner.rows.first?["data"] as? [String: Any])?["shape"])
+        try await owner.undo(); try await owner.undo(); XCTAssertTrue(owner.rows.isEmpty)
+    }
+
     func testCorrectionReceiptRecoveryDoesNotUndoNewerCanonicalEditAfterLostACK() async throws {
         for restart in [false, true] {
             let fixture = try Fixture(); defer { fixture.cleanup() }

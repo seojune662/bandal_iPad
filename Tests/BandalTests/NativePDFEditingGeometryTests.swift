@@ -104,5 +104,67 @@ final class NativePDFEditingGeometryTests: XCTestCase {
         XCTAssertEqual(box?.minX, 0); XCTAssertEqual(box?.width, 0.5)
         XCTAssertEqual(box?.height ?? 0, 0.4, accuracy: 1e-9)
     }
+    // MARK: Shapes
+
+    private func shape(_ figure: NativePDFShapeFigure, id: String, aspect: Double = 1.4) -> [String: Any] {
+        let fit = NativePDFHeldShape(figure, width: 0.004, aspect: aspect).correction(kind: "ink", style: ["color": "blue", "width": 0.006, "opacity": 1])
+        return ["id": id, "page": 1, "kind": fit.kind, "data": fit.data, "style": fit.style]
+    }
+    private let box = NativePDFShapeFigure(kind: .polygon, name: "rect", vertices: [CGPoint(x: 0.2, y: 0.28), CGPoint(x: 0.6, y: 0.28), CGPoint(x: 0.6, y: 0.56), CGPoint(x: 0.2, y: 0.56)])
+
+    func testTappingAShapeFindsItsLineFirstThenWhatItEncloses() {
+        let rect = shape(box, id: "rect"), ink = stroke([["x": 0.3, "y": 0.3, "p": 0.5], ["x": 0.4, "y": 0.32, "p": 0.5]])
+        // Page coordinates: the rectangle spans y 0.2...0.4 on a 1.4 page.
+        XCTAssertEqual(NativePDFEditingGeometry.shapeHit(CGPoint(x: 0.4, y: 0.205), rows: [rect], aspect: 1.4, tolerance: 0.012), "rect")
+        XCTAssertNil(NativePDFEditingGeometry.shapeHit(CGPoint(x: 0.4, y: 0.3), rows: [rect], aspect: 1.4, tolerance: 0.012), "Inside is only for the Pencil")
+        XCTAssertEqual(NativePDFEditingGeometry.shapeHit(CGPoint(x: 0.4, y: 0.3), rows: [rect], aspect: 1.4, tolerance: 0.012, interior: true), "rect")
+        // Handwriting inside the box is found by the ordinary hit before the box's interior.
+        XCTAssertEqual(NativePDFEditingGeometry.hit(CGPoint(x: 0.35, y: 0.31), rows: [ink, rect], aspect: 1.4), "ink")
+        XCTAssertNil(NativePDFEditingGeometry.shapeHit(CGPoint(x: 0.35, y: 0.31), rows: [ink], aspect: 1.4, tolerance: 0.012, interior: true),
+                     "Handwriting is not a shape")
+        // A shape the eraser cut, or an older build rewrote, is handwriting.
+        var cut = rect, data = rect["data"] as! [String: Any]
+        data["points"] = Array((data["points"] as! [Any]).prefix(30)); cut["data"] = data
+        XCTAssertNil(NativePDFEditingGeometry.shapeHit(CGPoint(x: 0.4, y: 0.205), rows: [cut], aspect: 1.4, tolerance: 0.012))
+    }
+
+    func testOneShapeGetsFreeCornersOrLineEndsAndAGroupKeepsOneProportionalHandle() {
+        let rect = shape(box, id: "rect")
+        let line = shape(NativePDFShapeFigure(kind: .line, name: "line", vertices: [CGPoint(x: 0.1, y: 0.14), CGPoint(x: 0.5, y: 0.7)]), id: "line")
+        XCTAssertEqual(NativePDFEditingGeometry.handles(for: [rect], aspect: 1.4, text: false).mode, "corners")
+        let ends = NativePDFEditingGeometry.handles(for: [line], aspect: 1.4, text: false)
+        XCTAssertEqual(ends.mode, "ends")
+        XCTAssertEqual(ends.ends[0].x, 0.1, accuracy: 1e-9); XCTAssertEqual(ends.ends[0].y, 0.1, accuracy: 1e-9)
+        XCTAssertEqual(ends.ends[1].x, 0.5, accuracy: 1e-9); XCTAssertEqual(ends.ends[1].y, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(NativePDFEditingGeometry.handles(for: [rect, line], aspect: 1.4, text: false).mode, "corner")
+        XCTAssertEqual(NativePDFEditingGeometry.handles(for: [stroke([["x": 0.1, "y": 0.1, "p": 0.5], ["x": 0.2, "y": 0.2, "p": 0.5]])], aspect: 1.4, text: false).mode, "corner")
+        XCTAssertEqual(NativePDFEditingGeometry.handlePoints(mode: "corners", box: CGRect(x: 0, y: 0, width: 1, height: 1), ends: []).map(\.0), ["nw", "ne", "se", "sw"])
+    }
+
+    func testCornerHandleStretchesOneShapeFreelyAndKeepsItsWidth() throws {
+        let rect = shape(box, id: "rect")
+        let bounds = try XCTUnwrap(NativePDFEditingGeometry.union([rect], aspect: 1.4))
+        // Drag the north-east corner up and right: wider and taller, by different amounts.
+        let target = CGPoint(x: bounds.maxX + 0.1, y: bounds.minY - 0.1)
+        let stretched = try XCTUnwrap(NativePDFEditingGeometry.reshaped([rect], handle: "ne", original: bounds, to: target, aspect: 1.4)?.first)
+        let after = try XCTUnwrap(NativePDFEditingGeometry.union([stretched], aspect: 1.4))
+        XCTAssertEqual(after.minX, bounds.minX, accuracy: 0.002, "The opposite corner stays")
+        XCTAssertEqual(after.maxY, bounds.maxY, accuracy: 0.002)
+        XCTAssertEqual(after.maxX, target.x, accuracy: 0.003); XCTAssertEqual(after.minY, target.y, accuracy: 0.003)
+        XCTAssertNotEqual(after.width / bounds.width, after.height / bounds.height, accuracy: 0.05, "Free proportions")
+        XCTAssertEqual((stretched["style"] as? [String: Any])?["width"] as? Double, 0.004, "The line's width never changes")
+        let figure = try XCTUnwrap(NativePDFShapeFigure(data: stretched["data"] as! [String: Any], aspect: 1.4), "Still a shape")
+        XCTAssertEqual(figure.name, "rect")
+        // A line moves one end; the other stays.
+        let line = shape(NativePDFShapeFigure(kind: .line, name: "line", vertices: [CGPoint(x: 0.1, y: 0.14), CGPoint(x: 0.5, y: 0.7)]), id: "line")
+        let lineBounds = try XCTUnwrap(NativePDFEditingGeometry.union([line], aspect: 1.4))
+        let moved = try XCTUnwrap(NativePDFEditingGeometry.reshaped([line], handle: "end1", original: lineBounds, to: CGPoint(x: 0.7, y: 0.2), aspect: 1.4)?.first)
+        let movedFigure = try XCTUnwrap(NativePDFShapeFigure(data: moved["data"] as! [String: Any], aspect: 1.4))
+        XCTAssertEqual(movedFigure.vertices[0].x, 0.1, accuracy: 1e-9); XCTAssertEqual(movedFigure.vertices[0].y, 0.14, accuracy: 1e-9)
+        XCTAssertEqual(movedFigure.vertices[1].x, 0.7, accuracy: 1e-9); XCTAssertEqual(movedFigure.vertices[1].y, 0.28, accuracy: 1e-9)
+        // Handwriting and groups are not reshaped.
+        XCTAssertNil(NativePDFEditingGeometry.reshaped([stroke([["x": 0.1, "y": 0.1, "p": 0.5], ["x": 0.2, "y": 0.2, "p": 0.5]])], handle: "ne", original: bounds, to: target, aspect: 1.4))
+        XCTAssertNil(NativePDFEditingGeometry.reshaped([rect, line], handle: "ne", original: bounds, to: target, aspect: 1.4))
+    }
     private func stroke(_ points: [[String: Any]]) -> [String: Any] { ["id": "ink", "kind": "ink", "data": ["inkVersion": 5, "points": points], "style": ["color": "blue", "width": 0.003, "opacity": 1]] }
 }

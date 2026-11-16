@@ -355,6 +355,80 @@ final class NativePDFWritingUITests: XCTestCase {
         expectInk(1, in: app)
         tap("native-pdf-undo", in: app); expectInk(2, in: app)
     }
+    /// Draw a rectangle and hold: it becomes one; still holding, pull it bigger. Then the hand picks it with one tap
+    /// and its corner handle stretches it freely; undo puts it back; the lasso picks it with a tap too.
+    @MainActor
+    func testHeldShapeGrowsWithThePenAndTheHandStretchesItByACorner() throws {
+        let app = createDocument("Shapes")
+        let pdf = app.otherElements["bandal-native-pdf-body"].firstMatch
+        XCTAssertTrue(pdf.waitForExistence(timeout: 10))
+        chooseTool("pen", in: app)
+        let frame = pdf.frame
+        let left = frame.minX + frame.width * 0.25, right = frame.minX + frame.width * 0.6
+        let top = frame.minY + frame.height * 0.25, bottom = frame.minY + frame.height * 0.4
+        func edge(_ a: CGPoint, _ b: CGPoint) -> [CGPoint] { (1...24).map { CGPoint(x: a.x + (b.x - a.x) * Double($0) / 24, y: a.y + (b.y - a.y) * Double($0) / 24) } }
+        let corners = [CGPoint(x: left, y: top), CGPoint(x: right, y: top), CGPoint(x: right, y: bottom), CGPoint(x: left, y: bottom), CGPoint(x: left, y: top)]
+        var path = [corners[0]] + (0..<4).flatMap { edge(corners[$0], corners[$0 + 1]) }
+        // Rest on the start corner until the rectangle appears, then pull that corner 1.3× as far from the centre.
+        path += Array(repeating: corners[0], count: 45)
+        let centre = CGPoint(x: (left + right) / 2, y: (top + bottom) / 2)
+        let pulled = CGPoint(x: centre.x + (left - centre.x) * 1.3, y: centre.y + (top - centre.y) * 1.3)
+        path += edge(corners[0], pulled)
+        draw(path, duration: Double(path.count - 1) * 0.02, in: app)
+        expectInk(1, in: app)
+        func shapeFrame() -> CGRect? {
+            guard let value = pdf.value as? String, let range = value.range(of: " shapes=") else { return nil }
+            let entry = value[range.upperBound...].prefix { $0 != " " && $0 != ";" }
+            let parts = entry.split(separator: ":")
+            guard parts.count == 2, parts[0] == "rect" else { return nil }
+            let numbers = parts[1].split(separator: ",").compactMap { Double($0) }
+            guard numbers.count == 4 else { return nil }
+            return CGRect(x: frame.minX + numbers[0], y: frame.minY + numbers[1], width: numbers[2], height: numbers[3])
+        }
+        let drawn = try XCTUnwrap(shapeFrame(), "The held loop is saved as a rectangle: \(pdf.value ?? "")")
+        XCTAssertEqual(drawn.width, (right - left) * 1.3, accuracy: 12, "Pulling the pen grew it about its centre")
+        XCTAssertEqual(drawn.midX, centre.x, accuracy: 6); XCTAssertEqual(drawn.midY, centre.y, accuracy: 6)
+        capture("Held rectangle pulled larger")
+
+        // The hand: one tap on its edge selects it; the north-east handle stretches it freely.
+        chooseTool("select", in: app)
+        let bar = app.descendants(matching: .any).matching(identifier: "native-pdf-selection-bar").firstMatch
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: drawn.midX, dy: drawn.minY + 1)).tap()
+        XCTAssertTrue(bar.waitForExistence(timeout: 10), "A tap on the rectangle selects it")
+        capture("Rectangle selected with four corner handles")
+        let handle = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: drawn.maxX + 6, dy: drawn.minY - 6))
+        handle.press(forDuration: 0.3, thenDragTo: app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: drawn.maxX + 80, dy: drawn.minY - 30)))
+        let stretched = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in (shapeFrame()?.width ?? 0) > drawn.width + 40 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [stretched], timeout: 10), .completed, "\(pdf.value ?? "")")
+        let after = try XCTUnwrap(shapeFrame())
+        XCTAssertEqual(after.minX, drawn.minX, accuracy: 4, "The opposite corner stays")
+        XCTAssertEqual(after.maxY, drawn.maxY, accuracy: 4)
+        XCTAssertEqual(after.width - drawn.width, 74, accuracy: 10); XCTAssertEqual(after.height - drawn.height, 24, accuracy: 10)
+        expectInk(1, in: app)
+        capture("Rectangle stretched by its corner")
+        tap("native-pdf-undo", in: app)
+        let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in abs((shapeFrame()?.width ?? 0) - drawn.width) < 3 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 10), .completed, "Undo puts it back: \(pdf.value ?? "")")
+
+        // The lasso picks it with a tap too.
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.minX + frame.width * 0.8, dy: frame.minY + frame.height * 0.8)).tap()
+        chooseTool("lasso", in: app)
+        XCTAssertFalse(bar.waitForExistence(timeout: 2))
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: drawn.minX + 1, dy: drawn.midY)).tap()
+        XCTAssertTrue(bar.waitForExistence(timeout: 10), "A lasso tap on the rectangle selects it")
+        // One more undo: the handwriting as drawn, no shape.
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.minX + frame.width * 0.8, dy: frame.minY + frame.height * 0.8)).tap()
+        tap("native-pdf-undo", in: app)
+        let handwriting = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in shapeFrame() == nil }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [handwriting], timeout: 10), .completed, "\(pdf.value ?? "")")
+        expectInk(1, in: app)
+    }
+    /// One continuous contact along `points` (app coordinates, landscape), which XCUICoordinate cannot do.
+    @MainActor private func draw(_ points: [CGPoint], duration: TimeInterval, in app: XCUIApplication) {
+        let height = app.frame.height
+        if let failure = ReviewStroke.drawPoints(points.map { NSValue(cgPoint: CGPoint(x: height - $0.y, y: $0.x)) }, duration: duration,
+                                                 orientation: .landscapeRight) { XCTFail("stroke: \(failure)") }
+    }
     @MainActor
     func testTapeHidesUntilTappedCommentPinKeepsANoteAndLaserSavesNothing() {
         let app = createDocument("Study Notes")
@@ -363,10 +437,22 @@ final class NativePDFWritingUITests: XCTestCase {
         chooseTool("laser", in: app)
         body.coordinate(withNormalizedOffset: .init(dx: 0.3, dy: 0.3)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.7, dy: 0.35)))
-        capture("Laser pointer trail")
+        // A second trail within three seconds keeps the first: both stay, then fade together.
+        body.coordinate(withNormalizedOffset: .init(dx: 0.3, dy: 0.45)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.7, dy: 0.5)))
+        let pdf = app.otherElements["bandal-native-pdf-body"].firstMatch
+        func laser(_ count: Int) -> NSPredicate { NSPredicate(format: "value CONTAINS %@", " laser=\(count) ") }
+        XCTAssertTrue(laser(2).evaluate(with: pdf), "Both laser trails stay on screen: \(pdf.value ?? "")")
+        capture("Two laser pointer trails")
         expectInk(0, in: app)
+        let faded = XCTNSPredicateExpectation(predicate: laser(0), object: pdf)
+        XCTAssertEqual(XCTWaiter.wait(for: [faded], timeout: 8), .completed, "The trails fade a few seconds after the last one: \(pdf.value ?? "")")
+        body.coordinate(withNormalizedOffset: .init(dx: 0.3, dy: 0.6)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.6, dy: 0.6)))
+        XCTAssertTrue(laser(1).evaluate(with: pdf), pdf.value as? String ?? "")
 
         chooseTool("tape", in: app)
+        XCTAssertTrue(laser(0).evaluate(with: pdf), "Another tool takes the laser away at once: \(pdf.value ?? "")")
         body.coordinate(withNormalizedOffset: .init(dx: 0.25, dy: 0.5)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.7, dy: 0.5)))
         expectInk(1, in: app)

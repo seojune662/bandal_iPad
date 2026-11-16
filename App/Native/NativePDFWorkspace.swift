@@ -1098,6 +1098,14 @@ final class NativePDFWorkspaceModel {
         objectPatch["upserts"] = try (objectPatch["upserts"] as? [[String: Any]] ?? []).map(legacyPrepared)
         var payload: [String: Any] = ["page": page, "objectSceneEpoch": sceneEpoch, "objectSceneRevision": revision, "objectPatch": objectPatch, "resizable": selection != nil && !selectedIDs.isEmpty, "textHandles": selectedText]
         if let selection { payload["selection"] = NativePDFEditingGeometry.dictionary(selection) }
+        // One shape gets four free corners (a line or arrow its two ends); anything else one proportional corner.
+        if selection != nil, !selectedIDs.isEmpty {
+            let previewing = gesture.map { !$0.preview.isEmpty && $0.tool != "eraser" && page == ($0.destinationPage ?? $0.page) } ?? false
+            let shown = previewing ? gesture?.preview ?? selectedRows : selectedRows
+            let handles = NativePDFEditingGeometry.handles(for: shown, aspect: aspect(page), text: selectedText)
+            payload["handles"] = handles.mode
+            if !handles.ends.isEmpty { payload["ends"] = handles.ends.map { ["x": Double($0.x), "y": Double($0.y)] } }
+        }
         if let selection, let outline = selectionOutline, !selectedIDs.isEmpty, outline.box.width > 1e-9, outline.box.height > 1e-9 {
             payload["selectionPath"] = outline.points.map { point -> [String: Double] in
                 ["x": Double(selection.minX + (point.x - outline.box.minX) / outline.box.width * selection.width),
@@ -1151,12 +1159,17 @@ final class NativePDFWorkspaceModel {
                 return
             }
             var rows: [[String: Any]] = [], box: CGRect?, corner: String?, onSelection = false
+            // The surface names the handle under the contact (measured on screen, 44 pt wide) and the shape a
+            // finger landed on.
+            let handle = payload["handle"] as? String, touchedShape = payload["shape"] as? String
             if ["select", "lasso"].contains(tool) {
                 if selectionPage == number, let selected = NativePDFEditingGeometry.union(selectedRows, aspect: aspect(number)),
-                   selected.insetBy(dx: -0.018, dy: -0.018 / aspect(number)).contains(first) {
-                    rows = selectedRows; box = selected; corner = NativePDFEditingGeometry.corner(at: first, box: selected, aspect: aspect(number), sides: selectedText)
+                   handle != nil || selected.insetBy(dx: -0.018, dy: -0.018 / aspect(number)).contains(first) {
+                    rows = selectedRows; box = selected
+                    corner = handle ?? NativePDFEditingGeometry.corner(at: first, box: selected, aspect: aspect(number), sides: selectedText)
                     onSelection = true
-                } else if tool == "select", let id = NativePDFEditingGeometry.hit(first, rows: self.rows(on: number), aspect: aspect(number)) {
+                } else if let id = touchedShape ?? (tool == "select" ? hit(first, page: number) : nil) {
+                    // The hand selects what it touches; a finger on a shape does so under the lasso too.
                     setSelection([id], page: number); rows = selectedRows; box = NativePDFEditingGeometry.union(rows, aspect: aspect(number))
                 } else { setSelection([], page: number) }
             } else { clearSelection() }
@@ -1214,7 +1227,12 @@ final class NativePDFWorkspaceModel {
         if !contact.rows.isEmpty, distance > 0.002 || destinationPage != number {
             if let previous = contact.destinationPage { dirtyScenes.insert(previous) }
             if let corner = contact.corner, let box = contact.box {
-                contact.preview = NativePDFEditingGeometry.resized(contact.rows, original: box, corner: corner, to: last)
+                // A shape's handle keeps the offset at which it was grabbed: taking it 20 pt off its dot does not jump.
+                let handles = NativePDFEditingGeometry.handles(for: contact.rows, aspect: aspect(number), text: selectedText)
+                let dot = NativePDFEditingGeometry.handlePoints(mode: handles.mode, box: box, ends: handles.ends).first { $0.0 == corner }?.1
+                let target = dot.map { CGPoint(x: $0.x + last.x - contact.start.x, y: $0.y + last.y - contact.start.y) } ?? last
+                contact.preview = (NativePDFEditingGeometry.reshaped(contact.rows, handle: corner, original: box, to: target, aspect: aspect(number))
+                    ?? NativePDFEditingGeometry.resized(contact.rows, original: box, corner: corner, to: last))
                     .map { NativePDFTextDraft.fittedObject($0, pageSize: pageSize(number)) }
             }
             else {
@@ -1240,6 +1258,10 @@ final class NativePDFWorkspaceModel {
             if !contact.preview.isEmpty {
                 // A moved or resized selection stays selected until the user taps outside or ✕.
                 performObjectEdit(contact.rows.isEmpty ? "create" : "update", values: contact.preview, expected: contact.rows, keepSelection: !contact.rows.isEmpty)
+            } else if contact.tool == "lasso", contact.rows.isEmpty, distance <= 0.004,
+                      let id = NativePDFEditingGeometry.shapeHit(last, rows: rows(on: number), aspect: aspect(number), tolerance: 0.012, interior: true) {
+                // A tap, not a loop: the lasso selects the shape under it.
+                setSelection([id], page: number)
             } else if contact.tool == "lasso", contact.rows.isEmpty {
                 let polygon = lassoMode == "box"
                     ? [contact.start, CGPoint(x: last.x, y: contact.start.y), last, CGPoint(x: contact.start.x, y: last.y)]
@@ -1264,6 +1286,13 @@ final class NativePDFWorkspaceModel {
             }
         }
         requestScene(number)
+    }
+    /// What the hand selects under a Pencil tap: the topmost thing whose line passes there, else a closed shape
+    /// drawn around the spot.
+    private func hit(_ point: CGPoint, page: Int) -> String? {
+        let rows = rows(on: page), ratio = aspect(page)
+        return NativePDFEditingGeometry.hit(point, rows: rows, aspect: ratio)
+            ?? NativePDFEditingGeometry.shapeHit(point, rows: rows, aspect: ratio, tolerance: 0.012, interior: true)
     }
     /// A tape band along the drawn path; a nearly straight drag becomes a straight strip.
     private func tapeRow(_ points: [CGPoint], page: Int, id: String) -> [String: Any] {
@@ -1505,7 +1534,8 @@ final class NativePDFWorkspaceModel {
     private func erasedPieces(_ row: [String: Any], _ pieces: [[[String: Any]]]) -> [[String: Any]] {
         pieces.map { piece in
             var value = row, data = row["data"] as? [String: Any] ?? [:]
-            data["points"] = piece; value["data"] = data; value.removeValue(forKey: "nativePath")
+            // A cut shape is handwriting again: its pieces no longer trace the figure.
+            data["points"] = piece; data.removeValue(forKey: "shape"); value["data"] = data; value.removeValue(forKey: "nativePath")
             return value
         }
     }

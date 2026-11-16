@@ -59,7 +59,93 @@ final class NativePDFPencilGestureTests: XCTestCase {
         surface.endPencilGesture(touch, with: nil)
         XCTAssertEqual(events.last?["phase"] as? String, "up")
     }
-    func testDrawAndHoldPreviewsBeforeLiftAndResumingPreservesMeasuredInk() async throws {
+    func testOneShapeSelectionTakesHandlesWithin22PointsAndAFingerOnAShapeNamesIt() throws {
+        let surface = try surface(), aspect = 400.0 / 600
+        surface.tool = .init(name: "select", style: .init(color: "ink", width: 0.004, opacity: 1))
+        let figure = NativePDFShapeFigure(kind: .polygon, name: "rect", vertices: [CGPoint(x: 0.3, y: 0.1), CGPoint(x: 0.6, y: 0.1), CGPoint(x: 0.6, y: 0.3), CGPoint(x: 0.3, y: 0.3)])
+        let fit = NativePDFHeldShape(figure, width: 0.004, aspect: aspect).correction(kind: "ink", style: ["color": "ink", "width": 0.006, "opacity": 1])
+        surface.objects = [["id": "rect", "kind": fit.kind, "data": fit.data, "style": fit.style]]
+        // Canvas: x 180...360, y 60...180 on the 600 × 400 test page.
+        XCTAssertEqual(surface.shapeTarget(at: CGPoint(x: 270, y: 60 + 18)), "rect", "A finger within 22 pt of the line")
+        XCTAssertNil(surface.shapeTarget(at: CGPoint(x: 270, y: 120)), "Inside the box a finger still scrolls")
+        let direct = PencilGestureTouch(kind: .direct); direct.point = CGPoint(x: 270, y: 62)
+        XCTAssertTrue(surface.hitTest(direct.point, with: PencilGestureEvent(direct)) === surface)
+        var events: [[String: Any]] = []
+        surface.onPointer = { events.append($0) }
+        surface.touchesBegan([direct], with: PencilGestureEvent(direct))
+        XCTAssertEqual(events.last?["shape"] as? String, "rect", "The workspace selects the shape the finger landed on")
+        surface.touchesEnded([direct], with: PencilGestureEvent(direct))
+        // Selected: four corner handles, each taken from up to 22 pt away.
+        surface.selectionBox = ["x": 0.3, "y": 0.15, "width": 0.3, "height": 0.3]
+        surface.selectionResizable = true; surface.selectionHandles = ("corners", [])
+        XCTAssertEqual(surface.selectionHandle(at: CGPoint(x: 360 + 15, y: 60 - 15)), "ne")
+        XCTAssertEqual(surface.selectionHandle(at: CGPoint(x: 180 - 10, y: 180 + 10)), "sw")
+        XCTAssertNil(surface.selectionHandle(at: CGPoint(x: 360 + 20, y: 60 - 20)), "28 pt is too far")
+        XCTAssertTrue(surface.selectionInputTarget(at: CGPoint(x: 360 + 15, y: 60 - 15)) === surface, "The handle's target reaches past the box")
+        let grab = PencilGestureTouch(kind: .direct); grab.point = CGPoint(x: 362, y: 58)
+        XCTAssertTrue(surface.beginSelectionGesture(grab, with: nil))
+        XCTAssertEqual(events.last?["handle"] as? String, "ne")
+        surface.endPencilGesture(grab, with: nil)
+        // A line shows its two ends instead.
+        surface.selectionHandles = ("ends", [CGPoint(x: 0.3, y: 0.15), CGPoint(x: 0.6, y: 0.45)])
+        XCTAssertEqual(surface.selectionHandle(at: CGPoint(x: 362, y: 178)), "end1")
+        XCTAssertNil(surface.selectionHandle(at: CGPoint(x: 362, y: 58)), "No corners on a line")
+        // The lasso takes a finger on a shape too, and a Pencil there may be starting a loop.
+        surface.selectionBox = nil; surface.selectionResizable = false
+        surface.tool = .init(name: "lasso", style: .init(color: "ink", width: 0.004, opacity: 1))
+        XCTAssertTrue(surface.hitTest(direct.point, with: PencilGestureEvent(direct)) === surface)
+        let pencil = PencilGestureTouch(kind: .pencil); pencil.point = CGPoint(x: 270, y: 62)
+        XCTAssertTrue(surface.beginPencilGesture(pencil, with: nil))
+        XCTAssertNil(events.last?["shape"])
+        surface.endPencilGesture(pencil, with: nil)
+    }
+    func testLaserTrailsStayUntilThreeSecondsAfterTheLastContactOnAnyPage() throws {
+        let clock = ManualLaserClock()
+        let session = NativePDFLaserSession(schedule: clock.schedule)
+        let first = try surface(), second = try surface()
+        var saved = 0, pointers = 0
+        for page in [first, second] {
+            page.tool = .init(name: "laser", style: .init(color: "ink", width: 0.004, opacity: 1))
+            page.laserSession = session
+            page.onStroke = { _ in saved += 1 }; page.onPointer = { _ in pointers += 1 }
+        }
+        func draw(on page: NativePDFInkSurface, moves: Int) {
+            let touch = PencilGestureTouch(kind: .pencil)
+            XCTAssertTrue(page.beginPencilGesture(touch, with: nil))
+            for i in 1...moves {
+                touch.point = CGPoint(x: 100 + Double(i) * 3, y: 120); touch.currentTime += 0.01
+                page.movePencilGesture(touch, with: nil)
+            }
+            page.endPencilGesture(touch, with: nil)
+        }
+        // One second of pointing: the whole trail stays, not only its last 0.6 s.
+        draw(on: first, moves: 100)
+        XCTAssertEqual(first.laserTrail.strokes.count, 1)
+        XCTAssertEqual(first.laserTrail.strokes[0].count, 101, "Every sample of the stroke stays on screen")
+        XCTAssertTrue(session.isWaitingToFade)
+        clock.advance(2)
+        XCTAssertEqual(session.strokeCount, 1, "Two seconds after lifting, the trail is still there")
+        // Pointing again on the next page restarts the one shared countdown.
+        draw(on: second, moves: 10)
+        XCTAssertEqual(session.strokeCount, 2)
+        clock.advance(2.9)
+        XCTAssertEqual(session.strokeCount, 2, "The countdown restarted when the second trail ended")
+        clock.advance(0.2)
+        XCTAssertEqual(session.strokeCount, 0, "Three seconds without the laser: every trail fades together")
+        XCTAssertFalse(session.isWaitingToFade)
+        // A contact still down keeps everything; another tool clears at once.
+        draw(on: first, moves: 5)
+        let held = PencilGestureTouch(kind: .pencil)
+        XCTAssertTrue(second.beginPencilGesture(held, with: nil))
+        clock.advance(5)
+        XCTAssertEqual(session.strokeCount, 2, "No fade while the Pencil is still pointing")
+        second.endPencilGesture(held, with: nil)
+        first.tool = .init(name: "pen", style: .init(color: "ink", width: 0.004, opacity: 1))
+        XCTAssertEqual(session.strokeCount, 0, "Choosing another tool removes the laser immediately")
+        XCTAssertFalse(session.isWaitingToFade)
+        XCTAssertEqual(saved, 0); XCTAssertEqual(pointers, 0, "The laser is never saved or sent to the editor")
+    }
+    func testDrawAndHoldThenMovingTurnsAndStretchesTheLineAndUndoKeepsTheHandwriting() async throws {
         let surface = try surface(), touch = PencilGestureTouch(kind: .pencil)
         var saved: [NativePDFCompletedStroke] = []
         surface.onStroke = { saved.append($0) }
@@ -69,15 +155,69 @@ final class NativePDFPencilGestureTests: XCTestCase {
             surface.movePencilGesture(touch, with: nil)
         }
         try await Task.sleep(for: .milliseconds(650))
-        XCTAssertEqual(surface.heldShape?.kind, "line", "A clean preview must exist while contact is still down")
+        let fit = try XCTUnwrap(surface.heldShape, "A clean preview must exist while contact is still down")
+        XCTAssertEqual(fit.kind, "line")
         XCTAssertTrue(saved.isEmpty, "A hold must not prematurely commit the raw stroke")
-        touch.point = CGPoint(x: 280, y: 140); touch.currentTime += 0.01
-        surface.movePencilGesture(touch, with: nil)
-        XCTAssertNil(surface.heldShape, "Moving again resumes freehand immediately")
+        // Moving on keeps the shape: its start stays, its end follows the pen.
+        for step in 1...10 {
+            touch.point = CGPoint(x: 260 + step * 4, y: 101 + step * 9); touch.currentTime += 0.01
+            surface.movePencilGesture(touch, with: nil)
+            XCTAssertNotNil(surface.heldShape, "Moving after the shape appeared never cancels it")
+        }
+        let moved = try XCTUnwrap(surface.heldShape)
+        let first = try XCTUnwrap(moved.points.first), last = try XCTUnwrap(moved.points.last)
+        XCTAssertEqual(first.x, fit.points.first!.x, accuracy: 0.002); XCTAssertEqual(first.y, fit.points.first!.y, accuracy: 0.003)
+        XCTAssertEqual(last.x, 300.0 / 600, accuracy: 0.004); XCTAssertEqual(last.y, 191.0 / 400, accuracy: 0.004)
         surface.endPencilGesture(touch, with: nil)
-        XCTAssertEqual(saved.count, 1); XCTAssertEqual(saved[0].points.count, 22)
-        XCTAssertFalse(saved[0].holdSnap); XCTAssertNil(saved[0].heldShape)
-        XCTAssertEqual(saved[0].points.last?.y ?? 0, 0.35, accuracy: 0.001)
+        XCTAssertEqual(saved.count, 1); XCTAssertTrue(saved[0].holdSnap)
+        XCTAssertEqual(saved[0].heldShape, moved, "Lift keeps the shape as adjusted")
+        // The measured stroke saved with it (what one undo restores) ends where the shape appeared.
+        XCTAssertEqual(saved[0].points.count, 21)
+        XCTAssertEqual(saved[0].points.last?.x ?? 0, 260.0 / 600, accuracy: 0.001)
+        // 8 pt per 10 ms on a 600 pt page: V5 draws it 12 % thinner for speed.
+        XCTAssertEqual(saved[0].heldShape?.width ?? 0, 0.004 * NativePDFInkGeometryV5.baseFactor(pressure: 0.5, speed: 1.33), accuracy: 0.0001,
+                       "The shape takes the drawn stroke's width")
+    }
+    func testHeldRectangleGrowsAndTurnsAboutItsCentreAndSnapsLevel() async throws {
+        let surface = try surface(), touch = PencilGestureTouch(kind: .pencil)
+        var saved: [NativePDFCompletedStroke] = []
+        surface.onStroke = { saved.append($0) }
+        touch.point = CGPoint(x: 200, y: 100)
+        XCTAssertTrue(surface.beginPencilGesture(touch, with: nil))
+        for corner in [CGPoint(x: 400, y: 100), CGPoint(x: 400, y: 260), CGPoint(x: 200, y: 260), CGPoint(x: 200, y: 100)] {
+            let from = touch.point
+            for step in 1...25 {
+                let t = Double(step) / 25
+                touch.point = CGPoint(x: from.x + (corner.x - from.x) * t, y: from.y + (corner.y - from.y) * t); touch.currentTime += 0.008
+                surface.movePencilGesture(touch, with: nil)
+            }
+        }
+        try await Task.sleep(for: .milliseconds(650))
+        let fit = try XCTUnwrap(surface.heldShape)
+        XCTAssertEqual(fit.kind, "rect")
+        func centre(_ shape: NativePDFHeldShape) -> CGPoint { CGPoint(x: shape.box[0] + shape.box[2] / 2, y: shape.box[1] + shape.box[3] / 2) }
+        // Pull the corner away from the centre, half as far again: the rectangle grows 1.5× about its centre.
+        touch.point = CGPoint(x: 150, y: 60); touch.currentTime += 0.01
+        surface.movePencilGesture(touch, with: nil)
+        let grown = try XCTUnwrap(surface.heldShape)
+        XCTAssertEqual(centre(grown).x, centre(fit).x, accuracy: 0.002); XCTAssertEqual(centre(grown).y, centre(fit).y, accuracy: 0.003)
+        XCTAssertEqual(grown.box[2] / fit.box[2], 1.5, accuracy: 0.03)
+        // Turn the pen 2° around the centre: the rectangle settles back level instead of tilting 2°.
+        let c = CGPoint(x: 300, y: 180), a = 2 * Double.pi / 180
+        touch.point = CGPoint(x: c.x + (150 - c.x) * cos(a) - (60 - c.y) * sin(a), y: c.y + (150 - c.x) * sin(a) + (60 - c.y) * cos(a))
+        touch.currentTime += 0.01; surface.movePencilGesture(touch, with: nil)
+        let level = try XCTUnwrap(surface.heldShape)
+        XCTAssertEqual(level.box[2], grown.box[2], accuracy: 0.002, "Still level: the 2° turn snapped back")
+        // 20° turns it.
+        let b = 20 * Double.pi / 180
+        touch.point = CGPoint(x: c.x + (150 - c.x) * cos(b) - (60 - c.y) * sin(b), y: c.y + (150 - c.x) * sin(b) + (60 - c.y) * cos(b))
+        touch.currentTime += 0.01; surface.movePencilGesture(touch, with: nil)
+        let turned = try XCTUnwrap(surface.heldShape)
+        XCTAssertGreaterThan(turned.box[2], grown.box[2] * 1.05, "A turned rectangle's box is wider")
+        surface.endPencilGesture(touch, with: nil)
+        XCTAssertEqual(saved.first?.heldShape, turned)
+        XCTAssertEqual(saved.first?.heldShape?.figure, "polygon")
+        XCTAssertEqual(turned.width, fit.width, "Resizing never changes the line's width")
     }
     func testDrawAndHoldCancellationKeepsRawStrokeAndDisablingPreventsRecognition() async throws {
         for enabled in [true, false] {
@@ -139,7 +279,7 @@ final class NativePDFPencilGestureTests: XCTestCase {
         XCTAssertEqual(surface.heldShape, fit, "Sub-3pt tip jitter keeps the accepted preview")
         surface.endPencilGesture(touch, with: nil)
         XCTAssertEqual(saved.count, 1); XCTAssertEqual(saved[0].kind, "highlighter")
-        XCTAssertEqual(saved[0].heldShape, fit); XCTAssertGreaterThan(saved[0].points.count, fit.points.count)
+        XCTAssertEqual(saved[0].heldShape, fit); XCTAssertEqual(saved[0].points.count, 16, "The measured source is kept beside the fit")
         XCTAssertEqual(saved[0].style.opacity, 0.32)
         XCTAssertFalse(NativePDFInkSurface.Tool().drawAndHold, "Non-PDF surfaces must explicitly opt into fitted-geometry persistence")
     }
@@ -737,6 +877,24 @@ final class NativePDFPencilGestureTests: XCTestCase {
         XCTAssertEqual(saved.first?.points.first?.p, 0)
     }
     #endif
+}
+
+/// A clock the laser session schedules on, advanced by hand.
+@MainActor
+private final class ManualLaserClock {
+    private var now: TimeInterval = 0, serial = 0
+    private var timers: [(id: Int, due: TimeInterval, body: @MainActor () -> Void)] = []
+    func schedule(_ delay: TimeInterval, _ body: @escaping @MainActor () -> Void) -> () -> Void {
+        serial += 1; let id = serial
+        timers.append((id, now + delay, body))
+        return { [weak self] in self?.timers.removeAll { $0.id == id } }
+    }
+    func advance(_ seconds: TimeInterval) {
+        now += seconds
+        while let next = timers.filter({ $0.due <= now }).min(by: { $0.due < $1.due }) {
+            timers.removeAll { $0.id == next.id }; next.body()
+        }
+    }
 }
 
 @MainActor

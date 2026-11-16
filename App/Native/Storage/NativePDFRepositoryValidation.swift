@@ -117,6 +117,11 @@ enum NativePDFRepositoryValidation {
             result["image"] = value
         }
         let count = (result["points"] as? [[String: Any]])?.count ?? 0
+        // A recognized shape's corners (NativePDFShapeFigure). Builds before it drop the field; a malformed one is
+        // dropped too, never the ink it describes.
+        if ["ink", "highlighter"].contains(kind), let shape = source["shape"], let value = shapeDescriptor(shape, pointCount: count) {
+            result["shape"] = value
+        }
         if ["ink", "highlighter"].contains(kind), count == 0 { throw error("Ink data needs at least one point") }
         if ["rect", "ellipse", "textbox", "image", "comment"].contains(kind), result["box"] == nil { throw error("\(kind) needs a box") }
         if kind == "tape", count < 2 { throw error("tape needs two points") }
@@ -125,6 +130,24 @@ enum NativePDFRepositoryValidation {
         if kind == "textbox", result["text"] == nil { throw error("textbox needs text") }
         if kind == "image", result["image"] == nil { throw error("image needs a source") }
         return result
+    }
+    static func shapeDescriptor(_ raw: Any, pointCount: Int) -> [String: Any]? {
+        guard let source = raw as? [String: Any], let type = source["type"] as? String,
+              ["line", "arrow", "polyline", "polygon", "ellipse"].contains(type) else { return nil }
+        func integers(_ value: Any?) -> [Int]? {
+            guard let values = value as? [Any] else { return nil }
+            let numbers = values.compactMap { $0 as? NSNumber }
+            guard numbers.count == values.count, numbers.allSatisfy({ CFGetTypeID($0) != CFBooleanGetTypeID() && $0.doubleValue.rounded() == $0.doubleValue }) else { return nil }
+            return numbers.map(\.intValue)
+        }
+        if type == "ellipse" {
+            guard let segments = integers([source["segments"] as Any])?.first, (8...4096).contains(segments), segments % 4 == 0,
+                  pointCount == segments + 1 else { return nil }
+            return ["type": type, "segments": segments]
+        }
+        guard let corners = integers(source["corners"]), corners.count >= 2, corners.count <= 64, corners.first == 0,
+              corners.last == pointCount - 1, zip(corners, corners.dropFirst()).allSatisfy({ $0 < $1 }) else { return nil }
+        return ["type": type, "corners": corners]
     }
     private static func inlineStyle(_ raw: Any?) throws -> [String: Any] {
         let source = try object(raw, "text style"); var result: [String: Any] = [:]
