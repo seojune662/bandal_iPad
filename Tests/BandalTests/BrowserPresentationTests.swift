@@ -61,6 +61,28 @@ final class BrowserPresentationTests: XCTestCase {
         try restored.forget("second")
         XCTAssertEqual(try BrowserPresentationStore(root: root).mode(profile: "second", host: "school.test", isPrivate: false), .automatic)
     }
+    func testYouTubeOpensMobileUntilThePersonChoosesAndItsHostsShareTheChoice() throws {
+        for host in ["youtube.com", "www.youtube.com", "M.YouTube.com", "youtu.be"] {
+            XCTAssertEqual(BrowserVideoSites.defaultPresentation(host: host), .mobile, host)
+        }
+        for host in ["music.youtube.com", "notyoutube.com", "youtube.com.evil.test", "school.test"] {
+            XCTAssertEqual(BrowserVideoSites.defaultPresentation(host: host), .automatic, host)
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("youtube-presentation-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try BrowserPresentationStore(root: root)
+        XCTAssertEqual(store.mode(profile: "default", host: "www.youtube.com", isPrivate: false), .mobile)
+        // 데스크톱 웹사이트 chosen on m.youtube.com holds for www as well (they redirect to each other).
+        try store.set(.desktop, profile: "default", host: "m.youtube.com", isPrivate: false)
+        let restored = try BrowserPresentationStore(root: root)
+        XCTAssertEqual(restored.mode(profile: "default", host: "www.youtube.com", isPrivate: false), .desktop)
+        XCTAssertEqual(restored.mode(profile: "default", host: "m.youtube.com", isPrivate: false), .desktop)
+        XCTAssertEqual(restored.mode(profile: "second", host: "www.youtube.com", isPrivate: false), .mobile, "Another profile keeps the default")
+        try restored.set(.automatic, profile: "default", host: "www.youtube.com", isPrivate: false)
+        XCTAssertEqual(try BrowserPresentationStore(root: root).mode(profile: "default", host: "m.youtube.com", isPrivate: false), .automatic,
+                       "자동 is a choice too: no longer the mobile default")
+    }
     func testPrivateOverridesNeverWriteAndEndWithTheirSession() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("browser-private-presentation-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
