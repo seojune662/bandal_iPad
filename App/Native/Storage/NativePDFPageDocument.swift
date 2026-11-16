@@ -2,6 +2,7 @@ import Foundation
 import CryptoKit
 import PDFKit
 import CoreGraphics
+import os
 
 /// Page edits retain the original document/catalog. Insertion preserves its raw
 /// object graph; reorder/deletion use PDFKit with full preservation validation.
@@ -52,12 +53,50 @@ enum NativePDFPageDocument {
     static func template(_ pages: [Int], at index: Int) -> Int {
         pages[...index].last { $0 != 0 } ?? pages.first { $0 != 0 } ?? 1
     }
+    /// Device log only (Console / sysdiagnose); nothing here leaves the device.
+    static let log = Logger(subsystem: "app.bandal", category: "pdf-pages")
+    /// The page edit could not be saved by any writer that keeps the original
+    /// intact. Not a conflict: the PDF and ink are unchanged and stay editable.
+    static let unsupportedCode = "PDF_PAGE_EDIT_UNSUPPORTED"
+    static var unsupported: DesktopRuntimeError { DesktopRuntimeError("이 PDF는 페이지를 바꿀 수 없어 원래대로 두었어요.", code: unsupportedCode) }
+
+    /// App-made paper continues its paper; any other PDF (slides, scans, books)
+    /// gets an empty page of the same size rather than a copy of its last page.
+    static func newPageMode(_ document: PDFDocument) -> NativePDFIncrementalUpdate.NewPage {
+        var keywords: CGPDFStringRef?
+        guard let info = document.documentRef?.info, CGPDFDictionaryGetString(info, "Keywords", &keywords), let keywords,
+              let text = CGPDFStringCopyTextString(keywords) as String?, text.hasPrefix("bandal-note ") else { return .blank }
+        return .template
+    }
+
+    /// The default is an incremental update (original bytes untouched, proven
+    /// structurally). The older writers remain as fallbacks for files it cannot
+    /// read, each validated; if none is proven, the edit is refused unchanged.
     static func rewrite(_ bytes: Data, pages recipe: [Int]) throws -> Data {
-        let pages = recipe.filter { $0 != 0 }
-        let document = try open(bytes), keep = Set(pages)
-        if let output = NativePDFPageInsertionWriter.write(bytes, pages: recipe) {
-            try validate(source: bytes, target: output, pages: recipe)
+        let document = try open(bytes), mode = newPageMode(document), started = Date()
+        func elapsed() -> Int { Int(Date().timeIntervalSince(started) * 1000) }
+        do {
+            let output = try NativePDFIncrementalUpdate.write(bytes, pages: recipe, newPage: mode)
+            let proof = try NativePDFIncrementalUpdate.verify(source: bytes, target: output.data, pages: recipe)
+            log.info("page edit: incremental pages=\(document.pageCount, privacy: .public)->\(recipe.count, privacy: .public) new=\(mode.rawValue, privacy: .public) rewritten=\(proof.rewrittenPages, privacy: .public) bytes=+\(output.data.count - bytes.count, privacy: .public) ms=\(elapsed(), privacy: .public)")
+            return output.data
+        } catch {
+            log.error("page edit: incremental refused: \(String(describing: error), privacy: .public)")
+        }
+        do {
+            let output = try legacyRewrite(bytes, document: document, pages: recipe, mode: mode)
+            log.info("page edit: fallback writer ok ms=\(elapsed(), privacy: .public)")
             return output
+        } catch {
+            log.error("page edit: fallback refused: \(String(describing: error), privacy: .public)")
+            throw unsupported
+        }
+    }
+    private static func legacyRewrite(_ bytes: Data, document: PDFDocument, pages recipe: [Int], mode: NativePDFIncrementalUpdate.NewPage) throws -> Data {
+        let pages = recipe.filter { $0 != 0 }, keep = Set(pages)
+        if mode == .template, let output = NativePDFPageInsertionWriter.write(bytes, pages: recipe) {
+            do { try validate(source: bytes, target: output, pages: recipe); log.info("page edit: raw writer"); return output }
+            catch { log.error("page edit: raw writer refused: \(String(describing: error), privacy: .public)") }
         }
         let originalPages = (0..<document.pageCount).map { document.page(at: $0)! }
         // PDFKit otherwise silently retargets destinations to a removed page.
@@ -81,12 +120,20 @@ enum NativePDFPageDocument {
         }
         while document.pageCount > pages.count { document.removePage(at: document.pageCount - 1) }
         for (index, entry) in recipe.enumerated() where entry == 0 {
-            guard let copy = originalPages[template(recipe, at: index) - 1].copy() as? PDFPage else { throw C.validation("새 페이지를 만들지 못했습니다.") }
+            let template = originalPages[template(recipe, at: index) - 1]
+            if mode == .blank {
+                let page = PDFPage()
+                page.setBounds(template.bounds(for: .mediaBox), for: .mediaBox); page.setBounds(template.bounds(for: .cropBox), for: .cropBox)
+                page.rotation = template.rotation
+                document.insert(page, at: index); continue
+            }
+            guard let copy = template.copy() as? PDFPage else { throw C.validation("새 페이지를 만들지 못했습니다.") }
             for annotation in copy.annotations { copy.removeAnnotation(annotation) }
             document.insert(copy, at: index)
         }
         guard let output = document.dataRepresentation(), !output.isEmpty else { throw C.validation("변경한 PDF를 저장하지 못했습니다.") }
         try validate(source: bytes, target: output, pages: recipe)
+        log.info("page edit: PDFKit writer")
         return output
     }
     /// Verify actual target pages rather than trusting a remotely supplied
@@ -97,6 +144,16 @@ enum NativePDFPageDocument {
     static func validate(source: Data, target: Data, pages recipe: [Int]) throws -> ValidationSummary {
         let before = try open(source), after = try open(target), pages = recipe.filter { $0 != 0 }
         guard after.pageCount == recipe.count, Set(pages).count == pages.count, pages.allSatisfy({ (1...before.pageCount).contains($0) }) else { throw C.conflict("PDF 페이지 변경 이력이 원본과 다릅니다.") }
+        // An incremental update (this build's writer, either direction for an
+        // undo) is proven by structure alone: no rendering, no text extraction,
+        // which differ between PDFKit versions and so between devices.
+        if source.count != target.count, let proof = try? NativePDFIncrementalUpdate.verify(source: source, target: target, pages: recipe) {
+            return ValidationSummary(structuralPages: proof.keptPages + proof.newPages, rasterPages: 0)
+        }
+        func refuse(_ check: String, _ message: String) -> DesktopRuntimeError {
+            log.error("page check failed: \(check, privacy: .public)")
+            return C.conflict(message)
+        }
         let sourceContent = NativePDFPageContentDigest(), targetContent = NativePDFPageContentDigest()
         // CGPDF exposes names as NUL-terminated C strings. Never use that
         // structural proof for an escaped NUL name; retain the pixel fallback.
@@ -117,18 +174,27 @@ enum NativePDFPageDocument {
         for (index, old) in recipe.enumerated() {
             guard let b = after.page(at: index) else { throw C.conflict("PDF 페이지 변경 이력이 원본과 다릅니다.") }
             if old == 0 {
-                // A new page is a template copy: same geometry and pixels as its source, no annotations.
-                guard let a = before.page(at: template(recipe, at: index) - 1), try preserved(a, b, annotations: false), b.annotations.isEmpty else { throw C.conflict("새 페이지를 원본 양식대로 만들지 못했습니다. 원본은 변경하지 않았습니다.") }
+                // A new page is a template copy (same geometry and pixels as its source) or an
+                // empty page of the same size; either way without annotations.
+                guard let a = before.page(at: template(recipe, at: index) - 1), b.annotations.isEmpty,
+                      try isBlank(b, like: a) || preserved(a, b, annotations: false) else { throw refuse("new-page", "새 페이지를 원본 양식대로 만들지 못했습니다. 원본은 변경하지 않았습니다.") }
                 continue
             }
             // Destinations map through the full recipe: inserted pages shift later numbers.
-            guard let a = before.page(at: old - 1), try preserved(a, b), try links(before, page: a, pages: recipe) == links(after, page: b, pages: Array(1...after.pageCount)) else { throw C.conflict("PDF 내용·양식 또는 페이지 크기를 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
+            guard let a = before.page(at: old - 1), try preserved(a, b) else { throw refuse("page-content", "PDF 내용·양식 또는 페이지 크기를 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
+            guard try links(before, page: a, pages: recipe) == links(after, page: b, pages: Array(1...after.pageCount)) else { throw refuse("page-links", "PDF 내용·양식 또는 페이지 크기를 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
         }
-        guard try outlines(before, pages: recipe) == outlines(after, pages: Array(1...after.pageCount)) else { throw C.conflict("PDF 책갈피의 대상을 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
+        guard try outlines(before, pages: recipe) == outlines(after, pages: Array(1...after.pageCount)) else { throw refuse("outline", "PDF 책갈피의 대상을 그대로 보존하지 못했습니다. 원본은 변경하지 않았습니다.") }
         for key in [PDFDocumentAttribute.titleAttribute, .authorAttribute, .subjectAttribute, .keywordsAttribute, .creatorAttribute] {
-            if let expected = before.documentAttributes?[key] as? NSObject, (after.documentAttributes?[key] as? NSObject).map({ expected.isEqual($0) }) != true { throw C.conflict("PDF 문서 정보를 그대로 보존하지 못했습니다.") }
+            if let expected = before.documentAttributes?[key] as? NSObject, (after.documentAttributes?[key] as? NSObject).map({ expected.isEqual($0) }) != true { throw refuse("document-info", "PDF 문서 정보를 그대로 보존하지 못했습니다.") }
         }
         return summary
+    }
+    /// An empty page with the template's boxes and rotation: nothing drawn at all.
+    static func isBlank(_ page: PDFPage, like template: PDFPage) throws -> Bool {
+        guard page.bounds(for: .mediaBox) == template.bounds(for: .mediaBox), page.bounds(for: .cropBox) == template.bounds(for: .cropBox),
+              page.rotation == template.rotation, (page.string ?? "").isEmpty else { return false }
+        return try fingerprint(page, annotations: false, metadata: "").pixels.allSatisfy { $0 == 255 }
     }
     struct Fingerprint { let meta: String; let pixels: [UInt8] }
     static func signature(_ page: PDFPage, annotations includeAnnotations: Bool = true) throws -> String {

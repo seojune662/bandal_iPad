@@ -20,4 +20,14 @@ enum NativePDFPageTestFixture {
         return nil
         #endif
     }
+    /// `--native-page-edit-failure`: every page add, delete or move fails as an unsupported PDF would,
+    /// so a UI test can check that the page stays writable and only a toast says so.
+    static func failsPageEdits(root: URL) -> Bool {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        return root.lastPathComponent == "BandalDesktop-Native-UI-Tests" && args.contains("--native-ui-testing") && args.contains("--native-page-edit-failure")
+        #else
+        return false
+        #endif
+    }
 }
