@@ -349,15 +349,17 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             let tab = span.map { CGRect(x: $0.x - Self.tabFlare, y: pillTop, width: $0.width + Self.tabFlare * 2, height: card.minY - pillTop + 2) }
             let silhouette = NativeDockCardSilhouette(card: card, tab: tab, radius: Self.cardRadius, tabRadius: metrics.radius, flare: Self.tabFlare)
             let toned = Self.takesDecor(navigation.document(pane.group.activeID))
+            let style = NativeDockFocusStyle.current
             ZStack(alignment: .topLeading) {
                 Color.clear
                 // The shadow alone, cut away under the sheet: a sheet that lets the glass through would show its own shadow too.
                 silhouette.fill(.black)
                     .shadow(color: .black.opacity(scheme == .dark ? 0.3 : 0.07), radius: 6, y: 2)
-                    .shadow(color: focused ? accent.opacity(0.22) : .clear, radius: 10)
+                    .shadow(color: focused && style.glow > 0 ? accent.opacity(style.glow) : .clear, radius: 10)
                     .mask { NativeDockCardSurround(inner: silhouette).fill(style: FillStyle(eoFill: true)) }
                 silhouette.fill(toned ? AnyShapeStyle(NativeGlass.card) : AnyShapeStyle(NativeGlass.paper))
-                silhouette.stroke(focused ? AnyShapeStyle(accent.opacity(0.55)) : AnyShapeStyle(NativeGlass.hairline), lineWidth: focused ? 1.5 : 1)
+                silhouette.stroke(focused && style.rim > 0 ? AnyShapeStyle(accent.opacity(style.rim)) : AnyShapeStyle(NativeGlass.hairline),
+                                  lineWidth: focused ? style.rimWidth : 1)
             }.animation(.snappy(duration: 0.2), value: span?.x)
         }
     }
@@ -457,10 +459,11 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             }
         }
         .frame(width: width, height: metrics.height).clipped()
-        // The pane being written in marks its chosen tab with a short accent bar along the top.
+        // The pane being written in may mark its chosen tab with a short accent bar along the top (`NativeDockFocusStyle`).
         .overlay(alignment: .top) {
-            if split && active {
-                Capsule().fill(NativeGlass.accent).frame(width: max(0, min(28, width - metrics.tabPadding * 2)), height: 3)
+            let style = NativeDockFocusStyle.current
+            if split && active, let bar = style.bar {
+                Capsule().fill(NativeGlass.accent).opacity(bar.opacity).frame(width: max(0, min(bar.width, width - metrics.tabPadding * 2)), height: bar.height)
                     .padding(.top, (metrics.height - metrics.pillHeight) / 2 + 3).allowsHitTesting(false)
             }
         }
@@ -1097,6 +1100,34 @@ struct NativeDockTouchFocus: UIViewRepresentable {
             state = .failed
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
+/// How the pane being written in stands out among panes side by side. Its chosen tab already reads in full
+/// strength while the other panes' tabs are greyed (`NativeDockTabButton` `dimmed`); this is what the card adds.
+/// DEBUG builds take `-native.chrome.focusStyle <name>`, so screenshots can put the candidates side by side.
+enum NativeDockFocusStyle: String, CaseIterable {
+    /// The card's rim in a light wash of the accent, 1 pt; no glow and no bar.
+    case rim
+    /// A plain rim like the other panes', and a short, thin accent bar on the chosen tab.
+    case bar
+    /// A fainter rim and a fainter, shorter bar.
+    case both
+    /// What 1.4 drew: a 55 % accent rim 1.5 pt wide, a 22 % accent glow and a 28 × 3 bar.
+    case legacy
+    static let key = "native.chrome.focusStyle"
+    static var current: NativeDockFocusStyle {
+        #if DEBUG
+        if let name = UserDefaults.standard.string(forKey: key), let style = NativeDockFocusStyle(rawValue: name) { return style }
+        #endif
+        return .rim
+    }
+    /// The accent's share in the focused card's rim; 0 keeps the plain hairline.
+    var rim: Double { switch self { case .rim: 0.3; case .bar: 0; case .both: 0.2; case .legacy: 0.55 } }
+    var rimWidth: CGFloat { self == .legacy ? 1.5 : 1 }
+    var glow: Double { self == .legacy ? 0.22 : 0 }
+    var bar: (width: CGFloat, height: CGFloat, opacity: Double)? {
+        switch self { case .rim: nil; case .bar: (16, 2, 0.85); case .both: (12, 2, 0.55); case .legacy: (28, 3, 1) }
     }
 }
 
