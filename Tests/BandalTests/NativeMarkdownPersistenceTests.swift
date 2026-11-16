@@ -329,4 +329,81 @@ final class NativeMarkdownPersistenceTests: XCTestCase {
         XCTAssertEqual(saved, "다시 편집")
         XCTAssertFalse(session.frozen)
     }
+
+    /// A fake notes store with real mtime checks: a write against an older mtime is a conflict.
+    @MainActor private final class Notes {
+        var files: [String: (text: String, mtime: Double)] = [:]
+        func invoke(_ channel: String, _ request: [String: Any]) async throws -> Any {
+            let path = request["relPath"] as! String
+            if channel == "notes:read" { let file = files[path]!; return ["markdown": file.text, "mtime": file.mtime] }
+            if let expected = (request["expectedMtime"] as? NSNumber)?.doubleValue, expected != files[path]?.mtime {
+                throw NativeRepositoryContext.conflict("\(path) changed on disk")
+            }
+            let next = (files[path]?.mtime ?? 0) + 1
+            files[path] = (request["markdown"] as! String, next); return ["mtime": next]
+        }
+    }
+    private func copyMaker(_ notes: Notes) -> @MainActor (String) async throws -> NativeDocumentReference {
+        { title in
+            let path = "notes/" + title + ".md"
+            notes.files[path] = ("", 1)
+            return NativeDocumentReference(courseID: "course", relativePath: path, title: title, kind: "note")
+        }
+    }
+
+    /// Renaming another note rewrites a [[link]] in this one on disk while it is open. The next
+    /// save takes that change and keeps the user's edit: no error, no copy.
+    func testFileChangedUnderTheEditorMergesDisjointEditsWithoutAnError() async throws {
+        let (directory, file) = try temporaryDraft()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let notes = Notes(); notes.files["notes/test.md"] = ("# 정리\n\n가우스 법칙\n\n참고: [[전기장]]\n", 1)
+        let session = NativeMarkdownSession(courseID: "course", relativePath: "notes/test.md", draftFile: file, debounceNanoseconds: 60_000_000_000, invoke: notes.invoke)
+        session.createCopy = copyMaker(notes)
+        await session.load()
+        session.update("# 정리\n\n가우스 법칙: 닫힌 곡면\n\n참고: [[전기장]]\n", isComposing: false)
+        notes.files["notes/test.md"] = ("# 정리\n\n가우스 법칙\n\n참고: [[전기장과 자기장]]\n", 2)
+        try await session.flush()
+        XCTAssertEqual(notes.files["notes/test.md"]?.text, "# 정리\n\n가우스 법칙: 닫힌 곡면\n\n참고: [[전기장과 자기장]]\n")
+        XCTAssertEqual(session.text, notes.files["notes/test.md"]?.text)
+        XCTAssertNil(session.errorMessage); XCTAssertFalse(session.dirty); XCTAssertNil(session.notice)
+        XCTAssertEqual(notes.files.count, 1, "nothing to keep aside")
+        // Saving again works: the editor follows the file's new revision.
+        session.update(session.text + "끝\n", isComposing: false)
+        try await session.flush()
+        XCTAssertTrue(notes.files["notes/test.md"]!.text.hasSuffix("끝\n"))
+    }
+
+    /// The same words changed in two places: this editor's text is saved, the other version is kept
+    /// as a note beside it, and a toast says where. The editor never stops.
+    func testOverlappingOutsideChangeIsKeptAsACopyAndTheEditorKeepsSaving() async throws {
+        let (directory, file) = try temporaryDraft()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let notes = Notes(); notes.files["notes/test.md"] = ("가우스 법칙\n", 1)
+        let session = NativeMarkdownSession(courseID: "course", relativePath: "notes/test.md", draftFile: file, debounceNanoseconds: 60_000_000_000, invoke: notes.invoke)
+        session.createCopy = copyMaker(notes)
+        await session.load()
+        session.update("가우스 정리\n", isComposing: false)
+        notes.files["notes/test.md"] = ("가우스 공식\n", 2)
+        try await session.flush()
+        XCTAssertEqual(notes.files["notes/test.md"]?.text, "가우스 정리\n")
+        XCTAssertEqual(notes.files["notes/test (다른 곳에서 바뀐 내용).md"]?.text, "가우스 공식\n")
+        XCTAssertNil(session.errorMessage)
+        XCTAssertEqual(session.notice, "다른 곳에서 바뀐 내용은 ‘test (다른 곳에서 바뀐 내용)’에 보관했어요.")
+    }
+
+    /// An unsaved draft from before a crash and a newer file: the file opens, the draft is kept as a note.
+    func testUnsavedDraftAgainstANewerFileOpensTheFileAndKeepsTheDraftAsACopy() async throws {
+        let (directory, file) = try temporaryDraft()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try file.write(.init(markdown: "내 미저장 내용", expectedMtime: 1))
+        let notes = Notes(); notes.files["notes/test.md"] = ("다른 기기에서 쓴 내용", 2)
+        let session = NativeMarkdownSession(courseID: "course", relativePath: "notes/test.md", draftFile: file, invoke: notes.invoke)
+        session.createCopy = copyMaker(notes)
+        await session.load()
+        XCTAssertEqual(session.text, "다른 기기에서 쓴 내용")
+        XCTAssertNil(session.errorMessage); XCTAssertTrue(session.canEdit)
+        XCTAssertEqual(notes.files["notes/test (저장하지 못한 내용).md"]?.text, "내 미저장 내용")
+        XCTAssertNil(try file.read())
+        XCTAssertNotNil(session.notice)
+    }
 }

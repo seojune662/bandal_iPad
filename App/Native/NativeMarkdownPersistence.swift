@@ -54,6 +54,11 @@ final class NativeMarkdownSession: ObservableObject {
     var setEditingEnabled: ((Bool) -> Void)?
     var onContentChanged: (() -> Void)?
     var applyRemoteText: ((Bool) -> Void)?
+    /// Makes a new note beside this one (title in, reference out) for a version that cannot be merged.
+    var createCopy: (@MainActor (String) async throws -> NativeDocumentReference)?
+    /// A short, non-blocking message: what happened to a version kept as a copy.
+    var notice: String? { storage.notice }
+    func clearNotice() { storage.notice = nil }
 
     var text: String { storage.text }
     var loading: Bool { storage.loading }
@@ -151,6 +156,7 @@ private final class NativeMarkdownStorage: ObservableObject {
     @Published private(set) var frozen = false
     @Published private(set) var retired = false
     @Published private(set) var recoveries: [String: NativeMarkdownDraft] = [:]
+    @Published var notice: String?
     var prepareForFlush: (() -> Void)?
     var applyFormat: ((String) -> Void)?
     var setEditingEnabled: ((Bool) -> Void)?
@@ -241,7 +247,12 @@ private final class NativeMarkdownStorage: ObservableObject {
             try loadRecoveries()
             resetsEditors = true; defer { resetsEditors = false }
             savedText = markdown; expectedMtime = mtime; text = markdown
-            if let draft, draft.markdown != markdown {
+            if let draft, draft.markdown != markdown, draft.expectedMtime != mtime,
+               let kept = try? await keepVersion(draft.markdown, as: "저장하지 못한 내용") {
+                // Both an unsaved draft and a newer file: the file opens, the draft is kept beside it.
+                try? draftFile.remove()
+                notice = String(format: NativeAppLocale.string("저장하지 못한 내용은 ‘%@’에 보관했어요.", Locale(identifier: NativeAppLocale.current)), kept)
+            } else if let draft, draft.markdown != markdown {
                 text = draft.markdown; dirty = true; recoveredDraft = true
                 expectedMtime = draft.expectedMtime
                 if draft.expectedMtime != mtime {
@@ -311,6 +322,7 @@ private final class NativeMarkdownStorage: ObservableObject {
         let task = Task { @MainActor [self] in
             saving = true
             defer { saving = false; saveFlight = nil }
+            var reconciled = false
             do { while dirty {
                 let value = text
                 guard let expectedMtime else { throw DesktopRuntimeError("노트의 저장 버전을 확인하지 못했습니다.") }
@@ -319,7 +331,10 @@ private final class NativeMarkdownStorage: ObservableObject {
                 let response: Any
                 do { response = try await invoke("notes:write", request) }
                 catch {
-                    if (error as? DesktopRuntimeError)?.code == "CONFLICT" || error.localizedDescription.localizedCaseInsensitiveContains("changed on disk") || error.localizedDescription.localizedCaseInsensitiveContains("conflict") { conflict = true }
+                    if (error as? DesktopRuntimeError)?.code == "CONFLICT" || error.localizedDescription.localizedCaseInsensitiveContains("changed on disk") || error.localizedDescription.localizedCaseInsensitiveContains("conflict") {
+                        if !reconciled, await reconcile() { reconciled = true; continue }
+                        conflict = true
+                    }
                     throw error
                 }
                 guard let result = response as? [String: Any], let next = (result["mtime"] as? NSNumber)?.doubleValue, next.isFinite else {
@@ -393,4 +408,38 @@ private final class NativeMarkdownStorage: ObservableObject {
     }
 
     private var identity: [String: Any] { ["courseId": courseID, "relPath": relativePath] }
+
+    private var createCopy: (@MainActor (String) async throws -> NativeDocumentReference)? { clients.values.compactMap { $0.value?.createCopy }.first }
+    /// Writes `markdown` into a new note beside this one and says so; nil when no editor can make one.
+    private func keepVersion(_ markdown: String, as label: String) async throws -> String? {
+        guard let createCopy else { return nil }
+        let name = ((relativePath as NSString).lastPathComponent as NSString).deletingPathExtension
+        let copy = try await createCopy("\(name) (\(NativeAppLocale.string(label, Locale(identifier: NativeAppLocale.current))))")
+        let identity: [String: Any] = ["courseId": copy.courseID, "relPath": copy.relativePath]
+        guard let current = try await invoke("notes:read", identity) as? [String: Any], let mtime = current["mtime"] as? NSNumber else { throw DesktopRuntimeError("사본의 저장 위치를 확인하지 못했습니다.") }
+        var request = identity; request["markdown"] = markdown; request["expectedMtime"] = mtime
+        _ = try await invoke("notes:write", request)
+        return ((copy.relativePath as NSString).lastPathComponent as NSString).deletingPathExtension
+    }
+    /// notes:write refused because the file changed under this editor: another note's rename
+    /// rewrote a link in it, sync brought a newer version, another app saved it. Re-read it and
+    /// carry on from there with this editor's edits on top. Edits that overlap the other change
+    /// keep that version in a copy note; this editor's text stays and is saved. Nothing blocks.
+    private func reconcile() async -> Bool {
+        do {
+            guard let result = try await invoke("notes:read", identity) as? [String: Any], let disk = result["markdown"] as? String,
+                  let mtime = (result["mtime"] as? NSNumber)?.doubleValue, mtime.isFinite else { return false }
+            if let merged = try? NativeMarkdownTextChange.rebase(from: savedText, to: text, onto: disk) {
+                savedText = disk; expectedMtime = mtime
+                if merged != text { text = merged }
+            } else {
+                guard let kept = try await keepVersion(disk, as: "다른 곳에서 바뀐 내용") else { return false }
+                savedText = disk; expectedMtime = mtime
+                notice = String(format: NativeAppLocale.string("다른 곳에서 바뀐 내용은 ‘%@’에 보관했어요.", Locale(identifier: NativeAppLocale.current)), kept)
+            }
+            dirty = text != savedText
+            if dirty { try? draftFile.write(.init(markdown: text, expectedMtime: mtime)) } else { try? draftFile.remove() }
+            return true
+        } catch { return false }
+    }
 }
