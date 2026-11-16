@@ -4,8 +4,9 @@ import CoreGraphics
 /// Eraser geometry on canonical rows. Distances are page-width units: y is
 /// scaled by the page aspect, like stroke widths and the eraser radius.
 enum NativePDFEraseSplit {
-    /// Kinds whose points are a freehand centre line. The partial eraser never
-    /// cuts shapes, text, images or anything else.
+    /// Kinds whose points are a freehand centre line. A recognized shape is
+    /// ink too; its cut pieces are handwriting. The partial eraser never cuts
+    /// legacy line/rect/ellipse objects, text, images or anything else.
     static let cuttableKinds: Set<String> = ["ink", "highlighter"]
 
     /// The partial eraser. nil: the eraser missed these samples. Otherwise the

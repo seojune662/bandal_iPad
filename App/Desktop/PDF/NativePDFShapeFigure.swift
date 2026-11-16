@@ -146,7 +146,6 @@ struct NativePDFShapeFigure: Equatable {
         self.center = center; self.axisA = axisA; self.axisB = axisB
     }
 
-    var descriptor: [String: Any] { Self.descriptor(kind: kind, corners: ink(aspect: 1).corners, segments: kind == .ellipse ? Self.ellipseSegments : nil) }
     static func descriptor(kind: Kind, corners: [Int]?, segments: Int?) -> [String: Any] {
         var shape: [String: Any] = ["type": kind.rawValue]
         if let corners { shape["corners"] = corners }
