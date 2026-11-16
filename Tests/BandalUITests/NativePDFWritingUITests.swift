@@ -363,10 +363,22 @@ final class NativePDFWritingUITests: XCTestCase {
         chooseTool("laser", in: app)
         body.coordinate(withNormalizedOffset: .init(dx: 0.3, dy: 0.3)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.7, dy: 0.35)))
-        capture("Laser pointer trail")
+        // A second trail within three seconds keeps the first: both stay, then fade together.
+        body.coordinate(withNormalizedOffset: .init(dx: 0.3, dy: 0.45)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.7, dy: 0.5)))
+        let pdf = app.otherElements["bandal-native-pdf-body"].firstMatch
+        func laser(_ count: Int) -> NSPredicate { NSPredicate(format: "value CONTAINS %@", " laser=\(count) ") }
+        XCTAssertTrue(laser(2).evaluate(with: pdf), "Both laser trails stay on screen: \(pdf.value ?? "")")
+        capture("Two laser pointer trails")
         expectInk(0, in: app)
+        let faded = XCTNSPredicateExpectation(predicate: laser(0), object: pdf)
+        XCTAssertEqual(XCTWaiter.wait(for: [faded], timeout: 8), .completed, "The trails fade a few seconds after the last one: \(pdf.value ?? "")")
+        body.coordinate(withNormalizedOffset: .init(dx: 0.3, dy: 0.6)).press(forDuration: 0.05,
+            thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.6, dy: 0.6)))
+        XCTAssertTrue(laser(1).evaluate(with: pdf), pdf.value as? String ?? "")
 
         chooseTool("tape", in: app)
+        XCTAssertTrue(laser(0).evaluate(with: pdf), "Another tool takes the laser away at once: \(pdf.value ?? "")")
         body.coordinate(withNormalizedOffset: .init(dx: 0.25, dy: 0.5)).press(forDuration: 0.05,
             thenDragTo: body.coordinate(withNormalizedOffset: .init(dx: 0.7, dy: 0.5)))
         expectInk(1, in: app)

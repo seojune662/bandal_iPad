@@ -59,6 +59,52 @@ final class NativePDFPencilGestureTests: XCTestCase {
         surface.endPencilGesture(touch, with: nil)
         XCTAssertEqual(events.last?["phase"] as? String, "up")
     }
+    func testLaserTrailsStayUntilThreeSecondsAfterTheLastContactOnAnyPage() throws {
+        let clock = ManualLaserClock()
+        let session = NativePDFLaserSession(schedule: clock.schedule)
+        let first = try surface(), second = try surface()
+        var saved = 0, pointers = 0
+        for page in [first, second] {
+            page.tool = .init(name: "laser", style: .init(color: "ink", width: 0.004, opacity: 1))
+            page.laserSession = session
+            page.onStroke = { _ in saved += 1 }; page.onPointer = { _ in pointers += 1 }
+        }
+        func draw(on page: NativePDFInkSurface, moves: Int) {
+            let touch = PencilGestureTouch(kind: .pencil)
+            XCTAssertTrue(page.beginPencilGesture(touch, with: nil))
+            for i in 1...moves {
+                touch.point = CGPoint(x: 100 + Double(i) * 3, y: 120); touch.currentTime += 0.01
+                page.movePencilGesture(touch, with: nil)
+            }
+            page.endPencilGesture(touch, with: nil)
+        }
+        // One second of pointing: the whole trail stays, not only its last 0.6 s.
+        draw(on: first, moves: 100)
+        XCTAssertEqual(first.laserTrail.strokes.count, 1)
+        XCTAssertEqual(first.laserTrail.strokes[0].count, 101, "Every sample of the stroke stays on screen")
+        XCTAssertTrue(session.isWaitingToFade)
+        clock.advance(2)
+        XCTAssertEqual(session.strokeCount, 1, "Two seconds after lifting, the trail is still there")
+        // Pointing again on the next page restarts the one shared countdown.
+        draw(on: second, moves: 10)
+        XCTAssertEqual(session.strokeCount, 2)
+        clock.advance(2.9)
+        XCTAssertEqual(session.strokeCount, 2, "The countdown restarted when the second trail ended")
+        clock.advance(0.2)
+        XCTAssertEqual(session.strokeCount, 0, "Three seconds without the laser: every trail fades together")
+        XCTAssertFalse(session.isWaitingToFade)
+        // A contact still down keeps everything; another tool clears at once.
+        draw(on: first, moves: 5)
+        let held = PencilGestureTouch(kind: .pencil)
+        XCTAssertTrue(second.beginPencilGesture(held, with: nil))
+        clock.advance(5)
+        XCTAssertEqual(session.strokeCount, 2, "No fade while the Pencil is still pointing")
+        second.endPencilGesture(held, with: nil)
+        first.tool = .init(name: "pen", style: .init(color: "ink", width: 0.004, opacity: 1))
+        XCTAssertEqual(session.strokeCount, 0, "Choosing another tool removes the laser immediately")
+        XCTAssertFalse(session.isWaitingToFade)
+        XCTAssertEqual(saved, 0); XCTAssertEqual(pointers, 0, "The laser is never saved or sent to the editor")
+    }
     func testDrawAndHoldPreviewsBeforeLiftAndResumingPreservesMeasuredInk() async throws {
         let surface = try surface(), touch = PencilGestureTouch(kind: .pencil)
         var saved: [NativePDFCompletedStroke] = []
@@ -737,6 +783,24 @@ final class NativePDFPencilGestureTests: XCTestCase {
         XCTAssertEqual(saved.first?.points.first?.p, 0)
     }
     #endif
+}
+
+/// A clock the laser session schedules on, advanced by hand.
+@MainActor
+private final class ManualLaserClock {
+    private var now: TimeInterval = 0, serial = 0
+    private var timers: [(id: Int, due: TimeInterval, body: @MainActor () -> Void)] = []
+    func schedule(_ delay: TimeInterval, _ body: @escaping @MainActor () -> Void) -> () -> Void {
+        serial += 1; let id = serial
+        timers.append((id, now + delay, body))
+        return { [weak self] in self?.timers.removeAll { $0.id == id } }
+    }
+    func advance(_ seconds: TimeInterval) {
+        now += seconds
+        while let next = timers.filter({ $0.due <= now }).min(by: { $0.due < $1.due }) {
+            timers.removeAll { $0.id == next.id }; next.body()
+        }
+    }
 }
 
 @MainActor

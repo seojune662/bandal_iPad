@@ -829,6 +829,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
     private var objectSceneRevisions: [Int: Int] = [:]
     private var objectScenePatchPages: Set<Int> = []
     private var tool = NativePDFInkSurface.Tool()
+    /// One laser clock for every page of this PDF.
+    let laserSession = NativePDFLaserSession()
     private var loading = true
     private var workspaceActive = false
     private var observations: [NSObjectProtocol] = []
@@ -938,6 +940,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         pencilGesture = NativePDFPencilGestureRecognizer()
         #endif
         super.init(); images.totalCostLimit = 64 * 1024 * 1024
+        laserSession.onChange = { [weak self] in self?.updateAccessibilityState() }
         pdfView.accessibilityIdentifier = "bandal-native-pdf-body"
         pdfView.accessibilityLabel = "PDF 본문"
         pdfView.onContact = { [weak self] in self?.onEvent("activate", [:]) }
@@ -1661,7 +1664,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             pinchEvents, lastPinchScale, scaleChanges, navigateCommands, lastRequestedZoom, submissionP95, submissionSamples,
             scrollView?.zoomScale ?? 0, scrollView?.minimumZoomScale ?? 0, scrollView?.maximumZoomScale ?? 0, pdfView.autoScales ? 1 : 0, workspaceActive ? 1 : 0)
         #if DEBUG
-        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " drawings=\(drawingSnapshots.order.count) pending=\(pending.count)"
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " drawings=\(drawingSnapshots.order.count) pending=\(pending.count) laser=\(laserSession.strokeCount)"
         let marks = searchMarks.values.joined()
         pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " searchMarks=\(marks.count) handwritingMarks=\(marks.filter(\.handwriting).count) currentMarks=\(marks.filter(\.current).count)"
         let savedPageCounts = drawingSnapshots.rowsByPage.mapValues(\.count)
@@ -1810,6 +1813,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         if let existing = overlays[number] { return existing }
         guard let overlay = NativePDFInkSurface() else { onEvent("error", ["message": "Metal 필기 표면을 만들지 못했습니다."]); return nil }
         overlay.pdfPage = page
+        overlay.laserSession = laserSession
         overlay.viewportProvider = { [weak self, weak overlay] in
             guard let self, let overlay else { return nil }
             return overlay.convert(self.pdfView.bounds, from: self.pdfView)

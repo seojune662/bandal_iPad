@@ -73,7 +73,12 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         /// The geometry new strokes are saved with: 4 for the plain 펜 (the first pen's even line), 5 otherwise.
         var inkVersion = 5
     }
-    var tool = Tool() { didSet { if tool != oldValue { finishMeasuredStroke(); reviewBackdropDependency() } } }
+    var tool = Tool() { didSet {
+        guard tool != oldValue else { return }
+        finishMeasuredStroke(); reviewBackdropDependency()
+        // Choosing another tool takes the laser away at once, on every page.
+        if oldValue.name == "laser", tool.name != "laser" { laserSession.clear() }
+    } }
     var retainedInkEnabled = false { didSet { if oldValue != retainedInkEnabled { retainedModelDirty = true; schedulePreview() } } }
     var nativeErasingEnabled = false
     var onEraseBegin: (() -> Void)?
@@ -150,6 +155,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
             }
         }
         decorations.setNeedsDisplay(); schedulePreview()
+        laserTrail.redraw(mapper: mapper)
     } }
     private var coordinateComparisonPixelScale: CGFloat {
         guard let window, let transform = NativePDFCoordinateMapping.sample(bounds: bounds,
@@ -565,6 +571,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         }
         accessibilityIdentifier = "bandal-native-pdf-ink"
         accessibilityLabel = "PDF 필기 영역"
+        laserSession.attach(laserTrail)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     func scribbleInteraction(_ interaction: UIScribbleInteraction, shouldBeginAt location: CGPoint) -> Bool {
@@ -764,6 +771,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         }
         backdropDependencyNeedsReview = true
         append(event?.coalescedTouches(for: touch) ?? [touch]); updateHoldSnap(from: 0); schedulePreview(); updateEraserCursor()
+        beginLaserContact()
         if nativeEraseContact { updateNativeErasure(points: measured) }
         // Put the first dot on the GPU before completion work. Further
         // coalesced samples share UIKit's normal/low-latency update phases.
@@ -1476,7 +1484,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         // Object edits retain their previous up-on-navigation behavior, but
         // must not drain the ink queues or clear a failed durability gate.
         let last = measured.last
-        markContactEnded()
+        markContactEnded(); endLaserContact()
         completion?.cancel(); completion = nil; ending = false
         active = nil; measured = []; redrawLassoPreview(); predicted = []; estimated = [:]
         onInputOwnership?(false)
@@ -1496,7 +1504,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         holdTimer?.invalidate(); holdTimer = nil
         completion?.cancel(); completion = nil; ending = false; estimated = [:]
         if active != nil {
-            markContactEnded()
+            markContactEnded(); updateLaser(); endLaserContact()
             if ["pen", "highlighter"].contains(strokeTool.name), !measured.isEmpty {
                 try completionBuffer.retain(.init(mutationID: UUID().uuidString,
                     kind: strokeTool.name == "pen" ? "ink" : "highlighter", points: measured, style: strokeTool.style, inkVersion: strokeInkVersion, holdSnap: holdSnap, heldShape: heldShape))
@@ -2158,37 +2166,29 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         if strokeTool.name == "lasso" || tool.name == "lasso" { decorations.setNeedsDisplay() }
         updateEraserCursor(); updateLaser()
     }
-    /// The laser pointer: a glowing red trail of the last moments of the
-    /// contact that fades on lift. Nothing is saved.
-    private lazy var laserTrail: CAShapeLayer = {
-        let trail = CAShapeLayer()
-        trail.fillColor = nil; trail.strokeColor = UIColor.systemRed.cgColor
-        trail.lineWidth = 4; trail.lineCap = .round; trail.lineJoin = .round
-        trail.shadowColor = UIColor.systemRed.cgColor; trail.shadowRadius = 6; trail.shadowOpacity = 0.9; trail.shadowOffset = .zero
-        trail.zPosition = 11
-        layer.addSublayer(trail)
-        return trail
-    }()
-    private var laserVisible = false
-    private static let laserTrailMilliseconds = 600.0
+    /// The laser pointer: every trail drawn on this page stays until the shared
+    /// session lets them all fade (see NativePDFLaserSession). Nothing is saved.
+    let laserTrail = NativePDFLaserTrail()
+    /// The host gives every page one session, so a gesture across pages keeps one timer.
+    var laserSession = NativePDFLaserSession() { didSet {
+        guard laserSession !== oldValue else { return }
+        oldValue.clear(); laserSession.attach(laserTrail)
+    } }
+    private var laserContact = false
     private func updateLaser() {
-        guard strokeTool.name == "laser" || laserVisible else { return }
-        guard active != nil, strokeTool.name == "laser", let mapper, let last = measured.last else {
-            guard laserVisible else { return }
-            laserVisible = false
-            let fade = CABasicAnimation(keyPath: "opacity"); fade.fromValue = 1; fade.toValue = 0; fade.duration = 0.5
-            laserTrail.opacity = 0; laserTrail.add(fade, forKey: "fade")
-            return
-        }
-        let cutoff = (last.t ?? 0) - Self.laserTrailMilliseconds
-        let recent = measured.filter { ($0.t ?? cutoff) >= cutoff }
-        let path = CGMutablePath()
-        path.addLines(between: recent.map { mapper.canvasPoint(InkPoint(x: $0.x, y: $0.y, p: 0.5)) })
-        if recent.count == 1 { path.addLine(to: mapper.canvasPoint(InkPoint(x: last.x, y: last.y, p: 0.5))) }
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        laserTrail.removeAnimation(forKey: "fade"); laserTrail.opacity = 1; laserTrail.path = path
-        CATransaction.commit()
-        laserVisible = true
+        guard laserContact, active != nil, strokeTool.name == "laser" else { return }
+        laserTrail.update(measured, mapper: mapper)
+    }
+    private func beginLaserContact() {
+        guard strokeTool.name == "laser", let first = measured.first else { return }
+        if laserTrail.layer.superlayer == nil { layer.addSublayer(laserTrail.layer) }
+        laserContact = true
+        laserSession.contactBegan(); laserTrail.begin(at: first); updateLaser()
+    }
+    private func endLaserContact() {
+        guard laserContact else { return }
+        laserContact = false
+        laserSession.contactEnded()
     }
     /// A ring of the eraser's size under the Pencil while erasing. A layer, so
     /// moving it never repaints the viewport-sized decorations bitmap.
