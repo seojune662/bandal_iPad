@@ -56,6 +56,13 @@ final class DesktopBrowserHost: NSObject {
     private var privacyTask: Task<Void, Error>?
     private var privacyGeneration = 0
     lazy var observationRelay = BrowserObservationRelay(host: self)
+    lazy var videoRelay = BrowserVideoRelay(host: self)
+    /// A page's video started, stopped or went away (`BrowserVideo.swift`).
+    var onVideoChange: ((DesktopBrowserPage) -> Void)?
+    /// The in-app PiP window: it may take a page's web view while it plays, and keep the page when its tab closes.
+    weak var pictureInPicture: DesktopBrowserPictureInPicture?
+    /// Pages whose tab closed while their video went on in PiP. Not tabs; the PiP window closes or returns them.
+    private(set) var pictureInPicturePages: [String: DesktopBrowserPage] = [:]
     lazy var loginRelay = BrowserLoginRelay(host: self)
 
     init(root: URL) {
@@ -177,6 +184,13 @@ final class DesktopBrowserHost: NSObject {
         nativeViewports[ObjectIdentifier(view)] = NativeViewport(view: view, selectedTabID: selectedTabID)
         layoutPages()
     }
+    /// A browser surface is about to leave the window (its dock tab closed or another one was chosen). Its web
+    /// views are still on screen: a playing video can move to the PiP window without ever leaving the window.
+    func surfaceWillLeaveWindow(_ view: UIView) {
+        for page in pages.values where !page.inPictureInPicture && page.bounds != nil && page.liveWebView?.superview === view {
+            if pictureInPicture?.browserPageWillHide(page) == true { page.bounds = nil }
+        }
+    }
     func detachNative(from view: UIView) {
         nativeViewports.removeValue(forKey: ObjectIdentifier(view))
         if container === view { container = nativeViewports.values.compactMap(\.view).first }
@@ -210,7 +224,17 @@ final class DesktopBrowserHost: NSObject {
             for page in pages.values {
                 let viewport = nativeViewports.values.first { $0.selectedTabID == page.tabID }
                 let visible = viewport?.view != nil && !hostOccluded && !surfaceOccluded
+                // The PiP window holds the web view; on its way back, the tab's viewport takes it in one move.
+                if page.inPictureInPicture {
+                    guard visible, let target = viewport?.view, pictureInPicture?.browserPage(page, returnsTo: target) == true else {
+                        page.bounds = nil; continue
+                    }
+                }
                 guard visible, let target = viewport?.view else {
+                    // Its tab went away (another tab chosen) while the video played: the PiP window may take it on.
+                    if viewport == nil, page.bounds != nil, page.liveWebView?.window != nil, pictureInPicture?.browserPageWillHide(page) == true {
+                        page.bounds = nil; continue
+                    }
                     page.bounds = nil
                     page.liveWebView?.isHidden = true; page.liveWebView?.accessibilityElementsHidden = true
                     continue
@@ -233,6 +257,7 @@ final class DesktopBrowserHost: NSObject {
             let diagnostic = "[bandal.browser.layout] bounds=\(page.bounds.map { "\(Int($0.minX)),\(Int($0.minY)),\(Int($0.width))x\(Int($0.height))" } ?? "nil") hostOccluded=\(hostOccluded) surfaceOccluded=\(surfaceOccluded) inputBlocked=\(surfaceInputBlocked) zoom=\(shell.scrollView.zoomScale) offset=\(Int(shell.scrollView.contentOffset.y))"
             if diagnostic != lastLayoutDiagnostic { lastLayoutDiagnostic = diagnostic; NSLog("%@", diagnostic) }
             #endif
+            if page.inPictureInPicture { continue }
             guard let rect = page.bounds, !hostOccluded, !surfaceOccluded else {
                 page.liveWebView?.isHidden = true; page.liveWebView?.accessibilityElementsHidden = true; continue
             }
@@ -581,8 +606,24 @@ final class DesktopBrowserHost: NSObject {
         guard let page = pages.removeValue(forKey: id) else { return }
         if let owner = popupOwners.removeValue(forKey: id) { popupAdmission.release(owner: owner) }
         rendererOwnershipRevisions.removeValue(forKey: id)
+        // Its video goes on in PiP: the page stays alive there, out of every tab, until the window closes or returns it.
+        // A private page never outlives its tab (its website data ends with the last private tab).
+        if pictureInPicture?.browserPageWillClose(page) == true, !page.isPrivate { pictureInPicturePages[id] = page; return }
         page.close()
         if page.isPrivate, !pages.values.contains(where: { $0.profileID == page.profileID && $0.isPrivate }) { persistence?.discardPrivateStore(page.profileID); presentationStore?.discardPrivate(page.profileID) }
+    }
+    /// The PiP window closed over a page whose tab had closed.
+    func releasePictureInPicturePage(_ page: DesktopBrowserPage) {
+        guard pictureInPicturePages[page.tabID] === page else { return }
+        pictureInPicturePages.removeValue(forKey: page.tabID)
+        page.close()
+    }
+    /// 돌아가기 for a page whose tab had closed: it becomes a page of its old scope again, so reopening that
+    /// browser tab adopts it (`NativeBrowserSession.start`) instead of loading the address anew.
+    func adoptPictureInPicturePage(_ page: DesktopBrowserPage) {
+        guard pictureInPicturePages[page.tabID] === page, pages[page.tabID] == nil else { return }
+        pictureInPicturePages.removeValue(forKey: page.tabID)
+        pages[page.tabID] = page
     }
     func popup(from opener: DesktopBrowserPage, configuration: WKWebViewConfiguration, action: WKNavigationAction) -> WKWebView? {
         let frameOrigin = action.sourceFrame.securityOrigin
@@ -646,4 +687,15 @@ final class DesktopBrowserHost: NSObject {
         let domain = domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased(), host = host.lowercased()
         return domain == host || domain.hasSuffix("." + host)
     }
+}
+
+/// The in-app PiP window, as the browser host sees it (`NativeVideoPiP`).
+@MainActor
+protocol DesktopBrowserPictureInPicture: AnyObject {
+    /// The page's tab is about to stop showing it. True: the PiP window took its web view.
+    func browserPageWillHide(_ page: DesktopBrowserPage) -> Bool
+    /// The page's tab is closing. True: the PiP window keeps the page alive.
+    func browserPageWillClose(_ page: DesktopBrowserPage) -> Bool
+    /// The page is in PiP and its tab's viewport is showing. True: the web view went back into `target`.
+    func browserPage(_ page: DesktopBrowserPage, returnsTo target: UIView) -> Bool
 }

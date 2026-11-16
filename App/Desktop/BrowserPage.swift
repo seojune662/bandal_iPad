@@ -60,6 +60,10 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
     private var restoring: BrowserPageRestoration?
     private var scrollRestoration: Task<Void, Never>?
     var preventsSuspension = false
+    /// Each frame's last video report (`BrowserVideo.swift`).
+    var videoReports: [BrowserVideoReport] = []
+    /// A PiP window shows this page's video: its web view lives in that window until it comes back.
+    var inPictureInPicture = false
     var loginOffer: BrowserLoginOffer?
     var lastUsedAt = Date()
     var isSuspended: Bool { liveWebView == nil && suspended != nil }
@@ -120,6 +124,9 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         observer.addUserScript(WKUserScript(source: BrowserMemoryScripts.observe, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: BrowserMemoryScripts.world))
         observer.addUserScript(WKUserScript(source: BrowserScripts.observation, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         observer.addUserScript(WKUserScript(source: "addEventListener('pointerdown',e=>{globalThis.__bandalContextPoint={x:e.clientX,y:e.clientY}},true)", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
+        // Every frame: an embedded lecture player is usually an iframe.
+        observer.addUserScript(WKUserScript(source: BrowserVideoScripts.observe, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: BrowserVideoScripts.world))
+        observer.add(host.videoRelay, contentWorld: BrowserVideoScripts.world, name: BrowserVideoScripts.handler)
         if !isPrivate {
             observer.addUserScript(WKUserScript(source: BrowserCredentialScripts.capture, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: BrowserCredentialScripts.world))
             observer.add(host.loginRelay, contentWorld: BrowserCredentialScripts.world, name: BrowserLoginRelay.name)
@@ -155,7 +162,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
     /// Only a hidden, reloadable reading page is eligible. Interaction state
     /// stays in memory; form/JS application state is never promised portable.
     func suspendIfSafe() async -> Bool {
-        guard let view = liveWebView, bounds == nil, !preventsSuspension, failedNavigation == nil,
+        guard let view = liveWebView, bounds == nil, !preventsSuspension, !inPictureInPicture, failedNavigation == nil,
               !view.isLoading, restoring == nil, view.url?.scheme == "http" || view.url?.scheme == "https",
               view.cameraCaptureState == .none, view.microphoneCaptureState == .none,
               host?.downloads.values.contains(where: { $0.page === self && $0.state == "progressing" }) != true else { return false }
@@ -164,7 +171,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         guard let position = (try? await view.callAsyncJavaScript(BrowserMemoryScripts.canSuspend, arguments: [:], in: nil, contentWorld: BrowserMemoryScripts.world)) as? [String: Double],
               let x = position["x"], let y = position["y"], x.isFinite, y.isFinite,
               let host, host.pages[tabID] === self, liveWebView === view, documentID == identity,
-              bounds == nil, !preventsSuspension, failedNavigation == nil, !view.isLoading,
+              bounds == nil, !preventsSuspension, !inPictureInPicture, failedNavigation == nil, !view.isLoading,
               view.cameraCaptureState == .none, view.microphoneCaptureState == .none,
               !host.downloads.values.contains(where: { $0.page === self && $0.state == "progressing" }),
               let interaction = view.interactionState else { return false }
@@ -179,6 +186,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         observations.removeAll(); liveWebView?.stopLoading(); liveWebView?.removeFromSuperview()
         liveWebView?.navigationDelegate = nil; liveWebView?.uiDelegate = nil
         suspended = nil; restoring = nil; navigations.removeAll(); pendingRequest = nil; pendingExplicitNavigation = nil
+        videoReports = []; inPictureInPicture = false
     }
     func send(_ name: String, _ detail: [String: Any] = [:]) {
         guard host?.pages[tabID] === self else { return }
@@ -373,6 +381,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         attempt.committed = true; attempt.request.url = webView.url; committedURL = webView.url; recoveredURL = nil
         committedNavigation = attempt
         pendingRequest = nil
+        forgetVideo() // A new document: its frames report their own videos.
         send("did-navigate", ["url": webView.url?.absoluteString ?? "", "httpResponseCode": httpStatus])
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

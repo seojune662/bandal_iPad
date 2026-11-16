@@ -46,6 +46,8 @@ final class NativeBrowserSession: ObservableObject {
     @Published var sessionChanging = false
     @Published var loginPrompts: [String: NativeBrowserLoginPrompt] = [:]
     @Published var loginChoices: [String: NativeBrowserLoginChoices] = [:]
+    /// Each page's main video, for the PiP로 보기 button.
+    @Published var videoStates: [String: BrowserVideoState] = [:]
     var findTasks: [String: Task<Void, Never>] = [:]
     var favoriteRequest = UUID()
     var profileRequest = UUID()
@@ -220,6 +222,15 @@ final class NativeBrowserSession: ObservableObject {
         #endif
         return NativeBrowserAddress.newTabURL(preferences: preferences, isPrivate: isPrivate)
     }
+    /// Where 돌아가기 brings a PiP video from this browser back to: this dock tab (or the 브라우저 screen) and the page's tab.
+    func pictureInPictureOrigin(_ tabID: String) -> NativeVideoPiPOrigin {
+        let document = workspaceID.map { NativeDocumentReference(courseID: effectiveCourseID ?? "", relativePath: $0, title: "브라우저", kind: "browser") }
+        return NativeVideoPiPOrigin(document: document, browserTabID: tabID)
+    }
+    func startPictureInPicture() {
+        guard let id = activeID, let page = host.pages[id] else { return }
+        if !NativeVideoPiP.shared.startWeb(page, origin: pictureInPictureOrigin(id)) { error = "이 영상은 PiP로 띄울 수 없어요." }
+    }
     func select(_ id: String) {
         guard tabs.contains(where: { $0.id == id }) else { return }
         activeID = id
@@ -288,8 +299,9 @@ final class NativeBrowserSession: ObservableObject {
         if event.channel == "settings:changed", let value = event.payload as? [String: Any] { preferences = value["settings"] as? [String: Any] ?? value; return }
         guard event.channel.hasPrefix("browser:"), let payload = event.payload as? [String: Any] else { return }
         if event.channel == "browser:page-event", let id = payload["tabId"] as? String, owns(id) {
-            refresh(id)
             let name = payload["name"] as? String
+            if name == "video-state" { videoStates[id] = host.pages[id]?.video?.state; return }
+            refresh(id)
             if name == "did-fail-load", id == activeID {
                 let detail = payload["detail"] as? [String: Any]
                 error = detail?["errorDescription"] as? String ?? detail?["message"] as? String ?? "페이지를 불러오지 못했습니다. 주소와 연결을 확인하세요."
@@ -341,6 +353,7 @@ struct NativeBrowserWorkspace: View {
     @State private var annotationPageID: String?
     var store: NativeWorkspaceStore
     @StateObject private var session: NativeBrowserSession
+    @ObservedObject private var pip = NativeVideoPiP.shared
     @State private var address = ""
     @State private var addressFocused = false
     @State private var addressHistory: [NativeBrowserLink] = []
@@ -381,6 +394,9 @@ struct NativeBrowserWorkspace: View {
         .nativeWorkspacePreviewSurface(id: "browser-private-" + (session.workspaceID ?? "global"), privateContent: { session.active?.isPrivate == true })
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { workspaceHeight = $0 }
         .task { await session.start(); updateAddress() }
+        .onChange(of: session.tabs.map(\.id), initial: true) { _, ids in
+            for id in ids { pip.register(browserTab: id, origin: session.pictureInPictureOrigin(id)) }
+        }
         .task(id: addressHistoryKey) { await loadAddressHistory() }
         .onChange(of: addressFocused) { _, focused in
             if focused { address = session.active?.url == "about:blank" ? "" : session.active?.url ?? ""; suggestionSelection = .init() }
@@ -505,6 +521,12 @@ struct NativeBrowserWorkspace: View {
                 .font(.system(size: 12)).foregroundStyle(NativeDesktopTheme.muted)
             NativeBrowserAddressField(text: $address, focused: $addressFocused, onSubmit: submitAddress, onEscape: { addressFocused = false }, onMove: moveSuggestion)
                 .frame(minWidth: 40, maxWidth: .infinity, minHeight: 32, maxHeight: 32)
+            if !addressFocused, let id = session.activeID, session.videoStates[id]?.isWatchable == true, !pip.holds(browserTabID: id) {
+                Button { session.startPictureInPicture() } label: { Image(systemName: "pip.enter").font(.system(size: 14)).frame(width: 32, height: 32).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).foregroundStyle(NativeDesktopTheme.secondary)
+                    .accessibilityLabel(Text("PiP로 보기")).accessibilityHint(Text("영상을 작은 창으로 띄워 다른 탭을 보면서 이어 봐요"))
+                    .accessibilityIdentifier("native-video-pip-start")
+            }
             if !addressFocused && abs(session.zoomLevel - session.defaultZoom) > 0.01 {
                 Button("\(session.zoomPercent)%") { perform { try await session.zoom(nil) } }
                     .font(.system(size: 11).monospacedDigit()).buttonStyle(.plain).frame(minHeight: 32).fixedSize(horizontal: true, vertical: false)
@@ -566,6 +588,7 @@ struct NativeBrowserWorkspace: View {
                     }
                 }
                 .overlay { if session.active?.url == "about:blank", session.active?.title.isEmpty == true { NativeBrowserStartPage(session: session, navigate: navigate) } }
+                .overlay { if let id = session.activeID, pip.holds(browserTabID: id) { NativeVideoPiPPlaceholder { pip.returnToOrigin() } } }
         } else {
             VStack(spacing: 16) {
                 NativeToolEmptyState(title: "열린 탭이 없습니다", message: "새 탭에서 웹사이트를 열어보세요.", symbol: "square.on.square")
@@ -754,5 +777,10 @@ struct NativeBrowserSurface: UIViewRepresentable {
     final class Surface: UIView {
         weak var host: DesktopBrowserHost?
         override func layoutSubviews() { super.layoutSubviews(); host?.layoutPages() }
+        /// Still on screen: a playing video can move to the PiP window before the tab's web view goes.
+        override func willMove(toWindow newWindow: UIWindow?) {
+            if newWindow == nil { host?.surfaceWillLeaveWindow(self) }
+            super.willMove(toWindow: newWindow)
+        }
     }
 }

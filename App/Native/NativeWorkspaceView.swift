@@ -379,6 +379,8 @@ struct NativeWorkspaceView: View {
             // The left slot counts as one: the home sidebar and AI trade places at once, only opening and folding slide.
             .animation(Self.railAnimation, value: [chrome.leftPinned || aiVisible, rightVisible, chrome.rightPinned,
                                                    compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width)])
+            // 영상 PiP: over every pane, sidebar and palette; settings and the study board cover it (video-pip).
+            .overlay { NativeVideoPiPLayer(store: store, browser: services.browser) }
             .blur(radius: settingsOpen ? 4 : boardOverlayOpen ? 3 : 0)
             // Its own reader, clear of the keyboard: typing a task must not squeeze the popup.
             .overlay {
@@ -1329,6 +1331,17 @@ struct NativeWorkspaceView: View {
         syncNavigationInstances(); saveNavigation()
         if !background, navigation.target(containing: child.id)?.ref == navigation.currentWindowRef { section = .library; auxiliary = nil; learningHome = false }
     }
+    /// PiP's 돌아가기 (video-pip): the video's tab, chosen in its window, or opened again if it was closed.
+    /// A browser tab is found by its scope, which is what its page belongs to.
+    private func returnFromPictureInPicture(_ document: NativeDocumentReference?) {
+        guard let document else { transition { section = .browser }; return }
+        let open = navigation.documents.first { $0.id == document.id }
+            ?? navigation.documents.first { document.kind == "browser" && $0.kind == "browser" && $0.relativePath == document.relativePath }
+        guard let open, let target = navigation.target(containing: open.id) else { self.open(document); return }
+        if target.ref == navigation.currentWindowRef { openCapturedDocument(open, target: target); return }
+        guard target.ref.workspaceID == navigation.currentWindowRef?.workspaceID else { self.open(open); return }
+        changeWindow(reveal: true) { if navigation.selectWindow(target.ref) { _ = navigation.open(open, target: target) } }
+    }
     /// A three-finger pinch over a pane: its chosen tab closes as with ✕, and for a few seconds a toast offers it
     /// back. A tab taking a lecture recording stays open.
     private func closeTabByGesture(_ groupID: String) {
@@ -1451,6 +1464,7 @@ struct NativeWorkspaceView: View {
             return
         }
         if event.channel == "nativeWorkspace:openSettings", let category = (event.payload as? [String: Any])?["category"] as? String { openSettings(category); return }
+        if event.channel == "nativeVideoPiP:return" { returnFromPictureInPicture(event.payload as? NativeDocumentReference); return }
         if event.channel == "nativeWorkspace:openAssistantResult", let payload = event.payload as? [String: Any],
            let document = payload["document"] as? NativeDocumentReference {
             if let target = payload["nativeWorkspaceTarget"] as? NativeWorkspaceTarget { openCapturedDocument(document, target: target) }
