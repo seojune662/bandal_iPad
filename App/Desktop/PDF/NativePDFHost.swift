@@ -1412,10 +1412,8 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         if var object = try? NativePDFHost.json(input) {
             object["id"] = input.clientMutationId
             if let shape = input.heldShape {
-                let fit = input.kind == "highlighter" ? shape.inkPayload : shape.payload
-                object["kind"] = input.kind == "highlighter" ? "highlighter" : fit["kind"]
-                object["data"] = fit["data"]
-                if input.kind != "highlighter" { object["style"] = shape.shapeStyle(object["style"] as? [String: Any] ?? [:]) }
+                let fit = shape.correction(kind: input.kind, style: object["style"] as? [String: Any] ?? [:])
+                object["kind"] = fit.kind; object["data"] = fit.data; object["style"] = fit.style
             }
             pendingRows[input.clientMutationId] = try? drawingSnapshots.makeRow(object, pageCount: document.pageCount,
                 previous: pendingRows[input.clientMutationId])

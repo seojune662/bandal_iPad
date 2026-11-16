@@ -1505,7 +1505,8 @@ final class NativePDFWorkspaceModel {
     private func erasedPieces(_ row: [String: Any], _ pieces: [[[String: Any]]]) -> [[String: Any]] {
         pieces.map { piece in
             var value = row, data = row["data"] as? [String: Any] ?? [:]
-            data["points"] = piece; value["data"] = data; value.removeValue(forKey: "nativePath")
+            // A cut shape is handwriting again: its pieces no longer trace the figure.
+            data["points"] = piece; data.removeValue(forKey: "shape"); value["data"] = data; value.removeValue(forKey: "nativePath")
             return value
         }
     }

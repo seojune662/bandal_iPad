@@ -195,47 +195,94 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     static let holdSnapRadius: Double = 3 // screen points, stable across PDF zoom
     private var holdTimer: Timer?
     private var holdAnchor: NativePDFPoint?
+    /// Where `holdAnchor` sits in `measured`: the samples after it are the pause, not the stroke.
+    private var holdAnchorIndex = 0
     private(set) var heldShape: NativePDFHeldShape?
+    /// The figure as recognized, where the pen was then and the stroke's own width. Moving on, the pen reshapes
+    /// the figure from these, so the shape never drifts with each move.
+    private var heldFigure: (figure: NativePDFShapeFigure, pen: CGPoint, width: Double)?
+    /// The samples drawn before the shape appeared: what one undo gives back as handwriting.
+    private var heldRawCount: Int?
+    private var heldSnapped = false
+    /// The tip trembles while it rests; the shape follows only once the pen really moves.
+    private var heldAdjusting = false
     private var holdSnap: Bool { heldShape != nil }
     private func updateHoldSnap(from start: Int) {
         guard strokeTool.drawAndHold, ["pen", "highlighter"].contains(strokeTool.name), let mapper else { return }
+        // Once a shape appeared, the pen sizes and turns it until lift instead of writing again.
+        if heldFigure != nil { adjustHeldShape(); return }
         func screenPoint(_ point: NativePDFPoint) -> CGPoint {
             let local = mapper.canvasPoint(InkPoint(x: point.x, y: point.y, p: point.p))
             return window.map { convert(local, to: $0) } ?? local
         }
         var moved = holdAnchor == nil
-        for point in measured.dropFirst(start) {
+        for (index, point) in measured.enumerated().dropFirst(start) {
             if let anchor = holdAnchor {
                 let a = screenPoint(anchor), b = screenPoint(point)
                 if hypot(a.x - b.x, a.y - b.y) <= Self.holdSnapRadius { continue }
             }
-            holdAnchor = point; moved = true
+            holdAnchor = point; holdAnchorIndex = index; moved = true
         }
         guard moved else { return }
-        if heldShape != nil { heldShape = nil; previewGeometry.reset() }
         holdTimer?.invalidate()
         let timer = Timer(timeInterval: Self.holdSnapDelay, repeats: false) { [weak self] _ in
             // This timer is installed exclusively on RunLoop.main below.
-            MainActor.assumeIsolated {
-                guard let self, self.active != nil, self.strokeTool.drawAndHold,
-                      let currentMapper = self.mapper else { return }
-                guard let fit = NativePDFShapeRecognition.recognize(self.measured,
-                    aspect: currentMapper.geometry.height / currentMapper.geometry.width) else {
-                    self.onDiagnostic?("shape.hold.unrecognized.samples.\(self.measured.count)")
-                    return
-                }
-                self.heldShape = fit; self.predicted = []; self.previewGeometry.reset()
-                self.schedulePreview(); self.renderPreview()
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                self.onDiagnostic?("shape.hold.preview.\(fit.kind)")
-            }
+            MainActor.assumeIsolated { self?.recognizeHeldShape() }
         }
         holdTimer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
+    private func recognizeHeldShape() {
+        guard active != nil, strokeTool.drawAndHold, heldFigure == nil, let mapper, let last = measured.last else { return }
+        let aspect = mapper.geometry.height / mapper.geometry.width
+        guard let figure = NativePDFShapeRecognition.recognize(measured, aspect: aspect, screenScale: screenPointsPerPageWidth(mapper)) else {
+            onDiagnostic?("shape.hold.unrecognized.samples.\(measured.count)")
+            return
+        }
+        // The shape is as thick as the stroke the hand just drew, not as the tool's nominal width.
+        let width = NativePDFHeldShape.measuredWidth(points: Array(measured.prefix(holdAnchorIndex + 1)), style: strokeTool.style,
+            inkVersion: strokeInkVersion, highlighter: strokeTool.name == "highlighter", aspect: aspect)
+        heldFigure = (figure, CGPoint(x: last.x, y: last.y * aspect), width)
+        heldRawCount = measured.count; heldSnapped = false; heldAdjusting = false
+        heldShape = NativePDFHeldShape(figure.keptOnPage(aspect: aspect), width: width, aspect: aspect)
+        predicted = []; previewGeometry.reset()
+        schedulePreview(); renderPreview()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        onDiagnostic?("shape.hold.preview.\(figure.name)")
+    }
+    /// The pen, still down after the shape appeared, sizes and turns it: a line keeps its start and points to the
+    /// pen; a closed figure keeps its centre, grows with the pen's distance from it and turns with its direction.
+    private func adjustHeldShape() {
+        guard let held = heldFigure, let mapper, let last = measured.last else { return }
+        let aspect = mapper.geometry.height / mapper.geometry.width
+        if !heldAdjusting {
+            let scale = screenPointsPerPageWidth(mapper)
+            guard hypot(last.x - held.pen.x, last.y * aspect - held.pen.y) * scale > Self.holdSnapRadius else { return }
+            heldAdjusting = true
+        }
+        let adjusted = held.figure.adjusted(from: held.pen, to: CGPoint(x: last.x, y: last.y * aspect),
+                                            minimumSize: 8 / screenPointsPerPageWidth(mapper))
+        let next = NativePDFHeldShape(adjusted.figure.keptOnPage(aspect: aspect), width: held.width, aspect: aspect)
+        if adjusted.snapped, !heldSnapped { UISelectionFeedbackGenerator().selectionChanged() }
+        heldSnapped = adjusted.snapped
+        guard next != heldShape else { return }
+        heldShape = next
+    }
+    /// Screen points across one page width, so recognition sizes stay what the user sees at any zoom.
+    private func screenPointsPerPageWidth(_ mapper: InkCoordinateMapper) -> Double {
+        let a = mapper.canvasPoint(InkPoint(x: 0, y: 0, p: 0.5)), b = mapper.canvasPoint(InkPoint(x: 1, y: 0, p: 0.5))
+        guard let window else { return max(1, Double(hypot(b.x - a.x, b.y - a.y))) }
+        let wa = convert(a, to: window), wb = convert(b, to: window)
+        return max(1, Double(hypot(wb.x - wa.x, wb.y - wa.y)))
+    }
     private func resetHoldSnap() {
-        holdTimer?.invalidate(); holdTimer = nil; holdAnchor = nil; heldShape = nil
+        holdTimer?.invalidate(); holdTimer = nil; holdAnchor = nil; holdAnchorIndex = 0
+        heldShape = nil; heldFigure = nil; heldSnapped = false; heldAdjusting = false
         previewGeometry.reset()
+    }
+    /// The measured stroke saved under a shape: without the pen's travel after the shape appeared.
+    private var measuredSource: [NativePDFPoint] {
+        heldRawCount.map { Array(measured.prefix($0)) } ?? measured
     }
     private func previewPoints(_ pending: NativePDFCompletedStroke?) -> [NativePDFPoint] {
         if let pending { return pending.heldShape?.points ?? pending.points }
@@ -764,7 +811,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         contactTimings = contactTimings.filter { $0.key >= inputSequence &- min(inputSequence, 32) }
         onInputOwnership?(true)
         measured = []; redrawLassoPreview(); predicted = []; estimated = [:]; ending = false
-        resetHoldSnap()
+        resetHoldSnap(); heldRawCount = nil
         nativeEraseContact = tool.name == "eraser" && !tool.partialErase && nativeErasingEnabled && prepareRetainedScene()
         if nativeEraseContact {
             erasingTargets = []; erasingKeys = []; eraserPreviousPoint = nil; onEraseBegin?()
@@ -1128,10 +1175,11 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         guard !measured.isEmpty else { finishMeasuredStroke(); return }
         let id = UUID().uuidString
         holdTimer?.invalidate(); holdTimer = nil
-        let stroke = NativePDFCompletedStroke(mutationID: id, kind: strokeTool.name == "pen" ? "ink" : "highlighter", points: measured, style: strokeTool.style, inkVersion: strokeInkVersion, holdSnap: holdSnap, heldShape: heldShape)
+        let source = measuredSource
+        let stroke = NativePDFCompletedStroke(mutationID: id, kind: strokeTool.name == "pen" ? "ink" : "highlighter", points: source, style: strokeTool.style, inkVersion: strokeInkVersion, holdSnap: holdSnap, heldShape: heldShape)
         // Move each unresolved sample's original basis unchanged. A contact
         // can contain measured samples on both sides of a page movement.
-        let entry = EstimatedCompletion(stroke: stroke, indices: estimated)
+        let entry = EstimatedCompletion(stroke: stroke, indices: estimated.filter { $0.value.index < source.count })
         do { try estimatedCompletions.append(entry, id: id) }
         catch { journalBlocked = true; onFailure?(error); return }
         active = nil; measured = []; redrawLassoPreview(); predicted = []; estimated = [:]; onInputOwnership?(false)
@@ -1507,7 +1555,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
             markContactEnded(); updateLaser(); endLaserContact()
             if ["pen", "highlighter"].contains(strokeTool.name), !measured.isEmpty {
                 try completionBuffer.retain(.init(mutationID: UUID().uuidString,
-                    kind: strokeTool.name == "pen" ? "ink" : "highlighter", points: measured, style: strokeTool.style, inkVersion: strokeInkVersion, holdSnap: holdSnap, heldShape: heldShape))
+                    kind: strokeTool.name == "pen" ? "ink" : "highlighter", points: measuredSource, style: strokeTool.style, inkVersion: strokeInkVersion, holdSnap: holdSnap, heldShape: heldShape))
             } else if nativeEraseContact {
                 if !cancelObjectEdit, !erasingTargets.isEmpty {
                     guard let onErase else { throw NativePDFError.invalid("지우개 저장 연결을 확인해 주세요.") }
