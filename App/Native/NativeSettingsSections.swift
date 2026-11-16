@@ -167,6 +167,7 @@ struct NativeSettingsSections: View {
     @AppStorage(NativeTabGesturePreferences.enabledKey) private var tabGestureEnabled = true
     @AppStorage(NativeTabGesturePreferences.openKindKey) private var tabGestureKind = NativeTabGesturePreferences.choose
     @State private var pickingGestureKind = false
+    @AppStorage(NativeFirstUseTip.offKey) private var tipsOff = false
     @State private var pickingLead = false
     @State private var pickingLocale = false
     @Environment(\.locale) private var locale
@@ -254,7 +255,17 @@ struct NativeSettingsSections: View {
     }
     /// 일반 › 더 보기: what the design's 새 문서 card leaves out.
     private var generalExtra: some View {
-        tabGroup
+        VStack(alignment: .leading, spacing: 28) {
+            tabGroup
+            NativeSettingsGroup(title: "사용 안내") {
+                Button { NotificationCenter.default.post(name: NativeGuideGate.openTour, object: nil) } label: {
+                    NativeSettingsRow(title: "반달 잘 쓰는 법", note: "공부 흐름으로 보는 짧은 예시") { NativeSettingsValue() }
+                }.buttonStyle(.plain).accessibilityIdentifier("native-settings-guide-tour")
+                NativeSettingsToggle(title: "처음 쓸 때 팁 보기", note: "PDF, 올가미, AI를 처음 쓸 때 한 줄씩 알려 줘요",
+                                     isOn: Binding(get: { !tipsOff }, set: { NativeFirstUseTip.setEnabled($0); tipsOff = !$0 }))
+                    .accessibilityIdentifier("native-settings-guide-tips")
+            }
+        }
     }
     private var tabGroup: some View {
         NativeSettingsGroup(title: "탭", description: tabGestureEnabled ? "켜 두면 반달의 노트와 글상자에서는 세 손가락 복사·붙여넣기·실행 취소 대신 이 동작을 써요. 단축키와 편집 메뉴는 그대로예요." : "") {

@@ -55,6 +55,12 @@ struct NativeWorkspaceView: View {
     @State private var closedTab: NativeClosedTab?
     @State private var closedTabNotice: String?
     @State private var tabGestureNotice: String?
+    /// 반달 잘 쓰는 법 or the new-feature card, on screen.
+    @State private var guideCard: NativeGuideGate.Card?
+    /// One of them is waiting for the workspace to be quiet; first-use tips wait for it.
+    @State private var guideDue = false
+    @State private var onboardedThisLaunch = false
+    @State private var tip: NativeFirstUseTip?
     @State private var workspaceSettings: [String: Any] = [:]
     @State private var busy = false
     @State private var showBusy = false
@@ -445,7 +451,7 @@ struct NativeWorkspaceView: View {
     }
 
     var body: some View {
-        workspaceChrome
+        guidedChrome
         .bandalToast(Binding(get: { store.errorMessage }, set: { store.errorMessage = $0 }))
         .bandalToast($shareNotice, symbol: "checkmark.circle.fill")
         .bandalToast($tabGestureNotice)
@@ -547,6 +553,70 @@ struct NativeWorkspaceView: View {
             }
         }
         .onOpenURL(perform: receiveURL)
+    }
+
+    /// The workspace with what shows once: 반달 잘 쓰는 법, the new-feature card and the first-use tips.
+    /// Its own expression: `body` is already near what the type checker gets through in a Release archive.
+    private var guidedChrome: some View {
+        workspaceChrome
+            .overlay(alignment: .bottom) { tipLayer }
+            .overlay { guideLayer }
+            .onChange(of: onboarding) { _, stage in if stage == .showing { onboardedThisLaunch = true } }
+            .task(id: restored && onboarding == .closed) { await presentGuideWhenQuiet() }
+            .onReceive(NotificationCenter.default.publisher(for: NativeGuideGate.openTour)) { _ in tip = nil; withAnimation { guideCard = .tour } }
+            .onChange(of: navigation.activeID) { _, _ in
+                let kind = navigation.active?.kind
+                if kind == "pdf" { offerTip(.pdf) } else if kind == "assistant" { offerTip(.ai) }
+            }
+            .onChange(of: aiRailOpen) { _, open in if open { offerTip(.ai) } }
+            .onChange(of: pdfPalette.entries.values.contains { $0.model.tool == "lasso" }) { _, lasso in if lasso { offerTip(.lasso) } }
+    }
+    @ViewBuilder private var guideLayer: some View {
+        switch guideCard {
+        case .intro:
+            NativeGuideBackdrop(width: min(460, windowWidth - 32), identifier: "native-tab-gesture-intro", dismiss: { closeGuide(.intro) }) {
+                NativeTabGestureIntro(openSettings: { closeGuide(.intro); openSettings("tab-gestures") }, close: { closeGuide(.intro) })
+            }
+        case .tour:
+            NativeGuideBackdrop(width: min(520, windowWidth - 32), identifier: "native-guide-tour", dismiss: { closeGuide(.tour) }) {
+                NativeUsageTour(close: { closeGuide(.tour) })
+            }
+        case nil: EmptyView()
+        }
+    }
+    @ViewBuilder private var tipLayer: some View {
+        if let tip {
+            NativeFirstUseTipCard(tip: tip, dismiss: { withAnimation { self.tip = nil } }, stopAll: { NativeFirstUseTip.stopAll(); withAnimation { self.tip = nil } })
+                .padding(.bottom, 76).padding(.horizontal, 16)
+                .task(id: tip) {
+                    try? await Task.sleep(for: .seconds(8))
+                    if self.tip == tip { withAnimation { self.tip = nil } }
+                }
+        }
+    }
+    /// Waits until nothing lies over the workspace for a moment, then shows what is due (NativeGuideGate).
+    private func presentGuideWhenQuiet() async {
+        guard restored, onboarding == .closed, guideCard == nil, let due = NativeGuideGate.due(onboardedThisLaunch: onboardedThisLaunch) else { return }
+        guideDue = true
+        defer { guideDue = false }
+        var quiet = 0
+        while !Task.isCancelled, guideCard == nil {
+            try? await Task.sleep(for: .milliseconds(500))
+            let idle = NativeGuideGate.idle(restored: restored, onboardingClosed: onboarding == .closed, workspaceShown: showsWorkspace && !windowsOverviewOpen,
+                                            overlay: newNoteGroupID != nil || boardOverlayOpen || annotation.request != nil || busy,
+                                            presented: NativeGuideGate.somethingPresented)
+            quiet = idle ? quiet + 1 : 0
+            if quiet >= 3, !Task.isCancelled { tip = nil; withAnimation { guideCard = due }; return }
+        }
+    }
+    private func closeGuide(_ card: NativeGuideGate.Card) {
+        NativeGuideGate.markSeen(card)
+        withAnimation { guideCard = nil }
+    }
+    private func offerTip(_ candidate: NativeFirstUseTip) {
+        guard tip == nil, guideCard == nil, !guideDue, onboarding == .closed, candidate.isDue() else { return }
+        candidate.markSeen()
+        withAnimation { tip = candidate }
     }
 
     /// A file handed to the app is imported. A web address is a universal link, never a file, and
@@ -1290,7 +1360,7 @@ struct NativeWorkspaceView: View {
     }
     /// A drawer, sheet or first-run screen lies over the panes: three fingers there are not on a tab.
     private func tabGestureBlocked(width: CGFloat) -> Bool {
-        newNoteGroupID != nil || windowsOverviewOpen || boardOverlayOpen || annotation.request != nil || onboarding != .closed
+        newNoteGroupID != nil || windowsOverviewOpen || boardOverlayOpen || annotation.request != nil || onboarding != .closed || guideCard != nil
             || compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(width)
             || compactMaterialsRail && !NativeWorkspaceChromeLayout.fitsRight(width)
             || compactAIRail && !NativeWorkspaceChromeLayout.fitsAI(width)

@@ -1,6 +1,6 @@
 import XCTest
 
-/// The three-finger tab gesture after it is recognized. XCUITest and the
+/// The three-finger tab gesture after it is recognized, and the cards that introduce it. XCUITest and the
 /// simulator cannot put three fingers down: `--native-tab-gesture-fixture` gives each pane two buttons that
 /// hand the dock what the recognizer would have decided (`native-tab-gesture-fixture-close-<pane>` / `-open-<pane>`).
 /// The recognizer's own rules are unit tests (NativeTabGestureTests).
@@ -80,6 +80,93 @@ final class NativeTabGestureUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["탭을 닫았어요"].exists)
     }
 
+    @MainActor
+    func testNewFeatureCardShowsOnceAndOpensItsSettings() throws {
+        let app = launch([NativeGuideFlags.intro])
+        let card = app.descendants(matching: .any)["native-tab-gesture-intro"]
+        XCTAssertTrue(card.waitForExistence(timeout: 25), "The card waits for a quiet workspace, then shows: \(app.debugDescription)")
+        XCTAssertTrue(app.staticTexts["손가락 3개로 탭 열고 닫기"].exists)
+        XCTAssertTrue(app.staticTexts["세 손가락을 모으면 탭이 닫혀요"].exists)
+        XCTAssertTrue(app.staticTexts["모았다가 펴면 새 탭을 열어요"].exists)
+        XCTAssertTrue(app.buttons["native-tab-gesture-intro-ok"].exists)
+        capture("New feature: three-finger tabs")
+        app.buttons["native-tab-gesture-intro-settings"].tap()
+        XCTAssertTrue(card.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.switches["native-settings-tab-gesture"].waitForExistence(timeout: 10), "설정에서 열 탭 고르기 opens 일반 › 더 보기: \(app.debugDescription)")
+        XCTAssertTrue(app.buttons["native-settings-tab-gesture-open"].exists)
+
+        app.terminate()
+        app.launchArguments = ["--native-ui-testing", NativeGuideFlags.intro]
+        app.launch()
+        XCTAssertTrue(app.buttons["native-section-settings"].waitForExistence(timeout: 25))
+        XCTAssertFalse(card.waitForExistence(timeout: 6), "Once only")
+    }
+
+    @MainActor
+    func testTourWalksThroughItsPagesAndOpensAgainFromHelpAndSettings() throws {
+        let app = launch([NativeGuideFlags.tour])
+        let tour = app.descendants(matching: .any)["native-guide-tour"]
+        XCTAssertTrue(tour.waitForExistence(timeout: 25), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["반달 잘 쓰는 법"].exists)
+        var pages: [String] = []
+        for _ in 0..<8 {
+            let page = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'native-guide-tour-page-'")).firstMatch
+            XCTAssertTrue(page.waitForExistence(timeout: 5), app.debugDescription)
+            pages.append(String(page.identifier.dropFirst("native-guide-tour-page-".count)))
+            capture("Tour · " + pages.last!)
+            if app.buttons["native-guide-tour-done"].exists { app.buttons["native-guide-tour-done"].tap(); break }
+            app.buttons["native-guide-tour-next"].tap()
+        }
+        XCTAssertEqual(Array(pages.prefix(5)), ["pdf", "lookup", "ai", "split", "school"])
+        XCTAssertTrue((4...6).contains(pages.count), "\(pages)")
+        XCTAssertTrue(tour.waitForNonExistence(timeout: 5))
+
+        // 도움말 › 반달 잘 쓰는 법.
+        app.buttons["native-section-account"].tap()
+        XCTAssertTrue(app.buttons["native-account-help"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["native-account-help"].tap()
+        XCTAssertTrue(app.buttons["native-help-tour"].waitForExistence(timeout: 3), app.debugDescription)
+        app.buttons["native-help-tour"].tap()
+        XCTAssertTrue(tour.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["native-guide-tour-page-pdf"].exists, "It opens at its first page")
+        app.buttons["native-guide-tour-next"].tap()
+        XCTAssertTrue(app.buttons["native-guide-tour-back"].waitForExistence(timeout: 3))
+        app.buttons["native-guide-tour-skip"].tap()
+        XCTAssertTrue(tour.waitForNonExistence(timeout: 5))
+
+        // 설정 › 일반 › 더 보기 › 반달 잘 쓰는 법.
+        openGestureSettings(app)
+        app.buttons["native-settings-guide-tour"].tap()
+        XCTAssertTrue(tour.waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["native-guide-tour-skip"].tap()
+        XCTAssertTrue(tour.waitForNonExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testFirstUseTipShowsOnceAndStopAllEndsTips() throws {
+        let app = launch([NativeGuideFlags.tips])
+        createCourse("Tips Course", app: app)
+        openFromPlus("chat", app: app)
+        let tip = app.descendants(matching: .any)["native-guide-tip-ai"]
+        XCTAssertTrue(tip.waitForExistence(timeout: 10), "The first AI tab brings the AI tip: \(app.debugDescription)")
+        capture("First-use tip: AI")
+        app.buttons["native-guide-tip-stop"].tap()
+        XCTAssertTrue(tip.waitForNonExistence(timeout: 5))
+        openGestureSettings(app)
+        let tips = app.switches["native-settings-guide-tips"]
+        XCTAssertTrue(tips.waitForExistence(timeout: 5))
+        XCTAssertEqual(tips.value as? String, "0", "팁 그만 보기 turns the setting off")
+        tips.tap()
+        XCTAssertTrue(waitValue(tips, "1"))
+        closeSettings(app)
+        openFromPlus("chat", app: app)
+        XCTAssertTrue(tip.waitForExistence(timeout: 10), "On again: each tip once more")
+        app.buttons["native-guide-tip-ok"].tap()
+        XCTAssertTrue(tip.waitForNonExistence(timeout: 5))
+        openFromPlus("chat", app: app)
+        XCTAssertFalse(tip.waitForExistence(timeout: 4), "Once only")
+    }
+
     // MARK: Helpers
 
     @MainActor private func launch(_ extra: [String]) -> XCUIApplication {
@@ -151,4 +238,10 @@ final class NativeTabGestureUITests: XCTestCase {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
+}
+
+private enum NativeGuideFlags {
+    static let intro = "--native-guide-intro"
+    static let tour = "--native-guide-tour"
+    static let tips = "--native-guide-tips"
 }
