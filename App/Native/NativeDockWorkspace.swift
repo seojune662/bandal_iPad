@@ -60,12 +60,20 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     var select: ((String, String) -> Void)? = nil
     var chromeMode: NativeWorkspaceChromeMode = .all
     var controlInset: CGFloat = 0
+    /// A three-finger pinch over a pane: close its chosen tab (with 되돌리기). nil closes it as ✕ does.
+    var closeTabByGesture: ((String) -> Void)? = nil
+    /// Something drawn over the panes (a drawer, a sheet) has the fingers: no three-finger gesture starts.
+    var tabGestureBlocked = false
     @StateObject private var drag = NativeDockDragSession()
     @Environment(\.nativeDecor) private var decor
     @Environment(\.colorScheme) private var scheme
     @State private var maximizedGroupID: String?
     @State private var newTabGroupID: String?
     @State private var tabListGroupID: String?
+    /// The pane three fingers are on, and what lifting them would do.
+    @State private var tabGesturePreview: TabGesturePreview?
+    private struct TabGesturePreview: Equatable { let groupID: String; let decision: NativeTabGestureDecision? }
+    @AppStorage(NativeTabGesturePreferences.enabledKey) private var tabGestureEnabled = true
     @AppStorage("native.fontScale") private var fontScale = 1.0
     @AppStorage("native.density") private var density = "comfortable"
 
@@ -97,6 +105,14 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     NativeDockTouchFocus(panes: geometry.panes.count > 1 && !covered ? geometry.panes.map { ($0.group.id, $0.frame) } : []) { id in
                         if navigation.layout?.focusedGroupID != id { focus(id) }
                     }
+                    // Three fingers pinched over a pane close its tab; spread, they open a new one (NativeTabGesture).
+                    NativeTabGestureProbe(panes: tabGestureEnabled ? geometry.panes.map { ($0.group.id, $0.frame) } : [],
+                        allowed: { tabGestureAllowed },
+                        preview: { id, decision in
+                            let next = id.map { TabGesturePreview(groupID: $0, decision: decision) }
+                            if next != tabGesturePreview { tabGesturePreview = next }
+                        },
+                        decide: { decision, id in handleTabGesture(decision, groupID: id) })
                     // Each pane's paper: a card on the glass with its chosen tab joined to it like a folder's tab.
                     ForEach(geometry.panes) { pane in
                         paneSurface(pane, metrics: metrics, focused: layout.groups.count > 1 && pane.group.id == layout.focusedGroupID,
@@ -138,6 +154,21 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                             .frame(width: frame.width, height: frame.height)
                             .position(x: frame.midX, y: frame.midY)
                     }
+                    ForEach(geometry.panes.filter { $0.group.id == tabGesturePreview?.groupID }) { pane in
+                        let frame = isHome(pane.group) ? contentFrame(pane, metrics) : Self.cardFrame(contentFrame(pane, metrics))
+                        NativeTabGesturePreview(decision: tabGesturePreview?.decision)
+                            .frame(width: frame.width, height: frame.height)
+                            .position(x: frame.midX, y: frame.midY)
+                    }
+                    #if DEBUG
+                    if NativeTabGestureFixture.isEnabled {
+                        ForEach(geometry.panes) { pane in
+                            let frame = contentFrame(pane, metrics)
+                            NativeTabGestureFixture.Buttons(index: layout.groups.firstIndex { $0.id == pane.group.id } ?? 0) { handleTabGesture($0, groupID: pane.group.id) }
+                                .position(x: frame.minX + 80, y: frame.midY)
+                        }
+                    }
+                    #endif
                     ForEach(geometry.dividers) { divider in
                         NativeDockDivider(divider: divider, wide: metrics == .columns,
                             topInset: metrics == .columns && chromeMode.showsTabs ? NativeDockHeaderMetrics.height(for: divider.frame, controlsHeight: metrics.total, topEdge: Self.topEdge) : 0,
@@ -666,6 +697,25 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         }.padding(.horizontal, 12).background(NativeGlass.panel)
     }
     private func focus(_ id: String) { navigation.focus(id); persist() }
+    /// Whether three fingers may start a gesture now. VoiceOver and Switch Control have gestures of their own.
+    private var tabGestureAllowed: Bool {
+        tabGestureEnabled && !covered && !tabGestureBlocked && drag.transfer == nil && newTabGroupID == nil && tabListGroupID == nil
+            && !UIAccessibility.isVoiceOverRunning && !UIAccessibility.isSwitchControlRunning
+    }
+    /// After the fingers lift, as ✕ and ＋ would: a pinch closes the pane's chosen tab, a spread opens the ＋ menu
+    /// there, or the kind chosen in 설정 straight away. Where ＋ can do nothing (no folder open), neither can this.
+    private func handleTabGesture(_ decision: NativeTabGestureDecision, groupID: String) {
+        guard tabGestureEnabled, navigation.groups.contains(where: { $0.id == groupID }) else { return }
+        NativeInputTrace.record("dock.tabGesture", decision == .close ? "close" : "open")
+        switch decision {
+        case .close:
+            guard let id = navigation.groups.first(where: { $0.id == groupID })?.activeID else { return }
+            if let closeTabByGesture { closeTabByGesture(groupID) } else { closeDocuments([id]) }
+        case .open:
+            if navigation.activeCourseID != nil, let action = NativeTabGesturePreferences.openAction { focus(groupID); openNewTab(action, groupID) }
+            else { focus(groupID); newTabGroupID = groupID }
+        }
+    }
     private func drop(_ groupID: String, direction: NativeDockDirection = .within, index: Int? = nil) -> NativeDockDropDelegate {
         NativeDockDropDelegate(drag: drag, target: .init(groupID: groupID, direction: direction, index: index), navigation: navigation, perform: perform)
     }

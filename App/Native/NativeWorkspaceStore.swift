@@ -169,6 +169,8 @@ final class NativeWorkspaceStore {
                         NativeDecor.paletteKey, NativeDecor.intensityKey] { UserDefaults.standard.removeObject(forKey: key) }
             // AI's 표시 방식 (사이드바 · 플로팅): every fixture starts in the sidebar.
             UserDefaults.standard.removeObject(forKey: NativeAssistantPresentation.key)
+            // The three-finger gesture's settings: back to a first launch.
+            for key in [NativeTabGesturePreferences.enabledKey, NativeTabGesturePreferences.openKindKey] { UserDefaults.standard.removeObject(forKey: key) }
             // The palette's tool options and slots are kept per root in the defaults, outside the reset folder.
             UserDefaults.standard.removeObject(forKey: NativePDFPalettePreferences.key(root: folder, documentsRoot: documents))
             // Browser logins live in the Keychain, outside the reset folder.
