@@ -36,8 +36,8 @@ import SwiftUI
 /// Where the window draws a PDF pane's palette: above the side panels, centred on the page area.
 /// A pane registers its page area here; with one pane the window floats the palette, otherwise each pane keeps its own.
 @MainActor @Observable final class NativePDFPaletteHost {
-    /// `top`: the palette's distance from the top of the page area.
-    struct Entry { let model: NativePDFWorkspaceModel; var frame: CGRect; var top = NativePDFFloatingPalette.top }
+    /// `top`: the palette's distance from the top of the page area; `trailing`: what it leaves free at the area's right.
+    struct Entry { let model: NativePDFWorkspaceModel; var frame: CGRect; var top = NativePDFFloatingPalette.top; var trailing = NativePDFFloatingPalette.trailingReserve }
     var entries: [String: Entry] = [:]
     /// A drawer covers the document, or another pane sits beside it: the palette stays inside its pane.
     var suspended = false
@@ -58,8 +58,8 @@ struct NativePDFPaletteLayer: View {
                 // Where it sits in that room is the palette's own layout (`NativePDFPalettePlacement`): nothing
                 // here waits for the pill to report its size.
                 let left = entry.frame.minX - origin.x + NativePDFFloatingPalette.leadingReserve
-                let span = max(0, entry.frame.width - NativePDFFloatingPalette.leadingReserve - NativePDFFloatingPalette.trailingReserve)
-                NativePDFFloatingPalette(model: entry.model, bias: (NativePDFFloatingPalette.trailingReserve - NativePDFFloatingPalette.leadingReserve) / 2)
+                let span = max(0, entry.frame.width - NativePDFFloatingPalette.leadingReserve - entry.trailing)
+                NativePDFFloatingPalette(model: entry.model, bias: (entry.trailing - NativePDFFloatingPalette.leadingReserve) / 2)
                     .frame(width: span)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .offset(x: left, y: entry.frame.minY - origin.y + entry.top)
@@ -90,6 +90,13 @@ struct NativePDFFloatingPalette: View {
     /// The first stage whose row fits `width` (the pill's whole width), or nil when none does.
     static func stage(fitting width: CGFloat, slots: Int) -> (tools: CGFloat, colors: Int?)? {
         stages.first { NativePDFPaletteQuickControls.width(tools: $0.tools, colors: $0.colors, slots: slots) + inset * 2 <= width }
+    }
+    /// Whether the palette of a page area `pageWidth` wide can sit in its row beside the window buttons (which take
+    /// `controls` from the area's right) and still show the same row as with the whole width.
+    static func fitsBeside(controls: CGFloat, pageWidth: CGFloat, slots: Int) -> Bool {
+        let whole = pageWidth - leadingReserve - trailingReserve
+        guard controls > 0, let wide = stage(fitting: whole, slots: slots), let narrow = stage(fitting: whole - controls, slots: slots) else { return controls <= 0 }
+        return wide == narrow
     }
     var body: some View {
         // The row takes its shape from the room it is given, read here before the pill is built: a pill asked
@@ -122,6 +129,7 @@ struct NativePDFFloatingPalette: View {
                 }.padding(.horizontal, Self.inset)
             }
         }.padding(.vertical, 5).bandalGlass(in: Capsule())
+            .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-palette")
     }
     private var mini: some View {
         Button { collapsed = false } label: {

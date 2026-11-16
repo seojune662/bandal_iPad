@@ -15,8 +15,19 @@ struct NativePDFWorkspace: View {
     @State private var bodyFrame = CGRect.zero
     private let tabID: String
     private var showsPalette: Bool { visible && model.assistantAnnotation == nil && (chromeMode == .toolsHidden || model.toolsExpanded) }
-    /// Where the palette starts. With the tabs hidden the window buttons sit over this pane's corner: start below them.
-    private var paletteTop: CGFloat { NativePDFFloatingPalette.top + (controlInset > 0 ? 44 : 0) }
+    /// With the tabs hidden the window buttons sit over this pane's top right corner (`controlInset` > 0). The palette
+    /// keeps to their left while it fits there as it would without them; when they would cost it tools or colours, it
+    /// goes under them instead, and so does the band of bars with no palette above it.
+    private var paletteBesideControls: Bool {
+        guard controlInset > 0, showsPalette else { return false }
+        if paletteCollapsed { return true }
+        let slots = (model.usesColorSlots ? model.colorSlots : model.palette.colors(for: model.penKind)).count
+        return NativePDFFloatingPalette.fitsBeside(controls: controlInset, pageWidth: bodyFrame.width, slots: slots)
+    }
+    /// Where the palette starts.
+    private var paletteTop: CGFloat { NativePDFFloatingPalette.top + (controlInset > 0 && !paletteBesideControls ? NativeWorkspaceControlAvoidance.editorDrop + topInset : 0) }
+    /// What the palette leaves free at the page area's right: its margin, and the buttons' room when it sits beside them.
+    private var paletteTrailing: CGFloat { NativePDFFloatingPalette.trailingReserve + (paletteBesideControls ? controlInset : 0) }
     /// The band under the palette: the thumbnails button at its right end, the recording bar in its middle.
     private var belowPalette: CGFloat { showsPalette ? paletteTop + NativePDFFloatingPalette.height + 8 : paletteTop }
     @AppStorage("native.pdf.paletteCollapsed") private var paletteCollapsed = false
@@ -32,8 +43,8 @@ struct NativePDFWorkspace: View {
     private func registerPalette() {
         guard let paletteHost else { return }
         if showsPalette, bodyFrame.width > 0 {
-            if let entry = paletteHost.entries[tabID], entry.model === model, entry.frame == bodyFrame, entry.top == paletteTop { return }
-            paletteHost.entries[tabID] = .init(model: model, frame: bodyFrame, top: paletteTop)
+            if let entry = paletteHost.entries[tabID], entry.model === model, entry.frame == bodyFrame, entry.top == paletteTop, entry.trailing == paletteTrailing { return }
+            paletteHost.entries[tabID] = .init(model: model, frame: bodyFrame, top: paletteTop, trailing: paletteTrailing)
         } else if paletteHost.entries[tabID] != nil { paletteHost.entries[tabID] = nil }
     }
 
@@ -90,7 +101,7 @@ struct NativePDFWorkspace: View {
                         .overlay(alignment: .top) {
                             if showsPalette, paletteHost?.floats(tabID) != true {
                                 NativePDFFloatingPalette(model: model)
-                                    .padding(.leading, NativePDFFloatingPalette.leadingReserve).padding(.trailing, NativePDFFloatingPalette.trailingReserve).padding(.top, paletteTop)
+                                    .padding(.leading, NativePDFFloatingPalette.leadingReserve).padding(.trailing, paletteTrailing).padding(.top, paletteTop)
                             }
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bodyFrame = $0; registerPalette() }
@@ -146,6 +157,7 @@ struct NativePDFWorkspace: View {
         .background { if visible { Button("") { model.find() }.keyboardShortcut("f", modifiers: .command).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true) } }
         .onChange(of: showsPalette, initial: true) { _, _ in registerPalette() }
         .onChange(of: paletteTop) { _, _ in registerPalette() }
+        .onChange(of: paletteTrailing) { _, _ in registerPalette() }
         .onDisappear { paletteHost?.entries[tabID] = nil }
         .accessibilityElement(children: .contain).accessibilityIdentifier(visible ? "native-pdf-pane-" + tabID : "")
         // 원문 메모 and 댓글 open over the page; closing keeps the edit (Esc cancels, 실행 취소 undoes).

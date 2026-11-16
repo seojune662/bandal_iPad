@@ -129,12 +129,16 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                     }
                     // Do not nest these in pane chrome: an editor retains identity
                     // when the same document moves to another group or the tree changes.
+                    let controls = NativeWorkspaceWindowControls.frame(dockWidth: proxy.size.width, reserve: controlInset, topEdge: Self.topEdge)
                     ForEach(visibleDocuments(geometry, layout: layout, bounds: bounds, metrics: metrics)) { entry in
                         let card = Self.cardFrame(entry.frame)
+                        // A document whose area runs under the window buttons keeps clear of them, in any mode and layout.
+                        let avoidance = NativeWorkspaceControlAvoidance.resolve(area: entry.frame, controls: controls, mode: chromeMode)
                         content(entry.document)
                             .environment(\.nativeEditorVisible, entry.visible && !covered)
                             .environment(\.nativeWorkspaceChromeMode, chromeMode)
-                            .environment(\.nativeWorkspaceControlInset, !chromeMode.showsTabs && entry.frame.minY <= 16.5 && entry.frame.maxX >= bounds.maxX - 1 ? controlInset : 0)
+                            .environment(\.nativeWorkspaceControlInset, avoidance.trailing)
+                            .environment(\.nativeWorkspaceTopInset, avoidance.extraDrop)
                             .frame(width: card.width, height: card.height)
                             .background {
                                 if Self.retainsEditor(entry.document) {
