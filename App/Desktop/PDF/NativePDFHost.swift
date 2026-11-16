@@ -1469,6 +1469,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             overlay.selectionBox = scene?.selection
             overlay.selectionResizable = scene?.resizable ?? false
             overlay.selectionTextHandles = scene?.textHandles ?? false
+            overlay.selectionHandles = (scene?.handles ?? "corner", scene?.ends ?? [])
             overlay.selectionPath = scene?.selectionPath ?? []
             let pendingInputs = pendingOrder.compactMap { pending[$0] }.filter { $0.page == number }
             if !pendingInputs.isEmpty {
@@ -1663,6 +1664,19 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             scrollView?.zoomScale ?? 0, scrollView?.minimumZoomScale ?? 0, scrollView?.maximumZoomScale ?? 0, pdfView.autoScales ? 1 : 0, workspaceActive ? 1 : 0)
         #if DEBUG
         pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " drawings=\(drawingSnapshots.order.count) pending=\(pending.count) laser=\(laserSession.strokeCount)"
+        // Recognized shapes on the pages in view: name and frame in this view's points, for UI tests.
+        let shapes = overlays.sorted { $0.key < $1.key }.flatMap { _, overlay -> [String] in
+            guard let mapper = overlay.mapper, overlay.window != nil else { return [] }
+            let aspect = mapper.geometry.height / mapper.geometry.width
+            return overlay.objects.compactMap { object -> String? in
+                guard let data = object["data"] as? [String: Any], let figure = NativePDFShapeFigure(data: data, aspect: aspect),
+                      let box = NativePDFEditingGeometry.bounds(object, aspect: aspect) else { return nil }
+                let a = overlay.convert(mapper.canvasPoint(InkPoint(x: box.minX, y: box.minY, p: 0.5)), to: pdfView)
+                let b = overlay.convert(mapper.canvasPoint(InkPoint(x: box.maxX, y: box.maxY, p: 0.5)), to: pdfView)
+                return String(format: "%@:%.0f,%.0f,%.0f,%.0f", figure.name, min(a.x, b.x), min(a.y, b.y), abs(b.x - a.x), abs(b.y - a.y))
+            }
+        }
+        pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " shapes=" + shapes.joined(separator: ";")
         let marks = searchMarks.values.joined()
         pdfView.accessibilityValue = (pdfView.accessibilityValue ?? "") + " searchMarks=\(marks.count) handwritingMarks=\(marks.filter(\.handwriting).count) currentMarks=\(marks.filter(\.current).count)"
         let savedPageCounts = drawingSnapshots.rowsByPage.mapValues(\.count)
@@ -1759,7 +1773,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
            let sourcePage = document.page(at: number - 1) {
             let box = CGRect(x: x, y: y, width: w, height: h)
             let coordinates = NativePDFPageCoordinates(page: sourcePage), aspect = coordinates.height / coordinates.width
-            if box.insetBy(dx: -0.018, dy: -0.018 / aspect).contains(point),
+            if payload["handle"] == nil, box.insetBy(dx: -0.018, dy: -0.018 / aspect).contains(point),
                NativePDFEditingGeometry.corner(at: point, box: box, aspect: aspect, sides: overlay.selectionTextHandles) == nil {
                 selectionDragSource = number; overlay.retainsObjectDrag = true
                 let link = CADisplayLink(target: self, selector: #selector(scrollSelectionDrag))
@@ -1955,6 +1969,9 @@ final class NativePDFEditorScene {
     let selection: [String: Double]?
     let resizable: Bool
     let textHandles: Bool
+    /// NativePDFEditingGeometry.handles: corner, text, corners or ends (with the two ends, page points).
+    let handles: String
+    let ends: [CGPoint]
     /// The lasso outline that follows the selection (normalized page points).
     let selectionPath: [CGPoint]
     var visualTokens: [NativePDFCommittedVisualToken] { entries.map(\.token) }
@@ -1965,6 +1982,11 @@ final class NativePDFEditorScene {
         selection = request["selection"] as? [String: Double]
         resizable = request["resizable"] as? Bool ?? false
         textHandles = request["textHandles"] as? Bool ?? false
+        handles = request["handles"] as? String ?? (request["textHandles"] as? Bool == true ? "text" : "corner")
+        ends = (request["ends"] as? [[String: Double]] ?? []).compactMap { value in
+            guard let x = value["x"], let y = value["y"], x.isFinite, y.isFinite else { return nil }
+            return CGPoint(x: x, y: y)
+        }
         selectionPath = (request["selectionPath"] as? [[String: Double]] ?? []).compactMap { value in
             guard let x = value["x"], let y = value["y"], x.isFinite, y.isFinite else { return nil }
             return CGPoint(x: x, y: y)

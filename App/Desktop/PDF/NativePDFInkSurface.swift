@@ -376,6 +376,38 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     var selectedTextRects: [[String: Double]] = [] { didSet { if selectedTextRects != oldValue { decorations.setNeedsDisplay() } } }
     var selectionResizable = false
     var selectionTextHandles = false
+    /// NativePDFEditingGeometry.handles: "corner", "text", "corners" (one shape) or "ends" (one line, page points).
+    var selectionHandles: (mode: String, ends: [CGPoint]) = ("corner", []) { didSet {
+        if selectionHandles.mode != oldValue.mode || selectionHandles.ends != oldValue.ends { decorations.setNeedsDisplay() }
+    } }
+    /// A handle's dot is 12 pt; a finger or the Pencil takes it anywhere within 22 pt (a 44 pt target).
+    static let handleReach = 22.0
+    private var handleMode: String { selectionTextHandles ? "text" : selectionHandles.mode }
+    /// The handle within reach of a contact at `location` (canvas points), measured on screen.
+    func selectionHandle(at location: CGPoint) -> String? {
+        guard ["select", "lasso"].contains(tool.name), selectionResizable, let mapper, let box = selectionBox,
+              let x = box["x"], let y = box["y"], let width = box["width"], let height = box["height"] else { return nil }
+        let scale = canvasScreenScale
+        return NativePDFEditingGeometry.handlePoints(mode: handleMode, box: CGRect(x: x, y: y, width: width, height: height), ends: selectionHandles.ends)
+            .map { name, point -> (String, Double) in
+                let canvas = mapper.canvasPoint(InkPoint(x: point.x, y: point.y, p: 0.5))
+                return (name, Double(hypot(canvas.x - location.x, canvas.y - location.y)) * scale)
+            }
+            .filter { $0.1 <= Self.handleReach }.min { $0.1 < $1.1 }?.0
+    }
+    /// The recognized shape a finger at `location` (canvas points) is on: its line within 22 screen points.
+    func shapeTarget(at location: CGPoint) -> String? {
+        guard let mapper, !objects.isEmpty else { return nil }
+        let page = mapper.normalized(location, pressure: 0.5)
+        return NativePDFEditingGeometry.shapeHit(CGPoint(x: page.x, y: page.y), rows: objects,
+            aspect: mapper.geometry.height / mapper.geometry.width, tolerance: Self.handleReach / screenPointsPerPageWidth(mapper))
+    }
+    /// Screen points per canvas point.
+    private var canvasScreenScale: Double {
+        guard let window else { return 1 }
+        let a = convert(CGPoint.zero, to: window), b = convert(CGPoint(x: 1, y: 0), to: window)
+        return max(1e-6, Double(hypot(b.x - a.x, b.y - a.y)))
+    }
     var selectionPath: [CGPoint] = [] { didSet { if selectionPath != oldValue { decorations.setNeedsDisplay() } } }
     var isLoading = true
     var imageForObject: (([String: Any]) -> UIImage?)?
@@ -732,6 +764,9 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         guard !isLoading, !journalBlocked, mapper != nil, !isHidden, bounds.contains(point) else { return nil }
         if selectionInputTarget(at: point) != nil,
            event?.allTouches?.filter({ $0.type == .direct }).count == 1 { return self }
+        // A finger on a recognized shape selects it, under the hand and the lasso alike.
+        if ["select", "lasso"].contains(tool.name), event?.allTouches?.filter({ $0.type == .direct }).count == 1,
+           shapeTarget(at: point) != nil { return self }
         // Fingers still navigate empty paper. Explicit selection/text objects
         // can be manipulated by touch, including their visible resize handles.
         if ["select", "text"].contains(tool.name), let mapper,
@@ -748,7 +783,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
               let x = box["x"], let y = box["y"], let width = box["width"], let height = box["height"] else { return nil }
         let a = mapper.canvasPoint(InkPoint(x: x, y: y, p: 0.5)), b = mapper.canvasPoint(InkPoint(x: x + width, y: y + height, p: 0.5))
         let rect = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
-        return rect.insetBy(dx: -12, dy: -12).contains(point) ? self : nil
+        return rect.insetBy(dx: -12, dy: -12).contains(point) || selectionHandle(at: point) != nil ? self : nil
     }
     func beginSelectionGesture(_ touch: UITouch, with event: UIEvent?) -> Bool {
         guard touch.type == .direct, selectionInputTarget(at: touch.location(in: self)) != nil else { return false }
@@ -823,7 +858,14 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
         // Put the first dot on the GPU before completion work. Further
         // coalesced samples share UIKit's normal/low-latency update phases.
         renderPreview()
-        publishPointer("down", points: Array(measured.prefix(1)))
+        var down: [String: Any] = [:]
+        if ["select", "lasso"].contains(strokeTool.name) {
+            let location = touch.preciseLocation(in: self)
+            if let handle = selectionHandle(at: location) { down["handle"] = handle }
+            // A finger (not the Pencil, which may be starting a lasso loop) picks the shape it lands on.
+            else if touch.type == .direct, !allowDirectInk, let shape = shapeTarget(at: location) { down["shape"] = shape }
+        }
+        publishPointer("down", points: Array(measured.prefix(1)), extra: down)
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         moveInput(Set(touches.filter { $0.type != .pencil && $0 !== gestureContact }), with: event)
@@ -1586,7 +1628,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
             journalBlocked = true; schedulePreview(); throw error
         }
     }
-    private func publishPointer(_ phase: String, points: [NativePDFPoint]) {
+    private func publishPointer(_ phase: String, points: [NativePDFPoint], extra: [String: Any] = [:]) {
         // The laser is drawn here and never saved, so the editor never sees it.
         if strokeTool.name == "laser" { return }
         if nativeEraseContact {
@@ -1594,7 +1636,7 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
             return
         }
         guard !["pen", "highlighter"].contains(strokeTool.name), !points.isEmpty else { return }
-        onPointer?(["phase": phase, "points": points.map { ["x": $0.x, "y": $0.y, "p": $0.p] }])
+        onPointer?(["phase": phase, "points": points.map { ["x": $0.x, "y": $0.y, "p": $0.p] }].merging(extra) { current, _ in current })
     }
     static func color(_ name: String) -> UIColor {
         switch name {
@@ -2308,9 +2350,10 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
             context.addPath(outline); context.strokePath(); context.setLineDash(phase: 0, lengths: [])
             context.setLineWidth(1)
             if selectionResizable {
-                // One proportional handle; a text box gets its two width handles instead.
-                (selectionTextHandles ? [CGPoint(x: frame.minX, y: frame.midY), CGPoint(x: frame.maxX, y: frame.midY)]
-                                      : [CGPoint(x: frame.maxX, y: frame.maxY)]).forEach(roundHandle)
+                // One proportional handle for a group; a text box its two width handles; one shape its four
+                // corners; a line or arrow its two ends.
+                NativePDFEditingGeometry.handlePoints(mode: handleMode, box: CGRect(x: x, y: y, width: w, height: h), ends: selectionHandles.ends)
+                    .map { point($0.1.x, $0.1.y) }.forEach(roundHandle)
             }
         }
         if let frame = textEditorLocalFrame {

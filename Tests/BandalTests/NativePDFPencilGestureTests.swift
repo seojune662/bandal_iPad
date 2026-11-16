@@ -59,6 +59,46 @@ final class NativePDFPencilGestureTests: XCTestCase {
         surface.endPencilGesture(touch, with: nil)
         XCTAssertEqual(events.last?["phase"] as? String, "up")
     }
+    func testOneShapeSelectionTakesHandlesWithin22PointsAndAFingerOnAShapeNamesIt() throws {
+        let surface = try surface(), aspect = 400.0 / 600
+        surface.tool = .init(name: "select", style: .init(color: "ink", width: 0.004, opacity: 1))
+        let figure = NativePDFShapeFigure(kind: .polygon, name: "rect", vertices: [CGPoint(x: 0.3, y: 0.1), CGPoint(x: 0.6, y: 0.1), CGPoint(x: 0.6, y: 0.3), CGPoint(x: 0.3, y: 0.3)])
+        let fit = NativePDFHeldShape(figure, width: 0.004, aspect: aspect).correction(kind: "ink", style: ["color": "ink", "width": 0.006, "opacity": 1])
+        surface.objects = [["id": "rect", "kind": fit.kind, "data": fit.data, "style": fit.style]]
+        // Canvas: x 180...360, y 60...180 on the 600 × 400 test page.
+        XCTAssertEqual(surface.shapeTarget(at: CGPoint(x: 270, y: 60 + 18)), "rect", "A finger within 22 pt of the line")
+        XCTAssertNil(surface.shapeTarget(at: CGPoint(x: 270, y: 120)), "Inside the box a finger still scrolls")
+        let direct = PencilGestureTouch(kind: .direct); direct.point = CGPoint(x: 270, y: 62)
+        XCTAssertTrue(surface.hitTest(direct.point, with: PencilGestureEvent(direct)) === surface)
+        var events: [[String: Any]] = []
+        surface.onPointer = { events.append($0) }
+        surface.touchesBegan([direct], with: PencilGestureEvent(direct))
+        XCTAssertEqual(events.last?["shape"] as? String, "rect", "The workspace selects the shape the finger landed on")
+        surface.touchesEnded([direct], with: PencilGestureEvent(direct))
+        // Selected: four corner handles, each taken from up to 22 pt away.
+        surface.selectionBox = ["x": 0.3, "y": 0.15, "width": 0.3, "height": 0.3]
+        surface.selectionResizable = true; surface.selectionHandles = ("corners", [])
+        XCTAssertEqual(surface.selectionHandle(at: CGPoint(x: 360 + 15, y: 60 - 15)), "ne")
+        XCTAssertEqual(surface.selectionHandle(at: CGPoint(x: 180 - 10, y: 180 + 10)), "sw")
+        XCTAssertNil(surface.selectionHandle(at: CGPoint(x: 360 + 20, y: 60 - 20)), "28 pt is too far")
+        XCTAssertTrue(surface.selectionInputTarget(at: CGPoint(x: 360 + 15, y: 60 - 15)) === surface, "The handle's target reaches past the box")
+        let grab = PencilGestureTouch(kind: .direct); grab.point = CGPoint(x: 362, y: 58)
+        XCTAssertTrue(surface.beginSelectionGesture(grab, with: nil))
+        XCTAssertEqual(events.last?["handle"] as? String, "ne")
+        surface.endPencilGesture(grab, with: nil)
+        // A line shows its two ends instead.
+        surface.selectionHandles = ("ends", [CGPoint(x: 0.3, y: 0.15), CGPoint(x: 0.6, y: 0.45)])
+        XCTAssertEqual(surface.selectionHandle(at: CGPoint(x: 362, y: 178)), "end1")
+        XCTAssertNil(surface.selectionHandle(at: CGPoint(x: 362, y: 58)), "No corners on a line")
+        // The lasso takes a finger on a shape too, and a Pencil there may be starting a loop.
+        surface.selectionBox = nil; surface.selectionResizable = false
+        surface.tool = .init(name: "lasso", style: .init(color: "ink", width: 0.004, opacity: 1))
+        XCTAssertTrue(surface.hitTest(direct.point, with: PencilGestureEvent(direct)) === surface)
+        let pencil = PencilGestureTouch(kind: .pencil); pencil.point = CGPoint(x: 270, y: 62)
+        XCTAssertTrue(surface.beginPencilGesture(pencil, with: nil))
+        XCTAssertNil(events.last?["shape"])
+        surface.endPencilGesture(pencil, with: nil)
+    }
     func testLaserTrailsStayUntilThreeSecondsAfterTheLastContactOnAnyPage() throws {
         let clock = ManualLaserClock()
         let session = NativePDFLaserSession(schedule: clock.schedule)

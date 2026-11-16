@@ -131,6 +131,75 @@ enum NativePDFEditingGeometry {
             return value
         }
     }
+    // MARK: Shapes
+
+    /// The topmost recognized shape (ink with `data.shape`) whose line passes within `tolerance` page widths of
+    /// `point`, or, with `interior`, that is closed around it. Outlines win over interiors, so a box drawn around
+    /// handwriting does not swallow taps on that handwriting.
+    static func shapeHit(_ point: CGPoint, rows: [[String: Any]], aspect: Double, tolerance: Double, interior: Bool = false) -> String? {
+        let p = CGPoint(x: point.x, y: point.y * aspect)
+        var inside: String?
+        for row in rows.reversed() {
+            guard ["ink", "highlighter"].contains(row["kind"] as? String ?? ""), let data = row["data"] as? [String: Any],
+                  data["shape"] != nil, let id = row["id"] as? String,
+                  let figure = NativePDFShapeFigure(data: data, aspect: aspect) else { continue }
+            let width = number((row["style"] as? [String: Any])?["width"]) ?? 0
+            let outline = figure.outline()
+            if zip(outline, outline.dropFirst()).contains(where: { distance(p, to: $0.0, $0.1) <= tolerance + width / 2 }) { return id }
+            if interior, inside == nil, figure.isClosed, contains(p, polygon: outline) { inside = id }
+        }
+        return inside
+    }
+    /// The handles one selection shows: `corner` (one proportional handle, groups and handwriting), `text` (a text
+    /// box's two width handles), `corners` (one shape: four free corners) or `ends` (one line or arrow: its ends,
+    /// returned in page coordinates).
+    static func handles(for rows: [[String: Any]], aspect: Double, text: Bool) -> (mode: String, ends: [CGPoint]) {
+        if text { return ("text", []) }
+        guard rows.count == 1, let data = rows[0]["data"] as? [String: Any], data["shape"] != nil,
+              let figure = NativePDFShapeFigure(data: data, aspect: aspect) else { return ("corner", []) }
+        if (figure.kind == .line || figure.kind == .arrow), figure.vertices.count >= 2 {
+            return ("ends", figure.vertices.prefix(2).map { CGPoint(x: $0.x, y: $0.y / aspect) })
+        }
+        return ("corners", [])
+    }
+    /// Where those handles sit, in page coordinates, by name.
+    static func handlePoints(mode: String, box: CGRect, ends: [CGPoint]) -> [(String, CGPoint)] {
+        switch mode {
+        case "text": return [("w", CGPoint(x: box.minX, y: box.midY)), ("e", CGPoint(x: box.maxX, y: box.midY))]
+        case "corners": return [("nw", CGPoint(x: box.minX, y: box.minY)), ("ne", CGPoint(x: box.maxX, y: box.minY)),
+                                ("se", CGPoint(x: box.maxX, y: box.maxY)), ("sw", CGPoint(x: box.minX, y: box.maxY))]
+        case "ends": return ends.prefix(2).enumerated().map { ("end\($0.offset)", $0.element) }
+        default: return [("se", CGPoint(x: box.maxX, y: box.maxY))]
+        }
+    }
+    /// One shape reshaped by a handle: a corner stretches it freely (the opposite corner stays) and an end moves
+    /// that end of a line or arrow. The line's width never changes. Nil when this is not one shape.
+    static func reshaped(_ rows: [[String: Any]], handle: String, original box: CGRect, to target: CGPoint, aspect: Double) -> [[String: Any]]? {
+        guard rows.count == 1, var row = rows.first, var data = row["data"] as? [String: Any], data["shape"] != nil,
+              let figure = NativePDFShapeFigure(data: data, aspect: aspect) else { return nil }
+        let point = CGPoint(x: min(1, max(0, target.x)), y: min(1, max(0, target.y)))
+        var next: NativePDFShapeFigure
+        if handle.hasPrefix("end") {
+            guard figure.kind == .line || figure.kind == .arrow else { return nil }
+            next = figure.movingEnd(handle == "end0" ? 0 : 1, to: CGPoint(x: point.x, y: point.y * aspect))
+        } else {
+            guard ["nw", "ne", "se", "sw"].contains(handle), box.width > 1e-9, box.height > 1e-9 else { return nil }
+            let west = handle.contains("w"), north = handle.contains("n")
+            let anchor = CGPoint(x: west ? box.maxX : box.minX, y: north ? box.maxY : box.minY)
+            let old = CGPoint(x: west ? box.minX : box.maxX, y: north ? box.minY : box.maxY)
+            // Free proportions; never folded over the anchor or squashed below a usable size.
+            let sx = max(0.01 / box.width, (point.x - anchor.x) / (old.x - anchor.x))
+            let sy = max(0.01 / box.height, (point.y - anchor.y) / (old.y - anchor.y))
+            let ay = anchor.y * aspect
+            next = figure.applying(CGAffineTransform(a: sx, b: 0, c: 0, d: sy, tx: anchor.x * (1 - sx), ty: ay * (1 - sy)))
+        }
+        next = next.keptOnPage(aspect: aspect)
+        let ink = next.ink(aspect: aspect)
+        data["points"] = ink.points.map { ["x": $0.x, "y": $0.y, "p": $0.p] as [String: Any] }
+        data["shape"] = NativePDFShapeFigure.descriptor(kind: next.kind, corners: ink.corners, segments: ink.segments)
+        row["data"] = data; row.removeValue(forKey: "nativePath"); row.removeValue(forKey: "_nativeInk")
+        return [row]
+    }
     /// The handles a selection draws: one proportional handle at the bottom
     /// right, or for a single text box the west/east handles that set its wrap width.
     static func corner(at point: CGPoint, box: CGRect, aspect: Double, sides: Bool = false) -> String? {
