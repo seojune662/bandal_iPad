@@ -36,8 +36,10 @@ final class NativePDFPageNoteRepository {
                 let source = try NativeSyncFormat.object(row["source_json"])
                 guard let payload = source["payload"] as? [String: Any], payload["courseId"] as? String == course, payload["relPath"] as? String == path else { continue }
                 let target = try NativeSyncFormat.object(row["target_json"])
-                guard target["kind"] as? String == "note", let payload = target["payload"] as? [String: Any], let targetCourse = payload["courseId"] as? String, let targetPath = payload["relPath"] as? String else { throw NativeRepositoryContext.conflict("페이지 필기 연결을 읽지 못했습니다.") }
-                _ = try context.materialURL(courseID: targetCourse, relativePath: targetPath)
+                // A link that cannot be read, or whose note was deleted, does not stop this button:
+                // a new page note is made. The old row stays, so a note restored later lines up again.
+                guard target["kind"] as? String == "note", let payload = target["payload"] as? [String: Any], let targetCourse = payload["courseId"] as? String, let targetPath = payload["relPath"] as? String,
+                      let url = try? context.materialURL(courseID: targetCourse, relativePath: targetPath), context.files.fileExists(atPath: url.path) else { continue }
                 return reference(course: targetCourse, path: targetPath)
             }
             let fingerprint = NativePDFPageDocument.fingerprint(try Data(contentsOf: file))
