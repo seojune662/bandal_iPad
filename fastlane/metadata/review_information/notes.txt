@@ -1,21 +1,24 @@
-Version 1.5.0 adds AI inside notes, automatic Look Up, one Plans screen and a new in-app purchase, AI Credit (consumable). Labels below are Korean (English); the app follows the device language.
+Version 1.6.0 adds three-finger tab gestures, cleaner shapes and laser in PDFs, and an in-app guide. Labels below are Korean (English); the app follows the device language.
 
 New in this version
-- AI panel (AI button, left rail): 사이드바 (Sidebar) or 플로팅 (Floating, a bar over the page), from the panel's 표시 방식 (Display mode) menu. Answers show lists, tables and math; links open in the in-app browser.
-- In a PDF: 노트에 넣기 (Add to note) places an answer in free space, and the AI can add a simple diagram; both undo. 짚어주기 (Point It Out; AI model menu > PDF에서 짚어주기) scrolls to passages and shows notes beside them; it saves nothing.
+- Three fingers: pinch to close the current tab (Undo toast), spread to open a new tab. Ignored while the Pencil is down, with VoiceOver or Switch Control on, or over a sheet. A one-time card introduces it.
+- 반달 잘 쓰는 법 (How to use Bandal) shows once after setup; short first-use tips for PDF, lasso and AI. All on the device.
+- PDF: the laser fades 3 s after the last stroke; a held stroke becomes a shape (line, circle, polygon, arrow) of the same width; tap it with the hand or lasso tool to move or resize.
+
+From 1.5.0
+- AI panel (AI button, left rail) as 사이드바 (Sidebar) or 플로팅 (Floating). In a PDF, 노트에 넣기 (Add to note) and 짚어주기 (Point It Out).
 - 찾아보기 (Look Up): automatic Look Up is asked once ("켜기" Turn On / "나중에" Later; Settings > AI > 찾아보기). Text lassoed in a PDF or selected in a note is looked up on Wikipedia's search API from the device (a term of the text and the heading above; no user or device data). Passages, formulas and figures use two optional AI steps via our server, within the AI allowance, with no purchase or consent screen. "여러 줄·수식·그림은 AI가 읽고 설명" (AI reads and explains; default on; signed in; a provider agreed to) sends the text (up to 400 characters), heading, document title and, for a formula or figure, a small picture of the area; the card links to a web search for the AI's search words. "여러 줄은 AI가 맞는 문서 고르기" (AI picks the matching article; default on; signed in, OpenAI agreed to) sends the passage (up to 300 characters), heading, document title and up to four Wikipedia results to OpenAI's Decisions API, which returns only probabilities and one title.
 
-Plans and AI Credit (AI Credit is new)
+Plans and AI Credit
 - Every purchase is on one screen, 요금제 (Plans): Settings (gear) > 구독·사용량 (Plan & usage) > 요금제 보기 (View plans). Also the profile menu, or a second folder on Free.
-- It shows the current plan, Monthly/Yearly with the Free, Plus and Pro cards at App Store prices, AI 충전 (AI Credit), Restore purchases, App Store에서 구독 해지·관리 (Cancel or manage in the App Store), Terms of Use, Privacy Policy and the auto-renewal terms.
+- Current plan, Free/Plus/Pro at App Store prices, AI 충전 (AI Credit), Restore, manage subscription, Terms, Privacy Policy, auto-renewal terms.
 - AI Credit adds to the account's AI allowance and never expires. Our server keeps the balance, so it needs sign-in. Then AI 충전 > the price button: the card says "충전했어요" (Credit added) and the balance goes up. Not restorable; it stays on the account.
 
 From earlier versions
-- First-run setup (once): language, school shortcuts, optional invite code.
 - "AI로 찾기" (Find with AI) for a school not in the directory needs sign-in and sends only the school name, country and app language; our server searches via Anthropic's API and returns the school's own links for review.
 - Friend invites (profile menu > 친구 초대): both accounts get in-app AI credit when an invited friend creates a first folder (at most 5 friends); no cash value, not transferable, no purchase needed. bandal.io/r/CODE links open the app (Associated Domains).
 - AI goes through our server to Anthropic or OpenAI after a per-provider consent sheet (5.1.2(i)); the server stores no questions, materials or answers.
-- Sync is optional (the user's own iCloud or Google Drive). Recordings stay on the device. In-app browser (17+). Account deletion: Settings > 계정 > 계정 삭제 (Delete Account).
+- Sync is optional (own iCloud or Google Drive). Recordings stay on the device. In-app browser (17+). Delete Account: Settings > 계정 > 계정 삭제.
 
 How to test
 - Sign in (Account button, left rail; Apple or Google) for AI, AI Credit and invites. In a PDF, tap the AI button and ask; circle printed text with the lasso for Look Up.
