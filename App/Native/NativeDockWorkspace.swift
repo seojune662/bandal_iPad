@@ -65,6 +65,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     /// Something drawn over the panes (a drawer, a sheet) has the fingers: no three-finger gesture starts.
     var tabGestureBlocked = false
     @StateObject private var drag = NativeDockDragSession()
+    /// Read only by the cards, so a strip's scroll redraws them and not the whole dock.
+    @State private var stripScroll = NativeDockStripScroll()
     @Environment(\.nativeDecor) private var decor
     @Environment(\.colorScheme) private var scheme
     @State private var maximizedGroupID: String?
@@ -315,16 +317,16 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         let inset = corner ? controlInset : 0
         let room = width - metrics.padding - Self.addWidth(metrics) - 8 - (split ? 44 : 0) - inset
         let roomy = sizing(group, metrics: metrics, available: room - (split ? 0 : Self.listWidth))
-        // The list of open tabs stays in a split pane only while some of its tabs do not fit.
-        let showsList = !split || roomy.visibleIndices.count < group.tabs.count
+        // The list of open tabs stays in a split pane only while its strip has to scroll.
+        let showsList = !split || roomy.scrolls
         return (split && showsList ? sizing(group, metrics: metrics, available: room - Self.listWidth) : roomy, showsList)
     }
-    /// The chosen tab's span in the strip (from the pane's left edge), when it is on screen.
-    private func selectedTabSpan(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, width: CGFloat, corner: Bool) -> (x: CGFloat, width: CGFloat)? {
+    /// The chosen tab's span in the strip (from the pane's left edge) before the strip scrolls, and the part of the
+    /// strip its tabs show in.
+    private func selectedTabSpan(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, width: CGFloat, corner: Bool) -> (x: CGFloat, width: CGFloat, viewport: ClosedRange<CGFloat>)? {
         let sizing = stripSizing(group, metrics: metrics, width: width, corner: corner).sizing
-        guard let active = group.activeID, let index = group.tabs.firstIndex(of: active), let position = sizing.visibleIndices.firstIndex(of: index) else { return nil }
-        let before = sizing.visibleIndices.prefix(position).reduce(CGFloat(0)) { $0 + sizing.width(of: $1) + sizing.spacing }
-        return (metrics.padding + before, sizing.width(of: index))
+        guard let active = group.activeID, let index = group.tabs.firstIndex(of: active) else { return nil }
+        return (metrics.padding + sizing.offset(of: index), sizing.width(of: index), metrics.padding...(metrics.padding + sizing.viewport))
     }
     // MARK: Card
     static var cardInset: CGFloat { NativeDockCard.inset }
@@ -343,24 +345,10 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             let content = contentFrame(pane, metrics), card = Self.cardFrame(content).offsetBy(dx: -pane.frame.minX, dy: -pane.frame.minY)
             let top = NativeDockHeaderMetrics.topPadding(for: pane.frame, topEdge: Self.topEdge)
             let span = chromeMode.showsTabs ? selectedTabSpan(pane.group, metrics: metrics, width: pane.frame.width, corner: corner) : nil
-            let accent = Color(uiColor: decor.palette.accent(dark: scheme == .dark))
-            let pillTop = top + (metrics.height - metrics.pillHeight) / 2
-            // The tab runs a little into the card, so the two outlines join as one.
-            let tab = span.map { CGRect(x: $0.x - Self.tabFlare, y: pillTop, width: $0.width + Self.tabFlare * 2, height: card.minY - pillTop + 2) }
-            let silhouette = NativeDockCardSilhouette(card: card, tab: tab, radius: Self.cardRadius, tabRadius: metrics.radius, flare: Self.tabFlare)
-            let toned = Self.takesDecor(navigation.document(pane.group.activeID))
-            let style = NativeDockFocusStyle.current
-            ZStack(alignment: .topLeading) {
-                Color.clear
-                // The shadow alone, cut away under the sheet: a sheet that lets the glass through would show its own shadow too.
-                silhouette.fill(.black)
-                    .shadow(color: .black.opacity(scheme == .dark ? 0.3 : 0.07), radius: 6, y: 2)
-                    .shadow(color: focused && style.glow > 0 ? accent.opacity(style.glow) : .clear, radius: 10)
-                    .mask { NativeDockCardSurround(inner: silhouette).fill(style: FillStyle(eoFill: true)) }
-                silhouette.fill(toned ? AnyShapeStyle(NativeGlass.card) : AnyShapeStyle(NativeGlass.paper))
-                silhouette.stroke(focused && style.rim > 0 ? AnyShapeStyle(accent.opacity(style.rim)) : AnyShapeStyle(NativeGlass.hairline),
-                                  lineWidth: focused ? style.rimWidth : 1)
-            }.animation(.snappy(duration: 0.2), value: span?.x)
+            NativeDockPaneSurface(card: card, pillTop: top + (metrics.height - metrics.pillHeight) / 2, span: span.map { CGRect(x: $0.x, y: 0, width: $0.width, height: 0) },
+                                  viewport: span?.viewport, tabRadius: metrics.radius, focused: focused, toned: Self.takesDecor(navigation.document(pane.group.activeID)),
+                                  accent: Color(uiColor: decor.palette.accent(dark: scheme == .dark)), dark: scheme == .dark,
+                                  groupID: pane.group.id, activeID: pane.group.activeID, scroll: stripScroll)
         }
     }
     /// The editors that leave their tool row to the card's tone and paint paper only under their page: PDF,
@@ -370,20 +358,32 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         if document.learningTarget != nil { return false }
         return ["pdf", "note", "browser", "assistant"].contains(document.kind) || ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased())
     }
-    static var tabFlare: CGFloat { 6 }
+    static var tabFlare: CGFloat { NativeDockCard.tabFlare }
     private func tabs(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, topPadding: CGFloat, corner: Bool) -> some View {
         GeometryReader { geometry in
             let split = navigation.groups.count > 1
             let inset = corner ? controlInset : 0
             let (sizing, showsList) = stripSizing(group, metrics: metrics, width: geometry.size.width, corner: corner)
             HStack(spacing: 0) {
-                HStack(spacing: sizing.spacing) {
-                    ForEach(sizing.visibleIndices.map { group.tabs[$0] }, id: \.self) { id in
-                        if let document = navigation.document(id), let index = group.tabs.firstIndex(of: id) {
-                            tab(document, group: group, index: index, sizing: sizing, metrics: metrics)
-                        }
+                // Every tab is in the strip; past the room it scrolls, and the chosen tab is kept in view.
+                ScrollViewReader { reader in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: sizing.spacing) {
+                            ForEach(Array(group.tabs.enumerated()), id: \.element) { index, id in
+                                if let document = navigation.document(id) {
+                                    tab(document, group: group, index: index, sizing: sizing, metrics: metrics).id(id)
+                                }
+                            }
+                        }.frame(height: metrics.height)
                     }
-                }.frame(width: sizing.totalWidth, height: metrics.height, alignment: .leading).clipped()
+                    .scrollDisabled(!sizing.scrolls)
+                    .frame(width: sizing.viewport, height: metrics.height, alignment: .leading)
+                    .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in stripScroll.set(group.id, x) }
+                    .onChange(of: group.activeID, initial: true) { old, id in Self.reveal(id, with: reader, animated: old != nil && old != id) }
+                    .onChange(of: group.tabs.count) { _, _ in Self.reveal(group.activeID, with: reader, animated: true) }
+                    .onChange(of: sizing.viewport) { _, _ in Self.reveal(group.activeID, with: reader, animated: false) }
+                    .accessibilityIdentifier("native-dock-tab-scroll-" + group.id)
+                }
                 addButton(group, metrics: metrics)
                 if showsList {
                     Button { tabListGroupID = group.id } label: {
@@ -417,6 +417,14 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             .background { NativeDockTabStripBounds(groupID: group.id) }
             .onDrop(of: [NativeDockDragPayload.contentType], delegate: drop(group.id))
     }
+    /// Scrolls the strip just enough that the tab `id` shows whole (nothing when it already does). After the strip's
+    /// next layout, so a tab that has only just been added is there to scroll to.
+    private static func reveal(_ id: String?, with reader: ScrollViewProxy, animated: Bool) {
+        guard let id else { return }
+        DispatchQueue.main.async {
+            if animated { withAnimation(.snappy(duration: 0.25)) { reader.scrollTo(id) } } else { reader.scrollTo(id) }
+        }
+    }
     /// ＋ opens the new-tab menu; a long press opens the split and layout menu the design keeps out of the strip.
     private func addButton(_ group: NativeDockGroup, metrics: NativeDockStripMetrics, visible: Bool = true) -> some View {
         Button {
@@ -441,22 +449,20 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         let selected = group.activeID == document.id, split = navigation.groups.count > 1
         // Only the pane being written in fills its selected tab; the others stay at full strength in grey.
         let active = selected && (!split || group.id == navigation.focusedGroupID)
-        let closeInside = selected && sizing.showsClose, width = sizing.width(of: index)
+        let width = sizing.width(of: index)
         return HStack(spacing: 0) {
-            NativeDockDraggableTab(document: document, selected: selected, symbol: Self.symbol(document, split: split), metrics: metrics,
-                dimmed: !active, mutedIcon: split && !active, closeInside: closeInside,
+            NativeDockDraggableTab(document: document, selected: selected, symbol: Self.symbol(document, split: split), image: nil, metrics: metrics,
+                dimmed: !active, mutedIcon: split && !active, closeInside: true,
                 fontScale: fontScale, density: sizing.density, courseID: navigation.activeCourseID ?? document.courseID, drag: drag,
                 close: { closeDocuments([document.id]) }) {
                 selectTab(document.id, in: group.id)
             }
-            .frame(width: max(0, width - (closeInside ? metrics.closeZone : 0)), height: metrics.height).clipped()
-            if closeInside {
-                Button { closeDocuments([document.id]) } label: {
-                    Image(systemName: "xmark").font(.system(size: metrics.close)).frame(width: metrics.close + 1).padding(.leading, 6).padding(.trailing, metrics.tabPadding)
-                        .frame(height: metrics.height).contentShape(Rectangle())
-                }.buttonStyle(.plain).foregroundStyle(split ? NativeDesktopTheme.muted : NativeDesktopTheme.secondary).accessibilityLabel(document.title + " 닫기")
-                    .accessibilityIdentifier(document.id == navigation.activeID ? "native-close-document" : "native-close-tab-" + document.id)
-            }
+            .frame(width: max(0, width - NativeDockTabSizing.closeTarget), height: metrics.height).clipped()
+            // Every tab keeps its ✕, 44 points to touch; the chosen tab's in the strip's grey, the others' a step lighter.
+            Button { closeDocuments([document.id]) } label: {
+                Image(systemName: "xmark").font(.system(size: metrics.close)).frame(width: NativeDockTabSizing.closeTarget, height: metrics.height).contentShape(Rectangle())
+            }.buttonStyle(.plain).foregroundStyle(selected && !split ? NativeDesktopTheme.secondary : NativeDesktopTheme.muted).accessibilityLabel(document.title + " 닫기")
+                .accessibilityIdentifier(document.id == navigation.activeID ? "native-close-document" : "native-close-tab-" + document.id)
         }
         .frame(width: width, height: metrics.height).clipped()
         // The pane being written in may mark its chosen tab with a short accent bar along the top (`NativeDockFocusStyle`).
@@ -959,6 +965,7 @@ private struct NativeDockDraggableTab: UIViewRepresentable {
     let document: NativeDocumentReference
     let selected: Bool
     let symbol: String
+    let image: UIImage?
     let metrics: NativeDockStripMetrics
     let dimmed: Bool
     let mutedIcon: Bool
@@ -970,21 +977,21 @@ private struct NativeDockDraggableTab: UIViewRepresentable {
     let close: () -> Void
     let action: () -> Void
     func makeCoordinator() -> Coordinator { Coordinator(self) }
-    func makeUIView(context: Context) -> NativeDockTabButton {
-        let button = NativeDockTabButton(frame: .zero)
-        button.addAction(UIAction { [weak coordinator = context.coordinator] _ in coordinator?.owner.action() }, for: .touchUpInside)
-        let interaction = UIDragInteraction(delegate: context.coordinator); interaction.isEnabled = true; button.addInteraction(interaction)
-        updateUIView(button, context: context); return button
+    func makeUIView(context: Context) -> NativeDockTabView {
+        let view = NativeDockTabView(frame: .zero)
+        view.onTap = { [weak coordinator = context.coordinator] in coordinator?.owner.action() }
+        let interaction = UIDragInteraction(delegate: context.coordinator); interaction.isEnabled = true; view.addInteraction(interaction)
+        updateUIView(view, context: context); return view
     }
-    func updateUIView(_ button: NativeDockTabButton, context: Context) {
+    func updateUIView(_ view: NativeDockTabView, context: Context) {
         context.coordinator.owner = self
-        button.configure(title: document.title, symbol: symbol, density: density, fontScale: fontScale, selected: selected,
-                         metrics: metrics, dimmed: dimmed, mutedIcon: mutedIcon, closeInside: closeInside)
-        button.accessibilityIdentifier = "native-document-tab-" + document.id
-        button.accessibilityHint = "길게 눌러 다른 영역이나 탭 사이로 드래그할 수 있습니다"
-        button.accessibilityCustomActions = [UIAccessibilityCustomAction(name: "닫기", actionHandler: { [weak coordinator = context.coordinator] _ in coordinator?.owner.close(); return true })]
+        view.configure(title: document.title, symbol: symbol, image: image, density: density, fontScale: fontScale, selected: selected,
+                       metrics: metrics, dimmed: dimmed, mutedIcon: mutedIcon, closeInside: closeInside)
+        view.accessibilityIdentifier = "native-document-tab-" + document.id
+        view.accessibilityHint = "길게 눌러 다른 영역이나 탭 사이로 드래그할 수 있습니다"
+        view.accessibilityCustomActions = [UIAccessibilityCustomAction(name: "닫기", actionHandler: { [weak coordinator = context.coordinator] _ in coordinator?.owner.close(); return true })]
     }
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: NativeDockTabButton, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: NativeDockTabView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
         return CGSize(width: width, height: proposal.height ?? 44)
     }
@@ -1100,6 +1107,49 @@ struct NativeDockTouchFocus: UIViewRepresentable {
             state = .failed
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
+/// How far each pane's tab strip is scrolled, for the card whose chosen tab rises out of it.
+@MainActor @Observable final class NativeDockStripScroll {
+    var offsets: [String: CGFloat] = [:]
+    func set(_ id: String, _ value: CGFloat) { if abs((offsets[id] ?? 0) - value) > 0.25 { offsets[id] = value } }
+}
+
+/// A pane's card and its chosen tab as one silhouette, so a single fill, rim and shadow run round both. The tab
+/// follows its strip's scroll, and only the part of it inside the strip's tab area shows.
+private struct NativeDockPaneSurface: View {
+    let card: CGRect
+    let pillTop: CGFloat
+    /// The chosen tab's span (x and width) in the pane before the strip scrolls; nil with the tabs hidden.
+    let span: CGRect?
+    let viewport: ClosedRange<CGFloat>?
+    let tabRadius: CGFloat
+    let focused: Bool
+    let toned: Bool
+    let accent: Color
+    let dark: Bool
+    let groupID: String
+    let activeID: String?
+    let scroll: NativeDockStripScroll
+    var body: some View {
+        let shown = span.flatMap { span in viewport.flatMap { NativeDockTabSizing.visibleSpan(x: span.minX, width: span.width, offset: scroll.offsets[groupID] ?? 0, viewport: $0) } }
+        let flare = NativeDockCard.tabFlare
+        // The tab runs a little into the card, so the two outlines join as one.
+        let tab = shown.map { CGRect(x: $0.x - flare, y: pillTop, width: $0.width + flare * 2, height: card.minY - pillTop + 2) }
+        let silhouette = NativeDockCardSilhouette(card: card, tab: tab, radius: NativeDockCard.radius, tabRadius: tabRadius, flare: flare)
+        let style = NativeDockFocusStyle.current
+        ZStack(alignment: .topLeading) {
+            Color.clear
+            // The shadow alone, cut away under the sheet: a sheet that lets the glass through would show its own shadow too.
+            silhouette.fill(.black)
+                .shadow(color: .black.opacity(dark ? 0.3 : 0.07), radius: 6, y: 2)
+                .shadow(color: focused && style.glow > 0 ? accent.opacity(style.glow) : .clear, radius: 10)
+                .mask { NativeDockCardSurround(inner: silhouette).fill(style: FillStyle(eoFill: true)) }
+            silhouette.fill(toned ? AnyShapeStyle(NativeGlass.card) : AnyShapeStyle(NativeGlass.paper))
+            silhouette.stroke(focused && style.rim > 0 ? AnyShapeStyle(accent.opacity(style.rim)) : AnyShapeStyle(NativeGlass.hairline),
+                              lineWidth: focused ? style.rimWidth : 1)
+        }.animation(.snappy(duration: 0.2), value: activeID)
     }
 }
 

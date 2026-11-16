@@ -18,11 +18,13 @@ struct NativeBrowserTabStrip: View {
             let sizing = NativeDockTabSizing(availableWidth: max(0, geometry.size.width - 96), count: tabs.count,
                 activeIndex: tabs.firstIndex { $0.id == activeID } ?? -1)
             HStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    ForEach(sizing.visibleIndices.map { tabs[$0] }) { tab in
-                        item(tab, sizing: sizing)
-                    }
-                }.frame(width: sizing.totalWidth, height: 44, alignment: .leading).clipped()
+                // Past the room the pages scroll, as the dock's tabs do.
+                ScrollViewReader { reader in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 0) { ForEach(tabs) { tab in item(tab, sizing: sizing).id(tab.id) } }.frame(height: 44)
+                    }.scrollDisabled(!sizing.scrolls).frame(width: sizing.viewport, height: 44, alignment: .leading)
+                        .onChange(of: activeID, initial: true) { _, id in if let id { DispatchQueue.main.async { reader.scrollTo(id) } } }
+                }
                 Spacer(minLength: 0)
                 Button(action: add) { Image(systemName: "plus").frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .accessibilityLabel("새 탭").accessibilityIdentifier("native-browser-add-tab")
@@ -44,12 +46,10 @@ struct NativeBrowserTabStrip: View {
         HStack(spacing: 0) {
             NativeBrowserTabButton(tab: tab, selected: tab.id == activeID, density: sizing.density, fontScale: fontScale,
                 select: { select(tab.id) }, close: { close(tab.id) })
-                .frame(width: sizing.width - (sizing.showsClose ? 44 : 0), height: 44).clipped()
-            if sizing.showsClose {
-                Button { close(tab.id) } label: { Image(systemName: "xmark").font(.system(size: 11)).frame(width: 44, height: 44).contentShape(Rectangle()) }
-                    .buttonStyle(.plain).accessibilityLabel(Self.title(tab) + " 닫기")
-                    .accessibilityIdentifier("native-browser-close-tab-" + tab.id)
-            }
+                .frame(width: sizing.width - NativeDockTabSizing.closeTarget, height: 44).clipped()
+            Button { close(tab.id) } label: { Image(systemName: "xmark").font(.system(size: 11)).frame(width: NativeDockTabSizing.closeTarget, height: 44).contentShape(Rectangle()) }
+                .buttonStyle(.plain).accessibilityLabel(Self.title(tab) + " 닫기")
+                .accessibilityIdentifier("native-browser-close-tab-" + tab.id)
         }.frame(width: sizing.width, height: 44).clipped()
             .nativeWorkspacePreviewSurface(id: "browser-tab-" + tab.id, privateContent: { tab.isPrivate })
             .background(tab.id == activeID ? NativeDesktopTheme.raised : .clear)
