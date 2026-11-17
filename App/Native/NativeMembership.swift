@@ -148,8 +148,7 @@ struct NativeSettingsSubscriptionPanel: View {
 
     @ViewBuilder private var overview: some View {
         HStack(spacing: 16) {
-            Image(systemName: "moon").font(.system(size: 22)).foregroundStyle(NativeDesktopTheme.bgApp).frame(width: 48, height: 48)
-                .background(PlanPalette.badge, in: RoundedRectangle(cornerRadius: 12)).accessibilityHidden(true)
+            PlanMark()
             VStack(alignment: .leading, spacing: 4) {
                 Text(tier == .pro ? "반달 프로" : tier == .plus ? "반달 플러스" : "반달 무료").font(.system(size: 20, weight: .bold))
                 Group {
@@ -160,7 +159,7 @@ struct NativeSettingsSubscriptionPanel: View {
             Spacer(minLength: 8)
             Button("요금제 보기") { MembershipPaywall.present() }
                 .buttonStyle(BandalButtonStyle(kind: .soft)).frame(height: 31).accessibilityIdentifier("native-membership-manage")
-        }.padding(20).background(PlanPalette.fill, in: RoundedRectangle(cornerRadius: 12))
+        }.padding(20).background { PlanCardGround(cornerRadius: 12) }
         VStack(alignment: .leading, spacing: 8) {
             Text("이번 달 사용량").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityAddTraits(.isHeader)
             VStack(spacing: 20) {
