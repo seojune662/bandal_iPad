@@ -1615,16 +1615,51 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
         return ["x": rect.minX, "y": rect.minY, "width": rect.width, "height": rect.height]
     }
     private var pullToAddArmed = false
-    /// Pulling well past the end while the finger is down, then releasing, adds a page.
-    private func checkPullToAddPage() {
-        guard let scroll = nativePan?.view as? UIScrollView, !loading else { return }
+    private var pullToAddState = "none"
+    private var pullToAddArming: DispatchWorkItem?
+    /// Past the last page: a hint from `pullHintDistance`; held beyond `pullArmDistance` for
+    /// `pullArmHold` it arms (haptic, "놓으면 새 페이지를 추가해요") and letting go adds a page.
+    /// Scrolling fast to the end crosses the line without stopping there, so it never adds one.
+    static let pullHintDistance: CGFloat = 60, pullArmDistance: CGFloat = 150, pullArmHold: TimeInterval = 0.35
+    private func pullOverscroll() -> CGFloat? {
+        guard let scroll = nativePan?.view as? UIScrollView else { return nil }
         let rest = max(scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom, -scroll.adjustedContentInset.top)
-        let overscroll = scroll.contentOffset.y - rest
+        return scroll.contentOffset.y - rest
+    }
+    private func setPullToAddState(_ state: String) {
+        guard state != pullToAddState else { return }
+        pullToAddState = state; onEvent("pullToAddState", ["state": state])
+    }
+    private func checkPullToAddPage() {
+        guard let scroll = nativePan?.view as? UIScrollView, !loading, let overscroll = pullOverscroll() else { return }
         if scroll.isTracking {
-            if overscroll > 120, !pullToAddArmed { pullToAddArmed = true; UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-            else if overscroll < 40 { pullToAddArmed = false }
-        } else if pullToAddArmed {
-            pullToAddArmed = false; onEvent("pullToAddPage", [:])
+            if overscroll > Self.pullArmDistance, !pullToAddArmed {
+                if pullToAddArming == nil {
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self else { return }
+                        self.pullToAddArming = nil
+                        guard (self.nativePan?.view as? UIScrollView)?.isTracking == true, let now = self.pullOverscroll(), now > Self.pullArmDistance - 20 else { return }
+                        self.pullToAddArmed = true
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        self.setPullToAddState("armed")
+                    }
+                    pullToAddArming = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Self.pullArmHold, execute: work)
+                }
+                setPullToAddState("pulling")
+            } else if overscroll > Self.pullHintDistance {
+                if overscroll < Self.pullArmDistance { pullToAddArming?.cancel(); pullToAddArming = nil }
+                if pullToAddArmed, overscroll < Self.pullArmDistance - 30 { pullToAddArmed = false }
+                setPullToAddState(pullToAddArmed ? "armed" : "pulling")
+            } else {
+                pullToAddArming?.cancel(); pullToAddArming = nil; pullToAddArmed = false
+                setPullToAddState("none")
+            }
+        } else {
+            pullToAddArming?.cancel(); pullToAddArming = nil
+            let add = pullToAddArmed
+            pullToAddArmed = false; setPullToAddState("none")
+            if add { onEvent("pullToAddPage", [:]) }
         }
     }
     private func viewportChanged() {

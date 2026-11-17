@@ -72,15 +72,18 @@ final class NativePDFPageRepositoryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent("root/PDFOriginals/\(f.revision).pdf")), f.original)
         let view = try f.context.query("SELECT * FROM pdf_view_state").first; XCTAssertEqual(view?["page"] as? Int, 1); XCTAssertEqual(view?["zoom"] as? Double, 1.7)
     }
-    func testInsertedPageCopiesTemplateWithoutInkAndUndoRestoresOriginal() throws {
+    /// An imported PDF gets an empty page of the preceding page's size (app paper continues its
+    /// paper: NativePDFPageInsertPaperTests); the original stays the file's first bytes.
+    func testInsertedPageIsEmptyOfTheSameSizeWithoutInkAndUndoRestoresOriginal() throws {
         let f = try Fixture()
         let result = try f.call("pdf:restructure", f.request(["pages": [1, 0, 2, 3]]))
         XCTAssertEqual(result["pageMap"] as? [[Int]], [[1], [3], [4]]); XCTAssertEqual(result["pageCount"] as? Int, 4)
         XCTAssertEqual((result["changedDocuments"] as? [[String: Any]])?.map { $0["relPath"] as? String }, [f.path], "only this PDF's editors are invalidated")
         let document = try XCTUnwrap(PDFDocument(url: f.url)); XCTAssertEqual(document.pageCount, 4)
         let template = try XCTUnwrap(document.page(at: 0)), inserted = try XCTUnwrap(document.page(at: 1))
-        XCTAssertTrue(try NativePDFPageDocument.matches(NativePDFPageDocument.fingerprint(template, annotations: false), NativePDFPageDocument.fingerprint(inserted)))
+        XCTAssertTrue(try NativePDFPageDocument.isBlank(inserted, like: template))
         XCTAssertTrue(inserted.annotations.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: f.url).prefix(f.original.count), f.original, "an incremental update")
         XCTAssertTrue(document.page(at: 2)?.string?.contains("Original Page 2") == true)
         let rows = try f.context.query("SELECT id,page FROM pdf_drawings WHERE deleted_at IS NULL ORDER BY id")
         XCTAssertEqual(rows.map { $0["page"] as? Int }, [1, 3, 4])

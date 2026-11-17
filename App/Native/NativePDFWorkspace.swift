@@ -108,6 +108,8 @@ struct NativePDFWorkspace: View {
                         }
                         .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model, sideInset: bandSideInset).padding(.top, belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0)) } }
                         .overlay { if visible { NativePDFCommentAnchor(model: model) } }
+                        // Pulling past the last page says what letting go will do.
+                        .overlay(alignment: .bottom) { if visible, let state = model.pullToAdd { NativePDFPullToAddHint(armed: state == "armed").padding(.bottom, 28) } }
                         // The text box's format card floats under the palette: opening a box never moves the page under the finger.
                         .overlay(alignment: .top) {
                             if let draft = model.textEditorDraft {
@@ -188,8 +190,27 @@ struct NativePDFWorkspace: View {
         .bandalToast(Binding(get: { model.recordingNotice }, set: { model.recordingNotice = $0 }))
         .bandalToast(Binding(get: { model.paletteNotice.map { NativeAppLocale.string($0, Locale(identifier: NativeAppLocale.current)) } }, set: { model.paletteNotice = $0 }))
         .bandalToast(Binding(get: { model.aiNoteNotice }, set: { model.aiNoteNotice = $0 }), symbol: "checkmark.circle.fill", actionTitle: "되돌리기") { model.undoAINote() }
+        .bandalToast(Binding(get: { model.pageNotice }, set: { model.pageNotice = $0 }), symbol: model.pageNoticeSucceeded ? "checkmark.circle.fill" : nil,
+                     actionTitle: model.pageNoticeCanUndo ? "되돌리기" : nil) { model.undoPageNotice() }
     }
 
+}
+
+/// Under the last page while it is pulled up: keep pulling, then letting go adds a page.
+struct NativePDFPullToAddHint: View {
+    let armed: Bool
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: armed ? "plus.circle.fill" : "arrow.up").font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(armed ? Color.accentColor : NativeDesktopTheme.muted)
+            BandalText(armed ? "놓으면 새 페이지를 추가해요" : "계속 당기면 새 페이지를 추가해요").font(.system(size: 14, weight: .medium))
+                .foregroundStyle(NativeDesktopTheme.text)
+        }
+        .padding(.horizontal, 16).frame(minHeight: 40).bandalGlass(in: Capsule())
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine).accessibilityIdentifier("native-pdf-pull-to-add").accessibilityValue(armed ? "armed" : "pulling")
+        .animation(.easeOut(duration: 0.15), value: armed)
+    }
 }
 
 @MainActor
@@ -252,11 +273,18 @@ final class NativePDFWorkspaceModel {
     private var pageRecoverToken: String?
     private var pageOperation: Task<Void, Never>?
     private final class PendingPageOperation {
-        let channel: String, request: [String: Any], goTo: Int?
+        let channel: String, goTo: Int?
+        var request: [String: Any]
         var committedResult: [String: Any]?
         var viewStateSaved = false
-        init(channel: String, request: [String: Any], goTo: Int?) {
-            self.channel = channel; self.request = request; self.goTo = goTo
+        /// A toast to show once the change is on screen ("페이지를 추가했어요").
+        let notice: String?
+        /// Retried once after another pane or sync changed the PDF first.
+        var retried = false
+        /// After the change was saved, the follow-up steps ran once more on their own.
+        var resumedAutomatically = false
+        init(channel: String, request: [String: Any], goTo: Int?, notice: String? = nil) {
+            self.channel = channel; self.request = request; self.goTo = goTo; self.notice = notice
         }
     }
     private var pendingPageOperation: PendingPageOperation?
@@ -346,6 +374,14 @@ final class NativePDFWorkspaceModel {
     var recordingNotice: String?
     /// "노트에 넣었어요" after an AI answer landed on the page; its toast offers 되돌리기.
     var aiNoteNotice: String?
+    /// How a page add, delete or move ended, in a toast: a page change never blocks the page.
+    var pageNotice: String?
+    /// The page notice's 되돌리기 undoes the page change it reports.
+    private(set) var pageNoticeCanUndo = false
+    /// The notice reports a change made (a check mark), not one refused.
+    private(set) var pageNoticeSucceeded = false
+    /// Pulling past the last page: nil, "pulling" (keep pulling) or "armed" (letting go adds a page).
+    private(set) var pullToAdd: String?
     private(set) var summarizingRecording = false
     /// How long the recording being summarized ran, for the "요약하는 중이에요" card.
     private(set) var recordingSummaryMinutes = 0
@@ -631,7 +667,7 @@ final class NativePDFWorkspaceModel {
         pageHistoryTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(1))
             guard let self, !Task.isCancelled, self.showPages, !self.retired else { return }
-            do { try await self.refreshPageHistory() } catch { self.fail(error) }
+            do { try await self.refreshPageHistory() } catch { NativePDFPageDocument.log.error("page history refresh failed") }
         }
     }
     func layout(_ rect: CGRect) {
@@ -825,7 +861,12 @@ final class NativePDFWorkspaceModel {
             let next = max(persistence?.pendingCount ?? 0, payload["count"] as? Int ?? 0)
             if next != pendingCount { pendingCount = next }
         case "error": fail(NativePDFError.invalid(payload["message"] as? String ?? "PDF 저장 중 문제가 발생했습니다."))
+        case "pullToAddState":
+            let state = payload["state"] as? String
+            let next = state == "pulling" || state == "armed" ? state : nil
+            if next != pullToAdd { pullToAdd = next }
         case "pullToAddPage":
+            if pullToAdd != nil { pullToAdd = nil }
             guard assistantAnnotation == nil, errorMessage == nil, !isBusy else { return }
             addPage(after: pageCount)
         case "pencilTap":
@@ -1594,8 +1635,20 @@ final class NativePDFWorkspaceModel {
         editorTask = task
         Task { @MainActor in
             do { try await task.value; self.isBusy = self.materialMutating; self.restoreInput() }
-            catch { self.clearGesture(); self.isBusy = self.materialMutating; self.fail(error) }
+            catch { self.clearGesture(); self.isBusy = self.materialMutating; self.refusedByPeer(error) ? () : self.fail(error) }
         }
+    }
+    /// Another pane (or sync) changed these objects first, so this edit or undo was not applied:
+    /// show what is saved now and keep the page writable, with a toast instead of the banner.
+    private func refusedByPeer(_ error: Error) -> Bool {
+        guard NativePDFPersistence.refusedByPeer(error) else { return false }
+        mediaImportError = "다른 창에서 먼저 바뀌어 이 편집은 적용하지 않았어요."
+        restoreInput()
+        Task { @MainActor [weak self] in
+            guard let self, !self.retired else { return }
+            try? await self.publishSnapshot(); self.refreshHistory()
+        }
+        return true
     }
     private func restoreInput() {
         NativeInputTrace.change("pdf.gate", "busy=\(isBusy ? 1 : 0) mutating=\(materialMutating ? 1 : 0) error=\(blockedForError ? 1 : 0) closing=\(closing == nil ? 0 : 1) annotation=\(showAnnotationEditor ? 1 : 0) loading=\(isLoading ? 1 : 0) visible=\(visible ? 1 : 0)")
@@ -2245,12 +2298,13 @@ final class NativePDFWorkspaceModel {
         guard !isLoading, !isBusy, errorMessage == nil else { return }
         isBusy = true; host?.setPresentation(blocked: false, inputBlocked: true, overlays: [])
         Task {
-            do {
-                try await flush()
-                _ = try await store.invoke("pdf:exportAnnotated", ["courseId": document.courseID, "relPath": document.relativePath])
-                isBusy = materialMutating
-                host?.setPresentation(blocked: false, inputBlocked: materialMutating || blockedForError || closing != nil, overlays: [])
-            } catch { isBusy = materialMutating; fail(error) }
+            do { try await flush() } catch { isBusy = materialMutating; fail(error); return }
+            // The page stays writable whatever the export says: nothing here changed the document.
+            do { _ = try await store.invoke("pdf:exportAnnotated", ["courseId": document.courseID, "relPath": document.relativePath]) }
+            catch is CancellationError {}
+            catch { mediaImportError = error.localizedDescription.replacingOccurrences(of: #"^\[[a-z-]+\] "#, with: "", options: .regularExpression) }
+            isBusy = materialMutating
+            host?.setPresentation(blocked: false, inputBlocked: materialMutating || blockedForError || closing != nil, overlays: [])
         }
     }
     /// While a box is open, undo and redo act on its text, not on the document:
@@ -2275,7 +2329,7 @@ final class NativePDFWorkspaceModel {
                 try await task.value
                 isBusy = materialMutating
                 host?.setPresentation(blocked: false, inputBlocked: materialMutating || blockedForError || closing != nil, overlays: [])
-            } catch { isBusy = materialMutating; fail(error) }
+            } catch { isBusy = materialMutating; if !refusedByPeer(error) { fail(error) } }
         }
     }
     func flush(keepingText: Bool = false) async throws {
@@ -2422,7 +2476,7 @@ final class NativePDFWorkspaceModel {
         showPages.toggle()
         if showPages {
             if availableWidth < 900 { showAnnotations = false }
-            Task { do { try await refreshPageHistory() } catch { fail(error) } }
+            Task { do { try await refreshPageHistory() } catch { NativePDFPageDocument.log.error("page history refresh failed") } }
         }
         savePreferences()
     }
@@ -2453,15 +2507,30 @@ final class NativePDFWorkspaceModel {
         guard let recipe = NativePDFPageEditing.moved(count: pageCount, from: number, insertionSlot: slot) else { return }
         restructure(recipe)
     }
-    /// GoodNotes-style: a new page copies the preceding page's paper template.
+    /// A new page: app-made paper continues its paper, any other PDF gets an empty page of the same size.
     func addPage(after number: Int) {
         guard let recipe = NativePDFPageEditing.inserted(count: pageCount, after: number) else { return }
-        restructure(recipe, goTo: number + 1)
+        restructure(recipe, goTo: number + 1, notice: "페이지를 추가했어요")
     }
-    private func restructure(_ pages: [Int], goTo: Int? = nil) {
+    private func restructure(_ pages: [Int], goTo: Int? = nil, notice: String? = nil) {
         guard !isBusy, !isLoading, pageCanRestructure || pageCanAppend && NativePDFPageEditing.appends(pages, count: pageCount), !pageRevision.isEmpty else { return }
         performPageOperation("pdf:restructure", request: ["courseId": document.courseID, "relPath": document.relativePath,
-            "documentRevision": pageRevision, "clientMutationId": UUID().uuidString, "pages": pages], goTo: goTo)
+            "documentRevision": pageRevision, "clientMutationId": UUID().uuidString, "pages": pages], goTo: goTo, notice: notice)
+    }
+    /// The page notice's 되돌리기.
+    func undoPageNotice() {
+        pageNotice = nil; pageNoticeCanUndo = false
+        restorePageChange(undo: true)
+    }
+    /// What a failed page change tells the user; the PDF and ink are as they were.
+    nonisolated static func pageFailureNotice(_ error: Error) -> String {
+        let code = (error as? DesktopRuntimeError)?.code
+        let text = error.localizedDescription.replacingOccurrences(of: #"^\[[a-z-]+\] "#, with: "", options: .regularExpression)
+        switch code {
+        case NativePDFPageDocument.unsupportedCode?, "SYNC_RESTRUCTURE_BLOCKED"?, "VALIDATION"?: return text
+        case "CONFLICT"?: return text.contains("필기") ? text : "PDF가 방금 바뀌어서 페이지를 그대로 두었어요."
+        default: return "페이지를 바꾸지 못해 원래대로 두었어요."
+        }
     }
     func restorePageChange(undo: Bool) {
         guard !isBusy, !isLoading, let token = undo ? pageUndoToken : pageRedoToken else { return }
@@ -2485,9 +2554,10 @@ final class NativePDFWorkspaceModel {
         pageRecoverToken = result["recoverToken"] as? String ?? pageUndoToken ?? pageRedoToken
         pageHistoryCanRecover = pageRecoverToken != nil
     }
-    private func performPageOperation(_ channel: String, request: [String: Any], goTo: Int? = nil) {
+    private func performPageOperation(_ channel: String, request: [String: Any], goTo: Int? = nil, notice: String? = nil) {
         guard pageOperation == nil, pendingPageOperation == nil, !retired else { return }
-        pendingPageOperation = PendingPageOperation(channel: channel, request: request, goTo: goTo)
+        pageNotice = nil; pageNoticeCanUndo = false; pageNoticeSucceeded = false
+        pendingPageOperation = PendingPageOperation(channel: channel, request: request, goTo: goTo, notice: notice)
         resumePageOperation()
     }
     private func resumePageOperation() {
@@ -2528,8 +2598,51 @@ final class NativePDFWorkspaceModel {
                 } else if self.showPages { try await self.refreshPageHistory() }
                 self.pendingPageOperation = nil
                 self.isBusy = self.materialMutating; self.restoreInput()
+                if let notice = pending.notice {
+                    // 되돌리기 needs this revision's undo token, which the pages panel may not have loaded.
+                    try? await self.refreshPageHistory()
+                    self.pageNoticeCanUndo = self.pageHistoryCanUndo && self.pageUndoToken != nil
+                    self.pageNoticeSucceeded = true; self.pageNotice = notice
+                }
             } catch {
-                self.isBusy = self.materialMutating; self.fail(error)
+                self.isBusy = self.materialMutating
+                guard !self.retired else { return }
+                if pending.committedResult != nil {
+                    // Saved; only this surface is behind. Finish the remaining steps once more on
+                    // its own; a fault that persists (storage) keeps the retry banner, since the
+                    // surface shows the old revision and must not take ink.
+                    if !pending.resumedAutomatically {
+                        pending.resumedAutomatically = true
+                        Task { @MainActor [weak self] in self?.resumePageOperation() }
+                        return
+                    }
+                    self.fail(error); return
+                }
+                // Nothing changed on disk: drop the operation and keep writing on the page as it was.
+                self.pendingPageOperation = nil
+                NativePDFPageDocument.log.error("page operation \(pending.channel, privacy: .public) refused: \((error as? DesktopRuntimeError)?.code ?? "error", privacy: .public)")
+                let stale = (error as? DesktopRuntimeError)?.code == "CONFLICT" && pending.channel == "pdf:restructure"
+                if stale, !pending.retried, let pages = pending.request["pages"] as? [Int], NativePDFPageEditing.appends(pages, count: self.pageCount) {
+                    // Another pane or sync changed the PDF first: add the page to what is there now.
+                    do {
+                        try await self.reopen()
+                        if self.setupComplete, !self.pageRevision.isEmpty, let recipe = NativePDFPageEditing.inserted(count: self.pageCount, after: self.pageCount) {
+                            var request = pending.request
+                            request["documentRevision"] = self.pageRevision; request["clientMutationId"] = UUID().uuidString; request["pages"] = recipe
+                            let again = PendingPageOperation(channel: pending.channel, request: request, goTo: self.pageCount + 1, notice: pending.notice)
+                            again.retried = true
+                            // After this task's `defer` has cleared pageOperation.
+                            self.pendingPageOperation = again
+                            Task { @MainActor [weak self] in self?.resumePageOperation() }
+                            return
+                        }
+                    } catch { self.fail(error); return }
+                } else if stale {
+                    // The surface must show the PDF as it is now before it takes ink again.
+                    do { try await self.reopen() } catch { self.fail(error); return }
+                }
+                self.restoreInput()
+                self.pageNoticeSucceeded = false; self.pageNotice = Self.pageFailureNotice(error)
             }
         }
     }
