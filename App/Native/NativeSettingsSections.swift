@@ -168,6 +168,7 @@ struct NativeSettingsSections: View {
     @AppStorage(NativeTabGesturePreferences.openKindKey) private var tabGestureKind = NativeTabGesturePreferences.choose
     @State private var pickingGestureKind = false
     @AppStorage(NativeFirstUseTip.offKey) private var tipsOff = false
+    @AppStorage(NativeVideoPiPPreferences.autoKey) private var autoPictureInPicture = true
     @State private var pickingLead = false
     @State private var pickingLocale = false
     @Environment(\.locale) private var locale
@@ -238,6 +239,10 @@ struct NativeSettingsSections: View {
             }
             NativeSettingsGroup(title: "검색") {
                 NativeHandwritingSearchToggle(store: store, isOn: boolean("handwritingSearch", fallback: true))
+            }
+            NativeSettingsGroup(title: "영상") {
+                NativeSettingsToggle(title: "탭을 떠나면 PiP로 이어 보기", note: "재생 중인 영상이 작은 창에서 계속 재생돼요", isOn: $autoPictureInPicture)
+                    .accessibilityIdentifier("native-settings-video-auto-pip")
             }
             NativeSettingsGroup {
                 Button { pickingLocale = true } label: {
