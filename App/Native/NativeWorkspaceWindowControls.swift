@@ -29,11 +29,18 @@ struct NativeWorkspaceWindowControls: View {
     static let trailing: CGFloat = 10
     static let height: CGFloat = 40
     /// Centred on the tab strip's row: (51 − 40) / 2 below the strip's top, which a window that is not full screen moves down.
-    static var top: CGFloat {
-        NativeDockHeaderMetrics.topPadding(for: .zero, topEdge: NativeDockHeaderMetrics.topEdge) + (NativeDockStripMetrics.single.height - height) / 2
+    static var top: CGFloat { top(at: NativeDockHeaderMetrics.topEdge) }
+    static func top(at topEdge: NativeDockTopEdge) -> CGFloat {
+        NativeDockHeaderMetrics.topPadding(for: .zero, topEdge: topEdge) + (NativeDockStripMetrics.single.height - height) / 2
     }
     /// The right panel starts under the group, with the same 9 pt gap as before the group was centred.
     static var inspectorTop: CGFloat { top + height + 9 }
+    /// Where the group sits over the dock, in the dock's space, when it sits there at all: `reserve` is the room it
+    /// keeps at the dock's right (`width + trailing`), 0 when the pinned right panel is under it instead.
+    static func frame(dockWidth: CGFloat, reserve: CGFloat, topEdge: NativeDockTopEdge) -> CGRect? {
+        guard reserve > 0, dockWidth > 0 else { return nil }
+        return CGRect(x: dockWidth - reserve, y: top(at: topEdge), width: width, height: height)
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -61,6 +68,8 @@ struct NativeWorkspaceWindowControls: View {
         .background(NativeGlass.selection.opacity(overview ? 0 : 1), in: RoundedRectangle(cornerRadius: 11))
         .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(NativeGlass.fieldStroke, lineWidth: 1).opacity(overview ? 0 : 1) }
         .accessibilityElement(children: .contain).accessibilityIdentifier("native-workspace-controls")
+        // The group lies over the right pane's corner: pressing it must not make that pane the one 공유 acts on.
+        .nativeDockTouchFocusExcluded()
     }
 
     /// Cells of 36 · 36 · 36 · 34 in a 169 × 40 group; the chosen one carries a 34 × 30 pill.
@@ -76,6 +85,29 @@ struct NativeWorkspaceWindowControls: View {
     }
     @ViewBuilder private func label(_ title: String, mode value: NativeWorkspaceChromeMode) -> some View {
         if mode == value { Label(title, systemImage: "checkmark") } else { Text(title) }
+    }
+}
+
+/// How a document whose area lies under the window buttons keeps clear of them. Whatever the layout (one pane,
+/// side by side, stacked, a grid) and the mode, it is the area's own overlap with the buttons that counts.
+struct NativeWorkspaceControlAvoidance: Equatable {
+    /// The room the buttons take from the area's right edge (`nativeWorkspaceControlInset`); 0 when they are not over it.
+    var trailing: CGFloat = 0
+    /// With the tools hidden the editors start their content 44 pt down when the buttons are over them; this is how
+    /// much further it must go to clear the buttons with a small gap (`nativeWorkspaceTopInset`).
+    var extraDrop: CGFloat = 0
+    static let none = NativeWorkspaceControlAvoidance()
+    /// What the editors move their content down by under the buttons, before `extraDrop`.
+    static let editorDrop: CGFloat = 44
+    static let gap: CGFloat = 4
+
+    /// `area`: a document's area in the dock's space (its pane below the strip); `controls`: the buttons' frame in the
+    /// same space, nil when they sit over the right panel.
+    static func resolve(area: CGRect, controls: CGRect?, mode: NativeWorkspaceChromeMode) -> NativeWorkspaceControlAvoidance {
+        guard let controls, !area.isEmpty, area.minY < controls.maxY, area.maxY > controls.minY,
+              area.minX < controls.maxX, area.maxX > controls.minX else { return .none }
+        let drop = mode == .toolsHidden ? max(0, controls.maxY + gap - area.minY - editorDrop) : 0
+        return NativeWorkspaceControlAvoidance(trailing: area.maxX - controls.minX, extraDrop: drop)
     }
 }
 

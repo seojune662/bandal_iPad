@@ -20,18 +20,24 @@ final class NativeDockTabSizingUITests: XCTestCase {
         XCTAssertTrue(browser.waitForExistence(timeout: 15))
         XCTAssertGreaterThan(browser.label.count, 80)
         let browserID = String(browser.identifier.dropFirst("native-document-tab-".count))
-        for action in ["new-note", "chat", "new-whiteboard"] { open(action, app: app) }
+        open("new-note", app: app)
         // With room to spare every tab hugs its own title (Figma 155:7541); the long browser title stops at the cap.
+        // (A tab's frame here is its title part; its ✕ is the 44 points after it.)
+        let two = tabs(app)
+        XCTAssertEqual(two.count, 2)
+        XCTAssertGreaterThan(try XCTUnwrap(two.max { $0.frame.width < $1.frame.width }).frame.width, try XCTUnwrap(two.min { $0.frame.width < $1.frame.width }).frame.width + 20)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(two.first).frame.width, 209 - 44)
+        for action in ["chat", "new-whiteboard"] { open(action, app: app) }
         assertTabsFit(app, expectedVisibleCount: 4)
-        let roomy = tabs(app)
-        XCTAssertGreaterThan(try XCTUnwrap(roomy.max { $0.frame.width < $1.frame.width }).frame.width, try XCTUnwrap(roomy.min { $0.frame.width < $1.frame.width }).frame.width + 20)
-        let wider = try XCTUnwrap(roomy.first).frame.width
-        XCTAssertLessThanOrEqual(wider, 209)
+        let wider = try XCTUnwrap(tabs(app).first).frame.width
         for _ in 0..<11 { open("new-note", app: app) }
+        // Past the room no tab is dropped: they share the narrowest width (icon and ✕) and the strip scrolls.
+        let all = allTabs(app)
+        XCTAssertEqual(all.count, 15, "Every tab stays in the strip")
         let shrunk = tabs(app)
-        XCTAssertLessThan(shrunk.count, 16, "Overflow remains in the full tab list, without horizontal scrolling")
+        XCTAssertLessThan(shrunk.count, 15, "Some are scrolled out of view")
         XCTAssertLessThan(try XCTUnwrap(shrunk.first).frame.width, wider)
-        XCTAssertTrue(shrunk.contains { $0.isSelected }, "The selected tab remains visible when earlier tabs overflow")
+        XCTAssertTrue(shrunk.contains { $0.isSelected }, "The selected tab is scrolled into view")
         assertUniformTabs(app)
         capture("Uniform compressed mixed tabs with a long browser title")
 
@@ -68,8 +74,14 @@ final class NativeDockTabSizingUITests: XCTestCase {
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [opened], timeout: 15), .completed)
     }
+    @MainActor private func allTabs(_ app: XCUIApplication) -> [XCUIElement] {
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-")).allElementsBoundByIndex.sorted { $0.frame.minX < $1.frame.minX }
+    }
+    /// The tabs in view: wholly inside the strip's scrolling part.
     @MainActor private func tabs(_ app: XCUIApplication) -> [XCUIElement] {
-        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-document-tab-")).allElementsBoundByIndex.filter { $0.frame.intersects(app.frame) }.sorted { $0.frame.minX < $1.frame.minX }
+        let scroller = app.scrollViews.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-tab-scroll-")).firstMatch
+        let viewport = scroller.exists ? scroller.frame.insetBy(dx: -1, dy: -1) : app.frame
+        return allTabs(app).filter { viewport.contains($0.frame) }
     }
     @MainActor private func assertUniformTabs(_ app: XCUIApplication) { assertTabsFit(app, uniform: true) }
     @MainActor private func assertTabsFit(_ app: XCUIApplication, expectedVisibleCount: Int? = nil, uniform: Bool = false) {

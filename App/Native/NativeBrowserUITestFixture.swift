@@ -25,6 +25,14 @@ extension NativeBrowserSession {
                 """, baseURL: URL(string: "https://login.fixture.test/"))
             return
         }
+        if args.contains("--native-chrome-favicon-fixture") {
+            // A site that declares its icon inline, so the tab's page icon needs no network.
+            page.webView.loadHTMLString("""
+                <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Favicon fixture</title>
+                <link rel="icon" href="\(NativeTabFavicons.fixtureIcon)"></head><body><h1>Favicon fixture</h1></body></html>
+                """, baseURL: URL(string: "https://favicon.fixture.test/"))
+            return
+        }
         let parity = args.contains("--native-browser-parity-ui-fixture")
         let body = parity ? """
             <p>Bandal needle one.</p><p>Bandal needle two.</p><p>Bandal needle three.</p>

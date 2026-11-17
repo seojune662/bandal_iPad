@@ -16,14 +16,14 @@ struct NativeDockStripMetrics: Equatable {
     }
     /// The strip and the 1-point line under it: 52 for one pane (the line is inside the Figma frame), 53 and 49 in a split.
     var total: CGFloat { height + 1 }
-    /// The × of the selected tab: its glyph, the 6-point gap before it and the pill's trailing padding.
-    var closeZone: CGFloat { 6 + close + 1 + tabPadding }
 }
 
 /// The paper card inside a pane's content area: in from the sides and bottom by `inset`, with `radius` corners.
 /// The strip of glass that leaves between a side panel and the card is where a panel's resize handle may reach.
 enum NativeDockCard {
     static let inset: CGFloat = 6, radius: CGFloat = 12
+    /// How far the chosen tab's foot flares out into the card's edge on each side.
+    static let tabFlare: CGFloat = 6
 }
 
 /// How far a pane at the window's top keeps its tab strip below the top edge.
@@ -80,43 +80,69 @@ enum NativeDockHeaderMetrics {
     }
 }
 
-/// Tabs hug their titles as in Figma while they fit. When they do not, desktop
-/// adaptiveTabs.ts sizing takes over: equal widths with a 44-point minimum,
-/// where title length and resource kind no longer participate.
+/// Tabs hug their titles as in Figma while they fit. When they do not, they share one width (desktop
+/// adaptiveTabs.ts), down to `minimum`: the icon and the ✕, which every tab keeps. Past that no tab is
+/// hidden: the strip scrolls sideways and keeps the chosen tab in view (`NativeDockWorkspace`).
 struct NativeDockTabSizing: Equatable {
-    enum Density { case regular, compact, icon }
+    /// `regular` tabs show their title; `icon` tabs only the icon and the ✕.
+    enum Density { case regular, icon }
     let width: CGFloat
     let spacing: CGFloat
     let density: Density
-    let visibleIndices: [Int]
+    /// The width the strip has for its tabs.
+    let available: CGFloat
+    let count: Int
     /// Per-tab widths while every tab fits at its own size; nil once tabs share one width.
     let natural: [CGFloat]?
-    var totalWidth: CGFloat { (natural?.reduce(0, +) ?? width * CGFloat(visibleIndices.count)) + spacing * CGFloat(max(0, visibleIndices.count - 1)) }
-    var showsClose: Bool { density == .regular }
+    /// Every tab, in order: none is ever left out.
+    var indices: Range<Int> { 0..<count }
+    var totalWidth: CGFloat { (natural?.reduce(0, +) ?? width * CGFloat(count)) + spacing * CGFloat(max(0, count - 1)) }
+    /// More tabs than fit at `minimum`: the strip scrolls.
+    var scrolls: Bool { totalWidth > available + 0.5 }
+    /// The strip's visible width for its tabs.
+    var viewport: CGFloat { min(totalWidth, max(0, available)) }
     func width(of index: Int) -> CGFloat { natural?[index] ?? width }
+    /// Where tab `index` starts, from the first tab's left edge (unscrolled).
+    func offset(of index: Int) -> CGFloat {
+        guard index > 0 else { return 0 }
+        let before = natural.map { Array($0.prefix(index)).reduce(0, +) } ?? width * CGFloat(index)
+        return before + spacing * CGFloat(index)
+    }
+
+    /// The narrowest a tab gets: a 32-point icon area and the 44-point ✕.
+    static let minimum: CGFloat = 76
+    static let maximum: CGFloat = 208
+    /// From this width a shared-width tab shows its title (truncated) between the icon and the ✕.
+    static let titled: CGFloat = 104
+    /// The ✕ at a tab's right end: 44 points to touch, as tall as the strip.
+    static let closeTarget: CGFloat = 44
 
     init(availableWidth: CGFloat, naturalWidths: [CGFloat], activeIndex: Int, spacing: CGFloat = 0) {
-        let capped = naturalWidths.map { min(Self.maximum, max(44, $0)) }, gaps = max(0, spacing) * CGFloat(max(0, capped.count - 1))
+        let capped = naturalWidths.map { min(Self.maximum, max(Self.minimum, $0)) }, gaps = max(0, spacing) * CGFloat(max(0, capped.count - 1))
         guard !capped.isEmpty, availableWidth.isFinite, capped.reduce(0, +) + gaps <= availableWidth else {
             self.init(availableWidth: availableWidth, count: naturalWidths.count, activeIndex: activeIndex, spacing: spacing); return
         }
-        self.init(width: capped.max() ?? 0, spacing: max(0, spacing), density: .regular, visibleIndices: Array(capped.indices), natural: capped)
+        self.init(width: capped.max() ?? 0, spacing: max(0, spacing), density: .regular, available: availableWidth, count: capped.count, natural: capped)
     }
-    private init(width: CGFloat, spacing: CGFloat, density: Density, visibleIndices: [Int], natural: [CGFloat]?) {
-        self.width = width; self.spacing = spacing; self.density = density; self.visibleIndices = visibleIndices; self.natural = natural
+    private init(width: CGFloat, spacing: CGFloat, density: Density, available: CGFloat, count: Int, natural: [CGFloat]?) {
+        self.width = width; self.spacing = spacing; self.density = density; self.available = available; self.count = count; self.natural = natural
     }
-    static let maximum: CGFloat = 208
 
+    /// The chosen tab's paper under a scrolled strip: its span (`x`, `width`, before the scroll) moved by the scroll
+    /// `offset` and cut to the strip's tab area; nil once less than a sliver of it shows.
+    static func visibleSpan(x: CGFloat, width: CGFloat, offset: CGFloat, viewport: ClosedRange<CGFloat>) -> (x: CGFloat, width: CGFloat)? {
+        let start = max(x - offset, viewport.lowerBound), end = min(x - offset + width, viewport.upperBound)
+        guard end - start >= 12 else { return nil }
+        return (start, end - start)
+    }
+
+    /// `activeIndex` no longer changes the widths (no tab is dropped for it); the strip scrolls it into view.
     init(availableWidth: CGFloat, count: Int, activeIndex: Int, spacing: CGFloat = 0) {
-        self.spacing = max(0, spacing); natural = nil
-        guard count > 0, availableWidth.isFinite, availableWidth >= 44 else {
-            width = 0; density = .icon; visibleIndices = []; return
-        }
-        let capacity = min(count, max(1, Int(floor((availableWidth + self.spacing) / (44 + self.spacing)))))
-        var indices = Array(0..<capacity)
-        if activeIndex >= capacity, activeIndex < count { indices[capacity - 1] = activeIndex }
-        visibleIndices = indices
-        width = min(Self.maximum, (availableWidth - self.spacing * CGFloat(capacity - 1)) / CGFloat(capacity))
-        density = width >= 104 ? .regular : width >= 56 ? .compact : .icon
+        self.spacing = max(0, spacing); natural = nil; self.count = max(0, count)
+        available = availableWidth.isFinite ? max(0, availableWidth) : 0
+        guard count > 0 else { width = 0; density = .icon; return }
+        let shared = (available - self.spacing * CGFloat(count - 1)) / CGFloat(count)
+        width = min(Self.maximum, max(Self.minimum, shared.isFinite ? shared : 0))
+        density = width >= Self.titled ? .regular : .icon
     }
 }
