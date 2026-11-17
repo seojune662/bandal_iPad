@@ -109,12 +109,13 @@ struct NativePDFFloatingPalette: View {
         .disabled(model.isLoading || model.isBusy || model.errorMessage != nil)
     }
     private func pill(offered: CGFloat) -> some View {
-        Group {
+        let slots = (model.usesColorSlots ? model.colorSlots : model.palette.colors(for: model.penKind)).count
+        let scrolls = Self.stage(fitting: offered, slots: slots) == nil
+        return Group {
             if collapsed { mini } else {
                 // One row, whose strips widen and narrow with the room: its buttons keep their identity through
                 // every change of shape, so a tool's open options stay where they are. (Choosing among several
                 // ready-made rows rebuilt the buttons, and their options with them, each time the choice changed.)
-                let slots = (model.usesColorSlots ? model.colorSlots : model.palette.colors(for: model.penKind)).count
                 Group {
                     if let stage = Self.stage(fitting: offered, slots: slots) {
                         NativePDFPaletteQuickControls(model: model, collapse: { model.showStyle = false; collapsed = true }, shownTools: stage.tools, shownColors: stage.colors)
@@ -129,7 +130,16 @@ struct NativePDFFloatingPalette: View {
                 }.padding(.horizontal, Self.inset)
             }
         }.padding(.vertical, 5).bandalGlass(in: Capsule())
-            .accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-palette")
+            .modifier(PaletteIdentity(applies: !collapsed && !scrolls))
+    }
+    /// `native-pdf-palette` names the pill while it is a row of buttons. When the pill is one view (the scrolling row,
+    /// or the collapsed button), an identifier on it would replace that view's own (`native-pdf-palette-scroll`,
+    /// `native-pdf-palette-expand`), so it is left off.
+    private struct PaletteIdentity: ViewModifier {
+        let applies: Bool
+        func body(content: Content) -> some View {
+            if applies { content.accessibilityElement(children: .contain).accessibilityIdentifier("native-pdf-palette") } else { content }
+        }
     }
     private var mini: some View {
         Button { collapsed = false } label: {
