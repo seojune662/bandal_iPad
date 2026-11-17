@@ -181,6 +181,7 @@ Menu {
             await projectLibrary.reload(store: store, scope: scope)
             #if DEBUG
             await NativeSearchUITestFixture.seedIfRequested(store: store, courseID: courseID)
+            await NativeVideoUITestFixture.seedIfRequested(store: store, courseID: courseID)
             #endif
         }
         .onChange(of: folderPath) { _, _ in saveBrowsing() }

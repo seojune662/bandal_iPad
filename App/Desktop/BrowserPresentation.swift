@@ -8,6 +8,22 @@ enum BrowserPresentationMode: String, Codable, CaseIterable {
     }
 }
 
+/// YouTube on a touch screen: its desktop player pauses on a click, and a Pencil tap (or a tap with a trackpad
+/// attached) reaches it as one. The mobile site shows its controls on a tap, pauses on its own button and seeks
+/// ten seconds on a double tap, as the YouTube app does. Until the person picks 웹사이트 표시 for the site, it opens mobile.
+enum BrowserVideoSites {
+    static let mobileByDefault: Set<String> = ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"]
+    static func defaultPresentation(host: String) -> BrowserPresentationMode {
+        mobileByDefault.contains(host.lowercased()) ? .mobile : .automatic
+    }
+    /// Where a site's 웹사이트 표시 choice is kept, most specific last. YouTube's hosts share `youtube.com`, and a
+    /// choice saved for one of them before they shared it still counts.
+    static func presentationKeys(_ host: String) -> [String] {
+        let host = host.lowercased()
+        return mobileByDefault.contains(host) && host != "youtube.com" ? ["youtube.com", host] : [host]
+    }
+}
+
 /// Website presentation is a device preference, isolated by profile and host.
 /// Private overrides never enter the on-disk preferences or normal profiles.
 @MainActor
@@ -22,12 +38,17 @@ final class BrowserPresentationStore {
             ? try JSONDecoder().decode([Entry].self, from: Data(contentsOf: file)) : []
     }
     func mode(profile: String, host: String, isPrivate: Bool) -> BrowserPresentationMode {
-        (isPrivate ? ephemeral : saved).last { $0.profile == profile && $0.host == host.lowercased() }?.mode ?? .automatic
+        let entries = isPrivate ? ephemeral : saved
+        for key in BrowserVideoSites.presentationKeys(host) {
+            if let mode = entries.last(where: { $0.profile == profile && $0.host == key })?.mode { return mode }
+        }
+        return BrowserVideoSites.defaultPresentation(host: host)
     }
     func set(_ mode: BrowserPresentationMode, profile: String, host: String, isPrivate: Bool) throws {
         guard !host.isEmpty, host.count <= 253 else { throw DesktopBrowserError.invalid("사이트 주소") }
-        let key = host.lowercased()
-        var next = (isPrivate ? ephemeral : saved).filter { !($0.profile == profile && $0.host == key) }
+        // YouTube's hosts share one choice: www and m redirect to each other by the device the site is asked for.
+        let keys = BrowserVideoSites.presentationKeys(host), key = keys[0]
+        var next = (isPrivate ? ephemeral : saved).filter { !($0.profile == profile && keys.contains($0.host)) }
         next.append(Entry(profile: profile, host: key, mode: mode))
         if isPrivate { ephemeral = next }
         else { try JSONEncoder().encode(next).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]); saved = next }

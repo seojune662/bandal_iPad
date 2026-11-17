@@ -357,7 +357,12 @@ final class CloudSyncEngineTests: XCTestCase {
         let history = try await a.invoke("pdf:pageHistory", ["courseId": course, "relPath": paper]) as! [String: Any]
         XCTAssertEqual(history["canRestructure"] as? Bool, false)
         XCTAssertEqual(history["canAppend"] as? Bool, true)
-        XCTAssertEqual(history["canUndo"] as? Bool, false)
+        // The added page has not left this device yet, so undoing it is invisible to others…
+        XCTAssertEqual(history["canUndo"] as? Bool, true)
+        // …until a sync pass has exchanged the PDF with it.
+        await a.engine.syncNow()
+        let exchanged = try await a.invoke("pdf:pageHistory", ["courseId": course, "relPath": paper]) as! [String: Any]
+        XCTAssertEqual(exchanged["canUndo"] as? Bool, false)
         try await a.runtime.withSyncStorage { context, _ in try SyncStore(context: context).setProvider(nil) }
         _ = try await change([2, 1])
     }

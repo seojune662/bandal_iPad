@@ -167,6 +167,7 @@ final class NativePDFPageRepository {
             let result: [String: Any] = ["documentRevision": from, "fingerprint": D.fingerprint(bytes), "pageCount": pages.count, "pageMap": map, "changedCourseIDs": [String](), "changedDocuments": [[String: Any]]()]
             try context.transaction { try saveReceipt(operation, canonical, result) }; return result
         }
+        if NativePDFPageTestFixture.failsPageEdits(root: context.root) { throw D.unsupported }
         let output = try D.rewrite(bytes, pages: pages), to = try retain(output), _ = try retain(bytes)
         let fingerprint = D.fingerprint(output), sizes = D.sizes(try D.open(output)), token = UUID().uuidString.lowercased(), head = try cursor(material)
         var before = try state(course: course, path: path), after = try remap(before, map: map, count: pages.count)
@@ -244,10 +245,22 @@ final class NativePDFPageRepository {
         if result["recoverToken"] != nil { result["recoverVariant"] = "before"; result["reason"] = "변경 뒤 필기나 연결 노트를 수정했다면 원본에 덮어쓰지 않고 변경 전 사본으로 복구할 수 있습니다." }
         if try syncLocked(course) {
             result["canAppend"] = result["canRestructure"]; result["canRestructure"] = false
-            result["canUndo"] = false; result["canRedo"] = false
+            if result["canUndo"] as? Bool == true, let token = head.0 { result["canUndo"] = try unsentAppend(token, material: material, course: course, path: path) } else { result["canUndo"] = false }
+            result["canRedo"] = false
             result["restructureReason"] = Self.syncMessage
         }
         return result
+    }
+    /// Under sync, pages may only be appended, and a change is final once other devices
+    /// can have it. Undoing the latest append is still invisible to them while the PDF last
+    /// exchanged is the one before it (or this PDF was never exchanged).
+    private func unsentAppend(_ token: String, material: String, course: String, path: String) throws -> Bool {
+        let record = try row(token, material: material), before = record["before_sha"] as? String
+        guard let raw = record["recipe_json"] as? String, let recipe = try DesktopJSON.decode(Data(raw.utf8)) as? [Int],
+              let before, let count = try? D.open(original(before)).pageCount, NativePDFPageEditing.appends(recipe, count: count) else { return false }
+        guard try context.tableExists("cloud_sync_docs"), let text = try context.query("SELECT registers FROM cloud_sync_docs WHERE course_id=? AND rel_path=?", [course, path]).first?["registers"] as? String else { return true }
+        let exchanged = try SyncStore.decode(text).text("pdf_sha256")
+        return exchanged == nil || exchanged == before
     }
     /// Other devices place ink by page number, so while sync is on a PDF of a synced (managed)
     /// course only grows at the end; undo and redo of a page change are off too (design §4.6).
@@ -258,8 +271,10 @@ final class NativePDFPageRepository {
     private static var syncBlocked: DesktopRuntimeError { DesktopRuntimeError(syncMessage, code: "SYNC_RESTRUCTURE_BLOCKED") }
     private func restore(_ request: [String: Any], operation: String, canonical: [String: Any]) throws -> [String: Any] {
         let (course, path, binding) = try identity(request), material = binding["materialID"] as! String, current = binding["documentRevision"] as! String, head = try cursor(material)
-        if try syncLocked(course) { throw Self.syncBlocked }
         guard let token = request["historyToken"] as? String, let direction = request["direction"] as? String, ["undo", "redo"].contains(direction), token == (direction == "undo" ? head.0 : head.1.last) else { throw C.conflict("현재 페이지 변경 기록과 복원 요청이 다릅니다.") }
+        if try syncLocked(course) {
+            guard direction == "undo", try unsentAppend(token, material: material, course: course, path: path) else { throw Self.syncBlocked }
+        }
         let record = try row(token, material: material), fromVariant = direction == "undo" ? "after" : "before", toVariant = direction == "undo" ? "before" : "after"
         guard try eligible(record, course: course, path: path, revision: current, variant: fromVariant) else { throw C.conflict("페이지 변경 이후 수정된 필기·노트가 있습니다. 변경 전 사본으로 복구해 주세요.") }
         let target = record[toVariant + "_sha"] as! String, output = try original(target), state = try F.object(record[toVariant + "_json"]), fileHistory = try historyFiles(record)
