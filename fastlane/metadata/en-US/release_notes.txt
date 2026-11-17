@@ -1,3 +1,4 @@
-• AI inside notes: open it as a sidebar or floating bar, place answers in your note, or draw a simple diagram.
-• Look Up: select a word or passage and a dictionary or Wikipedia card appears by itself.
-• One Plans screen, where you can also buy AI Credit.
+• Three fingers: pinch to close the current tab, spread to open a new one.
+• PDF shapes: hold at the end of a stroke for a clean shape of the same width; tap it to move or resize.
+• The laser fades 3 seconds after your last stroke.
+• A short guide to Bandal and a card for new features.
