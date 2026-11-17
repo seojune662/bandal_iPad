@@ -225,6 +225,45 @@ struct NativeWorkspaceView: View {
     }
 
 
+    // Split from `workspaceChrome`: inline it pushes that expression past the type checker's time limit in Release archives.
+    // Editors and the inspector remain mounted while covered. Navigation
+    // and opening a keyboard must not discard an in-progress draft.
+    @ViewBuilder
+    private func documentArea(width: CGFloat, chrome: NativeWorkspaceChromeLayout, rightVisible: Bool) -> some View {
+        let covered = section != .library || auxiliary != nil || windowsOverviewOpen
+        ZStack {
+            NativeWorkspacePreviewContainer(controller: previews, isInteractive: !covered) {
+            NativeDockWorkspace(navigation: navigation, store: store, content: { workspace($0) }, empty: { emptyWorkspace },
+                perform: transition, persist: saveNavigation, closeDocuments: closeDocuments,
+                materialsOpen: rightVisible,
+                toggleMaterials: { toggleMaterialsRail(width: width) },
+                openNewTab: openNewTab, covered: covered, select: selectTab,
+                chromeMode: navigation.chromeMode, controlInset: chrome.rightPinned ? 0 : NativeWorkspaceWindowControls.width + NativeWorkspaceWindowControls.trailing,
+                closeTabByGesture: closeTabByGesture, tabGestureBlocked: tabGestureBlocked(width: width))
+                .environment(\.nativeWorkspacePreviewController, previews)
+                .environment(\.nativePDFPaletteHost, pdfPalette)
+            }
+                .opacity(covered && !settingsOpen ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered)
+            if windowsOverviewOpen || section == .settings {
+                EmptyView()
+            } else if let auxiliary {
+                switch auxiliary {
+                case .marketplace: NativeMarketplaceView(store: store)
+                case .help: NativeHelpView()
+                case .account: NativeAccountView(store: store)
+                }
+            } else if section != .library {
+                VStack(spacing: 0) {
+                    toolTabs
+                    NativeToolsWorkspace(section: section, store: store, services: services)
+                }
+            }
+        // The page, note or web view runs to the window's bottom edge, under the home indicator.
+        // The dock lays its documents out as cards on the glass; a tool screen over it keeps the plain paper.
+        }.frame(maxWidth: .infinity, maxHeight: .infinity).ignoresSafeArea(.container, edges: .bottom)
+            .background(covered ? AnyShapeStyle(NativeGlass.paper) : AnyShapeStyle(NativeGlass.panel))
+    }
+
     // Split from `body`: as one expression it exceeds the type checker's time limit in Release archives.
     private var workspaceChrome: some View {
         GeometryReader { geometry in
@@ -258,40 +297,7 @@ struct NativeWorkspaceView: View {
                     // Outside the clip, so the glass reaches under the home indicator like the other panels.
                     .background(NativeGlass.panel)
                     .accessibilityHidden(true)
-                // Editors and the inspector remain mounted while covered. Navigation
-                // and opening a keyboard must not discard an in-progress draft.
-                let covered = section != .library || auxiliary != nil || windowsOverviewOpen
-                ZStack {
-                    NativeWorkspacePreviewContainer(controller: previews, isInteractive: !covered) {
-                    NativeDockWorkspace(navigation: navigation, store: store, content: { workspace($0) }, empty: { emptyWorkspace },
-                        perform: transition, persist: saveNavigation, closeDocuments: closeDocuments,
-                        materialsOpen: rightVisible,
-                        toggleMaterials: { toggleMaterialsRail(width: geometry.size.width) },
-                        openNewTab: openNewTab, covered: covered, select: selectTab,
-                        chromeMode: navigation.chromeMode, controlInset: chrome.rightPinned ? 0 : NativeWorkspaceWindowControls.width + NativeWorkspaceWindowControls.trailing,
-                        closeTabByGesture: closeTabByGesture, tabGestureBlocked: tabGestureBlocked(width: geometry.size.width))
-                        .environment(\.nativeWorkspacePreviewController, previews)
-                        .environment(\.nativePDFPaletteHost, pdfPalette)
-                    }
-                        .opacity(covered && !settingsOpen ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered)
-                    if windowsOverviewOpen || section == .settings {
-                        EmptyView()
-                    } else if let auxiliary {
-                        switch auxiliary {
-                        case .marketplace: NativeMarketplaceView(store: store)
-                        case .help: NativeHelpView()
-                        case .account: NativeAccountView(store: store)
-                        }
-                    } else if section != .library {
-                        VStack(spacing: 0) {
-                            toolTabs
-                            NativeToolsWorkspace(section: section, store: store, services: services)
-                        }
-                    }
-                // The page, note or web view runs to the window's bottom edge, under the home indicator.
-                // The dock lays its documents out as cards on the glass; a tool screen over it keeps the plain paper.
-                }.frame(maxWidth: .infinity, maxHeight: .infinity).ignoresSafeArea(.container, edges: .bottom)
-                    .background(covered ? AnyShapeStyle(NativeGlass.paper) : AnyShapeStyle(NativeGlass.panel))
+                documentArea(width: geometry.size.width, chrome: chrome, rightVisible: rightVisible)
                 if chrome.rightPinned {
                     railDivider
                     Color.clear.frame(width: chrome.rightWidth)
