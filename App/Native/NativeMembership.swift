@@ -104,6 +104,8 @@ struct NativeSettingsSubscriptionPanel: View {
     /// What the subscription does next (StoreKit), and what Bandal keeps on this iPad against the iPad's capacity.
     @State private var status: PlanStatus?
     @State private var storage: (used: Int64, total: Int64)?
+    /// The server's AI numbers were asked for: an empty AI row then means signed out, not still loading.
+    @State private var aiChecked = false
     @Environment(\.locale) private var locale
     #if DEBUG
     /// A Plus member renewing on 10 December, for the design screenshots.
@@ -135,6 +137,7 @@ struct NativeSettingsSubscriptionPanel: View {
         .task {
             await membership.refresh()
             _ = try? await store.invokePrivate("native:aiConfig", ["refresh": true])
+            aiChecked = true
             _ = try? await store.referral.loadStatus()
             if let status = try? await store.invokePrivate("nativeSettings:status") as? [String: Any],
                let used = ((status["storage"] as? [String: Any])?["documentsBytes"] as? NSNumber)?.int64Value,
@@ -163,12 +166,25 @@ struct NativeSettingsSubscriptionPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("이번 달 사용량").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary).accessibilityAddTraits(.isHeader)
             VStack(spacing: 20) {
-                // Only with an account (the server's numbers); this panel never asks anyone to sign in.
+                // The server's numbers, with an account; this panel never asks anyone to sign in, it only says why the row is empty.
                 if let percent = ai.percent { meter("AI 사용량", value: "\(percent)%", fraction: Double(percent) / 100).accessibilityIdentifier("native-ai-usage") }
-                if let storage { meter("저장 공간", value: Self.bytes(storage.used) + " / " + Self.bytes(storage.total), fraction: Double(storage.used) / Double(max(storage.total, 1))).accessibilityIdentifier("native-settings-storage") }
+                else {
+                    HStack {
+                        Text("AI 사용량").font(.system(size: 15))
+                        Spacer()
+                        Text(aiChecked ? "로그인하면 보여요" : "확인 중…").font(.system(size: 15)).foregroundStyle(NativeDesktopTheme.secondary)
+                    }.accessibilityElement(children: .combine).accessibilityIdentifier("native-ai-usage-empty")
+                }
             }.padding(17).frame(maxWidth: .infinity).background(NativeDesktopTheme.bgApp, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(NativeDesktopTheme.border))
             Text("AI 사용량은 매달 1일에 다시 채워져요").font(.system(size: 13)).foregroundStyle(NativeDesktopTheme.muted)
+        }
+        // What this iPad keeps of the materials: not a monthly figure, and not measured against the whole device's disk.
+        if let storage {
+            NativeSettingsGroup(title: "저장 공간") {
+                NativeSettingsRow(title: "이 iPad에 저장된 자료") { NativeSettingsValue(Self.bytes(storage.used), chevron: false) }
+                    .accessibilityIdentifier("native-settings-storage")
+            }
         }
         NativeSettingsGroup {
             NativeSettingsToggle(title: "사용량 \(AIUsage.alertPercent)%가 되면 알림", isOn: $usageAlert).accessibilityIdentifier("native-settings-usage-alert")
