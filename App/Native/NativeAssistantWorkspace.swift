@@ -131,18 +131,20 @@ struct NativeAssistantPanel: View {
                           onGuide:insertableDocument.map { document in { session.draft.mode = session.draft.mode == .guide ? .chat : .guide; if session.draft.mode == .guide, session.draft.document?.id != document.id { perform { try await session.pin(document) } } } },
                           guiding:session.draft.mode == .guide)
     }
-    /// 표시 방식: 사이드바 or 플로팅, the one in use checked. Both show this conversation; the workspace moves the panel.
+    /// 표시 방식: 사이드바, 떠 있는 사이드바 or 플로팅, the one in use checked. All show this conversation; the
+    /// workspace moves the panel.
     private var presentationMenu: some View {
         Menu {
             Picker(selection:$presentation) {
-                Label("사이드바",systemImage:NativeAssistantPresentation.sidebar.symbol).tag(NativeAssistantPresentation.sidebar)
-                Label("플로팅",systemImage:NativeAssistantPresentation.floating.symbol).tag(NativeAssistantPresentation.floating)
+                ForEach(NativeAssistantPresentation.allCases,id:\.self) { option in
+                    Label(option.title,systemImage:option.symbol).tag(option).accessibilityIdentifier("native-ai-presentation-"+option.rawValue)
+                }
             } label: { Text("표시 방식") }.pickerStyle(.inline)
         } label: {
             Image(systemName:presentation.symbol).font(.system(size:15)).foregroundStyle(NativeDesktopTheme.secondary).assistantHitArea(10)
         }
             .menuStyle(.button).buttonStyle(NativeAssistantButtonStyle())
-            .accessibilityLabel(Text("표시 방식")).accessibilityValue(presentation == .floating ? Text("플로팅") : Text("사이드바")).accessibilityIdentifier("native-ai-presentation")
+            .accessibilityLabel(Text("표시 방식")).accessibilityValue(Text(presentation.title)).accessibilityIdentifier("native-ai-presentation")
     }
     /// 플로팅: the card folds to its header and opens again with the next question.
     private var foldButton: some View {

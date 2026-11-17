@@ -1,15 +1,48 @@
 import SwiftUI
 
-/// How the workspace shows its AI conversation (the panel's 표시 방식 menu). Both show the same panel and
+/// How the workspace shows its AI conversation (the panel's 표시 방식 menu). All show the same panel and
 /// `NativeAssistantSession`; switching only moves it. Remembered across launches.
-enum NativeAssistantPresentation: String {
-    /// A column beside the document, in the slot the home sidebar also uses.
+enum NativeAssistantPresentation: String, CaseIterable {
+    /// A column beside the document, in the slot the home sidebar also uses: the document moves over for it.
     case sidebar
+    /// The sidebar's panel as a glass card over the document's left side, below its tab strip and tools: the
+    /// document stays where it is.
+    case overlay
     /// A small input bar over the document's bottom centre, the answer in a glass card above it.
     case floating
 
     static let key = "native.ai.presentation"
-    var symbol: String { self == .sidebar ? "sidebar.left" : "rectangle.bottomthird.inset.filled" }
+    var symbol: String {
+        switch self {
+        case .sidebar: "sidebar.left"
+        case .overlay: "rectangle.leadingthird.inset.filled"
+        case .floating: "rectangle.bottomthird.inset.filled"
+        }
+    }
+    /// The menu's name for it.
+    var title: LocalizedStringKey {
+        switch self { case .sidebar: "사이드바"; case .overlay: "떠 있는 사이드바"; case .floating: "플로팅" }
+    }
+    /// Over the document (`overlay`, `floating`): it takes no column, and opens and closes without moving a panel.
+    var overDocument: Bool { self != .sidebar }
+}
+
+/// 떠 있는 사이드바: the card's place in the document area.
+enum NativeAssistantOverlayMetrics {
+    /// From the document area's leading edge, and from its bottom (above the home indicator).
+    static let margin: CGFloat = 12
+    /// The sidebar's own default width; a narrow document area gives it less, keeping `margin` on both sides.
+    static let width: CGFloat = 360
+    static let radius: CGFloat = 22
+    static let gap: CGFloat = 8
+    /// The card's top, in the workspace's space: below the top pane's tab strip (and the status bar's band above
+    /// it) and below the PDF tool palette under that, with `gap` to spare. A note's or web page's tools take no
+    /// more room than the palette. Hiding the tabs or tools leaves it there.
+    @MainActor static var top: CGFloat {
+        NativeDockHeaderMetrics.height(for: .zero, topEdge: NativeDockHeaderMetrics.topEdge)
+            + NativePDFFloatingPalette.top + NativePDFFloatingPalette.height + gap
+    }
+    static func width(in documentWidth: CGFloat) -> CGFloat { max(0, min(width, documentWidth - margin * 2)) }
 }
 
 enum NativeAssistantFloatingMetrics {
@@ -107,14 +140,15 @@ struct NativeAssistantFloatingLayout: Layout {
     }
 }
 
-/// Where the workspace draws its one AI panel: in its column beside the document (사이드바), or over the
-/// document area (플로팅), where the panel lays out its bar and card at the bottom centre. The panel is the same
-/// view in both places and is only moved, so switching keeps its draft, a streaming answer and its own state.
+/// Where the workspace draws its one AI panel: in its column beside the document (사이드바), as a glass card over
+/// the document area's left side (떠 있는 사이드바), or over the document area (플로팅), where the panel lays out
+/// its bar and card at the bottom centre. The panel is the same view in every place and is only moved, so
+/// switching keeps its draft, a streaming answer and its own state.
 ///
 /// The column itself (its glass and divider) stays in the workspace's row; this draws the panel over it, cut to it.
 struct NativeAssistantHost<Panel: View>: View {
-    let floating: Bool
-    /// The column is open, or the bar is shown.
+    let presentation: NativeAssistantPresentation
+    /// The column is open, or the card or bar is shown.
     let visible: Bool
     /// Taking touches (not while the user marks an area for AI).
     let interactive: Bool
@@ -126,24 +160,43 @@ struct NativeAssistantHost<Panel: View>: View {
     var paletteHost: NativePDFPaletteHost?
     @ViewBuilder let panel: Panel
 
+    private var floating: Bool { presentation == .floating }
+    private var overlay: Bool { presentation == .overlay }
+
     var body: some View {
         let page = floating ? pageBottom : (selecting: false, notice: false)
         // Marking an area for AI, acting on a selection whose menu comes down where the bar is, or 짚어주기 playing on
-        // the page: out of the way until done.
-        let shown = visible && (!floating || interactive && !page.selecting)
+        // the page: out of the way until done. The card steps aside while an area is marked, as the bar does.
+        let shown = visible && (!presentation.overDocument || interactive && !page.selecting)
+        let card = NativeAssistantOverlayMetrics.width(in: documentWidth), margin = NativeAssistantOverlayMetrics.margin
+        let shape = RoundedRectangle(cornerRadius: NativeAssistantOverlayMetrics.radius, style: .continuous)
+        // One structure for every place (only values change), so the panel is never rebuilt by switching.
         HStack(spacing: 0) {
-            panel.frame(width: floating ? documentWidth : columnWidth)
-            Color.clear.frame(width: floating ? 0 : 1)
+            panel.frame(width: floating ? documentWidth : overlay ? card : columnWidth)
+                // 떠 있는 사이드바: the panel cut to the card's corners, on its glass. The other places are not cut
+                // here (the mask reaches far past them), so the floating bar keeps its shadow.
+                .mask { shape.padding(overlay ? 0 : -400) }
+                .background { if overlay { NativeGlassSurface(in: shape, veil: NativeGlass.popup) { Color.clear } } }
+            Color.clear.frame(width: presentation.overDocument ? 0 : 1)
         }
+        // The card keeps clear of the tab strip and a PDF's tools above it and of the home indicator below.
+        .padding(.top, overlay ? NativeAssistantOverlayMetrics.top : 0)
         // A page's toast (노트에 넣었어요 · 되돌리기) sits at its bottom centre: the bar rises above it.
-        .padding(.bottom, page.notice ? 64 : 0)
-        .frame(width: floating ? documentWidth : (visible ? columnWidth + 1 : 0), alignment: .trailing)
+        .padding(.bottom, overlay ? margin : page.notice ? 64 : 0)
+        .frame(width: floating ? documentWidth : overlay ? card : (visible ? columnWidth + 1 : 0), alignment: .trailing)
         .frame(maxHeight: .infinity)
-        // The column is cut at its sides (the input reaches below the home-indicator line); the floating card is not cut.
-        .mask { Rectangle().padding(.bottom, -40).padding(floating ? -400 : 0) }
-        .padding(.leading, floating ? documentLeading : columnLeading)
+        // Closed, the card slides out past the document area's leading edge and fades.
+        .offset(x: overlay && !shown ? -(card + margin) : 0)
+        .opacity(overlay && !shown ? 0 : 1)
+        // The column is cut at its sides (the input reaches below the home-indicator line); the floating card and
+        // bar are not cut, nor is the card's shadow. A closed card is cut at the document area's leading edge.
+        .mask {
+            Rectangle().padding(.bottom, -40).padding(floating ? -400 : 0)
+                .padding(.leading, overlay ? -margin : 0).padding([.top, .trailing, .bottom], overlay ? -400 : 0)
+        }
+        .padding(.leading, floating ? documentLeading : overlay ? documentLeading + margin : columnLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .animation(.easeOut(duration: 0.2), value: floating ? [shown, page.notice] : [])
+        .animation(.easeOut(duration: 0.2), value: presentation.overDocument ? [shown, page.notice] : [])
         .allowsHitTesting(shown && interactive)
         .accessibilityHidden(!shown)
         .environment(\.nativeAssistantFloatingHidden, floating && !shown)
