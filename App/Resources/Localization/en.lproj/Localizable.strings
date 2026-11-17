@@ -594,6 +594,7 @@
 "로그인하면 다른 모델도 고를 수 있어요" = "Sign in to choose other models";
 "로그인하면 바로 쓸 수 있어요" = "Sign in and it's ready to use";
 "로그인하면 반달 AI가 과목 자료를 읽고 답해요. 레일의 ✦로 AI 패널을 여세요." = "Sign in and Bandal AI answers using your course materials. Open the AI panel with ✦ in the rail.";
+"로그인하면 보여요" = "Shown after you sign in";
 "링크 주소" = "Link address";
 "링크 주소 편집" = "Edit link URL";
 "마감 시간" = "Due time";
@@ -962,6 +963,7 @@
 "이 iPad" = "This iPad";
 "이 iPad 자료는 따로 보관하고 클라우드로 시작" = "Set this iPad's materials aside and start from the cloud";
 "이 iPad 자료로 덮어쓰기" = "Overwrite with this iPad's materials";
+"이 iPad에 저장된 자료" = "Materials stored on this iPad";
 "이 iPad에서 만든 과목" = "Courses created on this iPad";
 "이 iPad에서 만든 자료" = "Materials created on this iPad";
 "이 iPad의 과목 %lld개, 자료 %lld개를 %@로 옮깁니다. 다 올리면 %@ 연결을 끊어요." = "Moves %lld course(s) and %lld material(s) from this iPad to %@. When the upload finishes, %@ is disconnected.";
@@ -1360,6 +1362,7 @@
 "확대/축소 · %lld%%" = "Zoom · %lld%%";
 "확대율 %lld퍼센트, 기본 크기로 복원" = "Zoom %lld percent, reset to actual size";
 "확인" = "OK";
+"확인 중…" = "Checking…";
 "환경설정만 기본값으로 돌아가요. 자료·계정·학교·언어는 그대로예요." = "Only preferences go back to their defaults. Materials, account, school and language stay.";
 "환불 완료" = "Refunded";
 "환불 처리 중" = "Refund in progress";

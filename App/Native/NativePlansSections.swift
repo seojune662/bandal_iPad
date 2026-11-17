@@ -1,10 +1,36 @@
 import StoreKit
 import SwiftUI
 
-/// The plan card's colours (Figma 132:3441): a warm fill and the moon's badge. Settings › 구독·사용량 uses them too.
-enum PlanPalette {
-    static let fill = NativeDesktopTheme.adaptive(0xfff5de, 0x3a2f1a)
-    static let badge = NativeDesktopTheme.adaptive(0xf5b83d, 0xe6a93a)
+/// The current plan's card ground (요금제 and 설정 › 구독·사용량): a faint wash of the theme's own palette, its first hue
+/// running into its last as the window's backdrop does, so the card wears whatever theme the window wears. A palette
+/// without colour (모노) stays a quiet grey. Figma 132:3441's fixed yellow fill matched no theme.
+struct PlanCardGround: View {
+    let cornerRadius: CGFloat
+    @Environment(\.nativeDecor) private var decor
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let dark = scheme == .dark, palette = decor.palette
+        let chroma = palette.chroma * (dark ? 0.6 : 0.5) * min(1.4, 0.6 + decor.intensity)
+        let colors = [palette.hues.0, palette.hues.2].map { Color(uiColor: NativeOKLCH.color(dark ? 0.27 : 0.975, chroma, $0)) }
+        shape.fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay { shape.strokeBorder(NativeGlass.hairline) }
+    }
+}
+
+/// The Bandal mark on a paper disc, in the theme's colours: the app's own half moon, not a symbol of one.
+/// A theme without colour (모노) draws it in the text colour: its usual faint grey would read as switched off.
+/// It turns once as the card appears (not with Reduce Motion), as on the welcome screen.
+struct PlanMark: View {
+    @Environment(\.nativeDecor) private var decor
+    var body: some View {
+        NativeBandalMark(size: 32, motion: .intro)
+            .foregroundStyle(decor.palette.chroma == 0 ? AnyShapeStyle(NativeDesktopTheme.text) : AnyShapeStyle(NativeDecorMarkStyle()))
+            .frame(width: 48, height: 48)
+            .background(NativeGlass.paper, in: Circle())
+            .overlay { Circle().strokeBorder(NativeGlass.hairline) }
+            .accessibilityHidden(true)
+    }
 }
 
 /// 요금제 › 현재 요금제: the plan and period in effect and what happens next, or 무료 with what is used of it.
@@ -16,8 +42,7 @@ struct PlanCurrentCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
-            Image(systemName: "moon").font(.system(size: 22)).foregroundStyle(NativeDesktopTheme.bgApp).frame(width: 48, height: 48)
-                .background(PlanPalette.badge, in: RoundedRectangle(cornerRadius: 12)).accessibilityHidden(true)
+            PlanMark()
             VStack(alignment: .leading, spacing: 6) {
                 Text("현재 요금제").font(NativeDesktopTheme.font(12, weight: .semibold)).foregroundStyle(NativeDesktopTheme.secondary)
                     .accessibilityAddTraits(.isHeader)
@@ -45,7 +70,7 @@ struct PlanCurrentCard: View {
             Spacer(minLength: 0)
         }
         .padding(20).frame(maxWidth: .infinity, alignment: .leading)
-        .background(PlanPalette.fill, in: RoundedRectangle(cornerRadius: BandalMetrics.radiusLarge))
+        .background { PlanCardGround(cornerRadius: BandalMetrics.radiusLarge) }
         .accessibilityElement(children: .contain).accessibilityIdentifier("plans-current")
     }
 
