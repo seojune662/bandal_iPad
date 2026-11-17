@@ -117,6 +117,45 @@ final class NativeWorkspaceChromeUITests: XCTestCase {
         XCTAssertTrue(last.isSelected, "Closing another tab leaves the chosen one chosen")
     }
 
+    /// A long press lifts a tab and it drags into the other pane, from a strip that scrolls and from one that fits.
+    /// (A drag down into the pane below is `NativeDockingUITests`'s.)
+    @MainActor func testTabsDragIntoTheOtherPaneFromEveryStrip() throws {
+        let app = launch()
+        createCourse("Drag Tabs", app: app)
+        setInspector(open: true, app: app)
+        openFromHome("Right Ink", app: app)
+        for _ in 0..<12 { open("new-note", app: app) }
+        splitRight(tab("Right Ink", app: app), app: app)
+        let scroller = app.scrollViews.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-tab-scroll-")).firstMatch
+        XCTAssertTrue(scroller.exists, "The left strip scrolls: " + app.debugDescription)
+        XCTAssertEqual(tabs(inPane: 1, app: app).count, 1)
+
+        // From the scrolling strip on the left into the right pane.
+        let moved = try XCTUnwrap(tabs(inPane: 0, app: app).first { $0.isSelected }), movedID = moved.identifier
+        drag(moved, intoPane: 1, app: app)
+        wait(app, "The left tab moved into the right pane") { self.tabs(inPane: 1, app: app).contains { $0.identifier == movedID } }
+        XCTAssertEqual(tabs(inPane: 1, app: app).count, 2)
+
+        // And back, from the right strip that fits its two tabs.
+        drag(tab("Right Ink", app: app), intoPane: 0, app: app)
+        wait(app, "Right Ink moved into the left pane") { self.tabs(inPane: 0, app: app).contains { $0.label.hasPrefix("Right Ink") } }
+        XCTAssertEqual(tabs(inPane: 1, app: app).count, 1)
+        capture(app, "Tabs dragged both ways")
+    }
+    /// The tabs of the `index`th strip from the left.
+    @MainActor private func tabs(inPane index: Int, app: XCUIApplication) -> [XCUIElement] {
+        let all = strips(app).allElementsBoundByIndex.sorted { $0.frame.minX < $1.frame.minX }
+        guard all.indices.contains(index) else { return [] }
+        let strip = all[index].frame
+        return documentTabs(app).filter { strip.minX <= $0.frame.midX && $0.frame.midX < strip.maxX && !$0.frame.isEmpty }
+    }
+    /// A long press on `tab`, then a slow drag to the middle of the `index`th pane's page.
+    @MainActor private func drag(_ tab: XCUIElement, intoPane index: Int, app: XCUIApplication) {
+        let strip = strips(app).allElementsBoundByIndex.sorted { $0.frame.minX < $1.frame.minX }[index].frame
+        let target = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: strip.midX, dy: strip.maxY + 220))
+        tab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1, thenDragTo: target, withVelocity: .slow, thenHoldForDuration: 0.5)
+    }
+
     /// A web tab shows its page's own icon instead of the globe, and still does straight after the app restarts,
     /// before the page is loaded again.
     @MainActor func testWebTabShowsItsPagesIconAndKeepsItAfterARestart() throws {

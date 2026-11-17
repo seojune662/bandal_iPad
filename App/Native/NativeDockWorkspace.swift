@@ -461,6 +461,11 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 selectTab(document.id, in: group.id)
             }
             .frame(width: max(0, width - NativeDockTabSizing.closeTarget), height: metrics.height).clipped()
+            // The tab's menu is on the tab itself, not on the tab and its ✕ together. With the 44-point ✕ button
+            // inside the menu's region, a long press that went on to drag the tab down into the pane below opened
+            // the menu instead, and the drag scrubbed its items (NativeDockingUITests, nearly every run; found
+            // 2026-11-17 by bisecting 101e595). Pressing the ✕ itself has no menu.
+            .contextMenu { tabMenu(document, group: group) }
             // Every tab keeps its ✕, 44 points to touch; the chosen tab's in the strip's grey, the others' a step lighter.
             Button { closeDocuments([document.id]) } label: {
                 Image(systemName: "xmark").font(.system(size: metrics.close)).frame(width: NativeDockTabSizing.closeTarget, height: metrics.height).contentShape(Rectangle())
@@ -468,7 +473,6 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 .accessibilityIdentifier(document.id == navigation.activeID ? "native-close-document" : "native-close-tab-" + document.id)
         }
         .frame(width: width, height: metrics.height).clipped()
-        .contextMenu { tabMenu(document, group: group) }
         .overlay(alignment: .leading) {
             if drag.target == .init(groupID: group.id, direction: .within, index: index) { Rectangle().fill(NativeGlass.accent).frame(width: 3) }
         }
