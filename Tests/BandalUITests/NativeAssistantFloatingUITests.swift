@@ -1,6 +1,6 @@
 import XCTest
 
-/// The AI panel's 표시 방식 (사이드바 · 플로팅): one conversation in either place. Switching keeps the draft and an
+/// The AI panel's 표시 방식 (사이드바 · 떠 있는 사이드바 · 플로팅): one conversation in every place. Switching keeps the draft and an
 /// answer still streaming; the choice survives a relaunch; floating, the page still takes the pen around the bar,
 /// and the bar steps aside for the page's selection menu and toast. Each step attaches what was on screen.
 final class NativeAssistantFloatingUITests: XCTestCase {
@@ -33,6 +33,71 @@ final class NativeAssistantFloatingUITests: XCTestCase {
         XCTAssertEqual(app.descendants(matching: .any)["native-chat-input"].value as? String, draft)
         XCTAssertTrue(app.descendants(matching: .any)["native-chat-input"].isHittable, app.debugDescription)
         attach("4 back in the sidebar")
+    }
+
+    /// 떠 있는 사이드바: the sidebar's panel as a card over the document. Opening and closing it moves nothing, the
+    /// card starts below the tab strip and the PDF's tools, the pen stays usable beside it, and the choice is
+    /// remembered with the draft. Back in the sidebar, the document moves over again.
+    @MainActor func testOverlaySidebarFloatsOverTheDocumentBelowItsTools() {
+        let app = launch(extra: ["--native-ai-catalog-fixture"])
+        openNoteAndAI(app)
+        let input = app.descendants(matching: .any)["native-chat-input"]
+        let draft = "떠 있어도 초안은 그대로"
+        input.tap(); input.typeText(draft); app.dismissNativeTestKeyboard()
+        let inSidebar = strip(app).frame
+
+        choose("떠 있는 사이드바", in: app, checking: "사이드바")
+        XCTAssertEqual(menu(app).value as? String, "떠 있는 사이드바")
+        let close = app.buttons["native-ai-close"], toggle = app.buttons["native-ai-rail-toggle"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5) && close.isHittable, app.debugDescription)
+        XCTAssertLessThan(strip(app).frame.minX, inSidebar.minX - 100, "Off the column, the document takes the room back")
+        let open = strip(app).frame, pen = app.buttons["native-pdf-tool-pen"].frame
+        assertOverlay(app, document: open, draft: draft)
+        attach("1 overlay over the note")
+
+        // Closing and opening it moves nothing.
+        close.tap(); sleep(1)
+        XCTAssertEqual(toggle.label, "AI 열기")
+        XCTAssertFalse(close.isHittable, app.debugDescription)
+        XCTAssertEqual(strip(app).frame.minX, open.minX, accuracy: 1, "The document stays where it is")
+        XCTAssertEqual(app.buttons["native-pdf-tool-pen"].frame.minX, pen.minX, accuracy: 1, "The tools stay where they are")
+        attach("2 overlay closed")
+        // Opened again from the rail. (After a reopen XCUITest reports the ✕ itself as not hittable, though a tap
+        // on it closes the card: check the model button and the input instead.)
+        toggle.tap(); sleep(1)
+        XCTAssertTrue(app.buttons["native-ai-model-pill"].isHittable && input.isHittable, app.debugDescription)
+        XCTAssertEqual(strip(app).frame.minX, open.minX, accuracy: 1)
+
+        // Remembered across a relaunch, the draft with it.
+        app.terminate(); app.launchArguments = arguments(reset: false, extra: ["--native-ai-catalog-fixture"]); app.launch()
+        XCTAssertTrue(input.waitForExistence(timeout: 25), app.debugDescription); sleep(2)
+        XCTAssertEqual(menu(app).value as? String, "떠 있는 사이드바")
+        assertOverlay(app, document: strip(app).frame, draft: draft)
+        attach("3 relaunched")
+
+        choose("사이드바", in: app, checking: "떠 있는 사이드바")
+        let pushed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in self.strip(app).frame.minX > open.minX + 100 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [pushed], timeout: 10), .completed, "Back in the sidebar, the document moves over: " + app.debugDescription)
+        XCTAssertEqual(input.value as? String, draft)
+        attach("4 back in the sidebar")
+    }
+    @MainActor private func strip(_ app: XCUIApplication) -> XCUIElement {
+        app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-dock-tab-strip-")).firstMatch
+    }
+    /// The card is over the document's left side (`document`: the tab strip's frame); its top is below the tab
+    /// strip and the PDF's tools, its bottom above the home indicator, and the pen beside it still works.
+    @MainActor private func assertOverlay(_ app: XCUIApplication, document: CGRect, draft: String) {
+        let pen = app.buttons["native-pdf-tool-pen"], close = app.buttons["native-ai-close"], model = app.buttons["native-ai-model-pill"]
+        let input = app.descendants(matching: .any)["native-chat-input"]
+        XCTAssertEqual(input.value as? String, draft)
+        // The header is 50 pt tall and the card's top is its top.
+        let top = model.frame.midY - 25
+        let tools = [pen, app.buttons["native-pdf-palette-collapse"], app.buttons["native-pdf-pages"]].filter(\.exists).map(\.frame.maxY).max() ?? 0
+        XCTAssertGreaterThanOrEqual(top, max(document.maxY, tools), "The card starts below the tab strip and the tools: top \(top), strip \(document), tools \(tools)")
+        XCTAssertGreaterThanOrEqual(model.frame.minX, document.minX - 12, "The card is over the document, not beside it")
+        XCTAssertLessThan(close.frame.maxX, document.minX + 420, "On the document's left side")
+        XCTAssertLessThan(input.frame.maxY, app.frame.maxY - 12, "Above the home indicator")
+        XCTAssertTrue(pen.isHittable, "The pen is not under the card")
     }
 
     @MainActor func testSwitchingWhileTheAnswerStreams() {
