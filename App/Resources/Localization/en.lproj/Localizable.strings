@@ -231,6 +231,29 @@
 "현재 요금제" = "Current plan";
 /* ===== END plans screen ===== */
 
+/* ===== BEGIN PDF page safety (seojune662/pdf-page-safety) =====
+   Toasts of page add, delete and move (NativePDFWorkspace.swift), the pull-past-the-end hint, and the notes a
+   Markdown save leaves when it keeps a version as a copy (NativeMarkdownPersistence.swift). String values
+   shown through BandalText, which the extractor cannot see. Sorted by key. */
+"PDF가 방금 바뀌어서 페이지를 그대로 두었어요." = "The PDF just changed, so its pages were left as they were.";
+"계속 당기면 새 페이지를 추가해요" = "Keep pulling to add a page";
+"놓으면 새 페이지를 추가해요" = "Release to add a page";
+"다른 곳에서 바뀐 내용" = "changed elsewhere";
+"다른 곳에서 바뀐 내용은 ‘%@’에 보관했어요." = "The version changed elsewhere was kept in “%@”.";
+"다른 창에서 먼저 바뀌어 이 편집은 적용하지 않았어요." = "Another window changed it first, so this edit wasn’t applied.";
+"동기화 중인 문서는 페이지 순서를 바꾸거나 지울 수 없어요." = "While a document syncs, its pages can’t be reordered or deleted.";
+"동적 양식 또는 서명 정보가 있는 PDF는 원본 보존을 위해 페이지 편집을 지원하지 않습니다." = "Pages of a PDF with dynamic forms or signatures can’t be edited, to keep the original intact.";
+"서명된 PDF의 페이지는 변경할 수 없습니다." = "Pages of a signed PDF can’t be changed.";
+"암호화되었거나 손상된 PDF의 페이지는 변경할 수 없습니다." = "Pages of an encrypted or damaged PDF can’t be changed.";
+"이 PDF는 페이지를 바꿀 수 없어 원래대로 두었어요." = "This PDF’s pages can’t be changed, so it was left as it was.";
+"저장하지 못한 내용" = "unsaved changes";
+"저장하지 못한 내용은 ‘%@’에 보관했어요." = "Your unsaved changes were kept in “%@”.";
+"첨부 파일 또는 문서 스크립트가 있는 PDF는 원본 보존을 위해 페이지 편집을 지원하지 않습니다." = "Pages of a PDF with attachments or document scripts can’t be edited, to keep the original intact.";
+"페이지 변경 이후 수정된 필기·노트가 있습니다. 변경 전 사본으로 복구해 주세요." = "Handwriting or notes changed after the page change. Restore it as a copy from before the change.";
+"페이지를 바꾸지 못해 원래대로 두었어요." = "The pages couldn’t be changed, so they were left as they were.";
+"페이지를 추가했어요" = "Page added";
+/* ===== END PDF page safety ===== */
+
 /* ===== App strings (extracted) ===== */
 "%@ 개인정보 처리방침" = "%@ privacy policy";
 "%@ 전송에 동의함" = "Consent to send to %@ given";
@@ -261,6 +284,8 @@
 ".ics 파일로 저장하거나 공유해요." = "Save or share it as an .ics file.";
 "/년" = "/year";
 "/월" = "/month";
+"10초 뒤로" = "Back 10 seconds";
+"10초 앞으로" = "Forward 10 seconds";
 "AI 닫기" = "Close AI";
 "AI 답변 출처 표시" = "Show sources under AI answers";
 "AI 도우미" = "AI assistant";
@@ -322,6 +347,10 @@
 "PDF에서 찾기" = "Find in PDF";
 "PDF와 노트에는 Apple Pencil로 필기하고, 마크다운으로 정리하세요." = "Write on PDFs and notes with Apple Pencil, and organize your thoughts in Markdown.";
 "PDF와 노트에는 Apple Pencil로 필기할 수 있습니다." = "You can write on PDFs and notes with Apple Pencil.";
+"PiP 닫기" = "Close PiP";
+"PiP 영상" = "Picture in Picture video";
+"PiP로 보기" = "Picture in Picture";
+"PiP에서 재생 중" = "Playing in Picture in Picture";
 "Plus와 Pro는 고른 기간(월간 또는 연간)마다 위 카드에 표시된 가격으로 자동 갱신되며, 요금은 구매를 확인할 때 Apple ID로 청구돼요. 현재 기간(무료 체험 포함)이 끝나기 24시간 전까지 해지하지 않으면 다음 기간 요금이 청구돼요. 구독은 설정 › Apple ID › 구독에서 관리하고 해지할 수 있어요. Pro 무료 체험 기간의 AI 사용량은 Plus와 같아요." = "Plus and Pro renew automatically each period you chose (monthly or yearly) at the price shown on the cards above, and payment is charged to your Apple Account when you confirm the purchase. Unless you cancel at least 24 hours before the end of the current period (including a free trial), you are charged for the next period. Manage or cancel your subscription in Settings › [your name] › Subscriptions. During a Pro free trial, AI usage is the same as Plus.";
 "URL 복사" = "Copy URL";
 "VoiceOver나 스위치 제어를 쓰는 동안에는 이 동작이 꺼져 있어요." = "This gesture is off while VoiceOver or Switch Control is on.";
@@ -549,6 +578,7 @@
 "뒤로" = "Back";
 "뒤로 이동" = "Move right";
 "들여쓰기" = "Indent";
+"떠 있는 사이드바" = "Overlay sidebar";
 "뜻 · 메모" = "Meaning · note";
 "뜻 편집" = "Edit meaning";
 "로그아웃" = "Sign out";
@@ -564,6 +594,7 @@
 "로그인하면 다른 모델도 고를 수 있어요" = "Sign in to choose other models";
 "로그인하면 바로 쓸 수 있어요" = "Sign in and it's ready to use";
 "로그인하면 반달 AI가 과목 자료를 읽고 답해요. 레일의 ✦로 AI 패널을 여세요." = "Sign in and Bandal AI answers using your course materials. Open the AI panel with ✦ in the rail.";
+"로그인하면 보여요" = "Shown after you sign in";
 "링크 주소" = "Link address";
 "링크 주소 편집" = "Edit link URL";
 "마감 시간" = "Due time";
@@ -680,6 +711,7 @@
 "브라우저 메뉴" = "Browser menu";
 "브라우저 탭에서 열기" = "Open in a browser tab";
 "브라우저 프로필" = "Browser profiles";
+"브라우저로 돌아가기" = "Back to the browser";
 "브라우저에서 열기" = "Open in browser";
 "브라우저의 열린 탭 %lld개" = "Open browser tabs: %lld";
 "브라우징 데이터" = "Browsing data";
@@ -846,6 +878,7 @@
 "업데이트 내역" = "What's new";
 "업로드 대기 %lld개" = "Waiting to upload: %lld";
 "여기까지 읽음" = "Mark read to here";
+"여기로 돌려놓기" = "Bring it back here";
 "여러 줄·수식·그림은 AI가 읽고 설명" = "AI reads and explains passages, formulas and figures";
 "여러 줄은 AI가 맞는 문서 고르기" = "AI picks the matching article for passages";
 "연결 끊김" = "Disconnected";
@@ -862,6 +895,8 @@
 "열린 탭 %lld개" = "Open tabs: %lld";
 "열린 탭 검색" = "Search open tabs";
 "열려 있던 탭만 닫혀요. 파일은 폴더에 그대로 있어요." = "Only its open tabs close. Your files stay in the folder.";
+"영상" = "Video";
+"영상을 작은 창으로 띄워 다른 탭을 보면서 이어 봐요" = "Keeps the video playing in a small window while you use other tabs";
 "영어 위키백과" = "English Wikipedia";
 "영어 이어읽기" = "Continue reading in English";
 "영어 읽기 · 표현 저장" = "English reading · saved phrases";
@@ -928,6 +963,7 @@
 "이 iPad" = "This iPad";
 "이 iPad 자료는 따로 보관하고 클라우드로 시작" = "Set this iPad's materials aside and start from the cloud";
 "이 iPad 자료로 덮어쓰기" = "Overwrite with this iPad's materials";
+"이 iPad에 저장된 자료" = "Materials stored on this iPad";
 "이 iPad에서 만든 과목" = "Courses created on this iPad";
 "이 iPad에서 만든 자료" = "Materials created on this iPad";
 "이 iPad의 과목 %lld개, 자료 %lld개를 %@로 옮깁니다. 다 올리면 %@ 연결을 끊어요." = "Moves %lld course(s) and %lld material(s) from this iPad to %@. When the upload finishes, %@ is disconnected.";
@@ -943,6 +979,7 @@
 "이 사이트에서 안 함" = "Never for this site";
 "이 색 빼기" = "Remove this color";
 "이 순간 기록" = "Mark this moment";
+"이 영상은 PiP로 띄울 수 없어요." = "This video can't be shown in Picture in Picture.";
 "이 영역" = "This pane";
 "이 영역 크게 보기" = "Enlarge this pane";
 "이 영역에서 새 탭을 여세요" = "Open a new tab in this pane";
@@ -1016,6 +1053,7 @@
 "재생" = "Play";
 "재생 속도" = "Playback speed";
 "재생 위치" = "Playback position";
+"재생 중인 영상이 작은 창에서 계속 재생돼요" = "A playing video keeps playing in a small window";
 "재생할 수 없어요" = "Can't play this";
 "재설정" = "Reset";
 "저장" = "Save";
@@ -1157,10 +1195,12 @@
 "탭 옆 +에서 브라우저, 노트, 마크다운, AI, 녹음을 여세요." = "Tap + next to the tabs to open a browser, note, Markdown, AI or recording.";
 "탭 옆 +에서 브라우저, 노트, 마크다운, AI를 여세요." = "Tap + next to the tabs to open a browser, note, Markdown or AI.";
 "탭과 도구 표시" = "Show tabs and tools";
+"탭으로 돌아가기" = "Back to the tab";
 "탭을 끌어 나누거나 화면 배치 메뉴로 여러 자료를 함께 보세요." = "Drag a tab to split the screen, or use the layout menu to view several materials together.";
 "탭을 끌어 영역을 나누고, 경계를 끌어 비율을 바꾸세요." = "Drag a tab to split into panes, and drag the divider to resize them.";
 "탭을 끌어 즐겨찾기 추가" = "Drag a tab here to add a favorite";
 "탭을 닫았어요" = "Tab closed";
+"탭을 떠나면 PiP로 이어 보기" = "Continue in Picture in Picture when leaving a tab";
 "탭을 화면 옆으로 끌면 PDF와 노트를 나란히 봐요" = "Drag a tab to the side to see a PDF and a note side by side";
 "텍스트" = "Text";
 "텍스트 공유" = "Share text";
@@ -1322,6 +1362,7 @@
 "확대/축소 · %lld%%" = "Zoom · %lld%%";
 "확대율 %lld퍼센트, 기본 크기로 복원" = "Zoom %lld percent, reset to actual size";
 "확인" = "OK";
+"확인 중…" = "Checking…";
 "환경설정만 기본값으로 돌아가요. 자료·계정·학교·언어는 그대로예요." = "Only preferences go back to their defaults. Materials, account, school and language stay.";
 "환불 완료" = "Refunded";
 "환불 처리 중" = "Refund in progress";

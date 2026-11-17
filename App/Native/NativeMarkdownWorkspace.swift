@@ -120,6 +120,11 @@ struct NativeMarkdownWorkspace: View {
             }
             await store.waitForExternalMutation()
             guard !session.retired, !Task.isCancelled else { return }
+            // A version that cannot be merged is kept as a note beside this one, never a blocking error.
+            session.createCopy = { [weak store, document] title in
+                guard let store else { throw DesktopRuntimeError("저장소 연결이 닫혔습니다.") }
+                return try await store.createMarkdown(title: title, courseID: document.courseID, parentPath: (document.relativePath as NSString).deletingLastPathComponent)
+            }
             await session.load()
             if let note = NativePDFPageNoteDocument(session.text) {
                 let source = try? await store.invokePrivate("nativePDF:pageNoteSource", ["courseId": document.courseID, "relPath": document.relativePath]) as? [String: Any]
@@ -211,6 +216,7 @@ struct NativeMarkdownWorkspace: View {
             .presentationCompactAdaptation(.popover)
         }
         .bandalToast($copyMessage)
+        .onChange(of: session.notice) { _, value in if let value { copyMessage = value; session.clearNotice() } }
     }
 
     /// The note's selection: 찾아보기 and AI read it from the store; once it settles it may look itself up.

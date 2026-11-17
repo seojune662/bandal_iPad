@@ -51,6 +51,14 @@ final class NativePDFEditRecovery {
 /// and close barriers all enter this owner, independently of view lifetime.
 @MainActor
 final class NativePDFPersistence {
+    /// An edit refused because another pane (or sync) changed the same objects first: nothing was
+    /// applied, the saved version stands. Ordinary with two panes; the editor says so without blocking.
+    nonisolated static let peerChanged = "다른 PDF 창에서 이 개체를 변경했습니다. 최신 내용을 확인하고 다시 편집해 주세요."
+    nonisolated static let objectGone = "이 개체는 이미 변경되거나 삭제되었습니다. 최신 문서를 확인해 주세요."
+    nonisolated static func refusedByPeer(_ error: Error) -> Bool {
+        guard case NativePDFError.invalid(let message)? = error as? NativePDFError else { return false }
+        return message == peerChanged || message == objectGone
+    }
     typealias Invoke = (String, [String: Any]) async throws -> Any
     private final class HistoryAction {
         let kind: String
@@ -420,7 +428,7 @@ final class NativePDFPersistence {
             guard result["status"] as? String == "live", let row = result["drawing"] as? [String: Any],
                   row["id"] as? String == result["drawingId"] as? String,
                   row["courseId"] as? String == self.courseID, row["relPath"] as? String == self.relativePath else {
-                throw NativePDFError.invalid("이 개체는 이미 변경되거나 삭제되었습니다. 최신 문서를 확인해 주세요.")
+                throw NativePDFError.invalid(Self.objectGone)
             }
             return row
         }
@@ -627,7 +635,7 @@ final class NativePDFPersistence {
         try await serial { try await self.applyPendingHistoryUnlocked() }
     }
     private func applyPendingHistoryUnlocked() async throws {
-        if peerEditRejected { peerEditRejected = false; throw NativePDFError.invalid("다른 PDF 창에서 이 개체를 변경했습니다. 최신 내용을 확인하고 다시 편집해 주세요.") }
+        if peerEditRejected { peerEditRejected = false; throw NativePDFError.invalid(Self.peerChanged) }
         guard let pending = pendingHistory else { return }
         let action = pending.action
         if action.recovery == nil {
@@ -641,7 +649,7 @@ final class NativePDFPersistence {
                     actual.contains { current in (old as NSDictionary).isEqual(to: current) }
                 }) else {
                     pendingHistory = nil
-                    throw NativePDFError.invalid("다른 PDF 창에서 이 개체를 변경했습니다. 최신 내용을 확인하고 다시 편집해 주세요.")
+                    throw NativePDFError.invalid(Self.peerChanged)
                 }
             }
             let selected: [[String: Any]]

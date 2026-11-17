@@ -32,19 +32,20 @@ enum NativePDFPageLinks {
                 var updated = value; updated["payload"] = remap(value["payload"] as? [String: Any] ?? [:]); next[key] = try F.canonical(updated)
             }
             if matches(source), row["kind"] as? String == "pdf-page-note", target["kind"] as? String == "note", let payload = target["payload"] as? [String: Any], let noteCourse = payload["courseId"] as? String, let notePath = payload["relPath"] as? String {
-                let key = noteCourse + ":" + notePath
-                guard noteTargets.insert(key).inserted else { throw NativeRepositoryContext.conflict("중복된 PDF 페이지 노트 연결을 먼저 정리해 주세요.") }
+                // A second link to the same note: the note is rewritten once.
+                let key = noteCourse + ":" + notePath, first = noteTargets.insert(key).inserted
                 // A note deleted behind the link table must not block page edits;
                 // its link row still remaps so a restored note lines up again.
                 let url = try context.materialURL(courseID: noteCourse, relativePath: notePath, allowMissing: true)
-                if context.files.fileExists(atPath: url.path) {
-                    let bytes = try Data(contentsOf: url)
-                    guard let text = String(data: bytes, encoding: .utf8) else { throw NativeRepositoryContext.validation("PDF 연결 노트를 읽지 못했습니다.") }
-                    let rewritten = try rewrite(text, source: path, pageMap: pageMap, fingerprint: fingerprint, sizes: sizes)
-                    result.files.append(["courseId": noteCourse, "relPath": notePath, "before": text, "after": rewritten])
-                    var metadata = try (row["metadata_json"] as? String).map { try F.object($0) } ?? [:]
-                    metadata["version"] = 1; metadata["fingerprint"] = fingerprint; metadata["pageSizes"] = sizes
-                    next["metadata_json"] = try F.canonical(metadata)
+                if first, context.files.fileExists(atPath: url.path), let text = String(data: try Data(contentsOf: url), encoding: .utf8) {
+                    // A note whose page markers the user edited by hand is kept exactly as written;
+                    // the page change goes ahead (its sections no longer follow the pages).
+                    if let rewritten = try? rewrite(text, source: path, pageMap: pageMap, fingerprint: fingerprint, sizes: sizes) {
+                        result.files.append(["courseId": noteCourse, "relPath": notePath, "before": text, "after": rewritten])
+                        var metadata = try (row["metadata_json"] as? String).map { try F.object($0) } ?? [:]
+                        metadata["version"] = 1; metadata["fingerprint"] = fingerprint; metadata["pageSizes"] = sizes
+                        next["metadata_json"] = try F.canonical(metadata)
+                    } else { NativePDFPageDocument.log.error("page note kept as written: its page sections did not match") }
                 }
             }
             result.before["material_links", default: []].append(row); result.after["material_links", default: []].append(next)
