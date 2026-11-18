@@ -1,3 +1,4 @@
+import PDFKit
 import SwiftUI
 import UIKit
 import UIKit.UIGestureRecognizerSubclass
@@ -40,8 +41,42 @@ enum NativeTabGesturePreferences {
     static var editingInteraction: UIEditingInteractionConfiguration { enabled ? .none : .default }
     /// Text is being edited somewhere iPadOS's three-finger editing still works.
     @MainActor static var yieldsToTextEditing: Bool {
-        guard let responder = NativeFirstResponder.current(), responder is UITextInput else { return false }
-        return responder.editingInteractionConfiguration != .none
+        yields(to: NativeFirstResponder.current(), keyboardShown: NativeKeyboardPresence.shared.isShown)
+    }
+    /// Holding the focus is not editing. PDFKit's page takes the first responder (a `UITextInput`, for ⌘C) as soon
+    /// as the page is touched, and a web page keeps it after a tap: yielding to those left three fingers to the
+    /// PDF's or the page's own pinch, which zoomed instead of closing the tab. Only a responder that has the
+    /// keyboard up (or, with a hardware keyboard, its shortcut bar) is being typed into.
+    @MainActor static func yields(to responder: UIResponder?, keyboardShown: Bool) -> Bool {
+        guard let responder, responder is UITextInput, responder.editingInteractionConfiguration != .none else { return false }
+        if let view = responder as? UIView, sequence(first: view, next: \.superview).contains(where: { $0 is PDFView }) { return false }
+        return keyboardShown
+    }
+    /// The fingers took the gesture from a responder that only held the focus (a PDF page, a web page): it lets go,
+    /// so iPadOS's own three-finger copy does not run under the tab gesture. The app's own editors have already
+    /// given those gestures up (`editingInteraction`) and keep their keyboard.
+    @MainActor static func releaseIdleTextFocus() {
+        guard let responder = NativeFirstResponder.current(), responder is UITextInput,
+              responder.editingInteractionConfiguration != .none, !yieldsToTextEditing else { return }
+        responder.resignFirstResponder()
+    }
+}
+
+/// Whether a keyboard is on screen: the software keyboard, or the shortcut bar iPadOS shows over a hardware
+/// keyboard while a field is being typed into. Started with the dock, before any field can take the keyboard.
+@MainActor final class NativeKeyboardPresence {
+    static let shared = NativeKeyboardPresence()
+    private(set) var isShown = false
+    private var observers: [NSObjectProtocol] = []
+    private init() {
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main) { note in
+            let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? .zero
+            MainActor.assumeIsolated { NativeKeyboardPresence.shared.isShown = !frame.isEmpty && frame.intersects(UIScreen.main.bounds) }
+        })
+        observers.append(center.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { NativeKeyboardPresence.shared.isShown = false }
+        })
     }
 }
 
@@ -274,7 +309,11 @@ final class NativeTabGestureRecognizer: UIGestureRecognizer, UIGestureRecognizer
     }
 
     private func start(at centre: CGPoint, event: UIEvent) {
-        guard allowed(), let pane = target(centre) else { tracker.ignore(); return }
+        guard allowed(), let pane = target(centre) else {
+            NativeInputTrace.record("tabGesture.refused", NativeTabGesturePreferences.yieldsToTextEditing ? "text editing" : "not allowed here")
+            tracker.ignore(); return
+        }
+        NativeTabGesturePreferences.releaseIdleTextFocus()
         groupID = pane; armed = nil
         haptic.prepare()
         cancelsTouchesInView = true
@@ -314,7 +353,10 @@ struct NativeTabGestureProbe: UIViewRepresentable {
     let allowed: () -> Bool
     let preview: (String?, NativeTabGestureDecision?) -> Void
     let decide: (NativeTabGestureDecision, String) -> Void
-    func makeUIView(context: Context) -> Probe { let view = Probe(); view.isUserInteractionEnabled = false; view.isAccessibilityElement = false; return view }
+    func makeUIView(context: Context) -> Probe {
+        _ = NativeKeyboardPresence.shared
+        let view = Probe(); view.isUserInteractionEnabled = false; view.isAccessibilityElement = false; return view
+    }
     func updateUIView(_ view: Probe, context: Context) {
         let panes = panes
         view.recognizer.allowed = { [weak view] in

@@ -1,3 +1,4 @@
+import PDFKit
 import XCTest
 @testable import Bandal
 
@@ -175,6 +176,30 @@ final class NativeTabGesturePreferencesTests: XCTestCase {
         // A kind that is no longer offered falls back to the menu.
         UserDefaults.standard.set("gone", forKey: NativeTabGesturePreferences.openKindKey)
         XCTAssertNil(NativeTabGesturePreferences.openAction)
+    }
+
+    /// Three fingers on a PDF zoomed it: PDFKit's page holds the focus as a `UITextInput` once touched, and the
+    /// gesture stood aside for it as if text were being typed. Only a field with the keyboard up is.
+    @MainActor
+    func testOnlyTypingTakesThreeFingersFromTheTabGesture() throws {
+        let page = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 400)).pdfData { renderer in
+            renderer.beginPage(); ("PDF text" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.systemFont(ofSize: 20)])
+        }
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 600, height: 800))
+        let pdf = PDFView(frame: window.bounds); pdf.document = PDFDocument(data: page)
+        window.addSubview(pdf); window.isHidden = false; pdf.layoutIfNeeded()
+        func textInputs(_ view: UIView) -> [UIView] { (view is UITextInput ? [view] : []) + view.subviews.flatMap(textInputs) }
+        let pageInput = try XCTUnwrap(textInputs(pdf).first, "PDFKit's page is a text input; that is what held the focus")
+        XCTAssertNotEqual(pageInput.editingInteractionConfiguration, .none)
+        XCTAssertFalse(NativeTabGesturePreferences.yields(to: pageInput, keyboardShown: false))
+        XCTAssertFalse(NativeTabGesturePreferences.yields(to: pageInput, keyboardShown: true), "A PDF page is never being typed into")
+
+        let field = UITextView(frame: CGRect(x: 0, y: 0, width: 200, height: 40)); window.addSubview(field)
+        XCTAssertTrue(NativeTabGesturePreferences.yields(to: field, keyboardShown: true), "Typing in a field keeps iPadOS's copy, paste and undo")
+        XCTAssertFalse(NativeTabGesturePreferences.yields(to: field, keyboardShown: false), "Focus left behind after typing stopped")
+        XCTAssertFalse(NativeTabGesturePreferences.yields(to: nil, keyboardShown: true))
+        XCTAssertFalse(NativeTabGesturePreferences.yields(to: pdf, keyboardShown: true), "Not a text input")
+        window.isHidden = true
     }
 
     func testKindsAreTheNewTabMenusRows() {
