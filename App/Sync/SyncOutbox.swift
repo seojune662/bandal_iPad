@@ -22,6 +22,8 @@ final class SyncOutbox {
         fileprivate var handled: [(id: String, mark: Int64)] = []
         fileprivate var files: [(path: String, key: String, content: String?)] = []
         fileprivate var deviceName: String?
+        /// This device's file is among the writes: commit records when (`device_written`).
+        fileprivate var deviceWritten: Int64?
         /// Sends the deletes an overwrite queued (`SyncConnection`); commit forgets them.
         fileprivate var clearsPending = false
         /// Files left for the next round (being written, unreadable), with the reason.
@@ -36,6 +38,9 @@ final class SyncOutbox {
     /// now, so what other devices changed there meanwhile wins over it once they follow.
     var asOf: Int64?
     var deviceName = "iPad"
+    /// The device file is written again after this long, so other devices see this one as recently seen
+    /// (the desktop writes its own hourly and shows the others' `last_seen`).
+    var deviceRefreshMs: Int64 = 60 * 60_000
     /// A session file is replaced by a new one once its gzip passes this size (spec: 1 MB).
     var maxFile = 1 << 20
 
@@ -61,24 +66,31 @@ final class SyncOutbox {
         // Order of a flush (design §1.5): pdf and assets went in first, then ink and notes, then the log.
         try assemble(&draft)
         let named = try store.value("device_name")
-        let device = Write(path: "devices/\(me).json", content: .data(try Self.deviceFile(name: deviceName, lastSeen: now())))
+        let at = now()
+        let device = Write(path: "devices/\(me).json", content: .data(try Self.deviceFile(name: deviceName, lastSeen: at)))
+        let written = try store.value("device_written").flatMap { Int64($0) } ?? 0
         if initialUpload {
             // The root names this device until everything is up, so no device takes it as whole before
             // then and an upload cut off goes on from here; this device's file says it is at it (spec v2.6).
             let mark = remote.contains("bandal.json") ? [] : [Write(path: "bandal.json", content: .data(try Self.json(["format": SyncFormat.version, "initial_upload": me, "started": now()])))]
             draft.batch.writes = mark + [device] + draft.batch.writes + [Write(path: "bandal.json", content: .data(try Self.json(["format": SyncFormat.version])), unmark: true)]
             draft.batch.deviceName = deviceName
-        } else if !remote.contains("devices/\(me).json") || named != deviceName {
+            draft.batch.deviceWritten = at
+        } else if !remote.contains("devices/\(me).json") || named != deviceName || at - written >= deviceRefreshMs {
             draft.batch.writes.append(device)
             draft.batch.deviceName = deviceName
+            draft.batch.deviceWritten = at
         }
         return draft.batch
     }
 
+    static let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+
     /// `devices/<id>.json`: the name, and when this device wrote it (ms).
     /// A device that left this root says where it went (spec v2.7 `moved_to`).
     static func deviceFile(name: String, lastSeen: Int64, movedTo: SyncFormat.MovedTo? = nil) throws -> Data {
-        var file: [String: Any] = ["name": name, "last_seen": lastSeen]
+        // platform and app_version as the desktop writes them (spec devices/<id>.json); other devices may show them.
+        var file: [String: Any] = ["name": name, "last_seen": lastSeen, "platform": "ipados", "app_version": appVersion]
         if let movedTo {
             var moved: [String: Any] = ["provider": movedTo.kind, "t": movedTo.t]
             if let account = movedTo.account { moved["account_hint"] = account }
@@ -110,6 +122,7 @@ final class SyncOutbox {
                 try context.run("INSERT OR REPLACE INTO cloud_sync_files(path,key,open,content) VALUES(?,?,1,?)", [file.path, file.key, file.content ?? NSNull()])
             }
             if let name = batch.deviceName { try store.set("device_name", name) }
+            if let at = batch.deviceWritten { try store.set("device_written", String(at)) }
             if batch.clearsPending { try context.run("DELETE FROM cloud_sync_state WHERE key IN ('pending_deletes','export_first')") }
         }
     }
@@ -151,8 +164,9 @@ final class SyncOutbox {
     private func courses(_ draft: inout Draft) throws {
         var known: [String: (id: String, registers: String)] = [:]
         for row in try context.query("SELECT sync_id,local_id,registers FROM cloud_sync_courses") { known[row["local_id"] as! String] = (row["sync_id"] as! String, row["registers"] as! String) }
-        // Linked folders stay on this iPad in v1 (user decision 2026-10-30).
-        for row in try context.query("SELECT id,name,color,archived,sort_order,deleted_at FROM courses WHERE source='managed' ORDER BY sort_order,id") {
+        // Linked folders stay on this iPad in v1 (user decision 2026-10-30). So do 학습 공간 (study spaces), as on the
+        // desktop, which syncs only workspace_kind 'course'; one made from a synced folder stops syncing, unremoved.
+        for row in try context.query("SELECT id,name,color,archived,sort_order,deleted_at FROM courses WHERE source='managed' AND workspace_kind='course' ORDER BY sort_order,id") {
             let local = row["id"] as! String, alive = row["deleted_at"] is NSNull
             if known[local] == nil {
                 guard alive else { continue }
@@ -181,7 +195,7 @@ final class SyncOutbox {
     }
 
     private func documents(_ draft: inout Draft) throws {
-        let courses = try context.query("SELECT s.sync_id,s.local_id FROM cloud_sync_courses s JOIN courses c ON c.id=s.local_id WHERE c.deleted_at IS NULL AND c.source='managed'")
+        let courses = try context.query("SELECT s.sync_id,s.local_id FROM cloud_sync_courses s JOIN courses c ON c.id=s.local_id WHERE c.deleted_at IS NULL AND c.source='managed' AND c.workspace_kind='course'")
         for course in courses {
             let local = course["local_id"] as! String
             // A course folder that cannot be read sends nothing, and above all no deletes.

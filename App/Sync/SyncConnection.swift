@@ -26,9 +26,9 @@ enum SyncConnection {
         let bytes = docs.values.compactMap { $0.text("pdf_sha256").flatMap { files["pdf/\($0).pdf"]?.size } }.reduce(0, +)
         let materials = try context.query("""
         SELECT COUNT(*) AS n, COALESCE(SUM(m.size),0) AS bytes FROM materials_index m JOIN courses c ON c.id=m.course_id
-        WHERE c.deleted_at IS NULL AND c.source='managed' AND m.deleted_at IS NULL AND m.kind IN ('pdf','note')
+        WHERE c.deleted_at IS NULL AND c.source='managed' AND c.workspace_kind='course' AND m.deleted_at IS NULL AND m.kind IN ('pdf','note')
         """).first
-        let local = try context.query("SELECT id,name FROM courses WHERE deleted_at IS NULL AND source='managed' ORDER BY sort_order,id")
+        let local = try context.query("SELECT id,name FROM courses WHERE deleted_at IS NULL AND source='managed' AND workspace_kind='course' ORDER BY sort_order,id")
         let mapped = forgetting ? [] : try Set(context.query("SELECT sync_id FROM cloud_sync_courses").compactMap { $0["sync_id"] as? String })
         var pairs: [[String: Any]] = []
         for (local, remote, fixed) in try candidates(state, forgetting: forgetting, context: context) {
@@ -153,7 +153,7 @@ enum SyncConnection {
     private static func candidates(_ state: SyncMerge.State, forgetting: Bool, context: NativeRepositoryContext) throws -> [(local: String, remote: String, fixed: Bool)] {
         let mapped = forgetting ? [] : try context.query("SELECT sync_id,local_id FROM cloud_sync_courses")
         let usedRemote = Set(mapped.compactMap { $0["sync_id"] as? String }), usedLocal = Set(mapped.compactMap { $0["local_id"] as? String })
-        let local = try context.query("SELECT id,name FROM courses WHERE deleted_at IS NULL AND source='managed' ORDER BY sort_order,id")
+        let local = try context.query("SELECT id,name FROM courses WHERE deleted_at IS NULL AND source='managed' AND workspace_kind='course' ORDER BY sort_order,id")
             .filter { !usedLocal.contains($0["id"] as! String) }
         let remote = state.courses.filter { $0.value.isAlive && !usedRemote.contains($0.key) }
         var result: [(local: String, remote: String, fixed: Bool)] = [], taken = Set<String>()
@@ -202,6 +202,6 @@ enum SyncConnection {
 
     /// The library index is filled by folder scans; files added since the last one count too.
     private static func scan(context: NativeRepositoryContext, library: NativeLibraryRepository) throws {
-        for row in try context.query("SELECT id FROM courses WHERE deleted_at IS NULL AND source='managed'") { _ = try library.handle("materials:tree", ["courseId": row["id"]!]) }
+        for row in try context.query("SELECT id FROM courses WHERE deleted_at IS NULL AND source='managed' AND workspace_kind='course'") { _ = try library.handle("materials:tree", ["courseId": row["id"]!]) }
     }
 }
