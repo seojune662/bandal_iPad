@@ -147,13 +147,27 @@ final class NativeBrowserSession: ObservableObject {
             guard let self, values[self.scopeKey] != nil, self.loaded else { return }
             Task { @MainActor [weak self] in await self?.consumePendingURL() }
         }.store(in: &subscriptions)
+        adoptLivePages()
+    }
+    /// The tab came back on screen (another tab, window or course was in front): its pages are still alive in the
+    /// host, so they show in the first frame. Waiting for `start()`'s storage round trips showed "열린 탭이 없습니다"
+    /// until settings came back, longer while a course switch kept the storage queue busy.
+    private func adoptLivePages() {
+        let live = host.pages.values.filter { owns($0.tabID) }.sorted { $0.id < $1.id }
+        guard !live.isEmpty else { return }
+        tabs = live.map(Self.tab)
+        let saved = (try? Data(contentsOf: saveURL)).flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
+        activeID = saved?.activeID.flatMap { id in tabs.contains { $0.id == id } ? id : nil } ?? tabs.first?.id
     }
     func start() async {
         guard !loaded, !retired else { return }; loaded = true; busy = true
-        defer { busy = false }
+        let started = ProcessInfo.processInfo.systemUptime
+        defer { busy = false; NativeInputTrace.perf("browser.start", since: started, "tabs=\(tabs.count)") }
         do {
             preferences = try await store.invoke("settings:get") as? [String: Any] ?? [:]
+            NativeInputTrace.perf("browser.settings", since: started)
             try await reloadProfiles()
+            NativeInputTrace.perf("browser.profiles", since: started)
             guard !retired else { throw CancellationError() }
             if host.pages.keys.contains(where: owns) {
                 tabs = host.pages.values.filter { owns($0.tabID) }.sorted { $0.id < $1.id }.map(Self.tab)

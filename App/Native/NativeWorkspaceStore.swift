@@ -267,19 +267,24 @@ final class NativeWorkspaceStore {
         }
     }
 
-    func selectCourse(_ id: String) async {
+    /// `flushed`: the caller has just saved every open editor. `waitForMaterials: false` returns once the course is
+    /// selected: its files list shows what it had last time and refreshes behind the switch.
+    func selectCourse(_ id: String, flushed: Bool = false, waitForMaterials: Bool = true) async {
         do {
             try await ensureStarted()
             if !courses.contains(where: { $0.id == id }) { try await loadCourses() }
             guard courses.contains(where: { $0.id == id }) else { throw DesktopRuntimeError("선택한 폴더를 찾을 수 없습니다.") }
-            if selectedCourseID != id { try await flushDocuments() }
+            if selectedCourseID != id, !flushed { try await flushDocuments() }
+            if selectedCourseID != id { materials = materialsCache[id] ?? [] }
             selectedCourseID = id
-            materials = []
             try saveSelection()
-            try await loadMaterials()
+            if waitForMaterials { try await loadMaterials() }
+            else { Task { @MainActor [weak self] in await self?.refreshMaterials() } }
             errorMessage = nil
         } catch { errorMessage = error.localizedDescription }
     }
+    /// Each course's files as last listed, so switching back shows them at once while the list refreshes.
+    private var materialsCache: [String: [NativeMaterial]] = [:]
 
     func clearCourseSelection() async throws {
         try await ensureStarted()
@@ -651,14 +656,23 @@ final class NativeWorkspaceStore {
             for _ in 0..<4 {
                 let revision = self.documentRevision
                 let entries = self.flushers.sorted { $0.value.id < $1.value.id }
-                for entry in entries where self.flushers[entry.key] != nil {
-                    let started = ProcessInfo.processInfo.systemUptime
-                    var failed = false
-                    do { if bounded { try await Self.settle(entry.value.flush) } else { try await entry.value.flush() } }
-                    catch { failed = true; if firstError == nil { firstError = error } }
-                    let elapsed = (ProcessInfo.processInfo.systemUptime - started) * 1000
-                    if failed || elapsed > 50 {
-                        NativeInputTrace.record("flush.editor", String(format: "kind=%@ ms=%.0f failed=%d bounded=%d editors=%d", entry.value.document?.kind ?? "unknown", elapsed, failed ? 1 : 0, bounded ? 1 : 0, entries.count))
+                // Editors save independently, so they run side by side: a pass waits for the slowest editor, not
+                // the sum of all (with recent PDFs kept open behind the current course, there are several).
+                await withTaskGroup(of: (String, Double, Error?).self) { group in
+                    for entry in entries where self.flushers[entry.key] != nil {
+                        let flush = entry.value.flush, kind = entry.value.document?.kind ?? "unknown"
+                        group.addTask { @MainActor in
+                            let started = ProcessInfo.processInfo.systemUptime
+                            var failure: Error?
+                            do { if bounded { try await Self.settle(flush) } else { try await flush() } } catch { failure = error }
+                            return (kind, (ProcessInfo.processInfo.systemUptime - started) * 1000, failure)
+                        }
+                    }
+                    for await (kind, elapsed, failure) in group {
+                        if let failure, firstError == nil { firstError = failure }
+                        if failure != nil || elapsed > 50 {
+                            NativeInputTrace.record("flush.editor", String(format: "kind=%@ ms=%.0f failed=%d bounded=%d editors=%d", kind, elapsed, failure == nil ? 0 : 1, bounded ? 1 : 0, entries.count))
+                        }
                     }
                 }
                 if revision == self.documentRevision { break }
@@ -738,7 +752,10 @@ final class NativeWorkspaceStore {
             watchedCourseID = nil
         }
         guard let courseID else { materials = []; return }
+        let treeStarted = ProcessInfo.processInfo.systemUptime
         let loaded: [NativeMaterial] = try Self.decode(try await runtime.invoke("materials:tree", request: ["courseId": courseID]))
+        NativeInputTrace.perf("materials.tree", since: treeStarted, "count=\(loaded.count)")
+        materialsCache[courseID] = loaded
         guard materialRequest == token, selectedCourseID == courseID else { return }
         // Every PDF save emits materials:changed; an unchanged tree must not
         // republish and re-render the root and library views.
@@ -752,7 +769,11 @@ final class NativeWorkspaceStore {
     }
 
     private func receive(_ channel: String, payload: Any) {
+        let sent = ProcessInfo.processInfo.systemUptime
         events.send(NativeWorkspaceEvent(channel: channel, payload: payload))
+        if NativeInputTrace.isEnabled, ProcessInfo.processInfo.systemUptime - sent > 0.002 {
+            NativeInputTrace.perf("event", since: sent, channel + (((payload as? [String: Any])?["name"] as? String).map { " " + $0 } ?? ""))
+        }
         if channel == "auth:changed" { referral.accountChanged(signedIn: (payload as? [String: Any])?["phase"] as? String == "signed-in") }
         let courseID = (payload as? [String: Any])?["courseId"] as? String
         guard channel == "courses:changed" || channel == "materials:changed" && courseID == selectedCourseID else { return }

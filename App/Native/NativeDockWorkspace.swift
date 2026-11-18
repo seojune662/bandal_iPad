@@ -76,6 +76,9 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
     @State private var tabGesturePreview: TabGesturePreview?
     private struct TabGesturePreview: Equatable { let groupID: String; let decision: NativeTabGestureDecision? }
     @AppStorage(NativeTabGesturePreferences.enabledKey) private var tabGestureEnabled = true
+    /// PDFs shown most recently, newest first: the ones not on screen stay open behind it (`warmPDFLimit`), so going
+    /// back to their tab, window or course shows them as they were instead of opening them again.
+    @State private var recentPDFs: [String] = []
     @AppStorage("native.fontScale") private var fontScale = 1.0
     @AppStorage("native.density") private var density = "comfortable"
 
@@ -143,7 +146,7 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                             .environment(\.nativeWorkspaceTopInset, avoidance.extraDrop)
                             .frame(width: card.width, height: card.height)
                             .background {
-                                if Self.retainsEditor(entry.document) {
+                                if Self.retainsEditor(entry.document) || entry.document.kind == "pdf" {
                                     NativeDockEditorVisibility(isVisible: entry.visible && !covered)
                                 }
                             }
@@ -206,6 +209,9 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
                 }
             } else { empty() }
         }
+        .onChange(of: shownPDFs, initial: true) { _, shown in
+            recentPDFs = Self.rememberPDFs(shown, recent: recentPDFs, open: Set(navigation.documents.lazy.filter { $0.kind == "pdf" }.map(\.id)))
+        }
         .onChange(of: navigation.currentWindowRef) { _, _ in NativeInputTrace.record("dock.reset", "window changed"); drag.end(); maximizedGroupID = nil; newTabGroupID = nil; tabListGroupID = nil }
         .onChange(of: chromeMode) { _, _ in NativeInputTrace.record("dock.reset", "chrome mode changed"); drag.end(); newTabGroupID = nil; tabListGroupID = nil }
         .onChange(of: newTabGroupID) { old, new in NativeInputTrace.record("dock.newTabGroup", "\(old == nil ? "nil" : "set")→\(new == nil ? "nil" : "set")") }
@@ -217,7 +223,20 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         var id: String { document.id }
     }
     private func visibleDocuments(_ geometry: NativeDockGeometry, layout: NativeDockLayout, bounds: CGRect, metrics: NativeDockStripMetrics) -> [VisibleDocument] {
-        Self.projectDocuments(navigation.documents, geometry: geometry, layout: layout, bounds: bounds, headerHeight: chromeMode.showsTabs ? metrics.total : 0)
+        Self.projectDocuments(navigation.documents, geometry: geometry, layout: layout, bounds: bounds, headerHeight: chromeMode.showsTabs ? metrics.total : 0, warmPDFs: recentPDFs)
+    }
+    /// The PDFs the current window shows, one per pane.
+    private var shownPDFs: [String] {
+        navigation.groups.compactMap(\.activeID).filter { navigation.document($0)?.kind == "pdf" }
+    }
+    /// How many PDFs that are off screen stay open. Each keeps its pages and ink laid out (a few tens of MB); a memory
+    /// warning lets them go (`NativePDFHost`), and the next look at them opens them again.
+    static var warmPDFLimit: Int { 3 }
+    /// The recency list after `shown` came on screen: those first, then the ones before them that are still open.
+    static func rememberPDFs(_ shown: [String], recent: [String], open: Set<String>) -> [String] {
+        let shownSet = Set(shown)
+        let earlier = recent.filter { !shownSet.contains($0) && open.contains($0) }
+        return shown + earlier.prefix(warmPDFLimit)
     }
     /// Where a seam's grip sits along it (Figma 130:6137): beside the first pane it borders,
     /// and seams that continue one another across a split share the first one's grip.
@@ -238,9 +257,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         return first.map { horizontal ? $0.midY - frame.minY : $0.midX - frame.minX } ?? (horizontal ? frame.height : frame.width) / 2
     }
     static func retainsEditor(_ document: NativeDocumentReference) -> Bool {
-        // PDF warm-retention is deferred: a resumed (offscreen-then-shown) PDFKit view
-        // swallows the UIKit tab drag-drop, so switching PDFs relies on the fast open()
-        // path (PDFOriginals + hash cache + deferred page history) instead. Markdown
+        // PDFs are not kept for their whole life: only the last few shown stay open while
+        // hidden (`warmPDFs` in projectDocuments, capped by warmPDFLimit). Markdown
         // keeps live retention: UIKit owns its selection, composition and per-pane undo.
         // Whiteboard owns local tools/history, and learning owns card disclosure
         // and answer focus. A window switch must not end those panel sessions.
@@ -248,7 +266,8 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             || document.learningTarget != nil || ["md", "markdown"].contains((document.relativePath as NSString).pathExtension.lowercased())
     }
     static func projectDocuments(_ documents: [NativeDocumentReference], geometry: NativeDockGeometry, layout: NativeDockLayout,
-                                 bounds: CGRect, headerHeight: CGFloat = NativeDockStripMetrics.single.total, topEdge: NativeDockTopEdge? = nil) -> [VisibleDocument] {
+                                 bounds: CGRect, headerHeight: CGFloat = NativeDockStripMetrics.single.total, topEdge: NativeDockTopEdge? = nil,
+                                 warmPDFs: [String] = []) -> [VisibleDocument] {
         let topEdge = topEdge ?? Self.topEdge
         // Compact mode hides other groups without ending their editor session.
         // Rotation or maximizing a pane must not race an asynchronous draft flush.
@@ -264,8 +283,9 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
         let activeIDs = Set(result.map(\.id))
         // Keep panel-local editor state alive until its tab is actually closed,
         // including while another window/course is active. Hidden panels cannot
-        // receive UIKit input. PDF retains its existing checkpoint path.
-        for document in documents where retainsEditor(document) && !activeIDs.contains(document.id) {
+        // receive UIKit input. A PDF stays only while it is among the last few shown (`warmPDFs`).
+        let warm = Set(warmPDFs)
+        for document in documents where (retainsEditor(document) || document.kind == "pdf" && warm.contains(document.id)) && !activeIDs.contains(document.id) {
             let original = projected.panes.first { $0.group.tabs.contains(document.id) }
             let inset = NativeDockHeaderMetrics.height(for: original?.frame ?? bounds, controlsHeight: headerHeight, topEdge: topEdge)
             result.append(VisibleDocument(document: document, groupID: original?.id ?? "",

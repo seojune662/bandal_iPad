@@ -114,9 +114,13 @@ final class DesktopRuntime: @unchecked Sendable {
         if channel == "studyMarket:request" || channel == "native:extractArticle" || channel.hasPrefix("native:cloud") || Self.nativeChannels.contains(channel) || channel.hasPrefix("browser:") || channel.hasPrefix("credentials:") || channel.hasPrefix("auth:") || channel.hasPrefix("sync:") || channel.hasPrefix("cloudSync:") || channel.hasPrefix("native:ai") || (channel.hasPrefix("nativeSettings:") && channel != "nativeSettings:usage") {
             return try await native(Self.aliases[channel] ?? channel,object)
         }
+        let enqueued = ProcessInfo.processInfo.systemUptime
         if let result = try await onQueue({
             let started = ProcessInfo.processInfo.systemUptime, changes = self.context?.db.totalChanges
             defer {
+                if NativeInputTrace.isEnabled, ProcessInfo.processInfo.systemUptime - enqueued > 0.03 {
+                    NativeInputTrace.perf("queue", since: enqueued, String(format: "channel=%@ wait=%.1f", channel, (started - enqueued) * 1000))
+                }
                 if let changes, self.context?.db.totalChanges != changes { self.onLocalChange?() }
                 switch channel {
                 case "nativePDF:binding": DesktopSignpost.benchmark("storage.binding", startedAt: started)
@@ -386,6 +390,8 @@ final class DesktopRuntime: @unchecked Sendable {
     }
     private func poll() {
         guard active else { return }
+        let polled = ProcessInfo.processInfo.systemUptime
+        defer { if ProcessInfo.processInfo.systemUptime - polled > 0.02 { NativeInputTrace.perf("queue.poll", since: polled) } }
         for course in Set(watches.values) {
             do {
                 guard let tree = try library?.handle("materials:tree",["courseId":course]) else { continue }
