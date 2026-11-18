@@ -2,3 +2,4 @@
 • AI panel: a new Overlay sidebar floats over the document instead of pushing it.
 • Adding, deleting or moving PDF pages now keeps the original file intact.
 • Split view has a lighter focus outline, and Share always acts on the right tab.
+• Switching subjects is faster, and browser tabs no longer flash when you come back to them.
