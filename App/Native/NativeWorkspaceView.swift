@@ -225,6 +225,135 @@ struct NativeWorkspaceView: View {
     }
 
 
+    // Split from `workspaceChrome`: inline it pushes that expression past the type checker's time limit in Release archives.
+    // Editors and the inspector remain mounted while covered. Navigation
+    // and opening a keyboard must not discard an in-progress draft.
+    @ViewBuilder
+    private func documentArea(width: CGFloat, chrome: NativeWorkspaceChromeLayout, rightVisible: Bool) -> some View {
+        let covered = section != .library || auxiliary != nil || windowsOverviewOpen
+        ZStack {
+            NativeWorkspacePreviewContainer(controller: previews, isInteractive: !covered) {
+            NativeDockWorkspace(navigation: navigation, store: store, content: { workspace($0) }, empty: { emptyWorkspace },
+                perform: transition, persist: saveNavigation, closeDocuments: closeDocuments,
+                materialsOpen: rightVisible,
+                toggleMaterials: { toggleMaterialsRail(width: width) },
+                openNewTab: openNewTab, covered: covered, select: selectTab,
+                chromeMode: navigation.chromeMode, controlInset: chrome.rightPinned ? 0 : NativeWorkspaceWindowControls.width + NativeWorkspaceWindowControls.trailing,
+                closeTabByGesture: closeTabByGesture, tabGestureBlocked: tabGestureBlocked(width: width))
+                .environment(\.nativeWorkspacePreviewController, previews)
+                .environment(\.nativePDFPaletteHost, pdfPalette)
+            }
+                .opacity(covered && !settingsOpen ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered)
+            if windowsOverviewOpen || section == .settings {
+                EmptyView()
+            } else if let auxiliary {
+                switch auxiliary {
+                case .marketplace: NativeMarketplaceView(store: store)
+                case .help: NativeHelpView()
+                case .account: NativeAccountView(store: store)
+                }
+            } else if section != .library {
+                VStack(spacing: 0) {
+                    toolTabs
+                    NativeToolsWorkspace(section: section, store: store, services: services)
+                }
+            }
+        // The page, note or web view runs to the window's bottom edge, under the home indicator.
+        // The dock lays its documents out as cards on the glass; a tool screen over it keeps the plain paper.
+        }.frame(maxWidth: .infinity, maxHeight: .infinity).ignoresSafeArea(.container, edges: .bottom)
+            .background(covered ? AnyShapeStyle(NativeGlass.paper) : AnyShapeStyle(NativeGlass.panel))
+    }
+
+    // Split from `workspaceChrome`: the columns and their resizers and drawers. One expression with the overlays
+    // below it exceeds the type checker's time limit in Release archives.
+    private func chromeColumns(geometry: GeometryProxy, chrome: NativeWorkspaceChromeLayout, aiVisible: Bool,
+                               aiHostWidth: CGFloat, aiLeading: CGFloat, rightVisible: Bool) -> some View {
+        let minimum = NativeWorkspaceChromeLayout.editorMinimum
+        return HStack(spacing: 0) {
+            globalNavigation(width: geometry.size.width).zIndex(2)
+            // The slot is cut at its sides, so the sidebar slides out of its own column and never passes
+            // under the rail: rail glass over panel glass reads as a flat grey band for the whole slide.
+            HStack(spacing: 0) {
+                if chrome.leftPinned {
+                    HStack(spacing: 0) { courseSidebar.frame(width: chrome.leftWidth); railDivider }
+                        .transition(.move(edge: .leading))
+                }
+            }
+            .mask { Rectangle().padding(.vertical, -400) }
+            .zIndex(1)
+            // The AI column: its glass and divider. The panel is drawn over it by `aiHost`, which can also float
+            // it over the document; the width animates and the panel, cut to the column, slides with it.
+            HStack(spacing: 0) { Color.clear.frame(width: aiHostWidth); railDivider }
+                .frame(width: aiVisible ? aiHostWidth + 1 : 0, alignment: .trailing)
+                // Cut at the sides only: the input capsule reaches below the home-indicator line.
+                .mask { Rectangle().padding(.bottom, -40) }
+                // Outside the clip, so the glass reaches under the home indicator like the other panels.
+                .background(NativeGlass.panel)
+                .accessibilityHidden(true)
+            documentArea(width: geometry.size.width, chrome: chrome, rightVisible: rightVisible)
+            if chrome.rightPinned {
+                railDivider
+                Color.clear.frame(width: chrome.rightWidth)
+            }
+        }
+        // Always mounted, in the column or floating, so a draft or streaming reply survives closing it and switching.
+        .overlay { aiHost(chrome: chrome, width: geometry.size.width, columnVisible: aiVisible, columnWidth: aiHostWidth, leading: aiLeading) }
+        .overlay {
+            if chrome.leftPinned {
+                NativeDockRailResizer(side: .left, width: Binding(get: { chrome.leftWidth }, set: { courseRailWidth = $0 }), maximum: min(360, geometry.size.width - 48 - chrome.aiWidth - chrome.rightWidth - minimum - 3))
+                    .frame(width: NativeDockRailResizer.hitWidth, height: geometry.size.height)
+                    .position(x: NativeDockRailResizer.center(seam: 48 + chrome.leftWidth + 0.5, side: .left), y: geometry.size.height / 2)
+            }
+        }
+        .overlay(alignment: .leading) {
+            if compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) && showsWorkspace && annotation.request == nil {
+                HStack(spacing: 0) {
+                    courseSidebar.frame(width: min(320, geometry.size.width - 48))
+                        // Over the paper, not the wallpaper: carry the window's stretch of the backdrop along, so the glass matches the pinned panel.
+                        .background { NativeBackdropUnderlay(windowSize: geometry.size, safeArea: geometry.safeAreaInsets, leadingInset: NativeDesktopTheme.navigationWidth) }
+                        .mask { Rectangle().padding(.vertical, -60) }
+                        .nativeWorkspacePreviewExcluded(occludesContent: true)
+                        .overlay(alignment: .trailing) { railDivider }
+                        .transition(.move(edge: .leading))
+                    Color.black.opacity(0.12).onTapGesture { setCourseRail(false, width: geometry.size.width) }
+                }.padding(.leading, NativeDesktopTheme.navigationWidth).clipped()
+            }
+        }
+        .overlay(alignment: .trailing) {
+            // A concrete stack keeps the drawer's drawing and hit region
+            // aligned to the trailing edge when the backdrop appears.
+            ZStack(alignment: .trailing) {
+                if rightVisible && !chrome.rightPinned {
+                    Color.black.opacity(0.12).onTapGesture { setRail(.materials, open: false, width: geometry.size.width) }.transition(.opacity)
+                }
+                // One stable host, including while hidden, for file browsing.
+                inspectorSidebar
+                    .frame(width: chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth,
+                           height: max(0, geometry.size.height - NativeWorkspaceWindowControls.inspectorTop))
+                    .padding(.top, NativeWorkspaceWindowControls.inspectorTop)
+                    .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
+                    .background(NativeGlass.panel)
+                    // The drawer may float over the paper; the window's own stretch of backdrop keeps its glass the pinned panel's.
+                    .background { NativeBackdropUnderlay(windowSize: geometry.size, safeArea: geometry.safeAreaInsets) }
+                    .mask { Rectangle().padding(.vertical, -60) }
+                    .overlay(alignment: .leading) { if rightVisible && !chrome.rightPinned { railDivider } }
+                    // Off the window's edge while closed, and opaque on the way: a fade would show the wallpaper through the glass.
+                    // It turns clear only once the slide is over, which is what takes its UIKit host out of the accessibility tree.
+                    .offset(x: rightVisible ? 0 : (chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth) + 1)
+                    .animation(rightVisible ? nil : .linear(duration: 0.01).delay(0.45)) { $0.opacity(rightVisible ? 1 : 0) }
+                    .allowsHitTesting(rightVisible).accessibilityHidden(!rightVisible)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        }
+        .overlay {
+            if chrome.rightPinned {
+                NativeDockRailResizer(side: .right, width: Binding(get: { chrome.rightWidth }, set: { materialsRailWidth = max(320, $0) }), maximum: min(520, geometry.size.width - 48 - chrome.leftWidth - chrome.aiWidth - minimum - 3), resetWidth: 360)
+                    .frame(width: NativeDockRailResizer.hitWidth, height: geometry.size.height)
+                    .position(x: NativeDockRailResizer.center(seam: geometry.size.width - chrome.rightWidth - 0.5, side: .right), y: geometry.size.height / 2)
+            }
+        }
+    }
+
     // Split from `body`: as one expression it exceeds the type checker's time limit in Release archives.
     private var workspaceChrome: some View {
         GeometryReader { geometry in
@@ -234,125 +363,9 @@ struct NativeWorkspaceView: View {
                 (chrome.aiPinned || !NativeWorkspaceChromeLayout.fitsAI(geometry.size.width) && compactAIRail)
             let aiHostWidth = chrome.aiPinned ? chrome.aiWidth : chrome.compactAIWidth
             let aiLeading = NativeDesktopTheme.navigationWidth + (chrome.leftPinned ? chrome.leftWidth + 1 : 0)
-            let minimum = NativeWorkspaceChromeLayout.editorMinimum
             let rightVisible = showsWorkspaceChrome && annotation.request == nil &&
                 (chrome.rightPinned || !NativeWorkspaceChromeLayout.fitsRight(geometry.size.width) && compactMaterialsRail)
-            HStack(spacing: 0) {
-                globalNavigation(width: geometry.size.width).zIndex(2)
-                // The slot is cut at its sides, so the sidebar slides out of its own column and never passes
-                // under the rail: rail glass over panel glass reads as a flat grey band for the whole slide.
-                HStack(spacing: 0) {
-                    if chrome.leftPinned {
-                        HStack(spacing: 0) { courseSidebar.frame(width: chrome.leftWidth); railDivider }
-                            .transition(.move(edge: .leading))
-                    }
-                }
-                .mask { Rectangle().padding(.vertical, -400) }
-                .zIndex(1)
-                // The AI column: its glass and divider. The panel is drawn over it by `aiHost`, which can also float
-                // it over the document; the width animates and the panel, cut to the column, slides with it.
-                HStack(spacing: 0) { Color.clear.frame(width: aiHostWidth); railDivider }
-                    .frame(width: aiVisible ? aiHostWidth + 1 : 0, alignment: .trailing)
-                    // Cut at the sides only: the input capsule reaches below the home-indicator line.
-                    .mask { Rectangle().padding(.bottom, -40) }
-                    // Outside the clip, so the glass reaches under the home indicator like the other panels.
-                    .background(NativeGlass.panel)
-                    .accessibilityHidden(true)
-                // Editors and the inspector remain mounted while covered. Navigation
-                // and opening a keyboard must not discard an in-progress draft.
-                let covered = section != .library || auxiliary != nil || windowsOverviewOpen
-                ZStack {
-                    NativeWorkspacePreviewContainer(controller: previews, isInteractive: !covered) {
-                    NativeDockWorkspace(navigation: navigation, store: store, content: { workspace($0) }, empty: { emptyWorkspace },
-                        perform: transition, persist: saveNavigation, closeDocuments: closeDocuments,
-                        materialsOpen: rightVisible,
-                        toggleMaterials: { toggleMaterialsRail(width: geometry.size.width) },
-                        openNewTab: openNewTab, covered: covered, select: selectTab,
-                        chromeMode: navigation.chromeMode, controlInset: chrome.rightPinned ? 0 : NativeWorkspaceWindowControls.width + NativeWorkspaceWindowControls.trailing,
-                        closeTabByGesture: closeTabByGesture, tabGestureBlocked: tabGestureBlocked(width: geometry.size.width))
-                        .environment(\.nativeWorkspacePreviewController, previews)
-                        .environment(\.nativePDFPaletteHost, pdfPalette)
-                    }
-                        .opacity(covered && !settingsOpen ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered)
-                    if windowsOverviewOpen || section == .settings {
-                        EmptyView()
-                    } else if let auxiliary {
-                        switch auxiliary {
-                        case .marketplace: NativeMarketplaceView(store: store)
-                        case .help: NativeHelpView()
-                        case .account: NativeAccountView(store: store)
-                        }
-                    } else if section != .library {
-                        VStack(spacing: 0) {
-                            toolTabs
-                            NativeToolsWorkspace(section: section, store: store, services: services)
-                        }
-                    }
-                // The page, note or web view runs to the window's bottom edge, under the home indicator.
-                // The dock lays its documents out as cards on the glass; a tool screen over it keeps the plain paper.
-                }.frame(maxWidth: .infinity, maxHeight: .infinity).ignoresSafeArea(.container, edges: .bottom)
-                    .background(covered ? AnyShapeStyle(NativeGlass.paper) : AnyShapeStyle(NativeGlass.panel))
-                if chrome.rightPinned {
-                    railDivider
-                    Color.clear.frame(width: chrome.rightWidth)
-                }
-            }
-            // Always mounted, in the column or floating, so a draft or streaming reply survives closing it and switching.
-            .overlay { aiHost(chrome: chrome, width: geometry.size.width, columnVisible: aiVisible, columnWidth: aiHostWidth, leading: aiLeading) }
-            .overlay {
-                if chrome.leftPinned {
-                    NativeDockRailResizer(side: .left, width: Binding(get: { chrome.leftWidth }, set: { courseRailWidth = $0 }), maximum: min(360, geometry.size.width - 48 - chrome.aiWidth - chrome.rightWidth - minimum - 3))
-                        .frame(width: NativeDockRailResizer.hitWidth, height: geometry.size.height)
-                        .position(x: NativeDockRailResizer.center(seam: 48 + chrome.leftWidth + 0.5, side: .left), y: geometry.size.height / 2)
-                }
-            }
-            .overlay(alignment: .leading) {
-                if compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) && showsWorkspace && annotation.request == nil {
-                    HStack(spacing: 0) {
-                        courseSidebar.frame(width: min(320, geometry.size.width - 48))
-                            // Over the paper, not the wallpaper: carry the window's stretch of the backdrop along, so the glass matches the pinned panel.
-                            .background { NativeBackdropUnderlay(windowSize: geometry.size, safeArea: geometry.safeAreaInsets, leadingInset: NativeDesktopTheme.navigationWidth) }
-                            .mask { Rectangle().padding(.vertical, -60) }
-                            .nativeWorkspacePreviewExcluded(occludesContent: true)
-                            .overlay(alignment: .trailing) { railDivider }
-                            .transition(.move(edge: .leading))
-                        Color.black.opacity(0.12).onTapGesture { setCourseRail(false, width: geometry.size.width) }
-                    }.padding(.leading, NativeDesktopTheme.navigationWidth).clipped()
-                }
-            }
-            .overlay(alignment: .trailing) {
-                // A concrete stack keeps the drawer's drawing and hit region
-                // aligned to the trailing edge when the backdrop appears.
-                ZStack(alignment: .trailing) {
-                    if rightVisible && !chrome.rightPinned {
-                        Color.black.opacity(0.12).onTapGesture { setRail(.materials, open: false, width: geometry.size.width) }.transition(.opacity)
-                    }
-                    // One stable host, including while hidden, for file browsing.
-                    inspectorSidebar
-                        .frame(width: chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth,
-                               height: max(0, geometry.size.height - NativeWorkspaceWindowControls.inspectorTop))
-                        .padding(.top, NativeWorkspaceWindowControls.inspectorTop)
-                        .nativeWorkspacePreviewExcluded(occludesContent: !chrome.rightPinned && rightVisible, enabled: rightVisible)
-                        .background(NativeGlass.panel)
-                        // The drawer may float over the paper; the window's own stretch of backdrop keeps its glass the pinned panel's.
-                        .background { NativeBackdropUnderlay(windowSize: geometry.size, safeArea: geometry.safeAreaInsets) }
-                        .mask { Rectangle().padding(.vertical, -60) }
-                        .overlay(alignment: .leading) { if rightVisible && !chrome.rightPinned { railDivider } }
-                        // Off the window's edge while closed, and opaque on the way: a fade would show the wallpaper through the glass.
-                        // It turns clear only once the slide is over, which is what takes its UIKit host out of the accessibility tree.
-                        .offset(x: rightVisible ? 0 : (chrome.rightPinned ? chrome.rightWidth : chrome.compactRightWidth) + 1)
-                        .animation(rightVisible ? nil : .linear(duration: 0.01).delay(0.45)) { $0.opacity(rightVisible ? 1 : 0) }
-                        .allowsHitTesting(rightVisible).accessibilityHidden(!rightVisible)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-            }
-            .overlay {
-                if chrome.rightPinned {
-                    NativeDockRailResizer(side: .right, width: Binding(get: { chrome.rightWidth }, set: { materialsRailWidth = max(320, $0) }), maximum: min(520, geometry.size.width - 48 - chrome.leftWidth - chrome.aiWidth - minimum - 3), resetWidth: 360)
-                        .frame(width: NativeDockRailResizer.hitWidth, height: geometry.size.height)
-                        .position(x: NativeDockRailResizer.center(seam: geometry.size.width - chrome.rightWidth - 0.5, side: .right), y: geometry.size.height / 2)
-                }
-            }
+            chromeColumns(geometry: geometry, chrome: chrome, aiVisible: aiVisible, aiHostWidth: aiHostWidth, aiLeading: aiLeading, rightVisible: rightVisible)
             // The PDF palette floats over the side panels; under a drawer, or beside another pane (whose bar it would cover), it stays inside its pane.
             .overlay { NativePDFPaletteLayer(host: pdfPalette, covered: compactCourseRail && !NativeWorkspaceChromeLayout.fitsLeft(geometry.size.width) || rightVisible && !chrome.rightPinned || navigation.groups.count > 1) }
             // Over the rail and both panels: the overview is the whole window (Figma 132:2517).
