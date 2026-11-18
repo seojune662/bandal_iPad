@@ -8,8 +8,9 @@ struct CloudSession: Codable {
 }
 struct CloudUser: Codable {
     var id: String; var email: String?
-    /// How the account signed in ("apple", "google"), as the auth server reports it.
+    /// How the account signed in ("apple", "google"), as the auth server reports it;
+    /// `providers` lists every sign-in linked to it.
     var app_metadata: Metadata?
-    struct Metadata: Codable { var provider: String? }
+    struct Metadata: Codable { var provider: String?; var providers: [String]? }
 }
 

@@ -216,7 +216,7 @@ struct NativeSignInButtons: View {
                 let result = try await store.invoke("auth:signIn", ["provider": provider]) as? [String: Any]
                 guard result?["ok"] as? Bool != true else { return }
                 switch result?["reason"] as? String {
-                case "already-signed-in": break
+                case "already-signed-in", "cancelled": break
                 case "provider": error = "다른 로그인이 진행 중이에요. 잠시 뒤 다시 해 주세요."
                 default: error = "지금은 로그인할 수 없어요. 연결을 확인해 주세요."
                 }

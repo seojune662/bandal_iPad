@@ -64,6 +64,8 @@ struct NativeSettingsWorkspace: View {
   }
   @State private var settings: [String: Any] = [:]
   @State private var account: [String: Any] = [:]
+  /// The sign-in being linked, until the account shows it or says why not.
+  @State private var linking: String?
   @State private var sync: [String: Any] = [:]
   @State private var conflicts: [[String: Any]] = []
   @State private var billing: [String: Any] = [:]
@@ -142,6 +144,7 @@ struct NativeSettingsWorkspace: View {
       if event.channel == "auth:changed", let state = event.payload as? [String: Any] {
         account = state
         setNicknameFromAccount()
+        linkOutcome()
       }
       if event.channel == "runtime:syncChanged", let state = event.payload as? [String: Any] {
         sync = state
@@ -462,9 +465,17 @@ struct NativeSettingsWorkspace: View {
   @ViewBuilder private var accountMore: some View {
     NativeReferralSettingsCard(store: store)
     if signedIn {
-      NativeSettingsGroup(title: "다른 로그인 방법 연결") {
-        NativeSettingsActionRow(title: "Apple 연결") { linkProvider("apple") }
-        NativeSettingsActionRow(title: "Google 연결") { linkProvider("google") }
+      let linked = account["providers"] as? [String] ?? []
+      NativeSettingsGroup(title: "다른 로그인 방법 연결", description: linked.count > 1 ? "Apple과 Google 모두 이 계정에 연결돼 있어요. 어느 쪽으로 로그인해도 같은 계정이에요." : "") {
+        ForEach(["apple", "google"], id: \.self) { provider in
+          let name = provider == "apple" ? "Apple" : "Google"
+          if linked.contains(provider) {
+            NativeSettingsRow(title: "\(name) 연결됨") { Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativeDesktopTheme.muted) }
+              .accessibilityIdentifier("native-settings-linked-\(provider)")
+          } else {
+            NativeSettingsActionRow(title: "\(name) 연결") { linkProvider(provider) }.accessibilityIdentifier("native-settings-link-\(provider)")
+          }
+        }
       }
     }
     if NativeReleaseFlags.legacyCloudSync { subscriptionPanel; syncPanel; profilePanel }
@@ -606,7 +617,7 @@ struct NativeSettingsWorkspace: View {
     account = try await store.invoke("auth:getState") as? [String: Any] ?? [:]
     #if DEBUG
     // A signed-in account for the design screenshots.
-    if ProcessInfo.processInfo.arguments.contains("--native-settings-account-fixture") { account = ["phase": "signed-in", "email": "banddal@snu.ac.kr", "provider": "apple", "profile": ["nickname": "김반달"]] }
+    if ProcessInfo.processInfo.arguments.contains("--native-settings-account-fixture") { account = ["phase": "signed-in", "email": "banddal@snu.ac.kr", "provider": "apple", "providers": ["apple"], "profile": ["nickname": "김반달"]] }
     #endif
     setNicknameFromAccount()
   }
@@ -631,13 +642,31 @@ struct NativeSettingsWorkspace: View {
     if let text = summary["text"] as? String, !text.isEmpty { lines.append(text) }
     return lines.isEmpty ? "내용 요약이 없습니다." : lines.joined(separator: "\n")
   }
+  /// Apple links in place; Google answers once its sign-in page opens, and the
+  /// outcome arrives later as auth:changed. Either way linkOutcome reports it.
   private func linkProvider(_ provider: String) {
     run {
+      linking = provider
       let result = try await store.invoke("auth:linkProvider", ["provider": provider]) as? [String: Any]
-      guard result?["ok"] as? Bool == true else { throw DesktopRuntimeError("로그인 방법을 연결하지 못했습니다. 다시 시도하세요.") }
       try await loadAccount()
-      notice = "로그인 방법을 연결했어요."
+      if linkOutcome() || result?["ok"] as? Bool == true { return }
+      linking = nil
+      if result?["reason"] as? String != "cancelled" { throw DesktopRuntimeError("연결을 시작하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.") }
     }
+  }
+  /// Says how a link ended once the account shows it: linked, refused (and why), or cancelled. True when it ended.
+  @discardableResult private func linkOutcome() -> Bool {
+    guard let provider = linking else { return false }
+    let name = provider == "apple" ? "Apple" : "Google"
+    if (account["providers"] as? [String] ?? []).contains(provider) { linking = nil; notice = "\(name)을 연결했어요."; return true }
+    switch account["errorCode"] as? String {
+    case "identity-already-linked": error = "이 \(name) 계정은 이미 다른 반달 계정에 연결돼 있어요. 그 계정으로 로그인해 주세요."
+    case "identity-link-failed": error = "연결하지 못했어요. 잠시 후 다시 시도해 주세요."
+    case "oauth-cancelled": break
+    default: return false
+    }
+    linking = nil
+    return true
   }
   private func signIn(_ provider: String) {
     run {
