@@ -191,6 +191,38 @@ final class SyncStoreTests: XCTestCase {
         XCTAssertEqual(try a.sync(cloud), [])
     }
 
+    /// The desktop shows other devices' `last_seen`: this device's file goes up again hourly while it syncs,
+    /// with its platform and app version as the desktop writes its own.
+    func testTheDeviceFileGoesUpAgainHourlyWithPlatformAndVersion() throws {
+        let cloud = Cloud(), a = try Device("iPad A")
+        _ = try a.course("수학")
+        try a.sync(cloud)
+        let path = try XCTUnwrap(cloud.files.keys.first { $0.hasPrefix("devices/") })
+        let file = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(cloud.files[path])) as? [String: Any])
+        XCTAssertEqual(file["platform"] as? String, "ipados")
+        XCTAssertFalse((file["app_version"] as? String ?? "").isEmpty)
+        XCTAssertEqual(try a.sync(cloud), [], "nothing travels within the hour")
+        SyncStoreTests.time += 60 * 60_000
+        XCTAssertEqual(try a.sync(cloud), [path])
+        XCTAssertEqual(try a.sync(cloud), [])
+    }
+
+    /// 학습 공간 stay on the iPad, as the desktop keeps its own: only workspace_kind 'course' syncs. A synced folder
+    /// made into a study space stops syncing without being removed for the other devices.
+    func testStudySpacesStayOnThisDevice() throws {
+        let cloud = Cloud(), a = try Device("iPad A"), b = try Device("iPad B")
+        let subject = try a.course("물리")
+        _ = try a.library.handle("courses:create", ["name": "공부방", "color": "green", "workspaceKind": "study-space"])
+        try a.sync(cloud)
+        try b.sync(cloud)
+        XCTAssertNoThrow(try b.courseID("물리"))
+        XCTAssertTrue(try b.context.query("SELECT id FROM courses WHERE name=?", ["공부방"]).isEmpty)
+        _ = try a.library.handle("courses:setWorkspaceKind", ["courseId": subject, "kind": "study-space"])
+        XCTAssertEqual(try a.sync(cloud).filter { $0.hasPrefix("log/") }, [], "no delete goes out")
+        try b.sync(cloud)
+        XCTAssertNoThrow(try b.courseID("물리"))
+    }
+
     func testEditsTravelBothWays() throws {
         let cloud = Cloud(), a = try Device("iPad A"), b = try Device("iPad B")
         let course = try a.course("물리"), paper = try a.paper(course, "1주차"), stroke = try a.stroke(course, paper)
