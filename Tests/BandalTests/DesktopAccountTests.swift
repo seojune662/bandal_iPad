@@ -66,6 +66,66 @@ final class DesktopAccountTests: XCTestCase {
         let token = try await service.accessToken()
         XCTAssertEqual(token, stored["access_token"] as? String, "The in-memory session must stay the original account")
     }
+    func testLinkedSignInsAreListedAndARefusedLinkSaysTheSignInBelongsToAnotherAccount() async throws {
+        let fixture = try DesktopAccountFixture(); defer { fixture.close() }
+        fixture.credential = String(decoding: try JSONSerialization.data(withJSONObject: fixture.session(user: fixture.user, providers: ["google"])), as: UTF8.self)
+        var environment = fixture.environment, events: [[String: Any]] = []
+        environment.authorizeApple = { _ in DesktopAppleCredential(identityToken: "signed-apple-id-token", authorizationCode: nil) }
+        environment.request = { request in
+            fixture.requests.append(request)
+            let path = request.url!.path
+            // The auth server refuses an Apple id_token that another account already holds.
+            if path == "/auth/v1/token", URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first?.value == "id_token" {
+                let refusal: [String: Any] = ["code": 422, "error_code": "identity_already_exists", "msg": "Identity is already linked to another user"]
+                return (try JSONSerialization.data(withJSONObject: refusal), HTTPURLResponse(url: request.url!, statusCode: 422, httpVersion: nil, headerFields: nil)!)
+            }
+            let object: Any = path == "/auth/v1/user/identities/authorize" ? ["url": "https://accounts.google.com/o/oauth2/auth"] : path.contains("/rest/") ? [] : ["ok": true]
+            return (try JSONSerialization.data(withJSONObject: object), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let service = DesktopAccountService(root: fixture.root, environment: environment)
+        service.emit = { channel, payload in if channel == "auth:changed", let state = payload as? [String: Any] { events.append(state) } }
+        _ = try await service.handle(channel: "auth:getState", request: [:])
+        // The saved session loads after the first answer and arrives as auth:changed.
+        try await waitUntil { events.last?["providers"] as? [String] == ["google"] }
+
+        let apple = try await service.handle(channel: "auth:linkProvider", request: ["provider": "apple"]) as? [String: Any]
+        XCTAssertEqual(apple?["ok"] as? Bool, false)
+        let current = try await service.handle(channel: "auth:getState", request: [:]) as? [String: Any]
+        var latest = try XCTUnwrap(current)
+        XCTAssertEqual(latest["errorCode"] as? String, "identity-already-linked")
+        XCTAssertEqual(latest["phase"] as? String, "signed-in", "A refused link leaves the account signed in")
+        XCTAssertEqual(latest["providers"] as? [String], ["google"])
+
+        // Google answers once its page opens; the refusal comes back on the callback, and the account stays signed in meanwhile.
+        let linking = Task { try await service.handle(channel: "auth:linkProvider", request: ["provider": "google"]) }
+        try await waitUntil { fixture.didStart != nil }
+        fixture.didStart?(); _ = try await linking.value
+        XCTAssertFalse(events.contains { $0["phase"] as? String == "signing-in" })
+        fixture.completeOAuth("bandal://auth/callback?error=server_error&error_code=identity_already_exists&error_description=Identity+is+already+linked+to+another+user")
+        try await waitUntil { events.last?["errorCode"] as? String == "identity-already-linked" }
+        latest = try XCTUnwrap(events.last)
+        XCTAssertEqual(latest["phase"] as? String, "signed-in")
+        XCTAssertNotNil(service.userID)
+    }
+    func testAnotherRefusedLinkIsAFailureNotACancellation() async throws {
+        let fixture = try DesktopAccountFixture(); defer { fixture.close() }
+        fixture.credential = String(decoding: try JSONSerialization.data(withJSONObject: fixture.session(user: fixture.user, providers: ["apple"])), as: UTF8.self)
+        var environment = fixture.environment, events: [[String: Any]] = []
+        environment.request = { request in
+            fixture.requests.append(request)
+            let object: Any = request.url!.path == "/auth/v1/user/identities/authorize" ? ["url": "https://accounts.google.com/o/oauth2/auth"] : []
+            return (try JSONSerialization.data(withJSONObject: object), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let service = DesktopAccountService(root: fixture.root, environment: environment)
+        service.emit = { channel, payload in if channel == "auth:changed", let state = payload as? [String: Any] { events.append(state) } }
+        _ = try await service.handle(channel: "auth:getState", request: [:])
+        let linking = Task { try await service.handle(channel: "auth:linkProvider", request: ["provider": "google"]) }
+        try await waitUntil { fixture.didStart != nil }
+        fixture.didStart?(); _ = try await linking.value
+        fixture.completeOAuth("bandal://auth/callback?error=server_error&error_description=Unexpected")
+        try await waitUntil { events.last?["errorCode"] as? String == "identity-link-failed" }
+        XCTAssertEqual(events.last?["providers"] as? [String], ["apple"])
+    }
     func testUnconfiguredStateDoesNotOpenNetworkOrWriteCredentials() async throws {
         let fixture = try DesktopAccountFixture(); defer { fixture.close() }
         fixture.configuration = ("", "")
@@ -312,7 +372,13 @@ private final class DesktopAccountFixture {
         }
         return environment
     }
-    func completeOAuth() { let callback = oauth; oauth = nil; callback?.resume(returning: URL(string: "bandal://auth/callback?code=fixture-code")!) }
+    func completeOAuth(_ callback: String = "bandal://auth/callback?code=fixture-code") { let open = oauth; oauth = nil; open?.resume(returning: URL(string: callback)!) }
+    /// A session whose user lists `providers` in app_metadata, as the auth server sends it.
+    func session(user: String, providers: [String]) -> [String: Any] {
+        var value = session(user: user), account = value["user"] as! [String: Any]
+        account["app_metadata"] = ["provider": providers.first ?? "", "providers": providers]
+        value["user"] = account; return value
+    }
     func reply(_ index: Int, status: Int = 200, object: Any) {
         waiting.removeValue(forKey: index)?.resume(returning: (try! JSONSerialization.data(withJSONObject: object), HTTPURLResponse(url: requests[index].url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: [:])!))
     }

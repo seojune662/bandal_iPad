@@ -254,6 +254,13 @@
 "페이지를 추가했어요" = "Page added";
 /* ===== END PDF page safety ===== */
 
+/* ===== BEGIN linked sign-ins (seojune662/account-links)
+   Row titles built from the provider name at run time; the script cannot see them. ===== */
+"Apple 연결됨" = "Apple linked";
+"Google 연결됨" = "Google linked";
+"Apple과 Google 모두 이 계정에 연결돼 있어요. 어느 쪽으로 로그인해도 같은 계정이에요." = "Apple and Google are both linked to this account. Either one signs in to the same account.";
+/* ===== END linked sign-ins ===== */
+
 /* ===== App strings (extracted) ===== */
 "%@ 개인정보 처리방침" = "%@ privacy policy";
 "%@ 전송에 동의함" = "Consent to send to %@ given";

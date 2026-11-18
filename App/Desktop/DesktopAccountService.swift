@@ -84,8 +84,19 @@ final class DesktopAccountService {
     var userID: String? { phase == "signed-in" ? session?.user.id : nil }
     private var state: [String: Any] {
         ["phase": phase, "profile": profile ?? NSNull() as Any, "email": session?.user.email ?? NSNull() as Any,
-         "provider": session?.user.app_metadata?.provider ?? NSNull() as Any,
+         "provider": session?.user.app_metadata?.provider ?? NSNull() as Any, "providers": linkedProviders,
          "avatarUrl": avatarURL ?? NSNull() as Any, "online": online, "errorCode": errorCode ?? NSNull() as Any]
+    }
+    /// Apple and Google sign-ins linked to this account. A session saved before
+    /// the list was kept names only the provider it signed in with.
+    private var linkedProviders: [String] {
+        let metadata = session?.user.app_metadata
+        let all = metadata?.providers ?? metadata?.provider.map { [$0] } ?? []
+        return ["apple", "google"].filter(all.contains)
+    }
+    /// Why a link came back refused: the sign-in already belongs to another 반달 account, or it failed.
+    nonisolated static func linkFailure(_ error: Error) -> String {
+        (error as? DesktopRuntimeError)?.code == "identity_already_exists" ? "identity-already-linked" : "identity-link-failed"
     }
     private func publish() { emit?("auth:changed", state) }
     private func context() -> Context {
@@ -168,9 +179,11 @@ final class DesktopAccountService {
                 let data = try await request(path: "/auth/v1/user/identities/authorize", query: (authorize.queryItems ?? []) + [URLQueryItem(name: "skip_http_redirect", value: "true")], method: "GET", body: nil, token: linkingToken, context: expected)
                 guard let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any], let raw = payload["url"] as? String, let target = URL(string: raw), target.scheme == "https", target.user == nil, target.password == nil else { throw DesktopRuntimeError("계정 연결을 시작하지 못했습니다.") }
                 url = target
-            } catch { errorCode = "provider"; publish(); return ["ok": false, "reason": "provider"] }
+            } catch { errorCode = "identity-link-failed"; publish(); return ["ok": false, "reason": "provider"] }
         }
-        phase = "signing-in"; errorCode = nil; publish()
+        // A link keeps the account signed in while its page is open: the user id stays for sync and billing.
+        if !linking { phase = "signing-in" }
+        errorCode = nil; publish()
         return await withCheckedContinuation { started in
             var answered = false
             let didStart: @MainActor () -> Void = { [weak self] in
@@ -195,7 +208,7 @@ final class DesktopAccountService {
                     if !answered { answered = true; started.resume(returning: ["ok": false, "reason": "network"]) }
                     guard self.matches(expected) else { return }
                     let cancelled = error is CancellationError || (error as NSError).domain == ASWebAuthenticationSessionError.errorDomain && (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue
-                    if linking { self.errorCode = cancelled ? "oauth-cancelled" : "provider"; self.phase = "signed-in" }
+                    if linking { self.errorCode = cancelled ? "oauth-cancelled" : Self.linkFailure(error); self.phase = "signed-in" }
                     else { self.reset(error: cancelled ? "oauth-cancelled" : "provider"); if !cancelled { self.phase = "error" } }
                     self.publish()
                 }
@@ -211,6 +224,7 @@ final class DesktopAccountService {
         appleInProgress = true
         generation += 1
         let expected = context(), linkedUser = session?.user.id
+        if linking, ["identity-already-linked", "identity-link-failed", "oauth-cancelled"].contains(errorCode ?? "") { errorCode = nil }
         defer { if matches(expected) { appleInProgress = false; apple = nil } }
         do {
             let token = linking ? try await currentToken(context: expected) : nil
@@ -237,8 +251,11 @@ final class DesktopAccountService {
             return ["ok": true]
         } catch {
             guard matches(expected) else { return ["ok": false, "reason": "provider"] }
-            errorCode = "provider"; if !linking { reset(error: "provider") }; publish()
-            return ["ok": false, "reason": "provider"]
+            let cancelled = (error as? ASAuthorizationError)?.code == .canceled || error is CancellationError
+            if linking { errorCode = cancelled ? "oauth-cancelled" : Self.linkFailure(error) }
+            else { errorCode = "provider"; reset(error: "provider") }
+            publish()
+            return ["ok": false, "reason": cancelled ? "cancelled" : "provider"]
         }
     }
 
@@ -360,14 +377,15 @@ final class DesktopAccountService {
         guard data.count <= 2 * 1024 * 1024, let http = response as? HTTPURLResponse else { throw DesktopRuntimeError("계정 서버 응답을 확인할 수 없습니다.") }
         guard (200..<300).contains(http.statusCode) else {
             let failure = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            let code = (failure?["error"] ?? failure?["code"]) as? String
+            // The auth server names its error in `error_code` (its `code` is the HTTP status number).
+            let code = (failure?["error"] ?? failure?["code"]) as? String ?? failure?["error_code"] as? String
             if http.statusCode == 409, code == "account_deletion_pending_transactions" {
                 throw DesktopRuntimeError(Self.pendingTransactionMessage(failure?["pendingTransactions"]), code: code!)
             }
             if code == "reauthentication_required" { throw DesktopRuntimeError("안전을 위해 로그아웃 후 다시 로그인하고 계정 삭제를 시도해 주세요.", code: "reauthentication_required") }
             if code == "23505" { throw DesktopRuntimeError("이미 쓰고 있는 이름이에요. 다른 이름으로 해볼까요?") }
             if code == "23514" { throw DesktopRuntimeError("닉네임은 한글·영문·숫자·밑줄 2~16자여야 해요.") }
-            let known = Set(["apple_billing_unavailable", "subscription_exists", "purchase_owned_by_another_account", "apple_account_token_required", "sign_in_required", "invalid_apple_signature", "apple_environment_mismatch", "sandbox_tester_required", "account_deletion_unavailable", "active_subscription", "purchase_revoked", "apple_product_mismatch", "invalid_apple_data", "apple_unavailable", "store_unavailable"])
+            let known = Set(["identity_already_exists", "apple_billing_unavailable", "subscription_exists", "purchase_owned_by_another_account", "apple_account_token_required", "sign_in_required", "invalid_apple_signature", "apple_environment_mismatch", "sandbox_tester_required", "account_deletion_unavailable", "active_subscription", "purchase_revoked", "apple_product_mismatch", "invalid_apple_data", "apple_unavailable", "store_unavailable"])
             throw DesktopRuntimeError("계정 요청을 완료하지 못했습니다 (\(http.statusCode)).", code: code.flatMap { known.contains($0) ? $0 : nil } ?? "ACCOUNT_REQUEST_FAILED")
         }
         return data
@@ -418,7 +436,11 @@ final class DesktopAccountService {
     private static func callbackCode(_ url: URL) throws -> String {
         guard url.scheme?.lowercased() == "bandal", url.host?.lowercased() == "auth", url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) == "callback", let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw DesktopRuntimeError("로그인 반환 주소를 확인할 수 없습니다.") }
         if components.queryItems?.contains(where: { $0.name == "error" && $0.value == "access_denied" }) == true { throw CancellationError() }
-        guard components.queryItems?.contains(where: { $0.name == "error" }) != true else { throw DesktopRuntimeError("로그인 서비스가 요청을 완료하지 못했습니다.") }
+        guard components.queryItems?.contains(where: { $0.name == "error" }) != true else {
+            // A refused link comes back as error=…&error_code=identity_already_exists.
+            let code = components.queryItems?.first { $0.name == "error_code" }?.value == "identity_already_exists" ? "identity_already_exists" : "ACCOUNT_REQUEST_FAILED"
+            throw DesktopRuntimeError("로그인 서비스가 요청을 완료하지 못했습니다.", code: code)
+        }
         let codes = Set(components.queryItems?.filter { $0.name == "code" }.compactMap(\.value) ?? [])
         guard codes.count == 1, let code = codes.first, code.range(of: "^[A-Za-z0-9._~+/=-]{1,2048}$", options: .regularExpression) != nil else { throw DesktopRuntimeError("로그인 코드를 확인할 수 없습니다.") }
         return code
