@@ -1,4 +1,4 @@
-• Three fingers: pinch to close the current tab, spread to open a new one.
-• PDF shapes: hold at the end of a stroke for a clean shape of the same width; tap it to move or resize.
-• The laser fades 3 seconds after your last stroke.
-• A short guide to Bandal and a card for new features.
+• Video PiP: keep a downloaded, web or YouTube video playing in a small window inside the app. It starts on its own when you leave the tab (turn it off in Settings › General).
+• AI panel: a new Overlay sidebar floats over the document instead of pushing it.
+• Adding, deleting or moving PDF pages now keeps the original file intact.
+• Split view has a lighter focus outline, and Share always acts on the right tab.
