@@ -126,9 +126,12 @@ final class DesktopBrowserHost: NSObject {
         }
     }
     func prepareBrowserNetwork() async throws {
+        let started = ProcessInfo.processInfo.systemUptime
         if privacyTask == nil { startPrivacyPreparation() }
         try await waitForPrivacySettings()
+        NativeInputTrace.perf("browser.prepare.privacy", since: started)
         try await DesktopBrowserIdentity.prepare()
+        NativeInputTrace.perf("browser.prepare.identity", since: started)
     }
     func validateSettings(_ settings: [String: Any]) async throws {
         _ = try await BrowserPrivacy.compile(tracking: settings["trackingProtection"] as? String ?? trackingProtection,

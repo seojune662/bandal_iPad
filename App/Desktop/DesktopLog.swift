@@ -13,6 +13,7 @@ enum DesktopSignpost {
     }
     /// Opt-in, static phase names and elapsed time only; no document identities.
     static func benchmark(_ name: StaticString, startedAt: TimeInterval) {
+        if NativeInputTrace.isEnabled { NativeInputTrace.perf("\(name)", since: startedAt) }
         #if DEBUG
         if ProcessInfo.processInfo.environment["BANDAL_PRIVATE_PDF_REPLAY_DIRECTORY"] != nil {
             let elapsed = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000

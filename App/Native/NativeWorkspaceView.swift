@@ -1224,7 +1224,7 @@ struct NativeWorkspaceView: View {
                 let context: NativeWorkspaceContext?
                 if preserve { context = current }
                 else {
-                    await store.selectCourse(document.courseID)
+                    await store.selectCourse(document.courseID, flushed: true, waitForMaterials: false)
                     guard store.selectedCourseID == document.courseID else { return }
                     context = store.courses.first(where: { $0.id == document.courseID }).map(NativeWorkspaceContext.course)
                 }
@@ -1264,13 +1264,17 @@ struct NativeWorkspaceView: View {
     private func changeWorkspace(_ context: NativeWorkspaceContext) {
         guard !refused("changeWorkspace") else { return }; busy = true
         restoreInspectorAfterAnnotation = false; annotation.cancel()
+        let switchStarted = ProcessInfo.processInfo.systemUptime
         Task { @MainActor in
-            defer { finishWorkspaceTransition() }
+            defer { finishWorkspaceTransition(); NativeInputTrace.perf("switch.end", since: switchStarted) }
             do {
                 try await store.flushDocuments()
-                await captureCurrentWindow()
+                NativeInputTrace.perf("switch.flushed", since: switchStarted)
+                // No window picture here: the windows overview only lists this course's windows and takes the
+                // current one's picture when it opens, so the next course does not wait for one.
                 windowsOverviewOpen = false
-                await store.selectCourse(context.courseID)
+                await store.selectCourse(context.courseID, flushed: true, waitForMaterials: false)
+                NativeInputTrace.perf("switch.selected", since: switchStarted)
                 guard store.selectedCourseID == context.courseID else { return }
                 navigation.activateWorkspace(context)
                 section = .library; auxiliary = nil; learningHome = false; compactCourseRail = false

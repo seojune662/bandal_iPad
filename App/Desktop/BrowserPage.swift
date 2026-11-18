@@ -190,7 +190,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
     }
     func send(_ name: String, _ detail: [String: Any] = [:]) {
         guard host?.pages[tabID] === self else { return }
-        revision += 1
+        revision += 1; sentEvents += 1
         host?.emit("browser:page-event", ["tabId": tabID, "name": name, "state": state, "detail": detail])
     }
     private func begin(_ request: URLRequest) -> BrowserNavigationAttempt {
@@ -224,6 +224,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         let view = webView
         let attempt = begin(request)
         pendingRequest = request; pendingExplicitNavigation = attempt
+        navigationStarted = ProcessInfo.processInfo.systemUptime
         let navigation = view.load(request)
         remember(navigation, attempt: attempt)
         #if DEBUG
@@ -364,7 +365,11 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         // later navigation while scroll restoration runs invalidates that work.
         if scrollRestoration != nil { scrollRestoration?.cancel(); scrollRestoration = nil; restoring = nil }
         documentID = UUID().uuidString; findRequest += 1; httpStatus = 0; send("did-start-loading")
+        if let navigationStarted { NativeInputTrace.perf("browser.nav.start", since: navigationStarted) } else { navigationStarted = ProcessInfo.processInfo.systemUptime }
     }
+    /// When the current navigation was asked for (a load) or began (a link): its timing marks count from here.
+    private var navigationStarted: TimeInterval?
+    private var sentEvents = 0
     func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
         guard let attempt = active(navigation, webView: webView), let url = webView.url else { return }
         if let pendingRequest, pendingRequest.url == url { attempt.request = pendingRequest }
@@ -385,6 +390,7 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
         committedNavigation = attempt
         pendingRequest = nil
         forgetVideo() // A new document: its frames report their own videos.
+        if let navigationStarted { NativeInputTrace.perf("browser.nav.commit", since: navigationStarted) }
         send("did-navigate", ["url": webView.url?.absoluteString ?? "", "httpResponseCode": httpStatus])
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -405,6 +411,8 @@ final class DesktopBrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, UI
                 }
             } else { restoring = nil }
         }
+        if let navigationStarted { NativeInputTrace.perf("browser.nav.finish", since: navigationStarted, (webView.url?.host ?? "") + " events=\(sentEvents)") }
+        navigationStarted = nil; sentEvents = 0
         send("dom-ready"); send("did-finish-load"); send("did-stop-loading")
         Task { [weak self] in
             guard let self else { return }

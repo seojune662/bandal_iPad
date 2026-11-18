@@ -578,7 +578,9 @@ final class NativePDFWorkspaceModel {
                 guard channel == "pdfNative:event", let event = value as? [String: Any] else { return }
                 self?.receive(event)
             }
-            let task = Task { @MainActor in try await self.open() }
+            let attached = ProcessInfo.processInfo.systemUptime
+            NativeInputTrace.record("perf.pdf.attach")
+            let task = Task { @MainActor in try await self.open(); NativeInputTrace.perf("pdf.ready", since: attached) }
             opening = task
             Task { do { try await task.value } catch { self.fail(error); self.isLoading = false } }
         } catch { fail(error); isLoading = false }
@@ -709,7 +711,9 @@ final class NativePDFWorkspaceModel {
     private func publishLayout() async throws {
         guard bounds.width > 0, bounds.height > 0 else { return }
         layoutRevision += 1
-        var request: [String: Any] = ["revision": layoutRevision, "visible": visible, "occluded": false, "holes": [],
+        // Hidden here means kept open by the dock (another tab, window or course in front): the host keeps the
+        // pages laid out so coming back is immediate.
+        var request: [String: Any] = ["revision": layoutRevision, "visible": visible, "warm": !visible, "occluded": false, "holes": [],
             "rect": ["x": Double(bounds.minX), "y": Double(bounds.minY), "width": Double(bounds.width), "height": Double(bounds.height)]]
         // PDFKit computes its fit scale only after the real container frame is
         // installed. The host restores after fitting, before preparing ink on

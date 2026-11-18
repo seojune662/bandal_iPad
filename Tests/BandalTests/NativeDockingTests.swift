@@ -59,6 +59,33 @@ final class NativeDockingTests: XCTestCase {
         XCTAssertFalse(projection.contains { $0.id == pdf.id && !$0.visible })
     }
 
+    /// Switching courses reopened every PDF from its file. The last few shown stay mounted offscreen instead.
+    func testRecentlyShownPDFsStayMountedOffscreenUpToTheLimit() throws {
+        typealias Dock = NativeDockWorkspace<EmptyView, EmptyView>
+        let open: Set<String> = ["a", "b", "c", "d", "e"]
+        var recent: [String] = []
+        for shown in ["a", "b", "c", "d", "e"] { recent = Dock.rememberPDFs([shown], recent: recent, open: open) }
+        XCTAssertEqual(recent, ["e", "d", "c", "b"], "the one on screen and the \(Dock.warmPDFLimit) shown before it")
+        recent = Dock.rememberPDFs(["c", "a"], recent: recent, open: open.subtracting(["d"]))
+        XCTAssertEqual(recent, ["c", "a", "e", "b"], "two panes on screen; a closed PDF leaves the list")
+
+        let navigation = NativeWorkspaceNavigation()
+        let first = NativeDocumentReference(courseID: "a", relativePath: "one.pdf", title: "one", kind: "pdf")
+        let second = NativeDocumentReference(courseID: "a", relativePath: "two.pdf", title: "two", kind: "pdf")
+        let third = NativeDocumentReference(courseID: "b", relativePath: "three.pdf", title: "three", kind: "pdf")
+        navigation.open(first); navigation.open(second)
+        let layout = try XCTUnwrap(navigation.layout), bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let projection = Dock.projectDocuments([first, second, third], geometry: layout.geometry(in: bounds), layout: layout, bounds: bounds,
+                                               warmPDFs: [second.id, first.id, third.id])
+        XCTAssertTrue(try XCTUnwrap(projection.first { $0.id == second.id }).visible)
+        for document in [first, third] {
+            let hidden = try XCTUnwrap(projection.first { $0.id == document.id }, document.title + " stays mounted")
+            XCTAssertFalse(hidden.visible); XCTAssertFalse(bounds.intersects(hidden.frame))
+        }
+        XCTAssertFalse(Dock.projectDocuments([first, second], geometry: layout.geometry(in: bounds), layout: layout, bounds: bounds, warmPDFs: [second.id])
+            .contains { $0.id == first.id }, "a PDF out of the recent list is closed as before")
+    }
+
     func testOtherWindowRetainsWhiteboardAndLearningPanelIdentityUntilClosed() throws {
         typealias Dock = NativeDockWorkspace<EmptyView, EmptyView>
         let navigation = NativeWorkspaceNavigation()

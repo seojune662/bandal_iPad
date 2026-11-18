@@ -169,11 +169,15 @@ final class NativeWorkspacePreviewTests: XCTestCase {
         let cached = try XCTUnwrap(NativeWorkspacePreviewController().image(root: root, workspaceID: course, windowID: "one"))
         XCTAssertGreaterThan(try redPixelCount(cached), 100, "The final JPEG must retain the provider's ink pixels")
         model.setVisible(false)
-        try await waitForPreviewHost { pdfView.document == nil }
+        try await waitForPreviewHost { pdfView.isHidden }
+        XCTAssertNotNil(pdfView.document, "A hidden PDF keeps its pages laid out, so showing it again is immediate")
         let hidden = try await model.workspacePreview()
         XCTAssertNil(hidden)
+        // A memory warning lets a hidden PDF's pages go; showing it lays them out again.
+        NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        try await waitForPreviewHost { pdfView.document == nil }
         model.setVisible(true)
-        try await waitForPreviewHost { !pdfView.visiblePages.isEmpty }
+        try await waitForPreviewHost { !pdfView.isHidden && !pdfView.visiblePages.isEmpty }
         let restored = try await model.workspacePreview()
         XCTAssertGreaterThan(try redPixelCount(XCTUnwrap(restored)), 100)
         model.close()

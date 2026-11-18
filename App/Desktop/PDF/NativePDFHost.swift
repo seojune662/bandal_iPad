@@ -64,7 +64,12 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
         self.directEnabled = directEnabled
         super.init()
         memoryObserver = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.documents.values.forEach { $0.releaseCaches() } }
+            Task { @MainActor in
+                self?.documents.values.forEach { document in
+                    do { try document.suspendIfHidden() } catch { document.onEvent("error", ["message": error.localizedDescription]) }
+                    document.releaseCaches()
+                }
+            }
         }
     }
     func attach(to container: UIView, shell: WKWebView? = nil) {
@@ -330,7 +335,9 @@ final class NativePDFHost: NSObject, UIPencilInteractionDelegate {
             let restore = try item.validatedViewportRestore(request["restoreViewport"])
             if visible, restore != nil { item.beginViewportRestore() }
             defer { if visible, restore != nil { item.finishViewportRestore() } }
-            if !replacing { try item.setVisible(visible) }
+            if !replacing {
+                if !visible, request["warm"] as? Bool == true { try item.hideKeepingPages() } else { try item.setVisible(visible) }
+            }
             if visible { visibleSurfaces.insert(identifier) } else { visibleSurfaces.remove(identifier) }
             if request["occluded"] as? Bool == true { occludedSurfaces.insert(identifier) } else { occludedSurfaces.remove(identifier) }
             if let value = request["rect"] as? [String: Double], let x = value["x"], let y = value["y"], let w = value["width"], let h = value["height"], [x,y,w,h].allSatisfy(\.isFinite), w > 0, h > 0 {
@@ -1188,6 +1195,7 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             }
             pdfView.isHidden = true
         } else {
+            warmHidden = false
             if suspended {
                 suspended = false; pdfView.document = document; pdfView.layoutIfNeeded(); prepareNavigation()
                 if let viewport = suspendedViewport { try navigate(viewport) }
@@ -1195,6 +1203,20 @@ private final class NativePDFDocument: NSObject, @preconcurrency PDFViewDelegate
             }
             pdfView.isHidden = false
         }
+    }
+    /// Hidden by the dock that keeps it open (`"warm"` layout): input stops and edits are saved, but the pages and
+    /// ink stay laid out, so showing the PDF again (its tab, window or course) is immediate. The dock keeps only a few
+    /// such PDFs; a memory warning suspends them (`suspendIfHidden`) and showing one lays it out again.
+    func hideKeepingPages() throws {
+        cancelPinchFallback()
+        pdfView.isHidden = true
+        warmHidden = true
+        if !suspended { try flush() }
+    }
+    private(set) var warmHidden = false
+    func suspendIfHidden() throws {
+        guard warmHidden, pdfView.isHidden else { return }
+        try setVisible(false)
     }
     func releaseCaches() {
         do { try flush() } catch { onEvent("error", ["message": error.localizedDescription]); return }

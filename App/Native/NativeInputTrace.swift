@@ -36,6 +36,13 @@ import os
             } else { try? bytes.write(to: file, options: .atomic) }
         }
     }
+    /// `perf.<name> ms=…` since `start` (a `systemUptime`). From any thread: the line is written on the main actor.
+    nonisolated static func perf(_ name: String, since start: TimeInterval, _ detail: String = "") {
+        guard isEnabled else { return }
+        let line = String(format: "ms=%.1f", (ProcessInfo.processInfo.systemUptime - start) * 1000) + (detail.isEmpty ? "" : " " + detail)
+        if Thread.isMainThread { MainActor.assumeIsolated { record("perf." + name, line) } }
+        else { Task { @MainActor in record("perf." + name, line) } }
+    }
     /// A state that is only worth a line when it changes (`key` names the state, `value` its current reading).
     static func change(_ key: String, _ value: @autoclosure () -> String) {
         guard isEnabled else { return }
@@ -49,6 +56,17 @@ import os
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         file = folder.appendingPathComponent("input-trace.log")
         record("trace.start", "os=\(UIDevice.current.systemVersion)")
+        watchMainThread()
+    }
+    /// `perf.main.busy ms=…`: a turn of the main run loop that kept it from drawing for longer than a frame.
+    private static func watchMainThread() {
+        var awake = ProcessInfo.processInfo.systemUptime
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue | CFRunLoopActivity.beforeWaiting.rawValue, true, 0) { _, activity in
+            let now = ProcessInfo.processInfo.systemUptime
+            if activity == .afterWaiting { awake = now; return }
+            if now - awake > 0.016 { MainActor.assumeIsolated { record("perf.main.busy", String(format: "ms=%.1f", (now - awake) * 1000)) } }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
     }
     /// Watches every touch of `window`. Safe to call again: one recognizer per window.
     static func install(in window: UIWindow?) {
