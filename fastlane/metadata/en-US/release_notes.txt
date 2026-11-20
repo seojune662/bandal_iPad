@@ -1,5 +1,3 @@
-• Video PiP: keep a downloaded, web or YouTube video playing in a small window inside the app. It starts on its own when you leave the tab (turn it off in Settings › General).
-• AI panel: a new Overlay sidebar floats over the document instead of pushing it.
-• Adding, deleting or moving PDF pages now keeps the original file intact.
-• Split view has a lighter focus outline, and Share always acts on the right tab.
-• Switching subjects is faster, and browser tabs no longer flash when you come back to them.
+• A tidier sidebar: folder controls sit at the end of the row, and + on the selected folder opens a new window.
+• PDF thumbnails are larger and keep each page's shape; the current page is marked in your theme colour.
+• A refreshed palette: undo and redo sit together, and colours and widths are easier to pick.
