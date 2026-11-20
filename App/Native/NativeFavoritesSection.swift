@@ -66,9 +66,9 @@ struct NativeFavoritesSection: View {
                     .simultaneousGesture(TapGesture(count: 2).onEnded { renamingID = favorite.id })
                 }
             }
-        }.padding(.leading, 34).padding(.trailing, 8).padding(.bottom, 6)
-            // The guide line of an open folder, down from its chevron.
-            .overlay(alignment: .leading) { NativeGlass.treeGuide.frame(width: 1).padding(.leading, 19).padding(.bottom, 6).allowsHitTesting(false) }
+        }.padding(.leading, NativeCourseSidebar.childLeading + 8).padding(.trailing, 8).padding(.bottom, 6)
+            // The guide line of an open folder, down from its glyph.
+            .overlay(alignment: .leading) { NativeGlass.treeGuide.frame(width: 1).padding(.leading, NativeCourseSidebar.guideX(0)).padding(.bottom, 6).allowsHitTesting(false) }
             .onReceive(NotificationCenter.default.publisher(for: Self.request)) { note in
                 guard note.object as? String == courseID else { return }
                 if let id = note.userInfo?["documentID"] as? String { if let document = documentByID(id) { addDocument(document) } }

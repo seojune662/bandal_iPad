@@ -48,7 +48,8 @@ final class NativePDFPageThumbnailSource {
                     if document == nil { document = PDFDocument(url: url) }
                     guard let pdfPage = document?.page(at: page - 1) else { return nil }
                     let coordinates = NativePDFPageCoordinates(page: pdfPage)
-                    let scale = min(260 / max(1, coordinates.width), 520 / max(1, coordinates.height))
+                    // As wide as the widest panel draws a slide, as tall as it draws a sheet.
+                    let scale = min(300 / max(1, coordinates.width), 420 / max(1, coordinates.height))
                     base = pdfPage.thumbnail(of: CGSize(width: coordinates.width * scale, height: coordinates.height * scale), for: .cropBox)
                     let cost = base.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
                     originals.setObject(base, forKey: key, cost: cost)
@@ -60,22 +61,27 @@ final class NativePDFPageThumbnailSource {
     }
 }
 
+/// One page in the pages panel, in its own shape (`ratio` is width over height): paper with soft corners
+/// and a shadow, as the page itself sits on the card.
 struct NativePDFPageThumbnail: View {
     let source: NativePDFPageThumbnailSource?
     let page: Int
     var rows: [[String: Any]] = []
     var inkRevision = 0
+    var ratio: CGFloat = 1 / sqrt(2)
     @State private var image: UIImage?
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         ZStack {
             Color.white
             if let image { Image(uiImage: image).resizable().scaledToFit() }
-            else { ProgressView().controlSize(.small) }
+            else { ProgressView().controlSize(.small).tint(.gray) }
         }
-        .aspectRatio(1 / sqrt(2), contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 3))
-        .overlay(RoundedRectangle(cornerRadius: 3).stroke(NativeDesktopTheme.border, lineWidth: 1))
-        .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+        .aspectRatio(ratio, contentMode: .fit)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Color.black.opacity(scheme == .dark ? 0.35 : 0.08), lineWidth: 0.5))
+        .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.1), radius: 5, y: 2)
         .accessibilityHidden(true)
         .task(id: (source?.revision ?? "") + ":" + String(page) + ":" + String(inkRevision)) {
             // Keep the previous image while a new revision renders: a page
