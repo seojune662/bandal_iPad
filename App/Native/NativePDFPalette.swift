@@ -20,13 +20,25 @@ import SwiftUI
     static let chosen = alpha(black: 0.07, white: 0.10)
     static let divider = alpha(black: 0.08, white: 0.11)
     static let ring = alpha(black: 0.85, white: 1)
-    static let addRing = alpha(black: 0.20, white: 0.28)
-    /// A thickness dot (155:7651): the chosen one solid, the others a step lighter.
-    static let dot = NativeDesktopTheme.adaptive(0x1a1a1a, 0xededed)
-    static let dotIdle = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.98) : UIColor(white: 0x1a / 255, alpha: 0.7) })
+    static let addRing = alpha(black: 0.24, white: 0.32)
+    /// The hairline round a swatch, so white and yellow still read on the glass.
+    static let swatchEdge = alpha(black: 0.12, white: 0.2)
+    /// The well undo and redo sit in, a group of their own at the row's start.
+    static let well = alpha(black: 0.045, white: 0.07)
+    /// A thickness line that is not the chosen one.
+    static let lineIdle = alpha(black: 0.5, white: 0.55)
+    /// How thick the palette draws a thickness step: 2.8 · 4.6 · 6.4 pt for the pen's default steps 3 · 6 · 9.
+    static func lineHeight(_ step: Int) -> CGFloat { max(1.5, 1 + CGFloat(step) * 0.6) }
     /// A swatch on the palette: 먹색 reads light on the dark glass, the ink itself stays dark on the page.
     static func swatch(_ color: String, tape: Bool = false) -> Color {
         tape ? Color(uiColor: NativePDFObjectRenderer.tapeColor(color)) : color == "ink" ? NativeDesktopTheme.adaptive(0x1a1a1a, 0xededed) : uiColor(color)
+    }
+    /// How light a swatch is as drawn (0 black … 1 white), to pick the ink of the mark on it and of its ring.
+    static func lightness(_ color: String, tape: Bool, dark: Bool) -> CGFloat {
+        let base: UIColor = tape ? NativePDFObjectRenderer.tapeColor(color) : color == "ink" ? UIColor(white: dark ? 0xed / 255 : 0x1a / 255, alpha: 1) : NativePDFInkSurface.color(color)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard base.resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light)).getRed(&r, green: &g, blue: &b, alpha: &a) else { return 0.5 }
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
     }
     private static func alpha(black: CGFloat, white: CGFloat) -> Color {
         Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(white) : UIColor.black.withAlphaComponent(black) })
@@ -144,14 +156,15 @@ struct NativePDFFloatingPalette: View {
     private var mini: some View {
         Button { collapsed = false } label: {
             HStack(spacing: 6) {
-                Image(NativePDFPaletteLook.toolImage(model.isPenLike ? "pen" : model.tool)).foregroundStyle(NativeDesktopTheme.text)
-                    .frame(width: 34, height: 34).background(NativeDesktopTheme.raised, in: RoundedRectangle(cornerRadius: 10))
+                Image(NativePDFPaletteLook.toolImage(model.isPenLike ? "pen" : model.tool)).foregroundStyle(NativeGlass.accent)
+                    .frame(width: 34, height: 34).background(NativeGlass.accentSoft, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 if model.usesColorSlots {
-                    Circle().fill(NativePDFPaletteLook.swatch(model.activeColor, tape: model.tool == "tape")).frame(width: 16, height: 16)
-                        .frame(width: 26, height: 26).overlay(Circle().strokeBorder(NativeDesktopTheme.accent, lineWidth: 2))
+                    let swatch = NativePDFPaletteLook.swatch(model.activeColor, tape: model.tool == "tape")
+                    Circle().fill(swatch).frame(width: 18, height: 18).overlay(Circle().strokeBorder(NativePDFPaletteLook.swatchEdge, lineWidth: 0.5))
+                        .frame(width: 26, height: 26).overlay(Circle().strokeBorder(NativePDFPaletteLook.ring, lineWidth: 2))
                 }
-                Rectangle().fill(NativeGlass.separator).frame(width: 1, height: 20)
-                Image(systemName: "chevron.up").font(.system(size: 16)).frame(width: 34, height: 34)
+                Rectangle().fill(NativePDFPaletteLook.divider).frame(width: 1, height: 18)
+                Image(systemName: "chevron.up").font(.system(size: 13, weight: .semibold)).foregroundStyle(NativePDFPaletteLook.icon).frame(width: 34, height: 34)
             }.padding(.horizontal, 6).contentShape(Rectangle())
         }.accessibilityLabel("팔레트 펼치기").accessibilityIdentifier("native-pdf-palette-expand")
     }
@@ -265,9 +278,12 @@ struct NativePDFPaletteQuickControls: View {
     var body: some View {
         // History · tools · colours · thicknesses stay put; only the tool strip slides.
         HStack(spacing: Self.spacing) {
-            history("되돌리기", "PDFIconUndo", id: "native-pdf-undo", enabled: model.canUndo || model.isEditingText) { model.undo() }
-            history("다시 실행", "PDFIconRedo", id: "native-pdf-redo", enabled: model.canRedo || model.isEditingText) { model.redo() }
-            divider
+            // Undo and redo in a well of their own; the gap after it is a divider's width, so the row keeps its size.
+            HStack(spacing: Self.spacing) {
+                history("되돌리기", "PDFIconUndo", id: "native-pdf-undo", enabled: model.canUndo || model.isEditingText) { model.undo() }
+                history("다시 실행", "PDFIconRedo", id: "native-pdf-redo", enabled: model.canRedo || model.isEditingText) { model.redo() }
+            }.background(NativePDFPaletteLook.well, in: Capsule())
+            Color.clear.frame(width: 1, height: 18).padding(.horizontal, 4)
             if slidingTools { toolStrip } else { HStack(spacing: Self.spacing) { toolButtons } }
             divider
             if let shownColors, slidingTools, shownColors < slotCount { colorStrip(shownColors) } else { colors }
@@ -305,9 +321,17 @@ struct NativePDFPaletteQuickControls: View {
         }
     }
     private var divider: some View { Rectangle().fill(NativePDFPaletteLook.divider).frame(width: 1, height: 18).padding(.horizontal, 4) }
-    private func cell(_ image: String, chosen: Bool = false) -> some View {
-        Image(image).foregroundStyle(NativePDFPaletteLook.icon).frame(width: NativePDFPaletteLook.cell, height: NativePDFPaletteLook.cell)
-            .background(chosen ? NativePDFPaletteLook.chosen : .clear, in: RoundedRectangle(cornerRadius: 10)).paletteHitArea()
+    /// A tool cell. The chosen one takes the decor's accent, its icon and a soft wash behind it; one whose second
+    /// tap opens options shows a small ⌄ in its corner.
+    private func cell(_ image: String, chosen: Bool = false, options: Bool = false) -> some View {
+        Image(image).foregroundStyle(chosen ? AnyShapeStyle(NativeGlass.accent) : AnyShapeStyle(NativePDFPaletteLook.icon))
+            .frame(width: NativePDFPaletteLook.cell, height: NativePDFPaletteLook.cell)
+            .background(chosen ? AnyShapeStyle(NativeGlass.accentSoft) : AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: "chevron.down").font(.system(size: 6, weight: .black)).foregroundStyle(NativeGlass.accent)
+                    .padding(.trailing, 3.5).padding(.bottom, 3.5).opacity(chosen && options ? 1 : 0).accessibilityHidden(true)
+            }
+            .paletteHitArea()
     }
     private func history(_ title: LocalizedStringKey, _ image: String, id: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) { cell(image) }.disabled(!enabled).accessibilityLabel(title).accessibilityIdentifier(id)
@@ -315,11 +339,12 @@ struct NativePDFPaletteQuickControls: View {
     @ViewBuilder private func tool(_ value: (String, String, String)) -> some View {
         // One 펜 button for the three pen types, always the design's pen; the type is chosen in the pen settings.
         let pen = value.0 == "pen", chosen = pen ? model.isPenLike : model.tool == value.0
-        let button = Button { if pen { model.choosePen() } else { model.chooseTool(value.0) } } label: { cell(value.2, chosen: chosen) }
+        let options = ["pen", "highlighter", "eraser", "lasso", "tape"].contains(value.0)
+        let button = Button { if pen { model.choosePen() } else { model.chooseTool(value.0) } } label: { cell(value.2, chosen: chosen, options: options) }
             .accessibilityLabel(LocalizedStringKey(value.1)).accessibilityIdentifier("native-pdf-tool-" + value.0)
             .accessibilityValue(chosen && model.isInkTool ? model.styleAccessibilityValue : value.0 == "tape" ? model.tapeAccessibilityValue : "")
             .accessibilityAddTraits(chosen ? .isSelected : []).help(LocalizedStringKey(value.1))
-        if ["pen", "highlighter", "eraser", "lasso", "tape"].contains(value.0) {
+        if options {
             // A second tap on the chosen tool: its options, directly under the button.
             button.bandalPopover(isPresented: Binding(get: { model.showStyle && chosen }, set: { if !$0, chosen { model.showStyle = false } }),
                                  width: pen ? 300 : 280, radius: 22, padding: 18, dims: false) {
@@ -343,8 +368,7 @@ struct NativePDFPaletteQuickControls: View {
                 if !model.usesColorSlots { model.choosePen() }
                 if chosen, model.isInkTool { model.showStyle.toggle() } else { model.chooseColor(name) }
             } label: {
-                Circle().fill(NativePDFPaletteLook.swatch(name, tape: tape)).frame(width: chosen ? 16 : 18, height: chosen ? 16 : 18)
-                    .frame(width: 26, height: 26).overlay(Circle().strokeBorder(NativePDFPaletteLook.ring, lineWidth: 2).opacity(chosen ? 1 : 0))
+                NativePDFPaletteSwatch(color: name, tape: tape, chosen: chosen, options: chosen && model.isInkTool)
                     .frame(width: 30, height: NativePDFPaletteLook.cell).paletteHitArea()
             }.accessibilityLabel(NativePDFPaletteLook.colorName(name)).accessibilityIdentifier("native-pdf-quick-color-" + name)
                 .accessibilityAddTraits(chosen ? .isSelected : [])
@@ -358,11 +382,11 @@ struct NativePDFPaletteQuickControls: View {
         Menu {
             ForEach(missing, id: \.name) { item in Button(item.label) { if !model.usesColorSlots { model.choosePen() }; model.addColorSlot(item.name) } }
         } label: {
-            Image("PDFIconPlus").resizable().scaledToFit().frame(width: 16, height: 16).foregroundStyle(NativePDFPaletteLook.icon).frame(width: 26, height: 26)
-                .overlay(Circle().strokeBorder(NativePDFPaletteLook.addRing, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))).frame(width: 30, height: NativePDFPaletteLook.cell).paletteHitArea()
+            Image("PDFIconPlus").resizable().scaledToFit().frame(width: 13, height: 13).foregroundStyle(NativePDFPaletteLook.icon).frame(width: 24, height: 24)
+                .overlay(Circle().strokeBorder(NativePDFPaletteLook.addRing, style: StrokeStyle(lineWidth: 1.2, dash: [2.5, 2.5]))).frame(width: 30, height: NativePDFPaletteLook.cell).paletteHitArea()
         }.disabled(missing.isEmpty).accessibilityLabel("색 추가").accessibilityIdentifier("native-pdf-color-add")
     }
-    /// The three thickness dots (Figma 155:7650): a tap picks one, a tap on the picked one opens its twelve steps.
+    /// The three thicknesses, each a line as thick as it draws: a tap picks one, a tap on the picked one opens its twelve steps.
     /// While a tool without thickness is chosen they are the pen's, and a tap returns to the pen.
     @ViewBuilder private var widths: some View {
         let own = model.usesWidthSlots, slots = own ? model.widthSlots : model.palette.widths(for: model.penKind), selected = own ? model.selectedWidthSlot : nil
@@ -371,9 +395,11 @@ struct NativePDFPaletteQuickControls: View {
             Button {
                 if own { model.chooseWidthSlot(index) } else { model.choosePen(); if model.selectedWidthSlot != index { model.chooseWidthSlot(index) } }
             } label: {
-                // 4 · 7 · 10 pt for the pen's default steps 3 · 6 · 9.
-                Circle().fill(chosen ? NativePDFPaletteLook.dot : NativePDFPaletteLook.dotIdle).frame(width: 2 + CGFloat(step), height: 2 + CGFloat(step))
-                    .frame(width: 26, height: 28).background(chosen ? NativePDFPaletteLook.chosen : .clear, in: Capsule()).frame(height: NativePDFPaletteLook.cell).paletteHitArea()
+                Capsule().fill(chosen ? AnyShapeStyle(NativeGlass.accent) : AnyShapeStyle(NativePDFPaletteLook.lineIdle))
+                    .frame(width: 16, height: NativePDFPaletteLook.lineHeight(step))
+                    .frame(width: 26, height: 30)
+                    .background(chosen ? AnyShapeStyle(NativeGlass.accentSoft) : AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .frame(height: NativePDFPaletteLook.cell).paletteHitArea()
             }.accessibilityLabel("굵기 \(index + 1)").accessibilityValue(NativePDFPaletteStyle.stepLabel(step))
                 .accessibilityIdentifier("native-pdf-width-slot-\(index)").accessibilityAddTraits(chosen ? .isSelected : [])
                 // The eraser and tape popovers show the same slots and open the steps themselves.
@@ -382,6 +408,35 @@ struct NativePDFPaletteQuickControls: View {
                     NativePDFWidthSteps(color: NativeDesktopTheme.text, selected: model.widthSlots.indices.contains(index) ? model.widthSlots[index] : step) { model.setWidthStep($0, slot: index) }
                 }
         }
+    }
+}
+
+/// A colour on the palette: a disc with a hairline edge. The chosen one shrinks inside a ring of its own colour
+/// (the palette's ink where that colour would vanish on the glass) and, when a second tap opens the tool's
+/// options, carries a small ⌄ in an ink that reads on it.
+struct NativePDFPaletteSwatch: View {
+    let color: String
+    var tape = false
+    let chosen: Bool
+    var options = false
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        let fill = NativePDFPaletteLook.swatch(color, tape: tape), dark = scheme == .dark
+        let light = NativePDFPaletteLook.lightness(color, tape: tape, dark: dark)
+        // A ring as light as the glass (white in the light, black in the dark) would not show: it takes the palette's ink.
+        let ringFill = (dark ? light < 0.18 : light > 0.82) ? NativePDFPaletteLook.ring : fill
+        ZStack {
+            Circle().fill(fill).frame(width: chosen ? 20 : 23, height: chosen ? 20 : 23)
+                .overlay(Circle().strokeBorder(NativePDFPaletteLook.swatchEdge, lineWidth: 0.5))
+            if chosen {
+                Circle().strokeBorder(ringFill, lineWidth: 2).frame(width: 28, height: 28)
+                if options {
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .black))
+                        .foregroundStyle(light > 0.6 ? Color.black.opacity(0.7) : Color.white)
+                        .offset(y: 0.5).accessibilityHidden(true)
+                }
+            }
+        }.frame(width: 28, height: 28).animation(.snappy(duration: 0.16), value: chosen)
     }
 }
 

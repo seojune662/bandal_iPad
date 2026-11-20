@@ -12,6 +12,7 @@ struct NativePDFWorkspace: View {
     @Environment(\.nativeWorkspaceControlInset) private var controlInset
     @Environment(\.nativeWorkspaceTopInset) private var topInset
     @Environment(\.nativePDFPaletteHost) private var paletteHost
+    /// The page area and, while it is open, the pages panel beside it: the palette's row spans both.
     @State private var bodyFrame = CGRect.zero
     private let tabID: String
     private var showsPalette: Bool { visible && model.assistantAnnotation == nil && (chromeMode == .toolsHidden || model.toolsExpanded) }
@@ -35,6 +36,12 @@ struct NativePDFWorkspace: View {
     /// `NativePDFFloatingPalette.leadingReserve` clear for it whether the window floats the palette or the pane
     /// draws its own, so the button never has to move and nothing here measures the pill.
     private var viewButtonTop: CGFloat { paletteTop + (NativePDFFloatingPalette.height - NativePDFViewButton.size) / 2 }
+    private var showsViewButton: Bool { visible && model.assistantAnnotation == nil && chromeMode != .toolsHidden }
+    /// How much of the pane's top the palette's row takes (the thumbnails button with it, or that button alone):
+    /// the pages panel starts under it.
+    private var bandBottom: CGFloat {
+        showsPalette ? belowPalette : showsViewButton ? viewButtonTop + NativePDFViewButton.size + 8 : 0
+    }
     /// The bars in the band under the palette keep clear of the thumbnails button only when it sits in that band,
     /// which is when there is no palette above it.
     private var bandSideInset: CGFloat { showsPalette ? 16 : NativePDFFloatingPalette.leadingReserve }
@@ -79,25 +86,59 @@ struct NativePDFWorkspace: View {
             }
             GeometryReader { geometry in
                 HStack(spacing: 0) {
-                    if model.showPages && visible {
-                        NativePDFPagesPanel(model: model).frame(width: geometry.size.width < 700 ? 128 : 160)
-                        Divider()
-                    }
-                    ZStack {
-                        // No hit-test gate on the tool popover: its own dimming view takes the outside tap, and a gate that
-                        // outlived its popover (anchor gone, palette collapsed) left the page dead to pan, zoom and Pencil.
-                        NativePDFBody(model: model, visible: visible).accessibilityIdentifier(visible ? "native-pdf-workspace" : "")
-                            .nativeWorkspacePreviewSurface(id: tabID, capture: { try await model.workspacePreview() })
-                        if model.isLoading {
-                            ProgressView("문서 여는 중…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    // The pages panel and the page share the palette's row: the thumbnails button and the pill sit across
+                    // both, and the panel starts under them, so opening it takes no room from the palette.
+                    HStack(spacing: 0) {
+                        if model.showPages && visible {
+                            let panel = NativePDFPagesPanel.width(forArea: geometry.size.width)
+                            HStack(spacing: 0) {
+                                NativePDFPagesPanel(model: model, width: panel).frame(width: panel)
+                                NativeGlass.hairline.frame(width: 1)
+                            }.padding(.top, bandBottom)
                         }
-                    // Around the pages, and under the thumbnails beside them, the card's own tone shows; the pages stay white.
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .overlay {
-                            if model.assistantAnnotation != nil, model.assistantRegionMode {
-                                NativeAnnotationRegionOverlay(selected: model.captureAssistantViewport)
+                        ZStack {
+                            // No hit-test gate on the tool popover: its own dimming view takes the outside tap, and a gate that
+                            // outlived its popover (anchor gone, palette collapsed) left the page dead to pan, zoom and Pencil.
+                            NativePDFBody(model: model, visible: visible).accessibilityIdentifier(visible ? "native-pdf-workspace" : "")
+                                .nativeWorkspacePreviewSurface(id: tabID, capture: { try await model.workspacePreview() })
+                            if model.isLoading {
+                                ProgressView("문서 여는 중…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                             }
-                        }
+                        // Around the pages, and under the thumbnails beside them, the card's own tone shows; the pages stay white.
+                        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .overlay {
+                                if model.assistantAnnotation != nil, model.assistantRegionMode {
+                                    NativeAnnotationRegionOverlay(selected: model.captureAssistantViewport)
+                                }
+                            }
+                            // 문서에서 찾기 takes the band under the palette, clear of the thumbnails button; a recording bar moves below it.
+                            .overlay(alignment: .top) {
+                                if visible, model.search.isPresented {
+                                    NativePDFSearchBar(search: model.search).padding(.horizontal, 8).frame(height: NativePDFViewButton.size).bandalGlass(in: Capsule())
+                                        .padding(.horizontal, bandSideInset).padding(.top, belowPalette)
+                                }
+                            }
+                            .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model, sideInset: bandSideInset).padding(.top, belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0)) } }
+                            .overlay { if visible { NativePDFCommentAnchor(model: model) } }
+                            // Pulling past the last page says what letting go will do.
+                            .overlay(alignment: .bottom) { if visible, let state = model.pullToAdd { NativePDFPullToAddHint(armed: state == "armed").padding(.bottom, 28) } }
+                            // The text box's format card floats under the palette: opening a box never moves the page under the finger.
+                            .overlay(alignment: .top) {
+                                if let draft = model.textEditorDraft {
+                                    NativePDFTextEditor(draft: draft, isBusy: model.isBusy, errorMessage: model.errorMessage, canCancel: !model.textSaveNeedsRecovery,
+                                        onSave: model.finishText, onCancel: model.cancelText, onDelete: model.deleteText)
+                                        .frame(maxWidth: 760).padding(.horizontal, 8).padding(.top, belowPalette)
+                                }
+                            }
+                            // 찾아보기: the card sits at the leading edge, under the palette row and the find or recording bar.
+                            .overlay(alignment: .topLeading) { if visible { NativeQuickLookupCardHost(owner: tabID).padding(.leading, 12).padding(.bottom, 12)
+                                .padding(.top, paletteTop + NativePDFFloatingPalette.height + 8 + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
+                            .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame,
+                                clearTop: belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
+                            // 짚어주기: the AI's steps pointed out on the page.
+                            .overlay { if visible { NativePDFGuideOverlay(guide: model.guide, top: belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
+                    }
+                        // Drawn over everything on the page, as the window's own palette is when it floats it.
                         .overlay(alignment: .top) {
                             if showsPalette, paletteHost?.floats(tabID) != true {
                                 NativePDFFloatingPalette(model: model)
@@ -106,36 +147,10 @@ struct NativePDFWorkspace: View {
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bodyFrame = $0; registerPalette() }
                         .overlay(alignment: .topLeading) {
-                            if visible, model.assistantAnnotation == nil, chromeMode != .toolsHidden {
+                            if showsViewButton {
                                 NativePDFViewButton(model: model).padding(.leading, NativePDFViewButton.leading).padding(.top, viewButtonTop)
                             }
                         }
-                        // 문서에서 찾기 takes the band under the palette, clear of the thumbnails button; a recording bar moves below it.
-                        .overlay(alignment: .top) {
-                            if visible, model.search.isPresented {
-                                NativePDFSearchBar(search: model.search).padding(.horizontal, 8).frame(height: NativePDFViewButton.size).bandalGlass(in: Capsule())
-                                    .padding(.horizontal, bandSideInset).padding(.top, belowPalette)
-                            }
-                        }
-                        .overlay(alignment: .top) { if visible { NativePDFRecordingBar(model: model, sideInset: bandSideInset).padding(.top, belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0)) } }
-                        .overlay { if visible { NativePDFCommentAnchor(model: model) } }
-                        // Pulling past the last page says what letting go will do.
-                        .overlay(alignment: .bottom) { if visible, let state = model.pullToAdd { NativePDFPullToAddHint(armed: state == "armed").padding(.bottom, 28) } }
-                        // The text box's format card floats under the palette: opening a box never moves the page under the finger.
-                        .overlay(alignment: .top) {
-                            if let draft = model.textEditorDraft {
-                                NativePDFTextEditor(draft: draft, isBusy: model.isBusy, errorMessage: model.errorMessage, canCancel: !model.textSaveNeedsRecovery,
-                                    onSave: model.finishText, onCancel: model.cancelText, onDelete: model.deleteText)
-                                    .frame(maxWidth: 760).padding(.horizontal, 8).padding(.top, belowPalette)
-                            }
-                        }
-                        // 찾아보기: the card sits at the leading edge, under the palette row and the find or recording bar.
-                        .overlay(alignment: .topLeading) { if visible { NativeQuickLookupCardHost(owner: tabID).padding(.leading, 12).padding(.bottom, 12)
-                            .padding(.top, paletteTop + NativePDFFloatingPalette.height + 8 + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
-                        .overlay { if model.assistantAnnotation == nil, model.hasSelectionMenu, let frame = model.selectionFrame { NativePDFSelectionBar(model: model, frame: frame,
-                            clearTop: belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
-                        // 짚어주기: the AI's steps pointed out on the page.
-                        .overlay { if visible { NativePDFGuideOverlay(guide: model.guide, top: belowPalette + (model.search.isPresented ? NativePDFViewButton.size + 8 : 0) + (model.recordingStartedAt != nil ? 56 : 0)) } }
                     if model.showAnnotations && visible {
                         Divider()
                         NativePDFAnnotationRail(model: model).background(NativeDesktopTheme.surface).frame(width: geometry.size.width < 700 ? 220 : 280)
@@ -1096,6 +1111,11 @@ final class NativePDFWorkspaceModel {
         dirtyScenes.formUnion(scenePages)
     }
     private func aspect(_ page: Int) -> Double { pageAspects.indices.contains(page - 1) ? pageAspects[page - 1] : sqrt(2) }
+    /// A page's width over its height, for its thumbnail: a sheet's 1 : √2 until the document says otherwise.
+    func thumbnailAspect(_ page: Int) -> CGFloat {
+        let value = aspect(page)
+        return value.isFinite && value > 0.05 && value < 20 ? CGFloat(1 / value) : 1 / sqrt(2)
+    }
     private func pageSize(_ page: Int) -> CGSize {
         let width = pageWidths.indices.contains(page - 1) ? pageWidths[page - 1] : 595.28
         let validWidth = width.isFinite && width > 0 ? width : 595.28

@@ -10,8 +10,8 @@ struct NativeSidebarWindowActions {
     let close: (String) -> Void
 }
 
-/// A folder's windows, listed under it in the sidebar: tap one to switch to it, ＋ for a new one, long press
-/// to rename, reorder or close. A window still called "윈도우 N" is shown by what it holds.
+/// A folder's windows, listed under it in the sidebar: tap one to switch to it, long press to rename, reorder or
+/// close. A new one is the ＋ at the end of the folder's own row. A window still called "윈도우 N" is shown by what it holds.
 struct NativeSidebarWindowsSection: View {
     let windows: [NativeWorkspaceWindow]
     let activeID: String?
@@ -24,18 +24,11 @@ struct NativeSidebarWindowsSection: View {
     @State private var closingID: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Text("윈도우").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted)
-                Spacer(minLength: 0)
-                Button(action: actions.add) { Image(systemName: "plus").font(.system(size: 11)).frame(width: 32, height: 32).padding(6).contentShape(Rectangle()).padding(-6) }
-                    .buttonStyle(.plain).foregroundStyle(NativeGlass.panelIcon)
-                    .accessibilityLabel("새 윈도우").accessibilityIdentifier("native-sidebar-window-add")
-            }
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(windows.enumerated()), id: \.element.id) { index, window in row(window, index: index) }
-        }.padding(.leading, 34).padding(.trailing, 8)
-            // The guide line of an open folder, down from its chevron.
-            .overlay(alignment: .leading) { NativeGlass.treeGuide.frame(width: 1).padding(.leading, 19).allowsHitTesting(false) }
+        }.padding(.leading, NativeCourseSidebar.childLeading).padding(.trailing, 8).padding(.top, 2)
+            // The guide line of an open folder, down from its glyph.
+            .overlay(alignment: .leading) { NativeGlass.treeGuide.frame(width: 1).padding(.leading, NativeCourseSidebar.guideX(0)).allowsHitTesting(false) }
             .accessibilityElement(children: .contain).accessibilityIdentifier("native-sidebar-windows")
     }
 
@@ -59,8 +52,11 @@ struct NativeSidebarWindowsSection: View {
                     Text(verbatim: title).font(NativeDesktopTheme.font(12, weight: active ? .semibold : .regular))
                         .foregroundStyle(active ? NativeGlass.icon : NativeDesktopTheme.secondary).lineLimit(1)
                     Spacer(minLength: 0)
-                    if count > 0 { Text(verbatim: "\(count)").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted) }
-                }.frame(maxWidth: .infinity, minHeight: 34, alignment: .leading).contentShape(Rectangle())
+                    if count > 0 { Text(verbatim: "\(count)").font(NativeDesktopTheme.font(11)).monospacedDigit().foregroundStyle(NativeDesktopTheme.muted) }
+                }.padding(.horizontal, 8).frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                    // The current window is a faint pill of the decor's accent, a step quieter than the chosen folder's.
+                    .background { if active { RoundedRectangle(cornerRadius: 7, style: .continuous).fill(NativeGlass.accentSoft).opacity(0.6) } }
+                    .contentShape(Rectangle())
             }.buttonStyle(.plain)
                 .accessibilityLabel(title).accessibilityValue(active ? "현재 윈도우" : "").accessibilityAddTraits(active ? .isSelected : [])
                 .accessibilityIdentifier("native-sidebar-window-" + window.id)

@@ -219,6 +219,7 @@
 		52B7821BAA095E22D3435A77 /* BrowserAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A8F3B5FA9EE8B8CF464CFD /* BrowserAgent.swift */; };
 		52CD40D28EDFF01E973705D8 /* NativePDFPageEditing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01B7CF78F23029323B2D1AF /* NativePDFPageEditing.swift */; };
 		5342E24BD3746F82CFEAB692 /* DesktopBookmarkImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA756BD2E3B8E40B6774F3A8 /* DesktopBookmarkImportService.swift */; };
+		534BA3D2284F22AA0667DB86 /* SidebarPaletteScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E313526B4E15FB9C3C26E6BB /* SidebarPaletteScreenshotTests.swift */; };
 		5361B97B7CCDFCA840122D67 /* NativeSchoolPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DBFF31B77ED8C26C556C81F /* NativeSchoolPicker.swift */; };
 		5387734A32EBD26177E85832 /* NativeQuickLookupRegionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B965A6DF3BD73F2AB57FA7 /* NativeQuickLookupRegionTests.swift */; };
 		550CAAB6347EDB1EEA2A29A4 /* BrowserContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C13229E67690218597EA87C /* BrowserContextMenu.swift */; };
@@ -1271,6 +1272,7 @@
 		E0A360CBB0ED8301FC334B65 /* NativePDFPageEditingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePDFPageEditingTests.swift; sourceTree = "<group>"; };
 		E1F36C90756886DB1F8F5BF8 /* NativeInlineEditingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeInlineEditingUITests.swift; sourceTree = "<group>"; };
 		E2583459275A18BD9E844519 /* DesktopInteractionDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopInteractionDiagnostics.swift; sourceTree = "<group>"; };
+		E313526B4E15FB9C3C26E6BB /* SidebarPaletteScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarPaletteScreenshotTests.swift; sourceTree = "<group>"; };
 		E3382995480E6F200589AAE2 /* NativeBrowserTabStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBrowserTabStrip.swift; sourceTree = "<group>"; };
 		E34AC699972182895DADB8C7 /* NativeAssistantPreferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAssistantPreferenceTests.swift; sourceTree = "<group>"; };
 		E3679A3BBA545B6E0634FFA2 /* Bandal.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Bandal.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -2109,6 +2111,7 @@
 				99A65BFF2994534CA8D49DDC /* ReviewRecordingTests.swift */,
 				ECDF59816627BB5D399E660B /* ReviewStroke.h */,
 				DA33C8ED6E36F5E113588364 /* ReviewStroke.m */,
+				E313526B4E15FB9C3C26E6BB /* SidebarPaletteScreenshotTests.swift */,
 				AA87FD50111B7AE5C26603C8 /* StoreScreensUITests.swift */,
 				A9F3FB52372C56E4648CFBB1 /* UXPassScreenshotTests.swift */,
 			);
@@ -2636,6 +2639,7 @@
 				DBCDCC47019431035EDF14DD /* ReviewHandwriting.swift in Sources */,
 				1DD3616E10E15CA83E0CF2C7 /* ReviewRecordingTests.swift in Sources */,
 				587B7D02E6AFCF54193EEEE3 /* ReviewStroke.m in Sources */,
+				534BA3D2284F22AA0667DB86 /* SidebarPaletteScreenshotTests.swift in Sources */,
 				3F207E4154CD9DBA693E1F27 /* StoreScreensUITests.swift in Sources */,
 				8571C87C74950DC5B39693F8 /* UXPassScreenshotTests.swift in Sources */,
 			);

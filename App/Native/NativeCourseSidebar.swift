@@ -114,31 +114,31 @@ struct NativeCourseSidebar: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NativeHomeTab.newCourse)) { _ in adding = .course }
     }
+    /// Where a row's glyph starts, and how far each level of nesting steps in.
+    static let rowLeading: CGFloat = 10, levelIndent: CGFloat = 14
+    /// The centre of a folder glyph `level` levels in: the guide line its contents hang from comes down here.
+    static func guideX(_ level: Int) -> CGFloat { rowLeading + CGFloat(level) * levelIndent + 11 }
+    /// Where the windows and favourites under a folder `indent` in begin: right of its guide line.
+    static let childLeading: CGFloat = 28
     /// One folder: its glyph and name, 14 pt whether chosen or not (the chosen one is medium on a pill).
-    /// A folder holding folders, or the chosen one (its favourites), has a chevron; nested folders step in 14 pt
-    /// a level, each level under a guide line that comes down from its parent's chevron.
+    /// Its controls sit at the right end, so every row's name starts right after its glyph: the chosen folder
+    /// has ⌄ (open or close it), ⋯ (its menu) and ＋ (a new window); a folder holding folders keeps ⌄ alone.
+    /// Nested folders step in 14 pt a level, each level under a guide line that comes down from its parent's glyph.
     private func courseRow(_ course: NativeCourse, depth: Int) -> some View {
         // A project inside this folder selects its own row, not this one.
         let selected = store.selectedCourseID == course.id && (selectedContextID?.hasPrefix("project:") != true), collapsed = contains(course.id, in: collapsedCourses)
-        let nested = query.isEmpty && !children(of: course.id).isEmpty, indent = CGFloat(min(depth, 6)) * 14
+        let nested = query.isEmpty && !children(of: course.id).isEmpty, indent = CGFloat(min(depth, 6)) * Self.levelIndent
+        // ＋ makes a window in the open folder's workspace, the one whose windows are listed under it.
+        let addsWindow = selected && windowActions != nil && navigation.currentWindowRef?.workspaceID == "course:" + course.id
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
-                Group {
-                    if selected || nested {
-                        Button { toggle(course.id, in: &collapsedCourses) } label: {
-                            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(NativeGlass.panelIcon)
-                                .rotationEffect(.degrees(collapsed ? 0 : 90)).animation(.snappy(duration: 0.18), value: collapsed)
-                                .frame(width: 30, height: 38).contentShape(Rectangle())
-                        }.accessibilityLabel(course.name + (collapsed ? " 펼치기" : " 접기")).accessibilityIdentifier("native-course-expand-" + course.id)
-                    } else { Color.clear.frame(width: 30, height: 38) }
-                }.padding(.leading, 4 + indent)
                 if renamingID == course.id {
                     HStack(spacing: 8) {
                         NativeFolderGlyph(color: course.color, selected: selected).frame(width: 22)
                         BandalInlineEditor(text: course.name, isEditing: renaming(course.id), font: NativeDesktopTheme.font(14, weight: .medium), identifier: "native-course-rename") { name in
                             mutate("courses:rename", ["courseId": course.id, "name": name])
                         }
-                    }.frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                    }.padding(.leading, Self.rowLeading + indent).frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
                 } else {
                 Button {
                     if collapsed, selected { toggle(course.id, in: &collapsedCourses) }
@@ -148,15 +148,26 @@ struct NativeCourseSidebar: View {
                         NativeFolderGlyph(color: course.color, selected: selected).frame(width: 22)
                         Text(course.name).font(NativeDesktopTheme.font(14, weight: selected ? .medium : .regular)).foregroundStyle(selected ? NativeGlass.icon : NativeDesktopTheme.text).lineLimit(1)
                         Spacer(minLength: 0)
-                        if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(10)).foregroundStyle(.orange) }
-                    }.padding(.trailing, selected ? 0 : 8).frame(height: 38).contentShape(Rectangle())
+                        if course.missing == true { Text("연결 끊김").font(NativeDesktopTheme.font(10)).foregroundStyle(.orange).fixedSize() }
+                    }.padding(.leading, Self.rowLeading + indent).padding(.trailing, selected || nested ? 2 : 5).frame(height: 38).contentShape(Rectangle())
                 }.accessibilityIdentifier("native-course-" + course.id).accessibilityAddTraits(selected ? .isSelected : [])
                     .contextMenu { courseMenu(course) }
                 }
-                if selected {
-                    Menu { courseMenu(course) } label: { Image(systemName: "ellipsis").font(.system(size: 16)).foregroundStyle(NativeGlass.panelIcon).frame(width: 46, height: 38).contentShape(Rectangle()) }.accessibilityLabel(course.name + " 폴더 메뉴")
+                if selected || nested {
+                    Button { toggle(course.id, in: &collapsedCourses) } label: {
+                        rowControlLabel("chevron.right", size: 11, weight: .semibold)
+                            .rotationEffect(.degrees(collapsed ? 0 : 90)).animation(.snappy(duration: 0.18), value: collapsed)
+                    }.accessibilityLabel(course.name + (collapsed ? " 펼치기" : " 접기")).accessibilityIdentifier("native-course-expand-" + course.id)
                 }
-            }.buttonStyle(.plain)
+                if selected {
+                    Menu { courseMenu(course) } label: { rowControlLabel("ellipsis", size: 15) }.accessibilityLabel(course.name + " 폴더 메뉴")
+                }
+                if addsWindow, let windowActions {
+                    // A closed folder opens, so the new window shows in its list.
+                    rowControl("plus", size: 14) { if collapsed { toggle(course.id, in: &collapsedCourses) }; windowActions.add() }
+                        .accessibilityLabel("새 윈도우").accessibilityIdentifier("native-sidebar-window-add")
+                }
+            }.buttonStyle(.plain).padding(.trailing, 3)
                 .background(selected ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 8))
                 // A tab dropped on the chosen course becomes its favourite.
                 .onDrop(of: selected ? [NativeDockDragPayload.contentType] : [], isTargeted: nil) { providers in
@@ -189,8 +200,16 @@ struct NativeCourseSidebar: View {
             }
         }
         .background(alignment: .leading) {
-            if query.isEmpty { ForEach(0..<min(depth, 6), id: \.self) { level in NativeGlass.treeGuide.frame(width: 1).padding(.leading, 19 + CGFloat(level) * 14).allowsHitTesting(false) } }
+            if query.isEmpty { ForEach(0..<min(depth, 6), id: \.self) { level in NativeGlass.treeGuide.frame(width: 1).padding(.leading, Self.guideX(level)).allowsHitTesting(false) } }
         }
+    }
+    /// A control at the right end of a folder row: 30 × 38, the glyph in the panel's icon colour.
+    private func rowControl(_ symbol: String, size: CGFloat, weight: Font.Weight = .regular, action: @escaping () -> Void) -> some View {
+        Button(action: action) { rowControlLabel(symbol, size: size, weight: weight) }
+    }
+    private func rowControlLabel(_ symbol: String, size: CGFloat, weight: Font.Weight = .regular) -> some View {
+        Image(systemName: symbol).font(.system(size: size, weight: weight)).foregroundStyle(NativeGlass.panelIcon)
+            .frame(width: 30, height: 38).contentShape(Rectangle())
     }
     private func deleteMessage(_ course: NativeCourse) -> String {
         let inside = descendants(of: course.id).count
@@ -259,7 +278,7 @@ struct NativeCourseSidebar: View {
                 HStack(spacing: 8) {
                     NativeFolderGlyph(tint: tint, selected: selected).frame(width: 22)
                     BandalInlineEditor(text: project.name, isEditing: renaming(project.id), font: NativeDesktopTheme.font(14), identifier: "native-project-rename") { renameProject(project, to: $0) }
-                }.padding(.leading, 34).frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                }.padding(.leading, Self.rowLeading).frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
             } else {
                 Button { onOpenProject(context) } label: {
                     HStack(spacing: 8) {
@@ -267,15 +286,15 @@ struct NativeCourseSidebar: View {
                         Text(context.title).font(NativeDesktopTheme.font(14, weight: selected ? .medium : .regular)).foregroundStyle(selected ? NativeGlass.icon : NativeDesktopTheme.text).lineLimit(1)
                         Spacer(minLength: 0)
                         if project.dueCardCount > 0 { Text("\(project.dueCardCount)").font(NativeDesktopTheme.font(11)).foregroundStyle(NativeDesktopTheme.muted) }
-                    }.padding(.leading, 34).padding(.trailing, selected ? 0 : 8).frame(height: 38).contentShape(Rectangle())
+                    }.padding(.leading, Self.rowLeading).padding(.trailing, selected ? 2 : 5).frame(height: 38).contentShape(Rectangle())
                 }.accessibilityIdentifier("native-project-" + project.id).accessibilityAddTraits(selected ? .isSelected : [])
                     .contextMenu { projectMenu(project) }
                 if selected {
-                    Menu { projectMenu(project) } label: { Image(systemName: "ellipsis").font(.system(size: 16)).foregroundStyle(NativeGlass.panelIcon).frame(width: 46, height: 38).contentShape(Rectangle()) }
+                    Menu { projectMenu(project) } label: { rowControlLabel("ellipsis", size: 15) }
                         .accessibilityLabel(context.title + " 폴더 메뉴")
                 }
             }
-        }.buttonStyle(.plain)
+        }.buttonStyle(.plain).padding(.trailing, 3)
             .background(selected ? NativeGlass.selection : .clear, in: RoundedRectangle(cornerRadius: 8))
             .bandalConfirm("폴더를 보관할까요?", isPresented: Binding(get: { deletingProject?.id == project.id }, set: { if !$0 { deletingProject = nil } }),
                            message: "자료와 학습 기록은 그대로이고 폴더 관리에서 다시 꺼낼 수 있어요.", action: "보관") {
