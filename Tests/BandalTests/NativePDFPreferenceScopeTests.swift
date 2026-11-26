@@ -153,4 +153,34 @@ final class NativePDFPreferenceScopeTests: XCTestCase {
         NativePDFPreferenceScope.registerPreviousRoot(root: root, documentsRoot: currentDocuments, defaults: defaults)
         XCTAssertFalse(NativePDFWorkspacePreferences.hasStored(root: root, documentID: "same", defaults: defaults, documentsRoot: currentDocuments))
     }
+
+    /// The PDF tools' settings live in their own suite so a palette tap does not redraw every @AppStorage view. The first
+    /// launch takes over what earlier builds left in the standard defaults, and only that once.
+    func testPDFPreferencesAdoptStandardValuesOnce() {
+        let (standard, standardSuite) = defaults(), (suite, suiteName) = defaults()
+        defer { standard.removePersistentDomain(forName: standardSuite); suite.removePersistentDomain(forName: suiteName) }
+        let root = URL(fileURLWithPath: "/adopt-preference-scope")
+        let paletteKey = NativePDFPalettePreferences.key(root: root), documentKey = NativePDFWorkspacePreferences.key(root: root, documentID: "doc")
+        standard.set(Data("palette".utf8), forKey: paletteKey)
+        standard.set(Data("document".utf8), forKey: documentKey)
+        standard.set("kept", forKey: "native.appearance")
+        suite.set(Data("newer".utf8), forKey: documentKey)
+        NativePDFPreferenceScope.adoptStandardValues(into: suite, from: standard)
+        XCTAssertEqual(suite.data(forKey: paletteKey), Data("palette".utf8))
+        XCTAssertEqual(suite.data(forKey: documentKey), Data("newer".utf8), "A value the suite already has is not overwritten")
+        XCTAssertNil(suite.object(forKey: "native.appearance"), "Only the PDF tools' keys move")
+        XCTAssertEqual(standard.data(forKey: paletteKey), Data("palette".utf8), "Earlier builds still find their copy")
+        suite.removeObject(forKey: paletteKey)
+        NativePDFPreferenceScope.adoptStandardValues(into: suite, from: standard)
+        XCTAssertNil(suite.data(forKey: paletteKey), "The copy happens once")
+    }
+    func testPDFPreferencesDefaultToTheirOwnSuite() {
+        XCTAssertFalse(NativePDFPreferenceScope.defaults === UserDefaults.standard)
+        let root = URL(fileURLWithPath: "/own-suite-\(UUID().uuidString)")
+        let key = NativePDFPalettePreferences.key(root: root)
+        defer { NativePDFPreferenceScope.defaults.removeObject(forKey: key); UserDefaults.standard.removeObject(forKey: key) }
+        NativePDFPalettePreferences.update(root: root) { $0.eraserMode = "partial" }
+        XCTAssertNotNil(NativePDFPreferenceScope.defaults.data(forKey: key))
+        XCTAssertNil(UserDefaults.standard.data(forKey: key), "A palette change writes nothing to the standard defaults")
+    }
 }

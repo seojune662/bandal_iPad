@@ -83,6 +83,79 @@ final class NativePerformanceUITests: XCTestCase {
         _ = XCTWaiter.wait(for: [idle], timeout: 40)
     }
 
+    /// Handwriting and palette taps with synthesized touches only (no XCUITest queries in the measured window), so
+    /// every `perf.main.busy` line in the trace is the app's own work. `TEST_RUNNER_INK_WARM=0` opens one PDF only.
+    @MainActor
+    func testInkAndPaletteResponsiveness() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["--native-ui-testing", "--reset-native-ui-testing", "--native-perf-fixture", "--native-input-trace", "--native-pencil-dispatch-fixture"]
+        app.launch()
+        let warm = ProcessInfo.processInfo.environment["INK_WARM"] != "0"
+        createCourse("Course A", app: app)
+        if warm { open(["강의 2.pdf"], app: app); createCourse("Course B", app: app); open(["강의 2.pdf"], app: app) }
+        open(["강의 1.pdf"], app: app)
+        let pen = app.buttons["native-pdf-tool-pen"]
+        XCTAssertTrue(pen.waitForExistence(timeout: 10))
+        if !pen.isSelected { pen.tap(); sleep(1) }
+        func centre(_ id: String) -> CGPoint? {
+            let item = app.buttons[id]; guard item.exists, item.isHittable else { return nil }
+            return CGPoint(x: item.frame.midX, y: item.frame.midY)
+        }
+        // Never a tap on what is already chosen: that opens the tool's options instead of changing anything.
+        let swatches = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "native-pdf-quick-color-")).allElementsBoundByIndex.filter { $0.isHittable }
+        let colours = swatches.map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) }
+        let chosenColour = swatches.firstIndex { $0.isSelected } ?? 0
+        let penPoint = try XCTUnwrap(centre("native-pdf-tool-pen")), highlighter = try XCTUnwrap(centre("native-pdf-tool-highlighter"))
+        let widths = (0..<3).compactMap { centre("native-pdf-width-slot-\($0)") }
+        let chosenWidth = (0..<3).first { app.buttons["native-pdf-width-slot-\($0)"].isSelected } ?? 0
+        let frame = app.otherElements["bandal-native-pdf-body"].firstMatch.frame
+        print("[INK_UI] colours=\(colours.count) chosen=\(chosenColour) widths=\(widths.count) chosen=\(chosenWidth) body=\(frame)")
+        let height = app.frame.height
+        func send(_ points: [CGPoint], duration: TimeInterval) {
+            if let failure = ReviewStroke.drawPoints(points.map { NSValue(cgPoint: CGPoint(x: height - $0.y, y: $0.x)) }, duration: duration,
+                                                     orientation: .landscapeRight) { XCTFail("stroke: \(failure)") }
+        }
+        ReviewStroke.skipQuiescenceWaits()
+        sleep(3)
+        let loop = Int(ProcessInfo.processInfo.environment["INK_LOOP"] ?? "") ?? 0
+        print("[INK_UI] loop start \(loop)")
+        // Thirty handwriting-like strokes, three lines of ten words (or INK_LOOP strokes for a profiler).
+        for index in 0..<(loop > 0 ? loop : 30) {
+            let x0 = frame.minX + frame.width * (0.2 + 0.06 * Double(index % 10)), y0 = frame.minY + frame.height * (0.35 + 0.08 * Double((index / 10) % 4))
+            let points = (0...36).map { step -> CGPoint in
+                let t = Double(step) / 36
+                return CGPoint(x: x0 + frame.width * 0.045 * t + 6 * cos(t * 6 * .pi), y: y0 - 10 * sin(t * 6 * .pi))
+            }
+            send(points, duration: 0.45)
+            usleep(180_000)
+        }
+        print("[INK_UI] loop end")
+        if loop > 0 { return }
+        sleep(3)
+        // Palette: tools, then colours and widths of the pen, each tap left to settle and each one a change.
+        var taps = [highlighter, penPoint, highlighter, penPoint]
+        if colours.count > 1 {
+            let other = colours[(chosenColour + 1) % colours.count], back = colours[chosenColour]
+            taps += [other, back, other, back]
+        }
+        if widths.count == 3 {
+            taps += [widths[(chosenWidth + 1) % 3], widths[chosenWidth], widths[(chosenWidth + 2) % 3], widths[chosenWidth]]
+        }
+        for point in taps { send([point, point], duration: 0.06); usleep(900_000) }
+        sleep(2)
+        // Strokes right after a colour change, as when writing in a new colour.
+        for index in 0..<6 where colours.count > 1 {
+            let colour = colours[index % 2 == 0 ? (chosenColour + 1) % colours.count : chosenColour]
+            send([colour, colour], duration: 0.06); usleep(120_000)
+            let x0 = frame.minX + frame.width * (0.2 + 0.1 * Double(index)), y0 = frame.minY + frame.height * 0.65
+            send((0...24).map { CGPoint(x: x0 + Double($0) * 3, y: y0 - 8 * sin(Double($0) / 24 * 4 * .pi)) }, duration: 0.3)
+            usleep(300_000)
+        }
+        sleep(4)
+        print("[INK_UI] body=\(app.otherElements["bandal-native-pdf-body"].firstMatch.value ?? "")")
+    }
+
     @MainActor private func waitForUsablePDF(app: XCUIApplication, timeout: TimeInterval) -> Bool {
         let tools = app.buttons["native-pdf-drawing-tools"]
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND value BEGINSWITH %@", "drawings="), object: tools)

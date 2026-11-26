@@ -585,7 +585,7 @@ struct NativeWorkspaceView: View {
                 if kind == "pdf" { offerTip(.pdf) } else if kind == "assistant" { offerTip(.ai) }
             }
             .onChange(of: aiRailOpen) { _, open in if open { offerTip(.ai) } }
-            .onChange(of: pdfPalette.entries.values.contains { $0.model.tool == "lasso" }) { _, lasso in if lasso { offerTip(.lasso) } }
+            .background { NativeLassoTipTrigger(host: pdfPalette) { offerTip(.lasso) } }
     }
     @ViewBuilder private var guideLayer: some View {
         switch guideCard {
@@ -1644,3 +1644,14 @@ struct NativeWorkspaceView: View {
 }
 
 private enum NativeAuxiliaryDestination { case marketplace, help, account }
+
+/// Offers the lasso's first-use tip when a PDF's palette picks the lasso. A view of its own: what it reads of each
+/// model (its tool) is then tracked here, and choosing a tool redraws this empty view instead of the whole window.
+private struct NativeLassoTipTrigger: View {
+    let host: NativePDFPaletteHost
+    let offer: () -> Void
+    var body: some View {
+        Color.clear.frame(width: 0, height: 0).allowsHitTesting(false).accessibilityHidden(true)
+            .onChange(of: host.entries.values.contains { $0.model.tool == "lasso" }) { _, lasso in if lasso { offer() } }
+    }
+}

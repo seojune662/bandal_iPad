@@ -167,6 +167,27 @@ final class NativeTabGestureUITests: XCTestCase {
         XCTAssertFalse(tip.waitForExistence(timeout: 4), "Once only")
     }
 
+    /// The lasso's tip comes when a PDF's palette picks the lasso (its watcher is a view of its own, not the window's).
+    @MainActor
+    func testLassoTipShowsWhenThePaletteChoosesTheLasso() throws {
+        let app = launch([NativeGuideFlags.tips])
+        createCourse("Lasso Tip Course", app: app)
+        let create = app.buttons["native-library-create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 10)); create.tap(); app.buttons["새 노트"].tap()
+        let title = app.textFields["native-new-note-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Lasso")
+        app.buttons["native-new-note-create"].tap()
+        let pdfTip = app.descendants(matching: .any)["native-guide-tip-pdf"]
+        XCTAssertTrue(pdfTip.waitForExistence(timeout: 20), "A first PDF brings its tip: \(app.debugDescription)")
+        app.buttons["native-guide-tip-ok"].tap()
+        XCTAssertTrue(pdfTip.waitForNonExistence(timeout: 5))
+        let lasso = app.buttons["native-pdf-tool-lasso"]
+        XCTAssertTrue(lasso.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<4 where !lasso.isHittable { app.scrollViews["native-pdf-tool-scroll"].swipeLeft() }
+        lasso.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["native-guide-tip-lasso"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+
     // MARK: Helpers
 
     @MainActor private func launch(_ extra: [String]) -> XCUIApplication {

@@ -634,7 +634,8 @@ final class NativeWorkspaceNavigation: ObservableObject {
                 try current.write(to: Self.previousSnapshotURL(for: url), options: .atomic)
             }
             try data.write(to: url, options: .atomic)
-            migrationBackup = nil; persistenceError = nil
+            // @Published announces every assignment: a save that changes nothing must not redraw every view watching navigation.
+            migrationBackup = nil; if persistenceError != nil { persistenceError = nil }
         } catch { persistenceError = error.localizedDescription; throw error }
     }
 }

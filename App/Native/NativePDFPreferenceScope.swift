@@ -5,6 +5,25 @@ import CryptoKit
 /// use a relative identity; injected or external workspaces retain their full
 /// path. No historical path is opened: predecessor paths are only hash inputs.
 enum NativePDFPreferenceScope {
+    /// Where the PDF tools keep their settings: the palette, and each document's tool and page. A palette tap and a
+    /// page change write here, so it is not `UserDefaults.standard`: a write there makes SwiftUI treat every
+    /// `@AppStorage` the window reads as changed and redraw the whole window (about 40 ms a tap on the simulator).
+    /// The first use copies what earlier builds kept in the standard defaults; those copies stay where they were.
+    static let defaults: UserDefaults = {
+        guard let suite = UserDefaults(suiteName: suiteName) else { return .standard }
+        adoptStandardValues(into: suite)
+        return suite
+    }()
+    static let suiteName = "app.bandal.ipad.pdf-preferences"
+    private static let adoptedKey = "native-pdf.adopted-standard-defaults.v1"
+    /// Copies every `native-pdf.` value of `standard` that `suite` does not have yet, once.
+    static func adoptStandardValues(into suite: UserDefaults, from standard: UserDefaults = .standard) {
+        guard suite !== standard, !suite.bool(forKey: adoptedKey) else { return }
+        for (key, value) in standard.dictionaryRepresentation() where key.hasPrefix("native-pdf.") && suite.object(forKey: key) == nil {
+            suite.set(value, forKey: key)
+        }
+        suite.set(true, forKey: adoptedKey)
+    }
     private static func documents(_ override: URL?) -> URL {
         override ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
@@ -60,7 +79,7 @@ enum NativePDFPreferenceScope {
     /// Capture the immediately preceding root before storage relocation rewrites
     /// settings.json. Keep the ordered chain of roots previously registered from
     /// that evidence, so an unopened document survives more than one update.
-    static func registerPreviousRoot(root: URL, documentsRoot: URL? = nil, defaults: UserDefaults = .standard) {
+    static func registerPreviousRoot(root: URL, documentsRoot: URL? = nil, defaults: UserDefaults = Self.defaults) {
         guard relativeRoot(root, documentsRoot: documentsRoot) != nil else { return }
         let settingsURL = root.appendingPathComponent("settings.json")
         guard let size = try? settingsURL.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 2 * 1024 * 1024,

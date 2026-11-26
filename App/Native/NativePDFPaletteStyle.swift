@@ -158,7 +158,7 @@ struct NativePDFPalettePreferences: Codable, Equatable {
     private static func key(rootIdentity: String) -> String {
         "native-pdf.palette.v2." + SHA256.hash(data: Data(rootIdentity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
-    static func load(root: URL, defaults: UserDefaults = .standard, documentsRoot: URL? = nil) -> Self {
+    static func load(root: URL, defaults: UserDefaults = NativePDFPreferenceScope.defaults, documentsRoot: URL? = nil) -> Self {
         let data = NativePDFPreferenceScope.storedData(root: root, stableKey: key(root: root, documentsRoot: documentsRoot), documentsRoot: documentsRoot, defaults: defaults,
             legacyKeys: { path in let key = key(rootIdentity: path); return [key, key.replacingOccurrences(of: ".v2.", with: ".v1.")] },
             normalize: { data in
@@ -170,7 +170,7 @@ struct NativePDFPalettePreferences: Codable, Equatable {
         return value
     }
     @discardableResult
-    static func update(root: URL, defaults: UserDefaults = .standard, documentsRoot: URL? = nil, _ change: (inout Self) -> Void) -> Self {
+    static func update(root: URL, defaults: UserDefaults = NativePDFPreferenceScope.defaults, documentsRoot: URL? = nil, _ change: (inout Self) -> Void) -> Self {
         var value = load(root: root, defaults: defaults, documentsRoot: documentsRoot); change(&value)
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         let key = key(root: root, documentsRoot: documentsRoot)

@@ -106,15 +106,15 @@ struct NativePDFWorkspacePreferences: Codable, Equatable {
                 return try? encoder.encode(value.validated())
             })
     }
-    static func hasStored(root: URL, documentID: String, defaults: UserDefaults = .standard, documentsRoot: URL? = nil) -> Bool {
+    static func hasStored(root: URL, documentID: String, defaults: UserDefaults = NativePDFPreferenceScope.defaults, documentsRoot: URL? = nil) -> Bool {
         storedData(root: root, documentID: documentID, defaults: defaults, documentsRoot: documentsRoot) != nil
     }
-    static func load(root: URL, documentID: String, defaults: UserDefaults = .standard, documentsRoot: URL? = nil) -> Self {
+    static func load(root: URL, documentID: String, defaults: UserDefaults = NativePDFPreferenceScope.defaults, documentsRoot: URL? = nil) -> Self {
         guard let data = storedData(root: root, documentID: documentID, defaults: defaults, documentsRoot: documentsRoot),
               let stored = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
         return stored.validated()
     }
-    func save(root: URL, documentID: String, defaults: UserDefaults = .standard, documentsRoot: URL? = nil) {
+    func save(root: URL, documentID: String, defaults: UserDefaults = NativePDFPreferenceScope.defaults, documentsRoot: URL? = nil) {
         let key = Self.key(root: root, documentID: documentID, documentsRoot: documentsRoot)
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         guard let data = try? encoder.encode(validated()), defaults.data(forKey: key) != data else { return }
