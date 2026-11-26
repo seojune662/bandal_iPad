@@ -528,7 +528,7 @@ final class NativePDFWorkspaceModel {
     private var pendingTextSave: [String: Any]?
     private var textCreateMutationID = UUID().uuidString
 
-    init(document: NativeDocumentReference, store: NativeWorkspaceStore, onOpenDocument: ((NativeDocumentReference) -> Void)? = nil, defaults: UserDefaults = .standard) {
+    init(document: NativeDocumentReference, store: NativeWorkspaceStore, onOpenDocument: ((NativeDocumentReference) -> Void)? = nil, defaults: UserDefaults = NativePDFPreferenceScope.defaults) {
         self.document = document; self.store = store; self.onOpenDocument = onOpenDocument; self.defaults = defaults
         let hasPreferences = NativePDFWorkspacePreferences.hasStored(root: store.root, documentID: document.id, defaults: defaults)
         let preferenceID = (hasPreferences ? nil : store.documentDuplicateSourceIDs[document.id]) ?? document.id
@@ -924,8 +924,15 @@ final class NativePDFWorkspaceModel {
         default: break
         }
     }
+    /// `perf.palette.<kind>`: a palette tap's turn of the main thread, through the frame it commits (NativePerformanceUITests).
+    private func tracePaletteTap(_ kind: String) {
+        guard NativeInputTrace.isEnabled else { return }
+        let started = ProcessInfo.processInfo.systemUptime
+        DispatchQueue.main.async { NativeInputTrace.perf("palette." + kind, since: started) }
+    }
     /// `keepingStyle`: a pen type picked inside the pen settings leaves them open.
     func chooseTool(_ next: String, keepingStyle: Bool = false) {
+        tracePaletteTap("tool")
         guard assistantAnnotation == nil, NativePDFWorkspacePreferences.tools.contains(next), !isBusy else { return }
         editingWidthSlot = nil
         if next == tool { if hasToolOptions { showStyle.toggle() }; return }
@@ -947,6 +954,7 @@ final class NativePDFWorkspaceModel {
         updateStyle()
     }
     func chooseColor(_ next: String) {
+        tracePaletteTap("color")
         guard NativePDFWorkspacePreferences.colors.contains(next), usesColorSlots else { return }
         if tool == "tape" {
             palette = NativePDFPalettePreferences.update(root: store.root, defaults: defaults) { $0.tapeColor = next }
@@ -957,6 +965,7 @@ final class NativePDFWorkspaceModel {
     }
     /// A slot tap selects its thickness; tapping the selected slot opens its twelve steps.
     func chooseWidthSlot(_ index: Int) {
+        tracePaletteTap("width")
         guard widthSlots.indices.contains(index), usesWidthSlots else { return }
         if selectedWidthSlot == index { editingWidthSlot = index; return }
         applyWidthStep(widthSlots[index])

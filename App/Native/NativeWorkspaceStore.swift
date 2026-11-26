@@ -175,7 +175,7 @@ final class NativeWorkspaceStore {
                 UserDefaults.standard.removeObject(forKey: key)
             }
             // The palette's tool options and slots are kept per root in the defaults, outside the reset folder.
-            UserDefaults.standard.removeObject(forKey: NativePDFPalettePreferences.key(root: folder, documentsRoot: documents))
+            NativePDFPreferenceScope.defaults.removeObject(forKey: NativePDFPalettePreferences.key(root: folder, documentsRoot: documents))
             // Browser logins live in the Keychain, outside the reset folder.
             SecItemDelete(DesktopCredentialsService.keychainQuery(folder.lastPathComponent + ":default") as CFDictionary)
             #endif

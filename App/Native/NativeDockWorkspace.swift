@@ -728,7 +728,12 @@ struct NativeDockWorkspace<Content: View, Empty: View>: View {
             if !compact { Button("전체 보기") { perform { maximizedGroupID = nil } }.frame(minHeight: 44) }
         }.padding(.horizontal, 12).background(NativeGlass.panel)
     }
-    private func focus(_ id: String) { navigation.focus(id); persist() }
+    /// A pane already focused stays as it is: a tap there writes nothing and redraws nothing. A stroke on the page can
+    /// end as a SwiftUI tap on its card; saving navigation for it redrew the whole window after every stroke.
+    private func focus(_ id: String) {
+        guard navigation.focusedGroupID != id else { return }
+        navigation.focus(id); persist()
+    }
     /// Whether three fingers may start a gesture now. VoiceOver and Switch Control have gestures of their own.
     private var tabGestureAllowed: Bool {
         tabGestureEnabled && !covered && !tabGestureBlocked && drag.transfer == nil && newTabGroupID == nil && tabListGroupID == nil

@@ -889,6 +889,11 @@ final class NativePDFInkSurface: UIView, UIScribbleInteractionDelegate {
     }
     private func endInput(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = active, touches.contains(touch) else { return }
+        // `perf.ink.lift`: the main thread's turn for a lift, through the frame it commits (NativePerformanceUITests).
+        if NativeInputTrace.isEnabled {
+            let started = ProcessInfo.processInfo.systemUptime
+            DispatchQueue.main.async { NativeInputTrace.perf("ink.lift", since: started) }
+        }
         recordInput("end", type: touch.type)
         let previousCount = measured.count
         append(event?.coalescedTouches(for: touch) ?? [touch]); predicted = []

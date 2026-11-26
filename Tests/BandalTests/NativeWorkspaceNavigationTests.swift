@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 @testable import Bandal
 
 @MainActor
@@ -141,6 +142,24 @@ final class NativeWorkspaceNavigationTests: XCTestCase {
         await restoration.value
         XCTAssertEqual(navigation.documents, [current])
         XCTAssertEqual(navigation.active, current)
+    }
+
+    /// Every view that watches navigation redraws on objectWillChange. A save that changes nothing (focusing the pane that
+    /// is already focused, which a stroke on a PDF can end as) must not announce one.
+    func testSavingUnchangedNavigationAnnouncesNoChange() throws {
+        let navigation = NativeWorkspaceNavigation()
+        navigation.open(document("first.md"))
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("navigation-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try navigation.save(to: file)
+        var announced = 0
+        let subscription = navigation.objectWillChange.sink { announced += 1 }
+        defer { subscription.cancel() }
+        try navigation.save(to: file); try navigation.save(to: file)
+        XCTAssertEqual(announced, 0)
+        XCTAssertNil(navigation.persistenceError)
+        if let focused = navigation.focusedGroupID { navigation.focus(focused) }
+        XCTAssertEqual(announced, 0, "Focusing the focused pane changes nothing either")
     }
 
     private func writeSnapshot(_ url: URL, documents: [NativeDocumentReference], active: String?, companion: String?) throws {
